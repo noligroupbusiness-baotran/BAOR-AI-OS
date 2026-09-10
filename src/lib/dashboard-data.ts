@@ -1,39 +1,48 @@
-// Lớp dữ liệu cho màn Điều hành. Gom số liệu thật từ CSDL (nội dung, khách hàng, lịch đăng)
-// với DỮ LIỆU MẪU (video, Agent, lịch hoạt động). Khi có API thật, chỉ thay ở đây.
-import { listActivity, listContent, listConversations, listPosts, pendingCounts } from "@/lib/queries";
-import { mockAgents, mockApprovals, mockTimeline, mockVideoPending, type ApprovalItem } from "@/lib/mock/dashboard";
-import { dateKey } from "@/lib/format";
+// Lớp dữ liệu cho màn Điều hành. Gom số liệu thật từ CSDL (nội dung, khách hàng, lịch đăng, lead)
+// với DỮ LIỆU MẪU (video, Agent, lịch hôm nay). Khi có API thật, chỉ thay ở đây.
+import { listContent, listConversations, listLeads, listPosts, pendingCounts } from "@/lib/queries";
+import { mockAgents, mockApprovals, mockTimeline, mockVideoPending, type AgentInfo, type ApprovalItem, type TimelineItem } from "@/lib/mock/dashboard";
+import { dateKey, TIME_ZONE } from "@/lib/format";
 
 export interface OverviewStats {
-  inProgress: number;
-  contentPending: number;
-  videoPending: number;
+  pendingApproval: number; // nội dung + video chờ duyệt
   postsToday: number;
+  leadsToday: number;
   alerts: number;
 }
 
 export function getOverview(): OverviewStats {
   const counts = pendingCounts();
   const today = dateKey(new Date());
-  const postsToday = listPosts().filter((p) => dateKey(p.scheduledFor) === today).length;
-  const failed = listPosts().filter((p) => p.status === "failed").length;
+  const posts = listPosts();
+  const failed = posts.filter((p) => p.status === "failed").length;
   const workflowErrors = mockApprovals.filter((a) => a.kind === "workflow").length;
   return {
-    inProgress: listContent(["in_progress"]).length,
-    contentPending: listContent(["review"]).length + counts.ideas,
-    videoPending: mockVideoPending,
-    postsToday,
-    alerts: failed + workflowErrors + counts.convs,
+    pendingApproval: listContent(["review"]).length + counts.ideas + mockVideoPending,
+    postsToday: posts.filter((p) => dateKey(p.scheduledFor) === today).length,
+    leadsToday: listLeads().filter((l) => l.stage === "new" && dateKey(l.lastMessageAt) === today).length,
+    alerts: failed + workflowErrors,
   };
 }
 
-export function getApprovals(): ApprovalItem[] {
+// Việc chờ xử lý kèm nhãn "đã chờ …", tính ở máy chủ để không lệch giờ khi hydrate.
+export type PendingItem = ApprovalItem & { waited: string };
+
+export function waitedLabel(sentAt: string, now = Date.now()): string {
+  const mins = Math.max(0, Math.round((now - new Date(sentAt).getTime()) / 60000));
+  if (mins < 60) return `đã chờ ${Math.max(1, mins)} phút`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `đã chờ ${hours} giờ`;
+  return `đã chờ ${Math.round(hours / 24)} ngày`;
+}
+
+export function getPending(): PendingItem[] {
   const fromDb: ApprovalItem[] = listContent(["review", "proposed"]).map((c) => ({
     id: `ap-${c.id}`,
-    title: c.status === "review" ? `Duyệt bài “${c.title}”` : `Ý tưởng “${c.title}” chờ anh nhận làm`,
+    title: c.status === "review" ? `Duyệt bài “${c.title}”` : `Ý tưởng “${c.title}” chờ nhận làm`,
     module: "Nội dung",
     moduleHref: c.status === "review" ? "/content?tab=mine" : "/content",
-    actor: c.source === "ai" || c.assignee === "ai" ? "Agent viết nội dung" : "Anh",
+    actor: c.source === "ai" || c.assignee === "ai" ? "Agent viết nội dung" : "Tôi",
     actorType: c.source === "ai" || c.assignee === "ai" ? "agent" : "human",
     sentAt: c.createdAt,
     priority: (c.score ?? 0) >= 85 ? "high" : (c.score ?? 0) >= 70 ? "medium" : "low",
@@ -43,27 +52,58 @@ export function getApprovals(): ApprovalItem[] {
     .filter((c) => c.needsHuman)
     .map((c) => ({
       id: `ap-${c.id}`,
-      title: `Khách ${c.leadName} đang chờ anh trả lời`,
+      title: `Khách ${c.leadName} đang chờ trả lời`,
       module: "Khách hàng",
       moduleHref: `/customers?conv=${c.id}`,
       actor: "Agent chăm sóc khách",
       actorType: "agent",
       sentAt: c.messages[c.messages.length - 1]?.at ?? new Date().toISOString(),
       priority: "high",
-      kind: "workflow",
+      kind: "customer",
     }));
   const order = { high: 0, medium: 1, low: 2 };
-  return [...mockApprovals, ...convs, ...fromDb].sort((a, b) => order[a.priority] - order[b.priority] || b.sentAt.localeCompare(a.sentAt)).slice(0, 8);
+  const now = Date.now();
+  return [...mockApprovals, ...convs, ...fromDb]
+    .sort((a, b) => order[a.priority] - order[b.priority] || b.sentAt.localeCompare(a.sentAt))
+    .map((a) => ({ ...a, waited: waitedLabel(a.sentAt, now) }));
 }
 
-export function getTimeline() {
-  return mockTimeline;
+// Tối đa N lịch của hôm nay: ưu tiên việc chưa xong tính từ giờ hiện tại, thiếu thì bù việc đã xong.
+export function getTodaySchedule(limit = 5): TimelineItem[] {
+  const nowHm = new Intl.DateTimeFormat("en-GB", { timeZone: TIME_ZONE, hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
+  const sorted = [...mockTimeline].sort((a, b) => a.time.localeCompare(b.time));
+  const upcoming = sorted.filter((t) => t.status !== "done" && t.time >= nowHm);
+  const rest = sorted.filter((t) => !upcoming.includes(t)).reverse();
+  return [...upcoming, ...rest].slice(0, limit).sort((a, b) => a.time.localeCompare(b.time));
 }
 
-export function getAgents() {
+export function getAgents(): AgentInfo[] {
   return mockAgents;
 }
 
-export function getRecentActivity() {
-  return listActivity(8);
+export interface SystemStatus {
+  level: "ok" | "warn" | "error";
+  summary: string; // một dòng: "3 Agent đang hoạt động · 2 việc chờ duyệt · Không có lỗi nghiêm trọng"
+  agents: AgentInfo[];
+  issues: string[]; // lỗi đang có, hiển thị trong bảng chi tiết
+}
+
+export function getSystemStatus(pendingCount: number): SystemStatus {
+  const agents = getAgents();
+  const active = agents.filter((a) => a.status === "active" || a.status === "waiting" || a.status === "needs_approval").length;
+  const issues: string[] = [];
+  for (const a of agents) if (a.status === "error") issues.push(`${a.name}: ${a.task}`);
+  for (const p of listPosts()) if (p.status === "failed") issues.push(`Đăng bài thất bại: “${p.title}”`);
+  for (const a of mockApprovals) if (a.kind === "workflow") issues.push(a.title);
+  const severe = agents.some((a) => a.status === "error") || listPosts().some((p) => p.status === "failed");
+  return {
+    level: severe ? "error" : issues.length ? "warn" : "ok",
+    summary: [
+      `${active} Agent đang hoạt động`,
+      `${pendingCount} việc chờ duyệt`,
+      severe ? `${issues.length} lỗi nghiêm trọng` : issues.length ? `${issues.length} lỗi nhẹ` : "Không có lỗi nghiêm trọng",
+    ].join(" · "),
+    agents,
+    issues,
+  };
 }

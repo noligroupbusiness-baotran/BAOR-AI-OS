@@ -10,8 +10,16 @@ export interface ApprovalItem {
   actorType: "agent" | "human";
   sentAt: string;
   priority: Priority;
-  kind: "content" | "video" | "schedule" | "workflow";
+  kind: "content" | "video" | "schedule" | "workflow" | "customer";
 }
+
+export const kindLabel: Record<ApprovalItem["kind"], string> = {
+  content: "Nội dung chờ duyệt",
+  video: "Video chờ duyệt",
+  schedule: "Lịch đăng cần xác nhận",
+  customer: "Khách hàng cần phản hồi",
+  workflow: "Quy trình Automation gặp lỗi",
+};
 
 export const mockApprovals: ApprovalItem[] = [
   { id: "ap-v1", title: "Video “Khách thật test serum 7 ngày” (bản dựng 2)", module: "Video Studio", moduleHref: "/video-studio", actor: "Agent Edit Video", actorType: "agent", sentAt: "2026-09-10T08:10:00+07:00", priority: "high", kind: "video" },
@@ -26,15 +34,22 @@ export interface TimelineItem {
   time: string; // HH:mm
   title: string;
   kind: "post" | "video" | "campaign" | "task";
+  platform: string; // nền tảng hoặc loại việc, hiển thị ngắn
   status: "done" | "upcoming" | "needs_confirm";
 }
 
+export const timelineStatusLabel: Record<TimelineItem["status"], string> = {
+  done: "Đã xong",
+  upcoming: "Sắp tới",
+  needs_confirm: "Cần xác nhận",
+};
+
 export const mockTimeline: TimelineItem[] = [
-  { id: "t1", time: "07:30", title: "Đăng bài “Routine 3 bước cho mẹ bỉm” (Facebook)", kind: "post", status: "done" },
-  { id: "t2", time: "09:00", title: "Chiến dịch “Sale 9.9” bước vào 2 ngày cuối", kind: "campaign", status: "done" },
-  { id: "t3", time: "14:00", title: "Chốt kịch bản video tuần sau cho Agent Edit Video", kind: "task", status: "upcoming" },
-  { id: "t4", time: "18:00", title: "Xuất bản video “Khách thật test serum 7 ngày” (TikTok)", kind: "video", status: "needs_confirm" },
-  { id: "t5", time: "20:30", title: "Đăng bài “Review thật: 30 ngày dùng serum” (Facebook)", kind: "post", status: "upcoming" },
+  { id: "t1", time: "07:30", title: "Đăng bài “Routine 3 bước cho mẹ bỉm”", kind: "post", platform: "Facebook", status: "done" },
+  { id: "t2", time: "09:00", title: "Chiến dịch “Sale 9.9” bước vào 2 ngày cuối", kind: "campaign", platform: "Quảng cáo", status: "done" },
+  { id: "t3", time: "14:00", title: "Chốt kịch bản video tuần sau cho Agent Edit Video", kind: "task", platform: "Việc của tôi", status: "upcoming" },
+  { id: "t4", time: "18:00", title: "Xuất bản video “Khách thật test serum 7 ngày”", kind: "video", platform: "TikTok", status: "needs_confirm" },
+  { id: "t5", time: "20:30", title: "Đăng bài “Review thật: 30 ngày dùng serum”", kind: "post", platform: "Facebook", status: "upcoming" },
 ];
 
 export type AgentStatus = "active" | "waiting" | "needs_approval" | "error" | "paused";
