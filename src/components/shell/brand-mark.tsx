@@ -45,12 +45,12 @@ export function BrandMark({ logos, collapsed, className }: { logos: BrandLogos; 
     );
   }
   return (
-    <div className={cn("flex w-fit min-w-0 flex-col gap-[5px]", className)} title="BAOR Marketing Automation System">
+    <div className={cn("flex w-fit min-w-0 flex-col gap-[3px]", className)} title="BAOR Marketing Automation System">
       <Pair light={logos.light} dark={logos.dark} className="h-[26px] w-auto max-w-[150px] object-contain object-left" alt="BAOR" />
       {/* Dòng phụ giãn chữ đúng bằng chiều rộng logo (textLength), nên luôn cân với logo dù kích thước ảnh khác nhau. */}
-      <svg width="100%" height="10" aria-hidden className="block fill-brand-caption">
-        <text x="0" y="9" textLength="100%" lengthAdjust="spacing" fontSize="8.5" fontWeight="600" fontFamily="var(--font-sans)">
-          MARKETING AUTOMATION SYSTEM
+      <svg width="100%" height="12" aria-hidden className="block fill-brand-caption">
+        <text x="0" y="10.5" textLength="100%" lengthAdjust="spacing" fontSize="11" fontWeight="500" fontFamily="var(--font-sans)">
+          Marketing Automation System
         </text>
       </svg>
     </div>
