@@ -73,7 +73,10 @@ Cài lần đầu trên VPS Ubuntu/Debian (SSH vào VPS rồi chạy):
 curl -fsSL https://raw.githubusercontent.com/noligroupbusiness-baotran/BAOR-AI-OS/main/deploy/install.sh | bash
 ```
 
-Script tự cài Docker, tải code về `/opt/baor-ai-os`, tạo `.env` với `DOMAIN=mkt.baor.vn` và khởi động. Caddy tự cấp HTTPS, mở `https://mkt.baor.vn`.
-Điều kiện: bản ghi DNS A của `mkt.baor.vn` phải trỏ về IP của VPS trước khi chạy. Muốn tạm dùng IP: đặt `DOMAIN=:80` trong `/opt/baor-ai-os/.env` rồi chạy `bash deploy/update.sh`.
+Script tự cài Docker, tải code về `/opt/baor-ai-os`, tạo `.env` và khởi động.
+- VPS đã có Caddy/Nginx giữ cổng 80/443 (trường hợp mkt.baor.vn): chỉ chạy app ở `127.0.0.1:3200`; thêm khối trong `deploy/caddy-host-snippet.txt` vào Caddyfile của máy chủ.
+- VPS trống: script tự chạy kèm Caddy trong Docker (`--profile caddy`) và cấp HTTPS cho `DOMAIN`.
+
+Cập nhật bản mới: `bash /opt/baor-ai-os/deploy/update.sh` (giữ chỉnh sửa cục bộ vào git stash trước khi cập nhật).
 
 Tự cập nhật khi push: vào GitHub > Settings > Secrets and variables > Actions, thêm `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`. Từ đó mỗi lần push, workflow `Deploy to VPS` sẽ cập nhật VPS.

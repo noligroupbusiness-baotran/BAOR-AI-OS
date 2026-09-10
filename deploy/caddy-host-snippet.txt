@@ -1,0 +1,6 @@
+# Khối cấu hình cho Caddy đang chạy sẵn trên VPS (/etc/caddy/Caddyfile).
+# Thêm vào cuối tệp, rồi: caddy validate --config /etc/caddy/Caddyfile && systemctl reload caddy
+mkt.baor.vn {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:3200
+}

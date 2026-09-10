@@ -25,14 +25,22 @@ if [ ! -f .env ]; then
 ADMIN_EMAIL=${ADMIN_EMAIL:-thanhbaotran.business@gmail.com}
 ADMIN_PASSWORD=${ADMIN_PASSWORD:-123456}
 AUTH_SECRET=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
-# Tên miền của hệ thống. Caddy tự cấp HTTPS khi tên miền đã trỏ về IP VPS này.
-# Đổi thành DOMAIN=:80 nếu muốn tạm truy cập bằng IP.
+# Tên miền của hệ thống (dùng khi chạy Caddy trong Docker).
 DOMAIN=${DOMAIN:-mkt.baor.vn}
+# Cổng nội bộ của app trên máy chủ (proxy của VPS trỏ vào 127.0.0.1:APP_PORT).
+APP_PORT=${APP_PORT:-3200}
 ENV
 fi
 
 echo "==> Khởi động ứng dụng"
-docker compose up -d --build
+# Nếu cổng 80 đã có proxy của máy chủ (Caddy/Nginx) thì chỉ chạy app; nếu trống thì chạy kèm Caddy.
+if ss -ltn 2>/dev/null | grep -q ':80 ' || (command -v systemctl >/dev/null && systemctl is-active --quiet caddy); then
+  echo "    Cổng 80 đã có proxy trên máy chủ: chỉ chạy app ở 127.0.0.1:$(grep -E '^APP_PORT=' .env | cut -d= -f2 || echo 3200)."
+  echo "    Trỏ tên miền trong proxy đó tới cổng này (xem deploy/caddy-host-snippet.txt)."
+  docker compose up -d --build
+else
+  docker compose --profile caddy up -d --build
+fi
 
 IP=$(curl -s https://api.ipify.org || hostname -I | awk '{print $1}')
 DOMAIN_SET=$(grep -E '^DOMAIN=' .env | cut -d= -f2)

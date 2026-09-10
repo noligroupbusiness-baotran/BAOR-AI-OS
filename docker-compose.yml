@@ -1,25 +1,28 @@
 # Chạy trên VPS: docker compose up -d --build
-# - app:   ứng dụng Next.js (cổng nội bộ 3000)
-# - caddy: reverse proxy, tự lấy SSL khi DOMAIN là tên miền thật
+#
+# Hai cách chạy:
+# 1) VPS đã có Caddy/Nginx riêng giữ cổng 80/443 (như VPS mkt.baor.vn): chỉ chạy app,
+#    app lắng nghe 127.0.0.1:${APP_PORT} (mặc định 3200), proxy của máy chủ trỏ vào đó.
+# 2) VPS trống: chạy kèm Caddy trong Docker để tự cấp HTTPS:
+#    docker compose --profile caddy up -d --build
 services:
   app:
     build: .
     restart: unless-stopped
     env_file: .env
-    expose:
-      - "3000"
+    ports:
+      - "127.0.0.1:${APP_PORT:-3200}:3000"
     volumes:
       - app_data:/app/data   # cơ sở dữ liệu SQLite, giữ nguyên khi cập nhật
 
   caddy:
+    profiles: ["caddy"]
     image: caddy:2-alpine
     restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
     environment:
-      # DOMAIN=ai.tenmiencuaban.com  -> HTTPS tự động
-      # DOMAIN=:80                   -> chỉ HTTP, truy cập bằng IP
       DOMAIN: ${DOMAIN:-:80}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
