@@ -35,7 +35,7 @@ export const menu: MenuItem[] = [
   { key: "publishing", href: "/publishing", label: "Đăng bài & Quảng cáo", description: "Lịch nội dung, hàng chờ, đã đăng, tài khoản kết nối, quảng cáo.", icon: CalendarClock },
   { key: "customers", href: "/customers", label: "Khách hàng", description: "Lead, khách hàng, phân data, chăm sóc, lịch sử tương tác, đơn hàng.", icon: Users },
   { key: "automation", href: "/automation", label: "Automation", description: "Quy trình tự động, bản nháp, lịch sử chạy, lỗi cần xử lý.", icon: Workflow },
-  { key: "reports", href: "/reports", label: "Báo cáo", description: "Hiệu quả nội dung, video, quảng cáo, lead, chuyển đổi, doanh thu.", icon: BarChart3, building: true },
+  { key: "reports", href: "/reports", label: "Báo cáo", description: "Hiệu quả nội dung, video, quảng cáo, lead, chuyển đổi, doanh thu.", icon: BarChart3 },
   { key: "settings", href: "/settings", label: "Cài đặt hệ thống", description: "Sản phẩm, thương hiệu, tài khoản nền tảng, nhân sự, AI Agent, bảo mật.", icon: Settings },
 ];
 

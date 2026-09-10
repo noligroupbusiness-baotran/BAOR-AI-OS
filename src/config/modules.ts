@@ -65,12 +65,12 @@ export const moduleGroups: Record<string, ModuleGroup[]> = {
     { name: "Lỗi cần xử lý", status: "active", href: "/automation?tab=error" },
   ],
   reports: [
-    { name: "Hiệu quả nội dung", status: "planned" },
-    { name: "Hiệu quả video", status: "planned" },
-    { name: "Hiệu quả quảng cáo", status: "planned" },
-    { name: "Lead", status: "planned" },
-    { name: "Chuyển đổi", status: "planned" },
-    { name: "Doanh thu", status: "planned" },
+    { name: "Hiệu quả nội dung", status: "active", href: "/reports?tab=content" },
+    { name: "Hiệu quả video", status: "active", href: "/reports?tab=content" },
+    { name: "Hiệu quả quảng cáo", status: "active", href: "/reports?tab=costs" },
+    { name: "Lead", status: "active", href: "/reports?tab=leads" },
+    { name: "Chuyển đổi", status: "active", href: "/reports?tab=overview" },
+    { name: "Doanh thu", status: "active", href: "/reports?tab=orders" },
   ],
   settings: [
     { name: "Sản phẩm và bảng giá", status: "active", href: "/settings#products" },
