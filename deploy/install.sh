@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Cài đặt lần đầu trên VPS Ubuntu/Debian. Chạy bằng root hoặc user có sudo:
-#   curl -fsSL https://raw.githubusercontent.com/noligroupbusiness-baotran/BAOR-AI-OS/claude/relaxed-ritchie-tb1144/deploy/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/noligroupbusiness-baotran/BAOR-AI-OS/main/deploy/install.sh | bash
 # Sau khi chạy: mở http://<IP-VPS> (hoặc https://<DOMAIN> nếu đã đặt DOMAIN)
 set -euo pipefail
 
 REPO="https://github.com/noligroupbusiness-baotran/BAOR-AI-OS.git"
-BRANCH="${BRANCH:-claude/relaxed-ritchie-tb1144}"
+BRANCH="${BRANCH:-main}"
 DIR="${DIR:-/opt/baor-ai-os}"
 
 if ! command -v docker >/dev/null 2>&1; then

@@ -7,11 +7,11 @@ export interface NavItem {
 
 // Sidebar thu gọn: 5 mục theo pipeline + Cài đặt.
 export const navItems: NavItem[] = [
-  { href: "/dashboard", label: "Điều hành", mark: "◎", badge: 5 },
+  { href: "/dashboard", label: "Điều hành", mark: "◎" },
   { href: "/research", label: "Nghiên cứu & insight", mark: "1" },
-  { href: "/content", label: "Nội dung", mark: "2", badge: 4 },
-  { href: "/publishing", label: "Đăng bài & quảng cáo", mark: "3", badge: 1 },
-  { href: "/customers", label: "Khách hàng & email", mark: "4", badge: 2 },
+  { href: "/content", label: "Nội dung", mark: "2" },
+  { href: "/publishing", label: "Đăng bài & quảng cáo", mark: "3" },
+  { href: "/customers", label: "Khách hàng & email", mark: "4" },
 ];
 
 export const settingsItem: NavItem = { href: "/settings", label: "Cài đặt", mark: "⚙" };

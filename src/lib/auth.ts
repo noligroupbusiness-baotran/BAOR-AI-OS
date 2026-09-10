@@ -12,33 +12,6 @@ function getSecret(): Uint8Array {
   return new TextEncoder().encode(secret);
 }
 
-export function getAdminCredentials() {
-  return {
-    email: process.env.ADMIN_EMAIL ?? "",
-    password: process.env.ADMIN_PASSWORD ?? "",
-  };
-}
-
-// So sánh chuỗi theo thời gian cố định để tránh timing attack.
-function safeEqual(a: string, b: string): boolean {
-  const ea = new TextEncoder().encode(a);
-  const eb = new TextEncoder().encode(b);
-  if (ea.length !== eb.length) return false;
-  let diff = 0;
-  for (let i = 0; i < ea.length; i++) diff |= ea[i] ^ eb[i];
-  return diff === 0;
-}
-
-export function verifyCredentials(email: string, password: string): boolean {
-  const admin = getAdminCredentials();
-  // Chưa cấu hình tài khoản thì từ chối mọi đăng nhập.
-  if (!admin.email || !admin.password) return false;
-  return (
-    safeEqual(email.trim().toLowerCase(), admin.email.toLowerCase()) &&
-    safeEqual(password, admin.password)
-  );
-}
-
 export async function createSessionToken(email: string): Promise<string> {
   return new SignJWT({ email })
     .setProtectedHeader({ alg: "HS256" })

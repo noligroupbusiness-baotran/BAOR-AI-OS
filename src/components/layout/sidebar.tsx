@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/format";
 import { navItems, settingsItem, type NavItem } from "./nav";
 
-function Item({ item, active }: { item: NavItem; active: boolean }) {
+function Item({ item, active, badge }: { item: NavItem; active: boolean; badge?: number }) {
   return (
     <Link
       href={item.href}
@@ -24,12 +24,12 @@ function Item({ item, active }: { item: NavItem; active: boolean }) {
         {item.mark}
       </span>
       <span className="flex-1 truncate">{item.label}</span>
-      {item.badge ? <span className="num text-[11px] font-semibold text-amber">{item.badge}</span> : null}
+      {badge ? <span className="num text-[11px] font-semibold text-amber">{badge}</span> : null}
     </Link>
   );
 }
 
-export function Sidebar() {
+export function Sidebar({ badges = {} }: { badges?: Record<string, number> }) {
   const pathname = usePathname();
   return (
     <aside className="sticky top-0 hidden h-screen w-[var(--sidebar-w)] shrink-0 flex-col gap-5 border-r border-border bg-ground-2 px-3 py-[18px] md:flex">
@@ -42,7 +42,7 @@ export function Sidebar() {
       </div>
       <nav className="flex flex-col gap-0.5">
         {navItems.map((item) => (
-          <Item key={item.href} item={item} active={pathname === item.href} />
+          <Item key={item.href} item={item} active={pathname === item.href} badge={badges[item.href]} />
         ))}
       </nav>
       <div className="mt-auto flex flex-col gap-2">
@@ -55,12 +55,12 @@ export function Sidebar() {
   );
 }
 
-export function MobileNav() {
+export function MobileNav({ badges = {} }: { badges?: Record<string, number> }) {
   const pathname = usePathname();
   return (
     <nav className="flex gap-1 overflow-x-auto border-b border-border bg-ground-2 px-3 py-2 md:hidden">
       {[...navItems, settingsItem].map((item) => (
-        <Item key={item.href} item={item} active={pathname === item.href} />
+        <Item key={item.href} item={item} active={pathname === item.href} badge={badges[item.href]} />
       ))}
     </nav>
   );

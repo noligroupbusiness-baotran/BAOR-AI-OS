@@ -35,32 +35,42 @@ Chưa có `.env.local` (hoặc thiếu ADMIN_EMAIL / ADMIN_PASSWORD) thì mọi 
 ## Công nghệ
 
 - Next.js 16 (App Router, Server Actions, `proxy.ts` bảo vệ route) + TypeScript
-- Tailwind CSS 4, giao diện tiếng Việt, nền kem / xanh lá
-- Phiên đăng nhập: cookie HTTP-only ký bằng `jose`
+- Tailwind CSS 4, giao diện tiếng Việt, tone xanh ngọc / xương trắng, chữ Be Vietnam Pro
+- Cơ sở dữ liệu SQLite (Drizzle ORM) trong thư mục `data/`, tự tạo bảng và nạp dữ liệu mẫu lần đầu
+- Phiên đăng nhập: cookie HTTP-only ký bằng `jose`; mật khẩu đổi trong Cài đặt được băm scrypt
+- AI: Claude API (`claude-opus-5`) cho đề xuất ý tưởng, viết nháp, gợi ý trả lời khách; nhập khóa ở Cài đặt › Kết nối
 
 ## Cấu trúc
 
 ```
-src/app/(admin)/*      các trang quản trị (dashboard, approvals, research, insights, content,
-                       publishing, ads, customers, email, settings)
+src/app/(admin)/*      các trang quản trị (dashboard, research, content, publishing, customers, settings)
 src/app/login          đăng nhập (Server Action)
-src/components/ui      pill, button, card, stat, filter-tabs, table, toggle, platform
+src/components/ui      pill, button, card, stat, segment, table, toast, platform
 src/components/layout  sidebar, topbar, nav
-src/lib/data/*         dữ liệu mẫu cho từng bước – thay bằng API/CSDL thật ở giai đoạn sau
-src/lib/auth.ts        xác thực
+src/db/*               schema, kết nối SQLite, nạp dữ liệu mẫu
+src/lib/actions/*      hành động server: nội dung, quảng cáo, khách hàng, cài đặt
+src/lib/queries.ts     truy vấn đọc cho các trang
+src/lib/ai.ts          gọi Claude API
+src/lib/data/*         dữ liệu mẫu ban đầu
+src/lib/auth.ts        phiên đăng nhập; src/lib/admin.ts tài khoản quản trị
 ```
+
+## Đã hoạt động thật
+
+Nhận ý tưởng, soạn và lưu nháp, gửi duyệt, duyệt, lên lịch đăng; duyệt / tạm dừng / sửa ngân sách ads; trả lời khách, đổi giai đoạn lead, bật tắt quy tắc và chuỗi email; kết nối (lưu khóa), bật tắt tự động hóa, thương hiệu, đổi email/mật khẩu; xóa hoặc nạp lại dữ liệu mẫu. AI đề xuất ý tưởng, viết nháp và gợi ý trả lời khi có khóa Claude.
 
 ## Giai đoạn tiếp theo
 
-- Backend agent: Claude API (research, insight, viết nội dung, trả lời khách), Meta Graph API + Marketing API, SMTP/Resend.
-- CSDL PostgreSQL thay cho dữ liệu mẫu; scheduler đăng bài; webhook Messenger.
+- Nối Meta Graph API để đăng bài thật, nhận webhook inbox/bình luận, đọc số liệu; Marketing API cho ads.
+- Bộ chạy nền theo lịch (đăng bài đúng giờ, AI trả lời tự động, chuỗi email).
+- Gửi email thật qua SMTP.
 
 ## Chạy trên VPS (Docker + tự cập nhật khi push)
 
 Cài lần đầu trên VPS Ubuntu/Debian (SSH vào VPS rồi chạy):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/noligroupbusiness-baotran/BAOR-AI-OS/claude/relaxed-ritchie-tb1144/deploy/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/noligroupbusiness-baotran/BAOR-AI-OS/main/deploy/install.sh | bash
 ```
 
 Script tự cài Docker, tải code về `/opt/baor-ai-os`, tạo `.env` và khởi động. Sau đó mở `http://<IP-VPS>`.
