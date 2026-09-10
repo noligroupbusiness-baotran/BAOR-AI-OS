@@ -40,10 +40,36 @@ Chưa có `.env.local` (hoặc thiếu ADMIN_EMAIL / ADMIN_PASSWORD) thì mọi 
 - Phiên đăng nhập: cookie HTTP-only ký bằng `jose`; mật khẩu đổi trong Cài đặt được băm scrypt
 - AI: Claude API (`claude-opus-5`) cho đề xuất ý tưởng, viết nháp, gợi ý trả lời khách; nhập khóa ở Cài đặt › Kết nối
 
+## Phân hệ Chiến dịch (trung tâm đặt mục tiêu)
+
+Chiến dịch là mục tiêu Marketing / kinh doanh chung (cấp 1); mỗi chiến dịch có nhiều **mục tiêu kênh** (cấp 2:
+Facebook Fanpage, Facebook Ads, TikTok, YouTube, Zalo OA, Website & SEO, Email). Mọi phân hệ khác dùng chung
+dữ liệu này qua bảng liên kết `marketing_links` (`campaign_id`, `channel_goal_id`, `entity_type`, `entity_id`):
+
+```
+Chiến dịch → Mục tiêu kênh → Insight → Nội dung → Video → Phê duyệt → Đăng bài/Quảng cáo → Lead → Automation → Đơn hàng → Báo cáo
+```
+
+- Cấu hình kênh tập trung: `src/config/channels.ts` (thêm kênh = thêm một phần tử).
+- Domain model: `src/lib/campaigns/types.ts`; tính toán thuần: `results.ts`; nhãn: `labels.ts`.
+- Repository: `src/lib/campaigns/repository.ts` — giao diện chỉ gọi `campaignRepo`; nối API thật thì viết
+  implementation khác và đổi dòng export cuối tệp.
+- Hành động: `src/lib/actions/campaigns.ts` (tạo 4 bước, gửi duyệt, phê duyệt, kích hoạt, tạm dừng, kết thúc,
+  thêm/sửa/tạm dừng mục tiêu kênh). Mọi hành động có nhật ký và khóa chống bấm lặp (`idem`).
+- Ngữ cảnh chiến dịch dùng chung: `src/lib/campaigns/context.ts` + `CampaignContextBar`. Ví dụ: mở
+  `/content?campaign=<id>&goal=<id>` thì trang Nội dung tự lọc và bài mới tự gắn vào chiến dịch.
+- Dữ liệu mẫu: `src/lib/data/campaigns.ts` (4 chiến dịch, liên kết bằng ID thật), `people.ts`, `products.ts`,
+  `videos.ts`. Nguồn chuẩn sau này là Cài đặt › Nhân sự, Sản phẩm; Video Studio.
+- Chưa nối: API Facebook / TikTok / YouTube / Zalo OA, đăng bài thật, chạy ads thật, thu lead thật, Agent Edit Video,
+  doanh thu thật. Tab Kết quả đang dùng số liệu mẫu trong `campaign_results`.
+
 ## Cấu trúc
 
 ```
-src/app/(admin)/*      các trang quản trị (dashboard, research, content, publishing, customers, settings)
+src/app/(admin)/*      các trang quản trị (dashboard, campaigns, insights, content, publishing, customers, settings)
+src/app/(admin)/campaigns  danh sách, tạo 4 bước (/new), chi tiết 5 tab (/[id]?tab=overview|goals|activity|approvals|results)
+src/lib/campaigns/*    domain, repository, tính toán, ngữ cảnh chiến dịch dùng chung
+src/config/channels.ts cấu hình kênh Marketing tập trung
 src/app/login          đăng nhập (Server Action)
 src/components/ui      pill, button, card, stat, segment, table, toast, platform
 src/components/layout  sidebar, topbar, nav

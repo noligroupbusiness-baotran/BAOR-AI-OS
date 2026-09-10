@@ -8,6 +8,13 @@
       "when": 1789036606519,
       "tag": "0000_reflective_star_brand",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1789053927953,
+      "tag": "0001_campaigns",
+      "breakpoints": true
     }
   ]
 }

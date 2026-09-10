@@ -4,7 +4,7 @@ import Database from "better-sqlite3";
 import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import * as schema from "./schema";
-import { seedIfEmpty } from "./seed";
+import { seedCampaignsIfEmpty, seedIfEmpty } from "./seed";
 
 // Kết nối SQLite dùng chung cho cả ứng dụng. Tệp DB nằm trong DATA_DIR (mặc định ./data),
 // trên Docker là volume /app/data nên dữ liệu không mất khi cập nhật.
@@ -26,6 +26,7 @@ export function getDb(): Db {
   const db = drizzle(sqlite, { schema });
   migrate(db, { migrationsFolder: path.join(process.cwd(), "drizzle") });
   seedIfEmpty(db);
+  seedCampaignsIfEmpty(db);
 
   globalForDb.__baorDb = db;
   return db;

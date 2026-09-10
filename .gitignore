@@ -42,3 +42,6 @@ next-env.d.ts
 
 # co so du lieu SQLite cuc bo
 /data
+
+# cau hinh cong cu dev cuc bo
+/.claude/

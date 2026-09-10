@@ -9,12 +9,12 @@ export interface ModuleGroup {
 
 export const moduleGroups: Record<string, ModuleGroup[]> = {
   campaigns: [
-    { name: "Danh sách chiến dịch", status: "planned" },
-    { name: "Mục tiêu", status: "planned" },
-    { name: "Ngân sách", status: "planned" },
-    { name: "Thời gian", status: "planned" },
-    { name: "Trạng thái", status: "planned" },
-    { name: "Kết quả tổng quan", status: "planned" },
+    { name: "Danh sách chiến dịch", status: "active", href: "/campaigns" },
+    { name: "Mục tiêu", status: "active", href: "/campaigns" },
+    { name: "Ngân sách", status: "active", href: "/campaigns" },
+    { name: "Thời gian", status: "active", href: "/campaigns" },
+    { name: "Trạng thái", status: "active", href: "/campaigns" },
+    { name: "Kết quả tổng quan", status: "active", href: "/campaigns" },
   ],
   insights: [
     { name: "Chân dung khách hàng", status: "active", href: "/insights#personas" },

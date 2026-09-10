@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { PageHead, Panel, PanelHeader, Rows, Row } from "@/components/ui/card";
+import { PageHead, Panel, PanelHeader, Rows } from "@/components/ui/card";
 import { Breadcrumb, ModuleGroups } from "@/components/shell/module-page";
 import { Pill, Score } from "@/components/ui/pill";
 import { Button, LinkButton } from "@/components/ui/button";
@@ -19,20 +19,29 @@ import { countContent, listContent, listInsights } from "@/lib/queries";
 import { contentFormatLabel, contentStatusLabel } from "@/lib/labels";
 import { formatDateTime, cn } from "@/lib/format";
 import type { ContentStatus } from "@/lib/types";
+import { CampaignContextBar } from "@/components/campaigns/campaign-context";
+import { campaignRepo } from "@/lib/campaigns/repository";
+import { readCampaignContext, withCampaignContext } from "@/lib/campaigns/context";
 
 export const metadata = { title: "Nội dung – BAOR AI OS" };
 
 const input = "h-8 w-full rounded-md border border-border-2 bg-surface px-2.5 text-[13px] text-ink outline-none focus-visible:outline-2 focus-visible:outline-jade";
 
-export default async function ContentPage({ searchParams }: { searchParams: Promise<{ tab?: string; open?: string }> }) {
-  const { tab = "proposed", open } = await searchParams;
+export default async function ContentPage({ searchParams }: { searchParams: Promise<{ tab?: string; open?: string; campaign?: string; goal?: string }> }) {
+  const sp = await searchParams;
+  const { tab = "proposed", open } = sp;
+  // Ngữ cảnh chiến dịch (campaign_id, channel_goal_id) do phân hệ Chiến dịch truyền sang.
+  const ctx = readCampaignContext(sp);
+  const campaign = ctx.campaignId ? campaignRepo.get(ctx.campaignId) : undefined;
+  const linkedIds = campaign ? new Set(campaignRepo.links(campaign.id, ctx.channelGoalId).filter((l) => l.entityType === "content").map((l) => l.entityId)) : null;
+  const href = (path: string) => withCampaignContext(path, ctx);
   const groups: Record<string, string[]> = {
     proposed: ["proposed"],
     mine: ["in_progress", "review"],
     done: ["approved", "scheduled", "published"],
   };
   const statuses = groups[tab] ?? groups.proposed;
-  const list = listContent(statuses);
+  const list = listContent(statuses).filter((c) => (linkedIds ? linkedIds.has(c.id) : true));
   const insights = listInsights();
   const opened = open ?? (tab === "mine" ? list[0]?.id : undefined);
 
@@ -44,7 +53,7 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
         sub="AI đề xuất và viết nháp, bạn là người hoàn thiện. Chỉ bài bạn đã duyệt mới được tự đăng."
         action={
           <div className="flex gap-2">
-            <LinkButton href="/content?tab=mine&open=new" size="md">Viết bài mới</LinkButton>
+            <LinkButton href={href("/content?tab=mine&open=new")} size="md">Viết bài mới</LinkButton>
             <form action={aiGenerateIdeas}>
               <Button variant="primary" size="md" type="submit">AI đề xuất 5 ý tưởng</Button>
             </form>
@@ -52,20 +61,26 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
         }
       />
 
-      <Segment
-        basePath="/content"
-        active={tab}
-        items={[
-          { key: "proposed", label: `AI đề xuất · ${countContent(groups.proposed)}` },
-          { key: "mine", label: `Bạn đang làm · ${countContent(groups.mine)}` },
-          { key: "done", label: `Đã duyệt · ${countContent(groups.done)}` },
-        ]}
-      />
+      <CampaignContextBar ctx={ctx} pathname="/content" params={{ tab, open }} note={linkedIds ? "chỉ hiện nội dung đã gắn vào chiến dịch" : undefined} />
+
+      <div className="mt-3.5">
+        <Segment
+          basePath={href("/content")}
+          active={tab}
+          items={[
+            { key: "proposed", label: `AI đề xuất · ${countContent(groups.proposed)}` },
+            { key: "mine", label: `Bạn đang làm · ${countContent(groups.mine)}` },
+            { key: "done", label: `Đã duyệt · ${countContent(groups.done)}` },
+          ]}
+        />
+      </div>
 
       {tab === "mine" && open === "new" && (
         <Panel>
-          <PanelHeader title="Bài mới" sub="Bạn tự viết, không qua AI." />
+          <PanelHeader title="Bài mới" sub={campaign ? `Bạn tự viết. Bài sẽ tự gắn vào chiến dịch “${campaign.name}”.` : "Bạn tự viết, không qua AI."} />
           <form action={createIdea} className="grid gap-3 p-4 md:grid-cols-2">
+            {campaign && <input type="hidden" name="campaignId" value={campaign.id} />}
+            {campaign && ctx.channelGoalId && <input type="hidden" name="channelGoalId" value={ctx.channelGoalId} />}
             <label className="block md:col-span-2">
               <span className="lbl">Tiêu đề</span>
               <input name="title" required className={cn(input, "mt-1")} placeholder="VD: Khách thật test serum 7 ngày" />
@@ -88,7 +103,7 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
             </label>
             <div className="flex gap-2 md:col-span-2">
               <Button variant="primary" type="submit">Tạo bài</Button>
-              <LinkButton href="/content?tab=mine" variant="ghost">Hủy</LinkButton>
+              <LinkButton href={href("/content?tab=mine")} variant="ghost">Hủy</LinkButton>
             </div>
           </form>
         </Panel>
@@ -102,7 +117,7 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
         <Rows>
           {list.length === 0 && (
             <li className="px-4 py-8 text-center text-[12.5px] text-ink-2">
-              {tab === "proposed" ? "Chưa có ý tưởng nào. Bấm “AI đề xuất 5 ý tưởng” để bắt đầu." : "Trống."}
+              {linkedIds ? "Chiến dịch này chưa có nội dung ở mục này. Bấm “Viết bài mới” để tạo bài gắn sẵn vào chiến dịch." : tab === "proposed" ? "Chưa có ý tưởng nào. Bấm “AI đề xuất 5 ý tưởng” để bắt đầu." : "Trống."}
             </li>
           )}
           {list.map((c, idx) => {
@@ -117,7 +132,7 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
                     <Score value={c.score ?? 0} />
                   </span>
                   <div className="min-w-0">
-                    <Link href={`/content?tab=${tab}&open=${c.id}`} className="font-semibold text-ink hover:underline">{c.title}</Link>
+                    <Link href={href(`/content?tab=${tab}&open=${c.id}`)} className="font-semibold text-ink hover:underline">{c.title}</Link>
                     {c.hook && <div className="mt-px truncate text-[12px] text-ink-2">{c.hook}</div>}
                     <div className="mt-1.5 flex flex-wrap gap-1.5">
                       {tab !== "proposed" && st && <Pill tone={st.tone}>{st.label}</Pill>}
@@ -138,8 +153,8 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
                     {c.status === "review" && (
                       <form action={approveContent}><input type="hidden" name="id" value={c.id} /><Button variant="primary" type="submit">Duyệt</Button></form>
                     )}
-                    {c.status === "in_progress" && !isOpen && <LinkButton href={`/content?tab=mine&open=${c.id}`} variant="soft">Soạn</LinkButton>}
-                    {c.status === "approved" && !isOpen && <LinkButton href={`/content?tab=done&open=${c.id}`} variant="primary">Lên lịch</LinkButton>}
+                    {c.status === "in_progress" && !isOpen && <LinkButton href={href(`/content?tab=mine&open=${c.id}`)} variant="soft">Soạn</LinkButton>}
+                    {c.status === "approved" && !isOpen && <LinkButton href={href(`/content?tab=done&open=${c.id}`)} variant="primary">Lên lịch</LinkButton>}
                   </div>
                 </div>
 

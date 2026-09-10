@@ -1,4 +1,4 @@
-import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 // Nội dung (ý tưởng → nháp → duyệt → lên lịch → đã đăng)
 export const contentItems = sqliteTable("content_items", {
@@ -163,3 +163,123 @@ export const activity = sqliteTable("activity", {
   message: text("message").notNull(),
   step: text("step").notNull().default(""),
 });
+
+// ---------------------------------------------------------------------------
+// Phân hệ Chiến dịch: chiến dịch (cấp 1) → mục tiêu kênh (cấp 2) → liên kết dùng chung.
+// Domain type tương ứng ở src/lib/campaigns/types.ts.
+// ---------------------------------------------------------------------------
+
+export const campaigns = sqliteTable("campaigns", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+  objective: text("objective").notNull(),
+  targetMetric: text("target_metric").notNull().default(""),
+  targetValue: integer("target_value"),
+  productIds: text("product_ids").notNull().default("[]"), // JSON string[]
+  audience: text("audience").notNull().default(""),
+  location: text("location").notNull().default(""),
+  startDate: text("start_date").notNull(), // YYYY-MM-DD
+  endDate: text("end_date").notNull(),
+  totalBudget: integer("total_budget").notNull().default(0),
+  budgetNote: text("budget_note").notNull().default(""),
+  ownerId: text("owner_id").notNull(),
+  status: text("status").notNull(), // draft | pending_approval | needs_changes | approved | active | paused | ended | error
+  createdBy: text("created_by").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  approvedBy: text("approved_by"),
+  approvedAt: text("approved_at"),
+});
+
+export const channelGoals = sqliteTable(
+  "channel_goals",
+  {
+    id: text("id").primaryKey(),
+    campaignId: text("campaign_id").notNull(),
+    channel: text("channel").notNull(), // khóa trong src/config/channels.ts
+    accountId: text("account_id"), // khóa integrations
+    executionType: text("execution_type").notNull(), // organic | paid | nurture | lead_gen
+    objective: text("objective").notNull(),
+    primaryMetric: text("primary_metric").notNull(),
+    targetValue: integer("target_value").notNull().default(0),
+    currentValue: integer("current_value").notNull().default(0),
+    budget: integer("budget").notNull().default(0),
+    spent: integer("spent").notNull().default(0),
+    ownerId: text("owner_id").notNull(),
+    status: text("status").notNull(), // planned | active | paused | done | error
+    startDate: text("start_date").notNull(),
+    endDate: text("end_date").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (t) => [index("channel_goals_campaign_idx").on(t.campaignId)],
+);
+
+// Liên kết dùng chung: mọi thực thể (insight, content, video, publication, ad, lead, automation_run...)
+// tham chiếu chiến dịch và mục tiêu kênh qua bảng này.
+export const marketingLinks = sqliteTable(
+  "marketing_links",
+  {
+    id: text("id").primaryKey(),
+    campaignId: text("campaign_id").notNull(),
+    channelGoalId: text("channel_goal_id"),
+    entityType: text("entity_type").notNull(),
+    entityId: text("entity_id").notNull(),
+    status: text("status").notNull().default(""),
+    ownerId: text("owner_id"),
+    viaType: text("via_type"),
+    viaId: text("via_id"),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [
+    uniqueIndex("marketing_links_entity_uq").on(t.campaignId, t.entityType, t.entityId),
+    index("marketing_links_campaign_idx").on(t.campaignId),
+  ],
+);
+
+export const campaignApprovals = sqliteTable(
+  "campaign_approvals",
+  {
+    id: text("id").primaryKey(),
+    campaignId: text("campaign_id").notNull(),
+    channelGoalId: text("channel_goal_id"),
+    type: text("type").notNull(), // campaign_change | channel_goal | content | video | schedule | budget | automation
+    title: text("title").notNull(),
+    entityType: text("entity_type"),
+    entityId: text("entity_id"),
+    status: text("status").notNull(), // pending | approved | rejected
+    requestedBy: text("requested_by").notNull(),
+    requestedAt: text("requested_at").notNull(),
+    decidedBy: text("decided_by"),
+    decidedAt: text("decided_at"),
+    note: text("note").notNull().default(""),
+  },
+  (t) => [index("campaign_approvals_campaign_idx").on(t.campaignId)],
+);
+
+export const campaignResults = sqliteTable("campaign_results", {
+  campaignId: text("campaign_id").primaryKey(),
+  achievedValue: integer("achieved_value").notNull().default(0),
+  leads: integer("leads").notNull().default(0),
+  orders: integer("orders").notNull().default(0),
+  revenue: integer("revenue").notNull().default(0),
+  spent: integer("spent").notNull().default(0),
+  updatedAt: text("updated_at").notNull(),
+  source: text("source").notNull().default("sample"), // sample | system
+});
+
+// Nhật ký hành động quan trọng của chiến dịch. idem_key chống thực hiện lặp do bấm nút nhiều lần.
+export const campaignLogs = sqliteTable(
+  "campaign_logs",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    campaignId: text("campaign_id").notNull(),
+    at: text("at").notNull(),
+    actor: text("actor").notNull(),
+    action: text("action").notNull(),
+    detail: text("detail").notNull().default(""),
+    idemKey: text("idem_key"),
+  },
+  (t) => [uniqueIndex("campaign_logs_idem_uq").on(t.idemKey), index("campaign_logs_campaign_idx").on(t.campaignId)],
+);

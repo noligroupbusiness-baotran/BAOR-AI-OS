@@ -47,10 +47,12 @@ export interface CreateAction {
   label: string;
   icon: LucideIcon;
   moduleKey: string;
+  /** Có href = chức năng đã làm việc được, mở thẳng thay vì báo "sắp triển khai". */
+  href?: string;
 }
 
 export const createActions: CreateAction[] = [
-  { key: "campaign", label: "Tạo chiến dịch", icon: Megaphone, moduleKey: "campaigns" },
+  { key: "campaign", label: "Tạo chiến dịch", icon: Megaphone, moduleKey: "campaigns", href: "/campaigns/new" },
   { key: "content", label: "Tạo nội dung", icon: FilePlus2, moduleKey: "content" },
   { key: "video", label: "Tải video lên", icon: Upload, moduleKey: "video-studio" },
   { key: "schedule", label: "Lên lịch đăng", icon: CalendarClock, moduleKey: "publishing" },

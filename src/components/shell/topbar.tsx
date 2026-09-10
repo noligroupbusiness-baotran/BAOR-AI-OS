@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Bell, ChevronDown, LogOut, Menu, Moon, Plus, Search, Sparkles, Sun, User } from "lucide-react";
 import { createActions, findMenuByPath, menu } from "@/config/menu";
@@ -103,6 +104,20 @@ export function Topbar({ email, unread, isDark, onToggleTheme, onOpenMobileMenu,
             <div role="menu" className="card absolute right-0 top-[calc(100%+6px)] z-50 w-[240px] p-1.5">
               {createActions.map((a) => {
                 const Icon = a.icon;
+                if (a.href) {
+                  return (
+                    <Link
+                      key={a.key}
+                      role="menuitem"
+                      href={a.href}
+                      onClick={() => setCreateOpen(false)}
+                      className="flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[13px] text-ink hover:bg-ground-2 focus-visible:outline-2 focus-visible:outline-jade"
+                    >
+                      <Icon size={16} className="text-ink-3" aria-hidden />
+                      {a.label}
+                    </Link>
+                  );
+                }
                 return (
                   <button
                     key={a.key}

@@ -9,6 +9,15 @@ import { integrations as seedIntegrations, automationSettings } from "@/lib/data
 import { personas as seedPersonas, insights as seedInsights } from "@/lib/data/insights";
 import { platformResearch as seedResearch } from "@/lib/data/research";
 import { recentActivity } from "@/lib/data/pipeline";
+import {
+  campaignApprovals as seedApprovals,
+  campaignLogs as seedCampaignLogs,
+  campaignResults as seedResults,
+  campaigns as seedCampaigns,
+  channelGoals as seedGoals,
+  linkedRows,
+  marketingLinks as seedLinks,
+} from "@/lib/data/campaigns";
 
 type Db = BetterSQLite3Database<typeof schema>;
 
@@ -99,7 +108,73 @@ export function seedAll(db: Db) {
       ...automationSettings.map((s) => ({ key: `automation.${s.key}`, value: s.enabled ? "1" : "0" })),
     ];
     tx.insert(schema.settings).values(settingRows).onConflictDoNothing().run();
+    seedCampaignData(tx);
   });
+}
+
+// Nạp dữ liệu mẫu phân hệ Chiến dịch khi bảng campaigns còn trống (kể cả CSDL đã có dữ liệu cũ).
+export function seedCampaignsIfEmpty(db: Db) {
+  const [{ n }] = db.select({ n: count() }).from(schema.campaigns).all();
+  if (n > 0) return;
+  db.transaction((tx) => {
+    // Kết nối mới (YouTube, Website) cho CSDL đã nạp trước đây.
+    tx.insert(schema.integrations)
+      .values(seedIntegrations.map((i) => ({ key: i.key, name: i.name, description: i.description, connected: false, account: null, config: "{}" })))
+      .onConflictDoNothing()
+      .run();
+    seedCampaignData(tx);
+  });
+}
+
+// Chiến dịch mẫu + các bản ghi ở phân hệ khác mà chiến dịch liên kết tới (chỉ thêm khi chưa có).
+function seedCampaignData(tx: Pick<Db, "insert">) {
+  tx.insert(schema.insights)
+    .values(linkedRows.insights.map((i) => ({ ...i, personaId: i.personaId || null })))
+    .onConflictDoNothing()
+    .run();
+  tx.insert(schema.contentItems)
+    .values(
+      linkedRows.content.map((c) => ({
+        id: c.id,
+        title: c.title,
+        format: c.format,
+        status: c.status,
+        insightId: c.insightId || null,
+        pillar: c.pillar,
+        hook: c.hook,
+        outline: JSON.stringify(c.outline),
+        draft: c.draft ?? null,
+        assignee: c.assignee,
+        scheduledFor: c.scheduledFor ?? null,
+        createdAt: c.createdAt,
+        score: c.score ?? null,
+        source: "seed",
+      })),
+    )
+    .onConflictDoNothing()
+    .run();
+  tx.insert(schema.scheduledPosts)
+    .values(linkedRows.posts.map((p) => ({ ...p, reach: p.reach ?? null, engagement: p.engagement ?? null, error: p.error ?? null })))
+    .onConflictDoNothing()
+    .run();
+  tx.insert(schema.adCampaigns)
+    .values(linkedRows.ads.map((a) => ({ ...a, contentId: a.contentId ?? null, startedAt: a.startedAt ?? null, aiNote: a.aiNote ?? null })))
+    .onConflictDoNothing()
+    .run();
+  tx.insert(schema.leads)
+    .values(linkedRows.leads.map((l) => ({ ...l, phone: l.phone ?? null, email: l.email ?? null, tags: JSON.stringify(l.tags) })))
+    .onConflictDoNothing()
+    .run();
+
+  tx.insert(schema.campaigns)
+    .values(seedCampaigns.map((c) => ({ ...c, productIds: JSON.stringify(c.productIds) })))
+    .onConflictDoNothing()
+    .run();
+  tx.insert(schema.channelGoals).values(seedGoals).onConflictDoNothing().run();
+  tx.insert(schema.marketingLinks).values(seedLinks).onConflictDoNothing().run();
+  tx.insert(schema.campaignApprovals).values(seedApprovals).onConflictDoNothing().run();
+  tx.insert(schema.campaignResults).values(seedResults).onConflictDoNothing().run();
+  tx.insert(schema.campaignLogs).values(seedCampaignLogs.map((l) => ({ ...l, idemKey: null }))).run();
 }
 
 export function clearAll(db: Db) {
@@ -118,6 +193,12 @@ export function clearAll(db: Db) {
       schema.personas,
       schema.platformResearch,
       schema.activity,
+      schema.campaignLogs,
+      schema.campaignResults,
+      schema.campaignApprovals,
+      schema.marketingLinks,
+      schema.channelGoals,
+      schema.campaigns,
     ]) {
       tx.delete(t).run();
     }

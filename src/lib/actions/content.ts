@@ -4,6 +4,8 @@ import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { done, logActivity, newId, nowIso } from "./common";
 import { generateIdeas, writeDraft } from "@/lib/ai";
+import { campaignRepo } from "@/lib/campaigns/repository";
+import { withCampaignContext } from "@/lib/campaigns/context";
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 
@@ -68,11 +70,16 @@ export async function scheduleContent(fd: FormData) {
 
 export async function createIdea(fd: FormData) {
   const title = str(fd, "title");
-  if (!title) return done("/content", "Cần nhập tiêu đề");
+  // Ngữ cảnh chiến dịch (nếu mở từ phân hệ Chiến dịch): bài mới tự gắn campaign_id + channel_goal_id.
+  const campaignId = str(fd, "campaignId") || null;
+  const channelGoalId = str(fd, "channelGoalId") || null;
+  const ctx = { campaignId, channelGoalId };
+  if (!title) return done(withCampaignContext("/content", ctx), "Cần nhập tiêu đề");
+  const id = newId("ct");
   getDb()
     .insert(schema.contentItems)
     .values({
-      id: newId("ct"),
+      id,
       title,
       format: str(fd, "format") || "post",
       status: "in_progress",
@@ -86,7 +93,12 @@ export async function createIdea(fd: FormData) {
       source: "manual",
     })
     .run();
-  done("/content?tab=mine", "Đã tạo bài mới");
+  if (campaignId && campaignRepo.get(campaignId)) {
+    const goal = channelGoalId ? campaignRepo.goal(channelGoalId) : undefined;
+    campaignRepo.addLink({ campaignId, channelGoalId: goal && goal.campaignId === campaignId ? goal.id : null, entityType: "content", entityId: id, status: "in_progress", ownerId: null, viaType: null, viaId: null });
+    campaignRepo.log(campaignId, "human", "Gắn nội dung", `“${title}” tạo từ phân hệ Nội dung`);
+  }
+  done(withCampaignContext(`/content?tab=mine&open=${id}`, ctx), campaignId ? "Đã tạo bài mới và gắn vào chiến dịch" : "Đã tạo bài mới");
 }
 
 export async function aiGenerateIdeas() {

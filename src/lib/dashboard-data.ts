@@ -3,6 +3,7 @@
 import { listContent, listConversations, listLeads, listPosts, pendingCounts } from "@/lib/queries";
 import { mockAgents, mockApprovals, mockTimeline, mockVideoPending, type AgentInfo, type ApprovalItem, type TimelineItem } from "@/lib/mock/dashboard";
 import { dateKey, TIME_ZONE } from "@/lib/format";
+import { campaignRepo } from "@/lib/campaigns/repository";
 
 export interface OverviewStats {
   pendingApproval: number; // nội dung + video chờ duyệt
@@ -18,7 +19,7 @@ export function getOverview(): OverviewStats {
   const failed = posts.filter((p) => p.status === "failed").length;
   const workflowErrors = mockApprovals.filter((a) => a.kind === "workflow").length;
   return {
-    pendingApproval: listContent(["review"]).length + counts.ideas + mockVideoPending,
+    pendingApproval: listContent(["review"]).length + counts.ideas + mockVideoPending + campaignRepo.pendingApprovals().filter((a) => a.type === "campaign_change").length,
     postsToday: posts.filter((p) => dateKey(p.scheduledFor) === today).length,
     leadsToday: listLeads().filter((l) => l.stage === "new" && dateKey(l.lastMessageAt) === today).length,
     alerts: failed + workflowErrors,
@@ -61,9 +62,24 @@ export function getPending(): PendingItem[] {
       priority: "high",
       kind: "customer",
     }));
+  // Chiến dịch gửi phê duyệt: đọc từ phân hệ Chiến dịch (dữ liệu dùng chung, không phải mẫu riêng).
+  const campaigns: ApprovalItem[] = campaignRepo
+    .pendingApprovals()
+    .filter((a) => a.type === "campaign_change")
+    .map((a) => ({
+      id: `ap-${a.id}`,
+      title: a.title,
+      module: "Chiến dịch",
+      moduleHref: `/campaigns/${a.campaignId}`,
+      actor: a.requestedBy,
+      actorType: "human",
+      sentAt: a.requestedAt,
+      priority: "high",
+      kind: "campaign",
+    }));
   const order = { high: 0, medium: 1, low: 2 };
   const now = Date.now();
-  return [...mockApprovals, ...convs, ...fromDb]
+  return [...mockApprovals, ...campaigns, ...convs, ...fromDb]
     .sort((a, b) => order[a.priority] - order[b.priority] || b.sentAt.localeCompare(a.sentAt))
     .map((a) => ({ ...a, waited: waitedLabel(a.sentAt, now) }));
 }

@@ -9,21 +9,23 @@ export function Toast() {
   const router = useRouter();
   const pathname = usePathname();
   const msg = params.get("toast");
+  const isError = params.get("tone") === "error";
 
   useEffect(() => {
     if (!msg) return;
     const t = setTimeout(() => {
       const next = new URLSearchParams(params.toString());
       next.delete("toast");
+      next.delete("tone");
       const q = next.toString();
       router.replace(q ? `${pathname}?${q}` : pathname, { scroll: false });
-    }, 3200);
+    }, isError ? 6000 : 3200);
     return () => clearTimeout(t);
-  }, [msg, params, pathname, router]);
+  }, [msg, isError, params, pathname, router]);
 
   if (!msg) return null;
   return (
-    <div role="status" className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-full border border-jade-2 bg-jade px-4 py-2 text-[13px] font-medium text-white shadow-lg">
+    <div role={isError ? "alert" : "status"} className={`fixed bottom-5 left-1/2 z-50 max-w-[calc(100vw-32px)] -translate-x-1/2 rounded-full border px-4 py-2 text-[13px] font-medium text-white shadow-lg ${isError ? "border-brick bg-brick" : "border-jade-2 bg-jade"}`}>
       {msg}
     </div>
   );

@@ -10,7 +10,7 @@ export interface ApprovalItem {
   actorType: "agent" | "human";
   sentAt: string;
   priority: Priority;
-  kind: "content" | "video" | "schedule" | "workflow" | "customer";
+  kind: "content" | "video" | "schedule" | "workflow" | "customer" | "campaign";
 }
 
 export const kindLabel: Record<ApprovalItem["kind"], string> = {
@@ -19,6 +19,7 @@ export const kindLabel: Record<ApprovalItem["kind"], string> = {
   schedule: "Lịch đăng cần xác nhận",
   customer: "Khách hàng cần phản hồi",
   workflow: "Quy trình Automation gặp lỗi",
+  campaign: "Chiến dịch chờ phê duyệt",
 };
 
 export const mockApprovals: ApprovalItem[] = [

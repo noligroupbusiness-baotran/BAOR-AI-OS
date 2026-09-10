@@ -25,6 +25,8 @@ const fields: Record<string, { key: string; label: string; secret?: boolean; hin
   instagram: [{ key: "igUserId", label: "Instagram Business ID" }],
   tiktok: [{ key: "accessToken", label: "Access Token", secret: true }],
   zalo_oa: [{ key: "oaId", label: "OA ID" }, { key: "accessToken", label: "Access Token", secret: true }],
+  youtube: [{ key: "channelId", label: "Channel ID" }, { key: "accessToken", label: "Access Token", secret: true }],
+  website: [{ key: "siteUrl", label: "Địa chỉ website", hint: "https://tenmien.com" }, { key: "gaPropertyId", label: "GA4 Property ID" }],
   email_provider: [
     { key: "smtpUrl", label: "SMTP URL", secret: true, hint: "smtp://user:pass@host:587" },
     { key: "from", label: "Tên và email gửi", hint: "BAOR <hello@tenmien.com>" },
