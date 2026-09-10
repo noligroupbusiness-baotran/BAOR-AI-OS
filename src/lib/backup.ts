@@ -239,10 +239,13 @@ export function pruneBackups(cfg = backupConfig()): number {
       /* bỏ qua */
     }
   }
-  // Dọn tệp tạm bỏ dở (app tắt giữa chừng lần sao lưu trước).
+  // Dọn tệp tạm bỏ dở (app tắt giữa chừng lần sao lưu trước) và -wal/-shm sinh ra khi ai đó mở bản sao lưu
+  // bằng sqlite3 mà bản gốc đã bị dọn.
   if (fs.existsSync(cfg.dir)) {
-    for (const n of fs.readdirSync(cfg.dir)) {
-      if (n.endsWith(".tmp")) {
+    const names = new Set(fs.readdirSync(cfg.dir));
+    for (const n of names) {
+      const stray = /\.db-(wal|shm)$/.test(n) && !names.has(n.replace(/-(wal|shm)$/, ""));
+      if (n.endsWith(".tmp") || stray) {
         try {
           fs.unlinkSync(path.join(cfg.dir, n));
         } catch {
