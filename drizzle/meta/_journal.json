@@ -29,6 +29,13 @@
       "when": 1789058005253,
       "tag": "0003_router_connectors",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1789059175376,
+      "tag": "0004_people_login",
+      "breakpoints": true
     }
   ]
 }

@@ -2,6 +2,7 @@
 // Mọi phân hệ (Chiến dịch, Nội dung, AI...) đọc qua catalogRepo, không giữ bản sao riêng.
 import { asc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
+import { hashPassword } from "@/lib/admin";
 import type { Person, Product } from "@/lib/campaigns/types";
 
 export type Permission = "admin" | "manager" | "staff";
@@ -10,6 +11,8 @@ export interface PersonRecord extends Person {
   email: string;
   permission: Permission;
   active: boolean;
+  /** Đã được cấp mật khẩu đăng nhập hay chưa (không bao giờ trả về hash). */
+  canLogin: boolean;
 }
 
 export interface ProductRecord extends Product {
@@ -32,7 +35,7 @@ export interface CatalogRepository {
   setProductActive(id: string, active: boolean): void;
   listPeople(includeInactive?: boolean): PersonRecord[];
   getPerson(id: string): PersonRecord | undefined;
-  savePerson(input: Omit<PersonRecord, "id" | "active"> & { id?: string }): PersonRecord;
+  savePerson(input: Omit<PersonRecord, "id" | "active" | "canLogin"> & { id?: string; password?: string }): PersonRecord;
   setPersonActive(id: string, active: boolean): void;
 }
 
@@ -67,28 +70,33 @@ class SqliteCatalogRepository implements CatalogRepository {
 
   listPeople(includeInactive = false): PersonRecord[] {
     const rows = this.db.select().from(schema.people).orderBy(asc(schema.people.name)).all();
-    return rows.filter((r) => includeInactive || r.active).map((r) => ({ ...r, permission: r.permission as Permission }));
+    return rows.filter((r) => includeInactive || r.active).map(toPerson);
   }
 
   getPerson(id: string) {
     const r = this.db.select().from(schema.people).where(eq(schema.people.id, id)).get();
-    return r ? { ...r, permission: r.permission as Permission } : undefined;
+    return r ? toPerson(r) : undefined;
   }
 
-  savePerson(input: Omit<PersonRecord, "id" | "active"> & { id?: string }): PersonRecord {
+  savePerson(input: Omit<PersonRecord, "id" | "active" | "canLogin"> & { id?: string; password?: string }): PersonRecord {
     const id = input.id ?? newId("u");
-    const row = { id, name: input.name, role: input.role, email: input.email, permission: input.permission, active: true, updatedAt: nowIso() };
+    const passwordHash = input.password ? hashPassword(input.password) : undefined;
+    const row = { id, name: input.name, role: input.role, email: input.email, permission: input.permission, active: true, updatedAt: nowIso(), ...(passwordHash ? { passwordHash } : {}) };
     this.db
       .insert(schema.people)
       .values(row)
-      .onConflictDoUpdate({ target: schema.people.id, set: { name: row.name, role: row.role, email: row.email, permission: row.permission, updatedAt: row.updatedAt } })
+      .onConflictDoUpdate({ target: schema.people.id, set: { name: row.name, role: row.role, email: row.email, permission: row.permission, updatedAt: row.updatedAt, ...(passwordHash ? { passwordHash } : {}) } })
       .run();
-    return this.getPerson(id) ?? row;
+    return this.getPerson(id)!;
   }
 
   setPersonActive(id: string, active: boolean) {
     this.db.update(schema.people).set({ active, updatedAt: nowIso() }).where(eq(schema.people.id, id)).run();
   }
+}
+
+function toPerson(r: typeof schema.people.$inferSelect): PersonRecord {
+  return { id: r.id, name: r.name, role: r.role, email: r.email, permission: r.permission as Permission, active: r.active, canLogin: !!r.passwordHash };
 }
 
 export const catalogRepo: CatalogRepository = new SqliteCatalogRepository();

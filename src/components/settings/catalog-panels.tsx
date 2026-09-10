@@ -108,6 +108,7 @@ export function PeoplePanel({ editing }: { editing?: string }) {
                   <div className="flex flex-wrap items-center gap-2">
                     <span className={cn("font-semibold", p.active ? "text-ink" : "text-ink-3")}>{p.name}</span>
                     <Pill tone={p.permission === "admin" ? "jade" : "neutral"}>{permissionLabel[p.permission].label}</Pill>
+                    {p.canLogin ? <Pill tone="jade">Đăng nhập được</Pill> : <Pill tone="amber">Chưa cấp mật khẩu</Pill>}
                     {!p.active && <Pill>Ngừng hoạt động</Pill>}
                   </div>
                   <div className="mt-0.5 truncate text-[12px] text-ink-2">{p.role || "Chưa có vai trò"}{p.email ? ` · ${p.email}` : ""}</div>
@@ -148,6 +149,9 @@ function PersonForm({ person }: { person?: PersonRecord }) {
             <option key={k} value={k}>{permissionLabel[k].label}</option>
           ))}
         </select>
+      </Field>
+      <Field label={person?.canLogin ? "Đổi mật khẩu đăng nhập (để trống nếu giữ)" : "Mật khẩu đăng nhập (cấp quyền vào hệ thống)"} hint="Nhân sự đăng nhập bằng email ở trên và mật khẩu này; quyền hạn áp theo lựa chọn bên cạnh.">
+        <input name="password" type="password" autoComplete="new-password" className={inputClass} placeholder="Ít nhất 6 ký tự" />
       </Field>
       <div className="flex gap-2 md:col-span-2">
         <SubmitButton pendingText="Đang lưu…">{person ? "Lưu thay đổi" : "Thêm nhân sự"}</SubmitButton>

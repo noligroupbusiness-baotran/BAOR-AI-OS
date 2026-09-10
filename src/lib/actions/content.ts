@@ -6,6 +6,7 @@ import { done, logActivity, newId, nowIso } from "./common";
 import { generateIdeas, writeDraft } from "@/lib/ai";
 import { campaignRepo } from "@/lib/campaigns/repository";
 import { withCampaignContext } from "@/lib/campaigns/context";
+import { requirePermission } from "@/lib/permissions";
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 
@@ -50,6 +51,7 @@ export async function saveDraft(fd: FormData) {
 }
 
 export async function approveContent(fd: FormData) {
+  await requirePermission("manager", "/content?tab=mine");
   const id = str(fd, "id");
   const db = getDb();
   const item = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, id)).get();

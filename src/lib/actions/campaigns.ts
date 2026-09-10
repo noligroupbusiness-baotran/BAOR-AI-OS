@@ -11,6 +11,7 @@ import type { CampaignStatus, ChannelGoalStatus, LinkedEntityType, NewCampaignIn
 import { withCampaignContext } from "@/lib/campaigns/context";
 import { campaignStatusLabel } from "@/lib/campaigns/labels";
 import { logActivity } from "./common";
+import { requirePermission } from "@/lib/permissions";
 
 // Mọi hành động: kiểm tra đăng nhập, chống lặp bằng idem key, kiểm tra trạng thái hợp lệ, ghi nhật ký.
 // AI chỉ đề xuất; phê duyệt, kích hoạt, tạm dừng đều do người bấm.
@@ -150,8 +151,8 @@ export async function createCampaignAction(_prev: CreateCampaignState, fd: FormD
 // ---------- Chuyển trạng thái ----------
 
 async function transition(fd: FormData, kind: keyof typeof transitions, next: CampaignStatus, actionLabel: string, toast: string) {
-  const by = await actor();
   const id = str(fd, "id");
+  const by = kind === "submit" ? await actor() : (await requirePermission("manager", `/campaigns/${id}`)).email;
   const idem = str(fd, "idem");
   const c = campaignRepo.get(id);
   if (!c) finish("/campaigns", "Không tìm thấy chiến dịch", "error");

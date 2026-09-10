@@ -1,4 +1,4 @@
-import { count } from "drizzle-orm";
+import { and, count, inArray, isNull } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "./schema";
 import { contentItems as seedContent, scheduledPosts as seedPosts } from "@/lib/data/content";
@@ -194,6 +194,56 @@ function seedCampaignData(tx: Pick<Db, "insert">) {
   tx.insert(schema.campaignApprovals).values(seedApprovals).onConflictDoNothing().run();
   tx.insert(schema.campaignResults).values(seedResults).onConflictDoNothing().run();
   tx.insert(schema.campaignLogs).values(seedCampaignLogs.map((l) => ({ ...l, idemKey: null }))).run();
+}
+
+// Chỉ xóa bản ghi mẫu (theo ID nạp ban đầu). Dữ liệu người dùng tự tạo được giữ nguyên.
+export function clearSampleOnly(db: Db) {
+  const ids = {
+    content: [...seedContent.map((c) => c.id), ...linkedRows.content.map((c) => c.id)],
+    posts: [...seedPosts.map((p) => p.id), ...linkedRows.posts.map((p) => p.id)],
+    ads: [...seedAds.map((a) => a.id), ...linkedRows.ads.map((a) => a.id)],
+    leads: [...seedLeads.map((l) => l.id), ...linkedRows.leads.map((l) => l.id)],
+    convs: seedConvs.map((c) => c.id),
+    rules: seedRules.map((r) => r.id),
+    seqs: seedSeqs.map((s) => s.id),
+    emails: seedEmailCampaigns.map((e) => e.id),
+    insights: [...seedInsights.map((i) => i.id), ...linkedRows.insights.map((i) => i.id)],
+    personas: seedPersonas.map((p) => p.id),
+    research: seedResearch.map((r) => r.id),
+    campaigns: seedCampaigns.map((c) => c.id),
+    goals: seedGoals.map((g) => g.id),
+    links: seedLinks.map((l) => l.id),
+    approvals: seedApprovals.map((a) => a.id),
+    products: seedProducts.map((p) => p.id),
+    people: seedPeople.map((p) => p.id),
+    videos: seedVideos.map((v) => v.id),
+    activityAt: recentActivity.map((a) => a.at),
+  };
+  db.transaction((tx) => {
+    tx.delete(schema.messages).where(inArray(schema.messages.conversationId, ids.convs)).run();
+    tx.delete(schema.conversations).where(inArray(schema.conversations.id, ids.convs)).run();
+    tx.delete(schema.leads).where(inArray(schema.leads.id, ids.leads)).run();
+    tx.delete(schema.contentItems).where(inArray(schema.contentItems.id, ids.content)).run();
+    tx.delete(schema.scheduledPosts).where(inArray(schema.scheduledPosts.id, ids.posts)).run();
+    tx.delete(schema.adCampaigns).where(inArray(schema.adCampaigns.id, ids.ads)).run();
+    tx.delete(schema.autoReplyRules).where(inArray(schema.autoReplyRules.id, ids.rules)).run();
+    tx.delete(schema.emailSequences).where(inArray(schema.emailSequences.id, ids.seqs)).run();
+    tx.delete(schema.emailCampaigns).where(inArray(schema.emailCampaigns.id, ids.emails)).run();
+    tx.delete(schema.insights).where(inArray(schema.insights.id, ids.insights)).run();
+    tx.delete(schema.personas).where(inArray(schema.personas.id, ids.personas)).run();
+    tx.delete(schema.platformResearch).where(inArray(schema.platformResearch.id, ids.research)).run();
+    tx.delete(schema.activity).where(inArray(schema.activity.at, ids.activityAt)).run();
+    tx.delete(schema.campaignLogs).where(inArray(schema.campaignLogs.campaignId, ids.campaigns)).run();
+    tx.delete(schema.campaignResults).where(inArray(schema.campaignResults.campaignId, ids.campaigns)).run();
+    tx.delete(schema.campaignApprovals).where(inArray(schema.campaignApprovals.id, ids.approvals)).run();
+    tx.delete(schema.marketingLinks).where(inArray(schema.marketingLinks.id, ids.links)).run();
+    tx.delete(schema.channelGoals).where(inArray(schema.channelGoals.id, ids.goals)).run();
+    tx.delete(schema.campaigns).where(inArray(schema.campaigns.id, ids.campaigns)).run();
+    tx.delete(schema.videos).where(inArray(schema.videos.id, ids.videos)).run();
+    tx.delete(schema.products).where(inArray(schema.products.id, ids.products)).run();
+    // Nhân sự mẫu: chỉ xóa người chưa được cấp mật khẩu (chưa thành tài khoản thật).
+    tx.delete(schema.people).where(and(inArray(schema.people.id, ids.people), isNull(schema.people.passwordHash))).run();
+  });
 }
 
 export function clearAll(db: Db) {

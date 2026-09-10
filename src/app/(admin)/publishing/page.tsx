@@ -12,13 +12,14 @@ import { formatNumber, formatTime, formatDate, cn } from "@/lib/format";
 import type { AdStatus, Platform, PostStatus } from "@/lib/types";
 import { CampaignTags, LinkToCampaignForm } from "@/components/campaigns/entity-campaign";
 import { campaignRepo } from "@/lib/campaigns/repository";
+import { Pager, paginate } from "@/components/ui/pager";
 
 export const metadata = { title: "Đăng bài & quảng cáo – BAOR AI OS" };
 
 const input = "h-8 rounded-md border border-border-2 bg-surface px-2.5 text-[13px] text-ink outline-none focus-visible:outline-2 focus-visible:outline-jade";
 
-export default async function PublishingPage({ searchParams }: { searchParams: Promise<{ edit?: string; link?: string }> }) {
-  const { edit, link } = await searchParams;
+export default async function PublishingPage({ searchParams }: { searchParams: Promise<{ edit?: string; link?: string; page?: string }> }) {
+  const { edit, link, page } = await searchParams;
   const g = getAdGuardrails();
   const posts = listPosts();
   const ads = listAds().filter((a) => a.status !== "rejected");
@@ -41,6 +42,7 @@ export default async function PublishingPage({ searchParams }: { searchParams: P
       return acc;
     }, {}),
   ).sort((a, b) => b.at.localeCompare(a.at));
+  const rowPage = paginate(rows, page);
 
   return (
     <>
@@ -65,7 +67,7 @@ export default async function PublishingPage({ searchParams }: { searchParams: P
           </thead>
           <tbody>
             {rows.length === 0 && <tr><Td className="text-center text-ink-2">Chưa có bài nào.</Td></tr>}
-            {rows.map((r) => {
+            {rowPage.items.map((r) => {
               const st = postStatusLabel[r.status as PostStatus];
               return (
                 <tr key={r.ids.join()}>
@@ -88,6 +90,7 @@ export default async function PublishingPage({ searchParams }: { searchParams: P
             })}
           </tbody>
         </Table>
+        <Pager page={rowPage.page} pages={rowPage.pages} total={rowPage.total} hrefFor={(p) => `/publishing?page=${p}`} label="bài" />
       </Panel>
 
       <Panel>

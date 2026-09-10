@@ -7,11 +7,13 @@ import { setSetting } from "@/lib/admin";
 import { getAdGuardrails } from "@/lib/queries";
 import { applyRule } from "@/lib/router";
 import { campaignRepo } from "@/lib/campaigns/repository";
+import { requirePermission } from "@/lib/permissions";
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 const num = (fd: FormData, k: string) => Number(String(fd.get(k) ?? "").replace(/[^\d]/g, ""));
 
 export async function approveAd(fd: FormData) {
+  await requirePermission("manager", "/publishing");
   const id = str(fd, "id");
   const db = getDb();
   const ad = db.select().from(schema.adCampaigns).where(eq(schema.adCampaigns.id, id)).get();
@@ -42,6 +44,7 @@ export async function toggleAd(fd: FormData) {
 }
 
 export async function updateBudget(fd: FormData) {
+  await requirePermission("manager", "/publishing");
   const id = str(fd, "id");
   const budget = num(fd, "dailyBudget");
   if (!budget) return done("/publishing", "Ngân sách không hợp lệ");
@@ -54,6 +57,7 @@ export async function updateBudget(fd: FormData) {
 }
 
 export async function saveGuardrails(fd: FormData) {
+  await requirePermission("admin", "/publishing");
   setSetting("ads.dailyCap", String(num(fd, "dailyCap")));
   setSetting("ads.monthlyCap", String(num(fd, "monthlyCap")));
   setSetting("ads.autoPauseCplAbove", String(num(fd, "autoPauseCplAbove")));

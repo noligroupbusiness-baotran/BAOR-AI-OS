@@ -1,6 +1,7 @@
 "use server";
 
 import { catalogRepo, type Permission } from "@/lib/catalog/repository";
+import { requirePermission } from "@/lib/permissions";
 import { done, logActivity } from "./common";
 
 // Cài đặt › Sản phẩm và bảng giá, Nhân sự và phân quyền. Đây là nguồn dữ liệu chuẩn cho mọi phân hệ.
@@ -9,6 +10,7 @@ const num = (fd: FormData, k: string) => Number(String(fd.get(k) ?? "").replace(
 const fail = (path: string, msg: string): never => done(`${path}${path.includes("?") ? "&" : "?"}tone=error`, msg);
 
 export async function saveProduct(fd: FormData) {
+  await requirePermission("manager", "/settings#products");
   const id = str(fd, "id") || undefined;
   const name = str(fd, "name");
   if (!name) return fail("/settings#products", "Cần nhập tên sản phẩm hoặc dịch vụ");
@@ -18,6 +20,7 @@ export async function saveProduct(fd: FormData) {
 }
 
 export async function toggleProduct(fd: FormData) {
+  await requirePermission("manager", "/settings#products");
   const id = str(fd, "id");
   const p = catalogRepo.getProduct(id);
   if (!p) return fail("/settings#products", "Không tìm thấy sản phẩm");
@@ -27,16 +30,22 @@ export async function toggleProduct(fd: FormData) {
 }
 
 export async function savePerson(fd: FormData) {
+  await requirePermission("admin", "/settings#people");
   const id = str(fd, "id") || undefined;
   const name = str(fd, "name");
   if (!name) return fail("/settings#people", "Cần nhập tên nhân sự");
   const permission = (["admin", "manager", "staff"] as Permission[]).includes(str(fd, "permission") as Permission) ? (str(fd, "permission") as Permission) : "staff";
-  const p = catalogRepo.savePerson({ id, name, role: str(fd, "role"), email: str(fd, "email").toLowerCase(), permission });
+  const password = str(fd, "password");
+  if (password && password.length < 6) return fail("/settings#people", "Mật khẩu đăng nhập cần ít nhất 6 ký tự");
+  const email = str(fd, "email").toLowerCase();
+  if (password && !email) return fail("/settings#people", "Cần email để cấp quyền đăng nhập");
+  const p = catalogRepo.savePerson({ id, name, role: str(fd, "role"), email, permission, password: password || undefined });
   logActivity("human", `${id ? "Cập nhật" : "Thêm"} nhân sự ${p.name} (${p.role || "chưa có vai trò"}).`, "settings");
   done("/settings#people", id ? "Đã cập nhật nhân sự" : "Đã thêm nhân sự");
 }
 
 export async function togglePerson(fd: FormData) {
+  await requirePermission("admin", "/settings#people");
   const id = str(fd, "id");
   const p = catalogRepo.getPerson(id);
   if (!p) return fail("/settings#people", "Không tìm thấy nhân sự");

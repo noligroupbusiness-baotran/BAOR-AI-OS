@@ -311,6 +311,7 @@ export const people = sqliteTable("people", {
   email: text("email").notNull().default(""),
   permission: text("permission").notNull().default("staff"), // admin | manager | staff
   active: integer("active", { mode: "boolean" }).notNull().default(true),
+  passwordHash: text("password_hash"), // scrypt; null = chưa cấp quyền đăng nhập
   updatedAt: text("updated_at").notNull(),
 });
 

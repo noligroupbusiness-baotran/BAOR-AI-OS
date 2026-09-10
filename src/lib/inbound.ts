@@ -4,7 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { campaignRepo } from "@/lib/campaigns/repository";
 import { recordDecision } from "@/lib/router";
-import { logActivity } from "@/lib/actions/common";
+import { logActivity } from "@/lib/activity";
 import type { InboundMessage } from "@/lib/connectors/types";
 
 const newId = (p: string) => `${p}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;

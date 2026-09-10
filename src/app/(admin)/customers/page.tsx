@@ -2,11 +2,15 @@ import Link from "next/link";
 import { PageHead, Panel, PanelHeader } from "@/components/ui/card";
 import { Breadcrumb, ModuleGroups } from "@/components/shell/module-page";
 import { Pill } from "@/components/ui/pill";
-import { Button } from "@/components/ui/button";
+import { Button, LinkButton } from "@/components/ui/button";
 import { Segment } from "@/components/ui/segment";
 import { Tiles, Tile } from "@/components/ui/stat";
 import { Table, Th, Td } from "@/components/ui/table";
-import { aiSuggest, handBackToAi, sendReply, setLeadStage, toggleRule, toggleSequence } from "@/lib/actions/customers";
+import { aiSuggest, createLead, handBackToAi, sendReply, setLeadStage, toggleRule, toggleSequence } from "@/lib/actions/customers";
+import { Field, inputClass } from "@/components/ui/field";
+import { SubmitButton } from "@/components/campaigns/submit-button";
+import { Pager, paginate } from "@/components/ui/pager";
+import { channelLabel } from "@/config/channels";
 import { listConversations, listEmailSequences, listLeads, listRules } from "@/lib/queries";
 import { leadSourceLabel, leadStageLabel } from "@/lib/labels";
 import { formatDateTime, formatNumber, formatTime, cn } from "@/lib/format";
@@ -19,8 +23,8 @@ export const metadata = { title: "Khách hàng & email – BAOR AI OS" };
 
 const stages: LeadStage[] = ["new", "contacted", "qualified", "won", "lost"];
 
-export default async function CustomersPage({ searchParams }: { searchParams: Promise<{ tab?: string; conv?: string; suggest?: string; link?: string }> }) {
-  const { tab = "inbox", conv, suggest, link } = await searchParams;
+export default async function CustomersPage({ searchParams }: { searchParams: Promise<{ tab?: string; conv?: string; suggest?: string; link?: string; add?: string; page?: string }> }) {
+  const { tab = "inbox", conv, suggest, link, add, page } = await searchParams;
   const convs = listConversations();
   const selected = convs.find((c) => c.id === conv) ?? convs[0];
   const leads = listLeads();
@@ -28,7 +32,9 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
   const seqs = listEmailSequences();
   const needHuman = convs.filter((c) => c.needsHuman).length;
   const won = leads.filter((l) => l.stage === "won").length;
-  const leadLinks = campaignRepo.linksForEntities("lead", leads.map((l) => l.id));
+  const leadPage = paginate(leads, page);
+  const leadLinks = campaignRepo.linksForEntities("lead", leadPage.items.map((l) => l.id));
+  const campaignsForLead = campaignRepo.list().filter((c) => c.status !== "ended");
 
   return (
     <>
@@ -118,13 +124,56 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
         </div>
       )}
 
+      {tab === "leads" && add === "1" && (
+        <Panel>
+          <PanelHeader title="Thêm khách hàng" sub="Lead nhập tay (khách ghé quầy, gọi điện, giới thiệu). Có số điện thoại thì vào giai đoạn “Đã liên hệ”." />
+          <form action={createLead} className="grid gap-3 p-4 md:grid-cols-2">
+            <Field label="Tên khách" required><input name="name" required className={inputClass} /></Field>
+            <Field label="Số điện thoại"><input name="phone" inputMode="tel" className={inputClass} /></Field>
+            <Field label="Email"><input name="email" type="email" className={inputClass} /></Field>
+            <Field label="Kênh">
+              <select name="platform" defaultValue="facebook" className={inputClass}>
+                {[["facebook", "Facebook"], ["instagram", "Instagram"], ["tiktok", "TikTok"], ["zalo", "Zalo OA"], ["youtube", "YouTube"]].map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </Field>
+            <Field label="Nguồn">
+              <select name="source" defaultValue="manual" className={inputClass}>
+                {Object.entries(leadSourceLabel).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </Field>
+            <Field label="Chiến dịch">
+              <select name="campaignId" defaultValue="" className={inputClass}>
+                <option value="">Không gắn</option>
+                {campaignsForLead.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </Field>
+            <Field label="Mục tiêu kênh (tùy chọn)">
+              <select name="channelGoalId" defaultValue="" className={inputClass}>
+                <option value="">Chọn sau</option>
+                {campaignsForLead.map((c) => (
+                  <optgroup key={c.id} label={c.name}>
+                    {campaignRepo.goals(c.id).map((g) => <option key={g.id} value={g.id}>{channelLabel(g.channel)} · {g.objective}</option>)}
+                  </optgroup>
+                ))}
+              </select>
+            </Field>
+            <Field label="Nhãn (phân cách bằng dấu phẩy)"><input name="tags" className={inputClass} placeholder="gội 39K, văn phòng" /></Field>
+            <Field label="Nhu cầu / ghi chú" className="md:col-span-2"><input name="message" className={inputClass} placeholder="VD: Muốn đặt lịch gội thứ 7" /></Field>
+            <div className="flex gap-2 md:col-span-2">
+              <SubmitButton pendingText="Đang lưu…">Thêm khách hàng</SubmitButton>
+              <LinkButton href="/customers?tab=leads" variant="ghost">Hủy</LinkButton>
+            </div>
+          </form>
+        </Panel>
+      )}
+
       {tab === "leads" && (
         <Panel>
-          <PanelHeader title="Danh sách lead" sub="Mỗi lead ghi nhận đến từ chiến dịch, mục tiêu kênh và bài đăng / quảng cáo nào. Đổi giai đoạn bằng ô chọn." />
+          <PanelHeader title="Danh sách lead" sub="Mỗi lead ghi nhận đến từ chiến dịch, mục tiêu kênh và bài đăng / quảng cáo nào. Đổi giai đoạn bằng ô chọn." action={add === "1" ? undefined : <LinkButton href="/customers?tab=leads&add=1" variant="primary">Thêm khách hàng</LinkButton>} />
           <Table>
             <thead><tr><Th>Khách</Th><Th>Nguồn</Th><Th>Chiến dịch</Th><Th>Tin nhắn cuối</Th><Th>Liên hệ</Th><Th right>Giai đoạn</Th></tr></thead>
             <tbody>
-              {leads.map((l) => (
+              {leadPage.items.map((l) => (
                 <tr key={l.id}>
                   <Td className="font-semibold text-ink">{l.name}<div className="mt-0.5 flex flex-wrap gap-1">{l.tags.map((t) => <Pill key={t}>#{t}</Pill>)}</div></Td>
                   <Td>{platformLabel(l.platform as Platform)} · {leadSourceLabel[l.source] ?? l.source}</Td>
@@ -149,6 +198,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
               ))}
             </tbody>
           </Table>
+          <Pager page={leadPage.page} pages={leadPage.pages} total={leadPage.total} hrefFor={(p) => `/customers?tab=leads&page=${p}`} label="lead" />
         </Panel>
       )}
 

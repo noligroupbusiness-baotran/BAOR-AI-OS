@@ -4,7 +4,8 @@ import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { done } from "./common";
 import { hashPassword, setSetting, verifyAdmin, getAdminEmail } from "@/lib/admin";
-import { clearAll, seedAll } from "@/db/seed";
+import { clearSampleOnly, seedAll } from "@/db/seed";
+import { requirePermission } from "@/lib/permissions";
 import { writeIntegrationConfig } from "@/lib/connectors/config";
 import { checkIntegration as runCheck } from "@/lib/connectors/sync";
 import { runSchedulerNow } from "@/lib/scheduler";
@@ -12,6 +13,7 @@ import { runSchedulerNow } from "@/lib/scheduler";
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 
 export async function toggleAutomation(fd: FormData) {
+  await requirePermission("manager", "/settings#automation");
   const key = str(fd, "key");
   const on = str(fd, "on") === "1";
   setSetting(`automation.${key}`, on ? "0" : "1");
@@ -19,6 +21,7 @@ export async function toggleAutomation(fd: FormData) {
 }
 
 export async function saveBrand(fd: FormData) {
+  await requirePermission("manager", "/settings#brand");
   setSetting("brand.name", str(fd, "name"));
   setSetting("brand.products", str(fd, "products"));
   setSetting("brand.voice", str(fd, "voice"));
@@ -26,6 +29,7 @@ export async function saveBrand(fd: FormData) {
 }
 
 export async function saveAccount(fd: FormData) {
+  await requirePermission("admin", "/settings#account");
   const email = str(fd, "email").toLowerCase();
   const current = str(fd, "current");
   const next = str(fd, "password");
@@ -40,6 +44,7 @@ export async function saveAccount(fd: FormData) {
 }
 
 export async function saveIntegration(fd: FormData) {
+  await requirePermission("admin", "/settings#integrations");
   const key = str(fd, "key");
   const db = getDb();
   const row = db.select().from(schema.integrations).where(eq(schema.integrations.key, key)).get();
@@ -62,6 +67,7 @@ export async function checkIntegration(fd: FormData) {
 }
 
 export async function saveAiBudget(fd: FormData) {
+  await requirePermission("admin", "/settings#ai");
   const n = (k: string) => Number(String(fd.get(k) ?? "").replace(/[^\d]/g, "")) || 0;
   setSetting("ai.dailyCapVnd", String(n("dailyCapVnd")));
   setSetting("ai.monthlyCapVnd", String(n("monthlyCapVnd")));
@@ -74,19 +80,22 @@ export async function runBackgroundNow() {
 }
 
 export async function disconnectIntegration(fd: FormData) {
+  await requirePermission("admin", "/settings#integrations");
   const key = str(fd, "key");
   getDb().update(schema.integrations).set({ config: "{}", connected: false, account: null }).where(eq(schema.integrations.key, key)).run();
   done("/settings", "Đã ngắt kết nối");
 }
 
 export async function resetSampleData() {
+  await requirePermission("admin", "/settings");
   const db = getDb();
-  clearAll(db);
+  clearSampleOnly(db);
   seedAll(db);
-  done("/dashboard", "Đã nạp lại dữ liệu mẫu");
+  done("/dashboard", "Đã nạp lại dữ liệu mẫu. Dữ liệu bạn tự tạo vẫn còn.");
 }
 
 export async function clearSampleData() {
-  clearAll(getDb());
-  done("/dashboard", "Đã xóa dữ liệu mẫu. Hệ thống sẵn sàng nhận dữ liệu thật.");
+  await requirePermission("admin", "/settings");
+  clearSampleOnly(getDb());
+  done("/dashboard", "Đã xóa dữ liệu mẫu, giữ nguyên dữ liệu bạn tự tạo. Hệ thống sẵn sàng nhận dữ liệu thật.");
 }

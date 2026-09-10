@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { campaignRepo } from "@/lib/campaigns/repository";
 import type { VideoStatus } from "@/lib/data/videos";
 import { done, logActivity, nowIso } from "./common";
+import { requirePermission } from "@/lib/permissions";
 
 // Video Studio: Agent Edit Video chỉ dựng và chuẩn bị phiên bản. Người kiểm tra, yêu cầu sửa và phê duyệt.
 // Video đã phê duyệt vẫn KHÔNG tự đăng; việc đăng thuộc phân hệ Đăng bài & Quảng cáo.
@@ -28,6 +29,7 @@ export async function transitionVideo(fd: FormData) {
   const back = str(fd, "back") || "/video-studio";
   const t = transitions[kind];
   if (!t) return fail(back, "Hành động không hợp lệ");
+  if (kind === "approve") await requirePermission("manager", back);
   const db = getDb();
   const v = db.select().from(schema.videos).where(eq(schema.videos.id, id)).get();
   if (!v) return fail(back, "Không tìm thấy video");

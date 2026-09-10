@@ -86,6 +86,19 @@ Chiến dịch → Mục tiêu kênh → Insight → Nội dung → Video → Ph
 - Đặt `PUBLIC_URL=https://mkt.baor.vn` (hoặc `DOMAIN`) trên VPS để Cài đặt hiện đúng địa chỉ webhook.
 - Kiểm thử phần thuần: `npm test` (node:test + tsx). Gate đầy đủ: `npm run gate`.
 
+## Vỏ ứng dụng, đăng nhập theo nhân sự và phân quyền
+
+- Đăng nhập: tài khoản quản trị (`.env.local` hoặc Cài đặt › Tài khoản) là quyền Quản trị; nhân sự trong Cài đặt ›
+  Nhân sự có email + mật khẩu riêng (cấp trong biểu mẫu) đăng nhập với quyền Quản trị / Quản lý / Nhân viên.
+  `src/lib/permissions.ts` (`requirePermission`) chặn ở máy chủ: phê duyệt, kích hoạt, kết thúc chiến dịch, duyệt nội dung,
+  video, duyệt chạy quảng cáo cần Quản lý; kết nối nền tảng, trần AI, nhân sự, tài khoản cần Quản trị.
+- Thanh trên: tìm kiếm toàn hệ thống (`/search`, không dấu), menu Tạo mới mở thẳng chức năng, chỉ báo sức khỏe hệ thống
+  (kết nối, bộ chạy nền, AI, lỗi 24h), chuông thông báo tính từ dữ liệu thật (`src/lib/shell-data.ts`, đã đọc lưu ở trình
+  duyệt), nút chuyển **giao diện trang xem** (ẩn thanh bên, nội dung rộng) ↔ **giao diện dashboard**.
+- Vỏ ứng dụng tự làm mới dữ liệu mỗi 60 giây khi tab đang mở. Chân thanh bên hiện tình trạng thật và người đang đăng nhập.
+- Điều hành không còn dữ liệu mẫu: việc chờ xử lý, lịch hôm nay, trạng thái Agent đều suy ra từ CSDL, bộ chạy nền, sổ AI.
+- "Xóa dữ liệu mẫu" chỉ xóa bản ghi có ID mẫu, giữ dữ liệu người dùng tự tạo. Danh sách dài phân trang 25 mục (`?page=`).
+
 ## Cấu trúc
 
 ```

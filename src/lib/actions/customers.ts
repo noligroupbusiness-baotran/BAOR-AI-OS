@@ -5,6 +5,8 @@ import { getDb, schema } from "@/db";
 import { done, logActivity, nowIso } from "./common";
 import { suggestReply } from "@/lib/ai";
 import { campaignRepo } from "@/lib/campaigns/repository";
+import { ingestLead } from "@/lib/inbound";
+import { CHANNELS } from "@/config/channels";
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 
@@ -24,6 +26,28 @@ export async function sendReply(fd: FormData) {
   campaignRepo.syncEntityStatus("lead", c.leadId, "contacted");
   logActivity("human", `Bạn đã trả lời ${c.leadName}.`, "customers");
   done(`/customers?conv=${conv}`, "Đã gửi (khi nối Facebook, tin sẽ đi thật)");
+}
+
+// Thêm lead thủ công (từ menu Tạo mới › Thêm khách hàng hoặc nút trong tab Lead).
+export async function createLead(fd: FormData) {
+  const name = str(fd, "name");
+  if (!name) return done("/customers?tab=leads&add=1&tone=error", "Cần nhập tên khách");
+  const platformRaw = str(fd, "platform") || "facebook";
+  const platform = ["facebook", "instagram", "tiktok", "threads", "youtube", "zalo"].includes(platformRaw) ? platformRaw : "facebook";
+  void CHANNELS;
+  const lead = ingestLead({
+    name,
+    phone: str(fd, "phone") || undefined,
+    email: str(fd, "email") || undefined,
+    message: str(fd, "message"),
+    source: str(fd, "source") || "manual",
+    platform,
+    campaignId: str(fd, "campaignId") || undefined,
+    channelGoalId: str(fd, "channelGoalId") || undefined,
+    tags: str(fd, "tags").split(",").map((t) => t.trim()).filter(Boolean),
+  });
+  logActivity("human", `Thêm lead thủ công “${lead.name}”.`, "customers");
+  done("/customers?tab=leads", `Đã thêm lead ${lead.name}`);
 }
 
 export async function handBackToAi(fd: FormData) {

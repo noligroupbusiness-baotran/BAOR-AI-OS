@@ -34,6 +34,10 @@ function createLocalStore<T extends string>(key: string, fallback: T) {
 export type ThemeMode = "light" | "dark" | "system";
 export const themeStore = createLocalStore<ThemeMode>("baor.theme", "system");
 export const sidebarStore = createLocalStore<"open" | "collapsed">("baor.sidebar", "open");
+// Giao diện: "dashboard" đầy đủ thanh bên; "view" trang xem gọn, ẩn thanh bên.
+export const viewModeStore = createLocalStore<"dashboard" | "view">("baor.viewMode", "dashboard");
+// Danh sách id thông báo đã đọc (ngăn cách bằng dấu phẩy).
+export const readStore = createLocalStore<string>("baor.notifRead", "");
 
 export function applyTheme(mode: ThemeMode) {
   const root = document.documentElement;

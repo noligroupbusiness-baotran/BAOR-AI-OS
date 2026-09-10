@@ -6,7 +6,7 @@ import { channelDef } from "@/config/channels";
 import { campaignRepo } from "@/lib/campaigns/repository";
 import { getAdGuardrails, getAutomation } from "@/lib/queries";
 import { applyRule, recordDecision } from "@/lib/router";
-import { logActivity } from "@/lib/actions/common";
+import { logActivity } from "@/lib/activity";
 import { connectorContext, finishRun, setIntegrationStatus, startRun } from "./config";
 import { connectorFor, connectors } from "./registry";
 import type { CheckResult } from "./types";

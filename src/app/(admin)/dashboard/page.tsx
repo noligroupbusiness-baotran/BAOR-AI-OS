@@ -6,8 +6,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PendingRow } from "@/components/dashboard/pending-row";
 import { PendingAllButton } from "@/components/dashboard/pending-all";
 import { SystemStatusBar } from "@/components/dashboard/system-status";
-import { getOverview, getPending, getSystemStatus, getTodaySchedule } from "@/lib/dashboard-data";
-import { timelineStatusLabel } from "@/lib/mock/dashboard";
+import { getOverview, getPending, getSystemStatus, getTodaySchedule, timelineStatusLabel } from "@/lib/dashboard-data";
 import { formatDate, cn } from "@/lib/format";
 
 export const metadata = { title: "Điều hành – BAOR AI OS" };

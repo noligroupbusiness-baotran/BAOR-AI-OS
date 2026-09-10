@@ -10,10 +10,11 @@ import { campaignRepo } from "@/lib/campaigns/repository";
 import { campaignStatusLabel, campaignStatusOrder } from "@/lib/campaigns/labels";
 import type { CampaignFilter, CampaignStatus } from "@/lib/campaigns/types";
 import { formatCurrency, formatDate, cn } from "@/lib/format";
+import { Pager, paginate } from "@/components/ui/pager";
 
 export const metadata = { title: "Chiến dịch – BAOR AI OS" };
 
-type Search = { q?: string; status?: string; product?: string; owner?: string; month?: string };
+type Search = { q?: string; status?: string; product?: string; owner?: string; month?: string; page?: string };
 
 export default async function CampaignsPage({ searchParams }: { searchParams: Promise<Search> }) {
   const sp = await searchParams;
@@ -29,6 +30,12 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
   const stats = campaignRepo.stats(today);
   const list = campaignRepo.list(filter);
   const total = filtering ? campaignRepo.list().length : list.length;
+  const paged = paginate(list, sp.page);
+  const hrefFor = (p: number) => {
+    const u = new URLSearchParams(Object.entries(sp).filter((e): e is [string, string] => !!e[1] && e[0] !== "page"));
+    u.set("page", String(p));
+    return `/campaigns?${u.toString()}`;
+  };
   const people = campaignRepo.people();
   const products = campaignRepo.products();
 
@@ -122,7 +129,7 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
           )
         ) : (
           <ul className="m-0 list-none p-0">
-            {list.map((c) => (
+            {paged.items.map((c) => (
               <li key={c.id} className="grid gap-3 border-b border-border px-4 py-3.5 last:border-b-0 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_150px_auto] lg:items-center">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
@@ -153,6 +160,7 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
             ))}
           </ul>
         )}
+        <Pager page={paged.page} pages={paged.pages} total={paged.total} hrefFor={hrefFor} label="chiến dịch" />
       </section>
     </>
   );

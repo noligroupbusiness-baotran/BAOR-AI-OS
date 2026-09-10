@@ -22,6 +22,8 @@ export interface MenuItem {
   label: string;
   description: string;
   icon: LucideIcon;
+  /** Phân hệ còn là trang khung: hiện nhãn "đang xây" trên menu. */
+  building?: boolean;
 }
 
 export const menu: MenuItem[] = [
@@ -32,12 +34,13 @@ export const menu: MenuItem[] = [
   { key: "video-studio", href: "/video-studio", label: "Video Studio", description: "Video gốc, Agent dựng, kiểm tra, phê duyệt, phiên bản theo nền tảng.", icon: Clapperboard },
   { key: "publishing", href: "/publishing", label: "Đăng bài & Quảng cáo", description: "Lịch nội dung, hàng chờ, đã đăng, tài khoản kết nối, quảng cáo.", icon: CalendarClock },
   { key: "customers", href: "/customers", label: "Khách hàng", description: "Lead, khách hàng, phân data, chăm sóc, lịch sử tương tác, đơn hàng.", icon: Users },
-  { key: "automation", href: "/automation", label: "Automation", description: "Quy trình tự động, bản nháp, lịch sử chạy, lỗi cần xử lý.", icon: Workflow },
-  { key: "reports", href: "/reports", label: "Báo cáo", description: "Hiệu quả nội dung, video, quảng cáo, lead, chuyển đổi, doanh thu.", icon: BarChart3 },
+  { key: "automation", href: "/automation", label: "Automation", description: "Quy trình tự động, bản nháp, lịch sử chạy, lỗi cần xử lý.", icon: Workflow, building: true },
+  { key: "reports", href: "/reports", label: "Báo cáo", description: "Hiệu quả nội dung, video, quảng cáo, lead, chuyển đổi, doanh thu.", icon: BarChart3, building: true },
   { key: "settings", href: "/settings", label: "Cài đặt hệ thống", description: "Sản phẩm, thương hiệu, tài khoản nền tảng, nhân sự, AI Agent, bảo mật.", icon: Settings },
 ];
 
 export function findMenuByPath(pathname: string): MenuItem | undefined {
+  if (pathname.startsWith("/search")) return { key: "search", href: "/search", label: "Tìm kiếm", description: "", icon: LayoutDashboard };
   return menu.find((m) => pathname === m.href || pathname.startsWith(m.href + "/"));
 }
 
@@ -47,15 +50,16 @@ export interface CreateAction {
   label: string;
   icon: LucideIcon;
   moduleKey: string;
-  /** Có href = chức năng đã làm việc được, mở thẳng thay vì báo "sắp triển khai". */
-  href?: string;
+  href: string;
+  /** Ghi chú ngắn khi chức năng chưa đầy đủ. */
+  note?: string;
 }
 
 export const createActions: CreateAction[] = [
   { key: "campaign", label: "Tạo chiến dịch", icon: Megaphone, moduleKey: "campaigns", href: "/campaigns/new" },
-  { key: "content", label: "Tạo nội dung", icon: FilePlus2, moduleKey: "content" },
-  { key: "video", label: "Tải video lên", icon: Upload, moduleKey: "video-studio" },
-  { key: "schedule", label: "Lên lịch đăng", icon: CalendarClock, moduleKey: "publishing" },
-  { key: "customer", label: "Thêm khách hàng", icon: UserPlus, moduleKey: "customers" },
-  { key: "automation", label: "Tạo quy trình Automation", icon: Workflow, moduleKey: "automation" },
+  { key: "content", label: "Tạo nội dung", icon: FilePlus2, moduleKey: "content", href: "/content?tab=mine&open=new" },
+  { key: "video", label: "Tải video lên", icon: Upload, moduleKey: "video-studio", href: "/video-studio", note: "chờ Agent" },
+  { key: "schedule", label: "Lên lịch đăng", icon: CalendarClock, moduleKey: "publishing", href: "/content?tab=done" },
+  { key: "customer", label: "Thêm khách hàng", icon: UserPlus, moduleKey: "customers", href: "/customers?tab=leads&add=1" },
+  { key: "automation", label: "Tạo quy trình Automation", icon: Workflow, moduleKey: "automation", href: "/automation", note: "đang xây" },
 ];
