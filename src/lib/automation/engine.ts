@@ -177,6 +177,8 @@ export function runScheduledRules(): { fired: number; errors: number } {
           if (!p.reach || !p.engagement) continue;
           const rate = (p.engagement / p.reach) * 100;
           if (rate < minRate || ranRecently(rule.id, "publication", p.id, 24 * 30)) continue;
+          // Một nội dung chỉ đề xuất một quảng cáo, dù đã đăng trên nhiều kênh hoặc đã có ads đang chạy.
+          if (rule.action === "propose_ad" && db.select().from(schema.adCampaigns).where(eq(schema.adCampaigns.contentId, p.contentId)).all().some((a) => ["proposed", "pending_approval", "active"].includes(a.status))) continue;
           const message = `Bài “${p.title}” đạt ${rate.toFixed(1)}% tương tác (ngưỡng ${minRate}%).`;
           if (rule.action === "propose_ad") {
             const g = getAdGuardrails();
