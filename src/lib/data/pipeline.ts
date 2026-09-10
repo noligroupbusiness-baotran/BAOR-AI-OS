@@ -10,7 +10,7 @@ export const pipelineSteps: PipelineStep[] = [
     owner: "ai",
     status: "done",
     lastRunAt: "2026-09-09T06:00:00+07:00",
-    href: "/research",
+    href: "/insights",
   },
   {
     key: "insights",
@@ -20,7 +20,7 @@ export const pipelineSteps: PipelineStep[] = [
     owner: "ai",
     status: "done",
     lastRunAt: "2026-09-09T06:20:00+07:00",
-    href: "/research",
+    href: "/insights",
   },
   {
     key: "content",

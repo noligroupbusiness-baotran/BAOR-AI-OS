@@ -1,4 +1,5 @@
 import { PageHead, Panel, PanelHeader, Rows, Row } from "@/components/ui/card";
+import { Breadcrumb, ModuleGroups } from "@/components/shell/module-page";
 import { Pill, Score } from "@/components/ui/pill";
 import { Button } from "@/components/ui/button";
 import { Table, Th, Td } from "@/components/ui/table";
@@ -6,7 +7,7 @@ import { aiGenerateIdeas } from "@/lib/actions/content";
 import { listInsights, listPersonas, listResearch } from "@/lib/queries";
 import { formatDateTime } from "@/lib/format";
 
-export const metadata = { title: "Nghiên cứu & insight – BAOR AI OS" };
+export const metadata = { title: "Nghiên cứu & Insight – BAOR AI OS" };
 
 export default function ResearchPage() {
   const research = listResearch();
@@ -15,8 +16,9 @@ export default function ResearchPage() {
 
   return (
     <>
+      <Breadcrumb items={[{ label: "Điều hành", href: "/dashboard" }, { label: "Nghiên cứu & Insight" }]} />
       <PageHead
-        title="Nghiên cứu & insight"
+        title="Nghiên cứu & Insight"
         sub="AI đọc bình luận, inbox và số liệu kênh, gom thành insight để đề xuất nội dung. Kết nối Facebook để AI tự cập nhật."
         action={
           <form action={aiGenerateIdeas}>
@@ -25,7 +27,7 @@ export default function ResearchPage() {
         }
       />
 
-      <Panel className="mt-0">
+      <Panel className="mt-0" id="channels">
         <PanelHeader title="Kênh phù hợp" sub={`Cập nhật ${research[0] ? formatDateTime(research[0].updatedAt) : "—"} · chấm theo mức khớp với khách hàng mục tiêu.`} />
         <Table>
           <thead>
@@ -51,7 +53,7 @@ export default function ResearchPage() {
         </Table>
       </Panel>
 
-      <Panel>
+      <Panel id="personas">
         <PanelHeader title="Chân dung khách hàng" sub="Tỷ lệ trong tập khách và nỗi đau chính." />
         <Rows>
           {personas.map((p) => (
@@ -66,7 +68,7 @@ export default function ResearchPage() {
         </Rows>
       </Panel>
 
-      <Panel>
+      <Panel id="insights">
         <PanelHeader title="Insight đang dùng" sub="Xếp theo độ tin cậy. Bấm nút phía trên để AI bung thành ý tưởng nội dung." />
         <Rows>
           {insights.map((i, idx) => {
@@ -93,6 +95,7 @@ export default function ResearchPage() {
           })}
         </Rows>
       </Panel>
+      <ModuleGroups moduleKey="insights" />
     </>
   );
 }

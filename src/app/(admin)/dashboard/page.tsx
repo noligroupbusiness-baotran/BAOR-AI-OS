@@ -1,176 +1,161 @@
 import Link from "next/link";
-import { PageHead, Panel, PanelHeader, Rows, Row } from "@/components/ui/card";
-import { Pill, Score } from "@/components/ui/pill";
-import { Tiles, Tile } from "@/components/ui/stat";
-import { Button, LinkButton } from "@/components/ui/button";
-import { platformLabel } from "@/components/ui/platform";
-import { claimIdea } from "@/lib/actions/content";
-import { approveAd } from "@/lib/actions/ads";
-import { listActivity, listAds, listContent, listConversations, listInsights, listPosts, pendingCounts } from "@/lib/queries";
-import { contentFormatLabel } from "@/lib/labels";
-import { formatDate, formatDateTime, formatNumber, formatTime, cn } from "@/lib/format";
-import type { Platform } from "@/lib/types";
+import { AlertTriangle, CalendarClock, Clapperboard, FileText, ListChecks } from "lucide-react";
+import { Panel, PanelHeader } from "@/components/ui/card";
+import { Pill } from "@/components/ui/pill";
+import { LinkButton } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { StatusPill } from "@/components/ui/status";
+import { getAgents, getApprovals, getOverview, getRecentActivity, getTimeline } from "@/lib/dashboard-data";
+import { agentStatusLabel, priorityLabel } from "@/lib/mock/dashboard";
+import { formatDate, formatDateTime, cn } from "@/lib/format";
 
 export const metadata = { title: "Điều hành – BAOR AI OS" };
 
-const steps = [
-  { order: 1, title: "Research nền tảng", key: "research", href: "/research" },
-  { order: 2, title: "Insight khách hàng", key: "insights", href: "/research" },
-  { order: 3, title: "AI đề xuất nội dung", key: "content", href: "/content" },
-  { order: 4, title: "Bạn hoàn thiện", key: "creator", href: "/content?tab=mine" },
-  { order: 5, title: "Tự đăng bài", key: "publishing", href: "/publishing" },
-  { order: 6, title: "Tự chạy ads", key: "ads", href: "/publishing" },
-  { order: 7, title: "Kết nối khách", key: "customers", href: "/customers" },
-  { order: 8, title: "Email marketing", key: "email", href: "/customers?tab=email" },
-];
+const weekdays = ["Chủ nhật", "Thứ hai", "Thứ ba", "Thứ tư", "Thứ năm", "Thứ sáu", "Thứ bảy"];
 
 export default function DashboardPage() {
-  const counts = pendingCounts();
-  const pending = counts.ideas + counts.ads + counts.convs;
-  const proposals = listContent(["proposed"]).slice(0, 3);
-  const adsPending = listAds().filter((a) => a.status === "pending_approval");
-  const needHuman = listConversations().filter((c) => c.needsHuman);
-  const posts = listPosts();
-  const upcoming = posts.filter((p) => p.status === "scheduled").sort((a, b) => a.scheduledFor.localeCompare(b.scheduledFor)).slice(0, 4);
-  const published = posts.filter((p) => p.status === "published");
-  const reach = published.reduce((n, p) => n + (p.reach ?? 0), 0);
-  const insights = listInsights();
-  const activity = listActivity(6);
-  const today = new Date();
-  const weekday = ["Chủ nhật", "thứ 2", "thứ 3", "thứ 4", "thứ 5", "thứ 6", "thứ 7"][Number(new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Ho_Chi_Minh", weekday: "short" }).format(today) === "Sun" ? 0 : today.getDay())];
+  const now = new Date();
+  const vnDay = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Ho_Chi_Minh", weekday: "short" }).format(now);
+  const weekday = weekdays[["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(vnDay)] ?? "";
+  const stats = getOverview();
+  const approvals = getApprovals();
+  const timeline = getTimeline();
+  const agents = getAgents();
+  const activity = getRecentActivity();
 
-  const stepState = (key: string) => {
-    if (key === "content") return counts.ideas ? { wait: true, text: `${counts.ideas} chờ bạn` } : { wait: false, text: "Đang chạy" };
-    if (key === "creator") return counts.mine ? { wait: true, text: `${counts.mine} đang làm` } : { wait: false, text: "Trống" };
-    if (key === "ads") return counts.ads ? { wait: true, text: `${counts.ads} chờ duyệt` } : { wait: false, text: "Đang chạy" };
-    if (key === "customers") return counts.convs ? { wait: true, text: `${counts.convs} cần bạn` } : { wait: false, text: "Đang chạy" };
-    if (key === "research" || key === "insights") return { wait: false, text: "Xong" };
-    return { wait: false, text: "Đang chạy" };
-  };
+  const tiles: { label: string; value: number; icon: typeof FileText; href: string; tone?: "amber" | "brick" }[] = [
+    { label: "Nội dung đang thực hiện", value: stats.inProgress, icon: FileText, href: "/content?tab=mine" },
+    { label: "Nội dung chờ duyệt", value: stats.contentPending, icon: ListChecks, href: "/content", tone: stats.contentPending ? "amber" : undefined },
+    { label: "Video chờ duyệt", value: stats.videoPending, icon: Clapperboard, href: "/video-studio", tone: stats.videoPending ? "amber" : undefined },
+    { label: "Lịch đăng hôm nay", value: stats.postsToday, icon: CalendarClock, href: "/publishing" },
+    { label: "Cảnh báo cần xử lý", value: stats.alerts, icon: AlertTriangle, href: "#can-xu-ly", tone: stats.alerts ? "brick" : undefined },
+  ];
 
   return (
     <>
-      <PageHead
-        title={`Hôm nay, ${weekday} · ${formatDate(today.toISOString()).slice(0, 5)}`}
-        sub={pending ? `AI đã chuẩn bị sẵn. Bạn có ${pending} việc cần quyết, còn lại hệ thống tự chạy.` : "Không có việc nào chờ bạn. Hệ thống đang tự chạy."}
-        action={pending ? <LinkButton href="#viec-can-ban" variant="primary" size="md">Xử lý {pending} việc chờ</LinkButton> : undefined}
-      />
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-[20px] font-bold tracking-[-0.01em] text-ink">Điều hành</h1>
+          <p className="mt-1 text-ink-2">
+            {weekday}, {formatDate(now.toISOString())}. {approvals.length ? `Có ${approvals.length} việc cần anh xử lý.` : "Không có việc nào chờ anh."} Agent không xuất bản khi chưa được phê duyệt.
+          </p>
+        </div>
+        {approvals.length > 0 && <LinkButton href="#can-xu-ly" variant="primary" size="md">Xử lý ngay</LinkButton>}
+      </div>
 
-      <Tiles>
-        <Tile label="Tiếp cận 7 ngày" value={formatNumber(reach)} hint={`${published.length} bài đã đăng`} />
-        <Tile label="Insight đang dùng" value={String(insights.length)} hint="Từ bình luận, inbox, CRM" />
-        <Tile label="Ý tưởng chờ bạn" value={String(counts.ideas)} hint="AI đề xuất" />
-        <Tile label="Khách chờ trả lời" value={String(counts.convs)} hint="AI đã chuyển cho bạn" tone={counts.convs ? "brick" : undefined} />
-      </Tiles>
-
-      <div className="mt-3.5 grid grid-cols-4 gap-1.5 md:grid-cols-8" aria-label="Quy trình 8 bước">
-        {steps.map((s) => {
-          const st = stepState(s.key);
+      {/* Hàng chỉ số tổng quan */}
+      <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-5">
+        {tiles.map((t) => {
+          const Icon = t.icon;
           return (
-            <Link
-              key={s.key}
-              href={s.href}
-              className={cn(
-                "card flex min-h-[86px] flex-col gap-1.5 p-2.5 transition-colors hover:border-ink-3",
-                st.wait && "border-amber bg-[color-mix(in_srgb,var(--amber-soft)_55%,var(--surface))]",
-              )}
-            >
-              <span className="text-[10px] font-bold tracking-[0.06em] text-ink-3">BƯỚC {s.order}</span>
-              <span className="text-[12px] font-semibold leading-tight text-ink">{s.title}</span>
-              <span className={cn("mt-auto flex items-center gap-1.5 text-[11px] font-semibold", st.wait ? "text-amber" : "text-ink-2")}>
-                {!st.wait && st.text === "Đang chạy" && <span className="live" style={{ width: 6, height: 6 }} />}
-                {st.text}
-              </span>
+            <Link key={t.label} href={t.href} className="card flex items-start justify-between gap-2 px-3.5 py-3 transition-colors hover:border-ink-3">
+              <div>
+                <div className="text-[12px] font-medium text-ink-2">{t.label}</div>
+                <div className={cn("num mt-1 text-[24px] font-bold tracking-[-0.02em]", t.tone === "brick" ? "text-brick" : t.tone === "amber" ? "text-amber" : "text-ink")}>{t.value}</div>
+              </div>
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-ground-2 text-ink-3"><Icon size={16} aria-hidden /></span>
             </Link>
           );
         })}
       </div>
 
-      <div className="grid gap-3.5 md:grid-cols-[1.6fr_1fr]">
-        <Panel>
-          <div id="viec-can-ban" />
-          <PanelHeader title="Việc cần bạn" sub="Duyệt hoặc nhận làm, mỗi việc một nút." />
-          <Rows>
-            {proposals.map((c) => {
-              const ins = insights.find((i) => i.id === c.insightId);
-              return (
-                <Row
-                  key={c.id}
-                  lead={<Score value={c.score ?? 0} />}
-                  title={c.title}
-                  sub={`Ý tưởng ${contentFormatLabel[c.format]?.toLowerCase() ?? c.format}${ins ? ` · từ insight “${ins.title}”` : ""}`}
-                  action={
-                    <form action={claimIdea}>
-                      <input type="hidden" name="id" value={c.id} />
-                      <Button variant="soft" type="submit">Nhận làm</Button>
-                    </form>
-                  }
-                />
-              );
-            })}
-            {adsPending.map((a) => (
-              <Row
-                key={a.id}
-                lead={<Pill tone="amber">Ads</Pill>}
-                title={a.name}
-                sub={`${formatNumber(a.dailyBudget)} ₫/ngày · ${a.aiNote ?? ""}`}
-                action={
-                  <form action={approveAd}>
-                    <input type="hidden" name="id" value={a.id} />
-                    <Button variant="primary" type="submit">Duyệt chạy</Button>
-                  </form>
-                }
-              />
-            ))}
-            {needHuman.map((c) => (
-              <Row
-                key={c.id}
-                lead={<Pill tone="brick">Inbox</Pill>}
-                title={c.leadName}
-                sub={`“${c.messages[c.messages.length - 1]?.text ?? ""}”`}
-                action={<LinkButton href={`/customers?conv=${c.id}`}>Trả lời</LinkButton>}
-              />
-            ))}
-            {pending === 0 && <li className="px-4 py-6 text-center text-[12.5px] text-ink-2">Không có việc nào chờ bạn.</li>}
-          </Rows>
+      <div className="grid gap-3.5 xl:grid-cols-[1.5fr_1fr]">
+        {/* Cần anh xử lý */}
+        <Panel id="can-xu-ly">
+          <PanelHeader title="Cần anh xử lý" sub="Nội dung, video chờ duyệt; lịch đăng cần xác nhận; quy trình gặp lỗi." />
+          {approvals.length === 0 ? (
+            <EmptyState title="Không có việc nào chờ anh" hint="Khi Agent gửi nội dung, video hoặc gặp lỗi, mục đó sẽ hiện ở đây." />
+          ) : (
+            <ul className="m-0 list-none p-0">
+              {approvals.map((a) => {
+                const pr = priorityLabel[a.priority];
+                return (
+                  <li key={a.id} className="grid gap-2 border-b border-border px-4 py-3 last:border-b-0 md:grid-cols-[1fr_auto] md:items-center">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Pill tone={pr.tone}>{pr.label}</Pill>
+                        <span className="truncate text-[13px] font-semibold text-ink">{a.title}</span>
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-ink-2">
+                        <span>{a.module}</span>
+                        <span className={cn(a.actorType === "agent" && "text-violet")}>{a.actor}</span>
+                        <span className="num">{formatDateTime(a.sentAt)}</span>
+                      </div>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <LinkButton href={a.moduleHref} variant="ghost">Xem</LinkButton>
+                      <LinkButton href={a.moduleHref} variant="soft">Xử lý</LinkButton>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </Panel>
 
+        {/* Lịch hoạt động hôm nay */}
         <Panel>
-          <PanelHeader title="Sắp đăng" sub="Theo giờ vàng từng kênh." />
-          <Rows>
-            {upcoming.map((p) => (
-              <Row
-                key={p.id}
-                lead={
-                  <span className="num block text-[12.5px] font-semibold leading-tight text-ink-2">
-                    {formatTime(p.scheduledFor)}
-                    <br />
-                    <small className="font-normal">{formatDate(p.scheduledFor).slice(0, 5)}</small>
-                  </span>
-                }
-                title={p.title}
-                sub={platformLabel(p.platform as Platform)}
-              />
-            ))}
-            {upcoming.length === 0 && <li className="px-4 py-6 text-center text-[12.5px] text-ink-2">Chưa có bài nào được lên lịch.</li>}
-          </Rows>
+          <PanelHeader title="Lịch hoạt động hôm nay" sub="Đăng bài, xuất bản video, chiến dịch, việc sắp đến hạn." />
+          {timeline.length === 0 ? (
+            <EmptyState title="Hôm nay chưa có hoạt động" />
+          ) : (
+            <ol className="m-0 list-none p-0">
+              {timeline.map((t, i) => (
+                <li key={t.id} className="relative flex gap-3 px-4 py-2.5">
+                  {i < timeline.length - 1 && <span className="absolute left-[64px] top-7 h-[calc(100%-8px)] w-px bg-border" aria-hidden />}
+                  <span className="num w-10 shrink-0 pt-0.5 text-[12.5px] font-semibold text-ink-2">{t.time}</span>
+                  <span className={cn("relative mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full border-2 border-surface", t.status === "done" ? "bg-jade" : t.status === "needs_confirm" ? "bg-amber" : "bg-ink-3")} aria-hidden />
+                  <div className="min-w-0">
+                    <div className={cn("text-[13px]", t.status === "done" ? "text-ink-2" : "text-ink")}>{t.title}</div>
+                    <div className="mt-0.5 text-[11.5px] text-ink-3">
+                      {t.status === "done" ? "Đã xong" : t.status === "needs_confirm" ? "Cần anh xác nhận trước khi Agent thực hiện" : "Sắp tới"}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
         </Panel>
       </div>
 
-      <Panel>
-        <PanelHeader title="Hoạt động gần đây" />
-        <ul className="m-0 list-none p-0">
-          {activity.map((a) => (
-            <li key={a.id} className="flex items-start gap-3 border-b border-border px-4 py-2 text-[12.5px] last:border-b-0">
-              <span className="num w-[84px] shrink-0 whitespace-nowrap text-ink-3">{formatDateTime(a.at)}</span>
-              <Pill tone={a.actor === "ai" ? "violet" : a.actor === "human" ? "amber" : "neutral"}>
-                {a.actor === "ai" ? "AI" : a.actor === "human" ? "Bạn" : "Hệ thống"}
-              </Pill>
-              <span className="text-ink">{a.message}</span>
-            </li>
-          ))}
-        </ul>
-      </Panel>
+      <div className="grid gap-3.5 xl:grid-cols-2">
+        {/* Trạng thái AI Agent */}
+        <Panel>
+          <PanelHeader title="Trạng thái AI Agent" sub="Agent chỉ chuẩn bị và đề xuất. Mọi việc xuất bản đều chờ anh phê duyệt." />
+          <ul className="m-0 list-none p-0">
+            {agents.map((ag) => {
+              const st = agentStatusLabel[ag.status];
+              return (
+                <li key={ag.id} className="flex items-center gap-3 border-b border-border px-4 py-2.5 last:border-b-0">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[13px] font-semibold text-ink">{ag.name}</div>
+                    <div className="truncate text-[12px] text-ink-2">{ag.task}</div>
+                  </div>
+                  <StatusPill status={ag.status === "active" ? "active" : ag.status === "needs_approval" ? "pending" : ag.status === "error" ? "error" : "disabled"} label={st.label} />
+                </li>
+              );
+            })}
+          </ul>
+        </Panel>
+
+        {/* Hoạt động gần đây */}
+        <Panel>
+          <PanelHeader title="Hoạt động gần đây" sub="Ai vừa tạo, duyệt, lên lịch; Agent vừa hoàn thành; lỗi vừa xuất hiện." />
+          {activity.length === 0 ? (
+            <EmptyState title="Chưa có hoạt động" />
+          ) : (
+            <ul className="m-0 list-none p-0">
+              {activity.map((a) => (
+                <li key={a.id} className="flex items-start gap-3 border-b border-border px-4 py-2 text-[12.5px] last:border-b-0">
+                  <span className="num w-[84px] shrink-0 whitespace-nowrap text-ink-3">{formatDateTime(a.at)}</span>
+                  <Pill tone={a.actor === "ai" ? "violet" : a.actor === "human" ? "amber" : "neutral"}>{a.actor === "ai" ? "Agent" : a.actor === "human" ? "Anh" : "Hệ thống"}</Pill>
+                  <span className="text-ink">{a.message}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Panel>
+      </div>
     </>
   );
 }

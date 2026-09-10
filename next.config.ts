@@ -5,6 +5,10 @@ const nextConfig: NextConfig = {
   output: "standalone",
   // better-sqlite3 là module native, không bundle vào server.
   serverExternalPackages: ["better-sqlite3"],
+  // Đường dẫn cũ
+  async redirects() {
+    return [{ source: "/research", destination: "/insights", permanent: true }];
+  },
 };
 
 export default nextConfig;

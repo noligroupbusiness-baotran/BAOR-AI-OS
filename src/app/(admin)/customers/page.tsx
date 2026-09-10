@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { PageHead, Panel, PanelHeader } from "@/components/ui/card";
+import { Breadcrumb, ModuleGroups } from "@/components/shell/module-page";
 import { Pill } from "@/components/ui/pill";
 import { Button } from "@/components/ui/button";
 import { Segment } from "@/components/ui/segment";
@@ -28,6 +29,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
 
   return (
     <>
+      <Breadcrumb items={[{ label: "Điều hành", href: "/dashboard" }, { label: "Khách hàng" }]} />
       <PageHead
         title="Khách hàng & email"
         sub="AI trả lời bình luận và inbox theo giọng của bạn, tạo lead, và chuyển cho bạn khi khách sẵn sàng chốt."
@@ -187,6 +189,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
           </Table>
         </Panel>
       )}
+      <ModuleGroups moduleKey="customers" />
     </>
   );
 }

@@ -25,9 +25,63 @@
   --sky: #2f5fd0;
   --sky-soft: #e1e8fa;
   --shadow: 0 1px 2px rgba(26, 31, 27, 0.05);
-  --sidebar-w: 236px;
+  --sidebar-w: 240px;
+  --sidebar-collapsed-w: 64px;
+  --topbar-h: 56px;
   --radius: 8px;
   color-scheme: light;
+}
+
+/* Chế độ tối: bảng màu tham khảo của BAOR AI OS */
+:root[data-theme="dark"] {
+  --ground: #121713;
+  --ground-2: #171d18;
+  --surface: #1a1f1b;
+  --border: #283029;
+  --border-2: #384139;
+  --ink: #ffffff;
+  --ink-2: #9aa19b;
+  --ink-3: #6f776f;
+  --jade: #1e7a4b;
+  --jade-2: #155d38;
+  --jade-soft: #1c3a29;
+  --jade-ink: #ddefe3;
+  --amber: #d9a441;
+  --amber-soft: #3a2d14;
+  --brick: #e0665f;
+  --brick-soft: #3d1f1d;
+  --violet: #a48ee6;
+  --violet-soft: #2b2340;
+  --sky: #7ea0f0;
+  --sky-soft: #1d2740;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) {
+    --ground: #121713;
+    --ground-2: #171d18;
+    --surface: #1a1f1b;
+    --border: #283029;
+    --border-2: #384139;
+    --ink: #ffffff;
+    --ink-2: #9aa19b;
+    --ink-3: #6f776f;
+    --jade: #1e7a4b;
+    --jade-2: #155d38;
+    --jade-soft: #1c3a29;
+    --jade-ink: #ddefe3;
+    --amber: #d9a441;
+    --amber-soft: #3a2d14;
+    --brick: #e0665f;
+    --brick-soft: #3d1f1d;
+    --violet: #a48ee6;
+    --violet-soft: #2b2340;
+    --sky: #7ea0f0;
+    --sky-soft: #1d2740;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+    color-scheme: dark;
+  }
 }
 
 @theme inline {
@@ -115,3 +169,43 @@ body {
     animation: none;
   }
 }
+
+/* Tooltip khi sidebar thu gọn */
+[data-tip] {
+  position: relative;
+}
+[data-tip]:hover::after,
+[data-tip]:focus-visible::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap;
+  background: var(--ink);
+  color: var(--ground);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 6px;
+  z-index: 60;
+  pointer-events: none;
+}
+
+/* Khung xương khi đang tải */
+@keyframes shimmer {
+  0% { opacity: 0.55; }
+  50% { opacity: 1; }
+  100% { opacity: 0.55; }
+}
+.skeleton {
+  background: var(--ground-2);
+  border-radius: 6px;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
+}
+
+/* Tránh cuộn ngang ngoài ý muốn */
+html, body { overflow-x: hidden; }

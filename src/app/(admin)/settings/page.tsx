@@ -1,4 +1,5 @@
 import { PageHead, Panel, PanelHeader, Rows, Row } from "@/components/ui/card";
+import { Breadcrumb, ModuleGroups } from "@/components/shell/module-page";
 import { Pill } from "@/components/ui/pill";
 import { Button, LinkButton } from "@/components/ui/button";
 import { clearSampleData, disconnectIntegration, resetSampleData, saveAccount, saveBrand, saveIntegration, toggleAutomation } from "@/lib/actions/settings";
@@ -40,9 +41,10 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 
   return (
     <>
-      <PageHead title="Cài đặt" sub="Kết nối nền tảng, bật tắt từng bước tự động, thương hiệu và tài khoản quản trị." />
+      <Breadcrumb items={[{ label: "Điều hành", href: "/dashboard" }, { label: "Cài đặt hệ thống" }]} />
+      <PageHead title="Cài đặt hệ thống" sub="Kết nối nền tảng, bật tắt từng bước tự động, thương hiệu và tài khoản quản trị." />
 
-      <Panel className="mt-0">
+      <Panel className="mt-0" id="integrations">
         <PanelHeader title="Kết nối" sub="Khóa và token được lưu trong cơ sở dữ liệu trên máy chủ của bạn, không hiển thị lại." />
         <Rows>
           {integrations.map((i) => {
@@ -87,7 +89,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         </Rows>
       </Panel>
 
-      <Panel>
+      <Panel id="automation">
         <PanelHeader title="Tự động hóa" sub="Bước có nhãn ‘cần bạn duyệt’ luôn chờ bạn trước khi thực hiện." />
         <Rows>
           {automationSettings.map((s) => {
@@ -119,7 +121,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       </Panel>
 
       <div className="grid gap-3.5 md:grid-cols-2">
-        <Panel>
+        <Panel id="brand">
           <PanelHeader title="Thương hiệu & giọng văn" sub="AI dùng thông tin này khi viết nội dung và trả lời khách." />
           <form action={saveBrand} className="grid gap-3 p-4">
             <label className="block"><span className="lbl">Tên thương hiệu</span><input name="name" defaultValue={brand.name} className={input} placeholder="VD: BAOR Skincare" /></label>
@@ -129,7 +131,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           </form>
         </Panel>
 
-        <Panel>
+        <Panel id="account">
           <PanelHeader title="Tài khoản quản trị" sub="Đổi email hoặc mật khẩu đăng nhập. Cần mật khẩu hiện tại để xác nhận." />
           <form action={saveAccount} className="grid gap-3 p-4">
             <label className="block"><span className="lbl">Email đăng nhập</span><input name="email" type="email" defaultValue={adminEmail} className={input} /></label>
@@ -147,6 +149,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           <form action={resetSampleData}><Button type="submit" variant="ghost">Nạp lại dữ liệu mẫu</Button></form>
         </div>
       </Panel>
+      <ModuleGroups moduleKey="settings" />
     </>
   );
 }

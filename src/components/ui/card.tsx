@@ -1,7 +1,7 @@
 import { cn } from "@/lib/format";
 
-export function Panel({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <section className={cn("card mt-3.5 overflow-hidden", className)}>{children}</section>;
+export function Panel({ children, className, id }: { children: React.ReactNode; className?: string; id?: string }) {
+  return <section id={id} className={cn("card mt-3.5 overflow-hidden scroll-mt-20", className)}>{children}</section>;
 }
 
 export function PanelHeader({ title, sub, action }: { title: string; sub?: string; action?: React.ReactNode }) {

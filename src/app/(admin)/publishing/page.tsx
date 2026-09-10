@@ -1,4 +1,5 @@
 import { PageHead, Panel, PanelHeader } from "@/components/ui/card";
+import { Breadcrumb, ModuleGroups } from "@/components/shell/module-page";
 import { Pill } from "@/components/ui/pill";
 import { Button } from "@/components/ui/button";
 import { Tiles, Tile } from "@/components/ui/stat";
@@ -39,6 +40,7 @@ export default async function PublishingPage({ searchParams }: { searchParams: P
 
   return (
     <>
+      <Breadcrumb items={[{ label: "Điều hành", href: "/dashboard" }, { label: "Đăng bài & Quảng cáo" }]} />
       <PageHead
         title="Đăng bài & quảng cáo"
         sub="Bài đã duyệt tự đăng đúng giờ. Bài tốt được đề xuất chạy ads, nhưng tiền chỉ tiêu khi bạn duyệt."
@@ -146,6 +148,7 @@ export default async function PublishingPage({ searchParams }: { searchParams: P
           <Button variant="primary" type="submit">Lưu hạn mức</Button>
         </form>
       </Panel>
+      <ModuleGroups moduleKey="publishing" />
     </>
   );
 }
