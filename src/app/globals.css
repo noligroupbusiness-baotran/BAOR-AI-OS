@@ -12,6 +12,7 @@
   --ink: #1a1f1b;
   --ink-2: #5e655f;
   --ink-3: #9aa19b;
+  --brand-caption: #6a7069;
   --jade: #1e7a4b;
   --jade-2: #155d38;
   --jade-soft: #ddefe3;
@@ -42,6 +43,7 @@
   --ink: #ffffff;
   --ink-2: #aab2ab;
   --ink-3: #8a928b;
+  --brand-caption: #b8a271;
   --jade: #1e7a4b;
   --jade-2: #155d38;
   --jade-soft: #1c3a29;
@@ -67,6 +69,7 @@
     --ink: #ffffff;
     --ink-2: #aab2ab;
     --ink-3: #8a928b;
+    --brand-caption: #b8a271;
     --jade: #1e7a4b;
     --jade-2: #155d38;
     --jade-soft: #1c3a29;
@@ -93,6 +96,7 @@
   --color-ink: var(--ink);
   --color-ink-2: var(--ink-2);
   --color-ink-3: var(--ink-3);
+  --color-brand-caption: var(--brand-caption);
   --color-jade: var(--jade);
   --color-jade-2: var(--jade-2);
   --color-jade-soft: var(--jade-soft);

@@ -1,6 +1,6 @@
 import { cn } from "@/lib/format";
 
-// Logo góc trái: chữ BAOR (ảnh, hai biến thể theo nền) + dòng phụ bằng chữ giao diện.
+// Logo góc trái: chữ BAOR (ảnh, hai biến thể theo nền) + dòng phụ "Marketing Automation System" giãn bằng chiều rộng logo.
 // Lớp only-light / only-dark (globals.css) chọn biến thể theo chế độ màu. Không có ảnh thì hiện ô chữ B.
 export interface BrandLogos {
   /** Chữ tối, dùng trên nền sáng. */
@@ -39,15 +39,20 @@ export function BrandMark({ logos, collapsed, className }: { logos: BrandLogos; 
         <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-jade text-[14px] font-bold text-white">B</div>
         <div className="min-w-0 leading-tight">
           <div className="truncate text-[13px] font-bold text-ink">BAOR AI OS</div>
-          <div className="truncate text-[11px] text-ink-2">Marketing Automation</div>
+          <div className="truncate text-[11px] text-ink-2">Marketing Automation System</div>
         </div>
       </div>
     );
   }
   return (
-    <div className={cn("flex min-w-0 flex-col gap-[3px]", className)} title="BAOR AI OS">
-      <Pair light={logos.light} dark={logos.dark} className="h-[24px] w-auto max-w-[150px] object-contain object-left" alt="BAOR" />
-      <div className="truncate text-[9.5px] font-semibold uppercase tracking-[0.18em] text-ink-3">Marketing Automation</div>
+    <div className={cn("flex w-fit min-w-0 flex-col gap-[5px]", className)} title="BAOR Marketing Automation System">
+      <Pair light={logos.light} dark={logos.dark} className="h-[26px] w-auto max-w-[150px] object-contain object-left" alt="BAOR" />
+      {/* Dòng phụ giãn chữ đúng bằng chiều rộng logo (textLength), nên luôn cân với logo dù kích thước ảnh khác nhau. */}
+      <svg width="100%" height="10" aria-hidden className="block fill-brand-caption">
+        <text x="0" y="9" textLength="100%" lengthAdjust="spacing" fontSize="8.5" fontWeight="600" fontFamily="var(--font-sans)">
+          MARKETING AUTOMATION SYSTEM
+        </text>
+      </svg>
     </div>
   );
 }
