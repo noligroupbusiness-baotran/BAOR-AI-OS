@@ -15,13 +15,22 @@ Kèm **Hộp chờ duyệt** gom mọi việc cần chủ fanpage quyết địn
 
 ## Chạy thử
 
+Tạo tệp `.env.local` ở thư mục gốc (tệp này không đưa lên git):
+
 ```bash
-cp .env.example .env.local   # rồi sửa ADMIN_EMAIL, ADMIN_PASSWORD, AUTH_SECRET
+ADMIN_EMAIL=ban@email.com
+ADMIN_PASSWORD=mat-khau-cua-ban
+AUTH_SECRET=chuoi-ngau-nhien-dai      # sinh bằng: openssl rand -hex 32
+```
+
+Rồi chạy:
+
+```bash
 npm install
 npm run dev                  # http://localhost:3000
 ```
 
-Tài khoản đăng nhập đọc từ `.env.local`. Sinh khóa ký cookie: `openssl rand -hex 32`.
+Nếu chưa có `.env.local`, hệ thống dùng tài khoản mặc định trong `src/lib/auth.ts` (chỉ dành cho phát triển, hãy đổi trước khi triển khai thật).
 
 ## Công nghệ
 
