@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertOctagon, CalendarCheck, Clapperboard, FileText, MessageSquare } from "lucide-react";
+import { AlertOctagon, CalendarCheck, ChevronRight, Clapperboard, FileText, MessageSquare } from "lucide-react";
 import { Pill } from "@/components/ui/pill";
 import { kindLabel, priorityLabel, type ApprovalItem } from "@/lib/mock/dashboard";
 import type { PendingItem } from "@/lib/dashboard-data";
@@ -42,6 +42,7 @@ export function PendingRow({ item, compact }: { item: PendingItem; compact?: boo
         <span className="hidden shrink-0 rounded-full border border-border-2 px-3 py-1 text-[12px] font-medium text-ink transition-colors group-hover:border-jade group-hover:text-jade sm:inline-flex">
           Xem và xử lý
         </span>
+        <ChevronRight size={16} className="shrink-0 text-ink-3 sm:hidden" aria-label="Xem và xử lý" />
       </Link>
     </li>
   );

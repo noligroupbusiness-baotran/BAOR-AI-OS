@@ -68,10 +68,25 @@ export function getPending(): PendingItem[] {
     .map((a) => ({ ...a, waited: waitedLabel(a.sentAt, now) }));
 }
 
-// Tối đa N lịch của hôm nay: ưu tiên việc chưa xong tính từ giờ hiện tại, thiếu thì bù việc đã xong.
+// Tối đa N lịch của hôm nay: lịch đăng thật trong CSDL + DỮ LIỆU MẪU (video, chiến dịch, việc của tôi).
+// Ưu tiên việc chưa xong tính từ giờ hiện tại, thiếu thì bù việc đã xong.
 export function getTodaySchedule(limit = 5): TimelineItem[] {
-  const nowHm = new Intl.DateTimeFormat("en-GB", { timeZone: TIME_ZONE, hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
-  const sorted = [...mockTimeline].sort((a, b) => a.time.localeCompare(b.time));
+  const now = new Date();
+  const today = dateKey(now);
+  const nowHm = new Intl.DateTimeFormat("en-GB", { timeZone: TIME_ZONE, hour: "2-digit", minute: "2-digit", hour12: false }).format(now);
+  const platformName: Record<string, string> = { facebook: "Facebook", tiktok: "TikTok", instagram: "Instagram", youtube: "YouTube", zalo: "Zalo" };
+  const fromDb: TimelineItem[] = listPosts()
+    .filter((p) => dateKey(p.scheduledFor) === today)
+    .map((p) => ({
+      id: `post-${p.id}`,
+      time: new Intl.DateTimeFormat("en-GB", { timeZone: TIME_ZONE, hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(p.scheduledFor)),
+      title: `${p.status === "failed" ? "Đăng lỗi" : "Đăng bài"} “${p.title}”`,
+      kind: "post",
+      platform: platformName[p.platform.toLowerCase()] ?? p.platform,
+      status: p.status === "published" || p.status === "failed" ? "done" : "upcoming",
+    }));
+  const mock = mockTimeline.filter((t) => t.kind !== "post"); // bài đăng mẫu nhường chỗ cho bài đăng thật
+  const sorted = [...fromDb, ...mock].sort((a, b) => a.time.localeCompare(b.time));
   const upcoming = sorted.filter((t) => t.status !== "done" && t.time >= nowHm);
   const rest = sorted.filter((t) => !upcoming.includes(t)).reverse();
   return [...upcoming, ...rest].slice(0, limit).sort((a, b) => a.time.localeCompare(b.time));

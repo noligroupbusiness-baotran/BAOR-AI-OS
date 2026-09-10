@@ -29,7 +29,7 @@ export default function DashboardPage() {
     { label: "Chờ tôi duyệt", value: stats.pendingApproval, icon: ListChecks, href: "#cho-toi-xu-ly", tone: stats.pendingApproval ? "amber" : undefined },
     { label: "Lịch đăng hôm nay", value: stats.postsToday, icon: CalendarClock, href: "/publishing" },
     { label: "Lead mới hôm nay", value: stats.leadsToday, icon: UserPlus, href: "/customers?tab=leads" },
-    { label: "Cảnh báo", value: stats.alerts, icon: AlertTriangle, href: "#cho-toi-xu-ly", tone: stats.alerts ? "brick" : undefined },
+    { label: "Cảnh báo", value: stats.alerts, icon: AlertTriangle, href: "#tinh-trang-he-thong", tone: stats.alerts ? "brick" : undefined },
   ];
 
   return (
@@ -55,10 +55,10 @@ export default function DashboardPage() {
         })}
       </div>
 
-      <div className="grid gap-3.5 lg:grid-cols-[2fr_1fr] lg:items-start">
+      <div className="mt-3.5 grid gap-3.5 lg:grid-cols-[2fr_1fr] lg:items-start">
         {/* 2. Chờ tôi xử lý: tối đa 5 việc ưu tiên nhất */}
-        <Panel id="cho-toi-xu-ly">
-          <PanelHeader title="Chờ tôi xử lý" sub={pending.length ? `${Math.min(5, pending.length)} việc ưu tiên nhất trong ${pending.length} việc.` : "Không có việc nào."} />
+        <Panel id="cho-toi-xu-ly" className="mt-0">
+          <PanelHeader title="Chờ tôi xử lý" sub={pending.length > 5 ? `5 việc ưu tiên nhất trong ${pending.length} việc.` : pending.length ? `${pending.length} việc đang chờ.` : "Không có việc nào."} />
           {top.length === 0 ? (
             <EmptyState title="Hiện không có việc nào chờ anh xử lý" hint="Khi Agent gửi nội dung, video, lịch đăng hoặc gặp lỗi, mục đó sẽ hiện ở đây." />
           ) : (
@@ -74,7 +74,7 @@ export default function DashboardPage() {
         </Panel>
 
         {/* 3. Hôm nay: tối đa 5 hoạt động gần nhất */}
-        <Panel>
+        <Panel className="mt-0">
           <PanelHeader title="Hôm nay" sub="Hoạt động gần nhất hoặc sắp diễn ra." />
           {schedule.length === 0 ? (
             <EmptyState title="Hôm nay chưa có lịch" />

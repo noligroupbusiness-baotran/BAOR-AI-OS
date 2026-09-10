@@ -13,7 +13,7 @@ export function SystemStatusBar({ status }: { status: SystemStatus }) {
   const dot = status.level === "error" ? "bg-brick" : status.level === "warn" ? "bg-amber" : "bg-jade";
   return (
     <>
-      <div className="card mt-3.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5 text-[12.5px]">
+      <div id="tinh-trang-he-thong" className="card mt-3.5 scroll-mt-20 flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5 text-[12.5px]">
         <span className={cn("live inline-block h-2 w-2 shrink-0 rounded-full", dot)} aria-hidden />
         <span className="font-semibold text-ink">Tình trạng hệ thống</span>
         <span className="text-ink-2">{status.summary}</span>
