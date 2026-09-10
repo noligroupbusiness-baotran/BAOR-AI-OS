@@ -32,7 +32,6 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const tab = tabs.some((t) => t.key === sp.tab) ? sp.tab! : "overview";
   const f: ReportFilter = { month: sp.month && /^\d{4}-\d{2}$/.test(sp.month) ? sp.month : undefined, campaignId: sp.campaign || undefined };
   const filtering = !!(f.month || f.campaignId);
-  const qs = (t: string) => `/reports?tab=${t}${f.month ? `&month=${f.month}` : ""}${f.campaignId ? `&campaign=${f.campaignId}` : ""}`;
   const campaigns = campaignRepo.list();
   const rows = campaignRows(f);
   const totals = { leads: rows.reduce((n, r) => n + r.leads, 0), orders: rows.reduce((n, r) => n + r.orders, 0), revenue: rows.reduce((n, r) => n + r.revenue, 0), spent: rows.reduce((n, r) => n + r.spent, 0) };

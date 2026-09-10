@@ -146,6 +146,9 @@ export const insights = sqliteTable("insights", {
   personaId: text("persona_id"),
   createdAt: text("created_at").notNull(),
   usedInContent: integer("used_in_content").notNull().default(0),
+  status: text("status").notNull().default("approved"), // proposed (AI rút ra, chờ duyệt) | approved | rejected
+  origin: text("origin").notNull().default("seed"), // seed | ai | manual
+  evidence: text("evidence").notNull().default("[]"), // JSON string[]: trích dẫn / nguồn cụ thể
 });
 
 export const platformResearch = sqliteTable("platform_research", {

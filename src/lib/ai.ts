@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { getBrand, listInsights, listPersonas } from "@/lib/queries";
 import { readIntegrationConfig } from "@/lib/connectors/config";
@@ -59,7 +59,7 @@ function describeError(e: unknown): string {
 function brandContext() {
   const b = getBrand();
   const personas = listPersonas();
-  const insights = listInsights();
+  const insights = listInsights().filter((i) => i.status === "approved");
   return [
     `Thương hiệu: ${b.name || "(chưa đặt tên)"}. Sản phẩm/dịch vụ: ${b.products || "(chưa mô tả)"}.`,
     `Giọng văn: ${b.voice || "gần gũi, chân thật"}.`,
@@ -191,4 +191,73 @@ export async function suggestReply(conversationId: string): Promise<Result<{ tex
   } catch (e) {
     return { ok: false, error: describeError(e) };
   }
+}
+
+
+// ---------- Trợ lý: câu hỏi tự do trên ảnh chụp dữ liệu hệ thống ----------
+export async function askAi(question: string, snapshot: string, history: string): Promise<Result<{ text: string }>> {
+  const gated = await gate("assistant", `Trợ lý: “${question.slice(0, 80)}”`, (client) =>
+    client.messages.create({
+      model: MODEL,
+      max_tokens: 1500,
+      output_config: { effort: "low" },
+      system:
+        "Bạn là trợ lý vận hành marketing trong hệ thống BAOR AI OS. Chỉ trả lời dựa trên DỮ LIỆU HỆ THỐNG được cung cấp; không bịa số. Nếu dữ liệu không đủ, nói rõ thiếu gì và gợi ý mở phân hệ nào. Trả lời tiếng Việt, ngắn gọn, có gạch đầu dòng khi liệt kê. Không đưa ra quyết định chi tiền hay xuất bản; chỉ đề xuất để người duyệt.",
+      messages: [{ role: "user", content: `DỮ LIỆU HỆ THỐNG:\n${snapshot}\n\nHỘI THOẠI TRƯỚC:\n${history || "(chưa có)"}\n\nCÂU HỎI: ${question}` }],
+    }),
+  );
+  if (!gated.ok) return gated;
+  const res = gated.res;
+  if (res.stop_reason === "refusal") return { ok: false, error: "AI từ chối yêu cầu này." };
+  const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("\n").trim();
+  return { ok: true, text };
+}
+
+// ---------- Rút insight từ dữ liệu thật, kèm bằng chứng, chờ người duyệt ----------
+const InsightsSchema = z.object({
+  insights: z.array(
+    z.object({
+      title: z.string(),
+      detail: z.string(),
+      confidence: z.number().int().min(0).max(100),
+      source: z.string(),
+      evidence: z.array(z.string()).min(1),
+      personaId: z.string().nullable(),
+    }),
+  ),
+});
+
+export async function extractInsights(): Promise<Result<{ count: number }>> {
+  const db = getDb();
+  const msgs = db.select().from(schema.messages).orderBy(desc(schema.messages.at)).limit(120).all().filter((m) => m.from === "customer");
+  const leads = db.select().from(schema.leads).orderBy(desc(schema.leads.lastMessageAt)).limit(60).all();
+  const posts = db.select().from(schema.scheduledPosts).all().filter((p) => p.status === "published" && p.reach);
+  const personas = listPersonas();
+  if (msgs.length + leads.length + posts.length < 5) return { ok: false, error: "Chưa đủ dữ liệu (inbox, lead, bài đăng) để rút insight. Kết nối nền tảng hoặc nhập lead trước." };
+  const data = [
+    `Tin nhắn khách (${msgs.length}):\n${msgs.map((m) => `- [msg ${m.id}] ${m.text}`).join("\n")}`,
+    `Lead (${leads.length}):\n${leads.map((l) => `- [lead ${l.id}] ${l.name} · ${l.source}/${l.platform} · ${l.stage} · "${l.lastMessage}" · nhãn ${l.tags}`).join("\n")}`,
+    `Bài đã đăng:\n${posts.map((p) => `- [post ${p.id}] "${p.title}" ${p.platform}: reach ${p.reach}, tương tác ${p.engagement}`).join("\n")}`,
+    `Nhóm khách hàng có sẵn: ${personas.map((p) => `${p.id}=${p.name}`).join("; ") || "(chưa có)"}`,
+  ].join("\n\n");
+  const gated = await gate("research", "AI rút insight từ inbox, lead, bài đăng", (client) =>
+    client.messages.parse({
+      model: MODEL,
+      max_tokens: 6000,
+      system:
+        "Bạn là chuyên viên nghiên cứu khách hàng. Từ dữ liệu thô, rút ra 2–5 insight cụ thể, có thể hành động, tiếng Việt. Mỗi insight PHẢI kèm evidence là trích dẫn / mã bản ghi có trong dữ liệu (dạng [msg id], [lead id], [post id]); không suy đoán ngoài dữ liệu. confidence phản ánh số bằng chứng. personaId chỉ dùng id có trong danh sách, không có thì null. source ghi rõ loại dữ liệu và số lượng (VD: '18 tin nhắn inbox tuần này').",
+      messages: [{ role: "user", content: data }],
+      output_config: { format: zodOutputFormat(InsightsSchema) },
+    }),
+  );
+  if (!gated.ok) return gated;
+  const list = gated.res.parsed_output?.insights ?? [];
+  const validPersona = new Set(personas.map((p) => p.id));
+  const now = new Date().toISOString();
+  for (const i of list) {
+    db.insert(schema.insights)
+      .values({ id: `i_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, title: i.title, detail: i.detail, confidence: i.confidence, source: i.source, personaId: i.personaId && validPersona.has(i.personaId) ? i.personaId : null, createdAt: now, usedInContent: 0, status: "proposed", origin: "ai", evidence: JSON.stringify(i.evidence) })
+      .run();
+  }
+  return { ok: true, count: list.length };
 }
