@@ -1,69 +1,19 @@
 import { cn } from "@/lib/format";
 
-export function StatTile({
-  label,
-  value,
-  delta,
-  hint,
-  className,
-}: {
-  label: string;
-  value: string;
-  delta?: number;
-  hint?: string;
-  className?: string;
-}) {
-  const up = (delta ?? 0) >= 0;
+export function Tiles({ children }: { children: React.ReactNode }) {
+  return <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">{children}</div>;
+}
+
+export function Tile({ label, value, delta, hint, tone }: { label: string; value: string; delta?: string; hint?: string; tone?: "brick" }) {
+  const good = delta ? !delta.startsWith("▼") : true;
   return (
-    <div
-      className={cn(
-        "rounded-[var(--radius)] border border-border bg-surface px-4 py-3 shadow-[0_1px_2px_rgba(30,30,20,0.04)]",
-        className,
-      )}
-    >
-      <div className="eyebrow">{label}</div>
-      <div className="mt-1 flex items-baseline gap-2">
-        <div className="text-[20px] font-bold tabular-nums tracking-tight text-ink">{value}</div>
-        {delta !== undefined && (
-          <span
-            className={cn(
-              "text-[11px] font-semibold tabular-nums",
-              up ? "text-primary-text" : "text-red",
-            )}
-          >
-            {up ? "▲" : "▼"} {Math.abs(delta).toFixed(1)}%
-          </span>
-        )}
+    <div className="card px-3.5 py-3">
+      <div className="lbl">{label}</div>
+      <div className={cn("num mt-1 flex items-baseline gap-2 text-[22px] font-bold tracking-[-0.02em]", tone === "brick" ? "text-brick" : "text-ink")}>
+        {value}
+        {delta && <span className={cn("text-[11.5px] font-semibold", good ? "text-jade" : "text-ink-2")}>{delta}</span>}
       </div>
-      {hint && <div className="mt-0.5 text-[11px] text-faint">{hint}</div>}
-    </div>
-  );
-}
-
-export function MiniStat({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return (
-    <div className="min-w-[110px]">
-      <div className="eyebrow">{label}</div>
-      <div className="mt-0.5 text-[15px] font-bold tabular-nums text-ink">{value}</div>
-      {sub && <div className="text-[10.5px] text-faint">{sub}</div>}
-    </div>
-  );
-}
-
-export function ProgressBar({
-  value,
-  tone = "green",
-  className,
-}: {
-  value: number;
-  tone?: "green" | "gold" | "red" | "blue";
-  className?: string;
-}) {
-  const color =
-    tone === "red" ? "bg-red" : tone === "gold" ? "bg-gold" : tone === "blue" ? "bg-blue" : "bg-primary";
-  return (
-    <div className={cn("h-1.5 w-full overflow-hidden rounded-full bg-surface-soft", className)}>
-      <div className={cn("h-full rounded-full", color)} style={{ width: `${Math.min(100, value)}%` }} />
+      {hint && <div className="mt-0.5 text-[11.5px] text-ink-2">{hint}</div>}
     </div>
   );
 }

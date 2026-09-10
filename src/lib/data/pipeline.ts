@@ -20,7 +20,7 @@ export const pipelineSteps: PipelineStep[] = [
     owner: "ai",
     status: "done",
     lastRunAt: "2026-09-09T06:20:00+07:00",
-    href: "/insights",
+    href: "/research",
   },
   {
     key: "content",
@@ -41,7 +41,7 @@ export const pipelineSteps: PipelineStep[] = [
     owner: "human",
     status: "running",
     pendingCount: 2,
-    href: "/content?tab=in_progress",
+    href: "/content?tab=mine",
   },
   {
     key: "publishing",
@@ -61,7 +61,7 @@ export const pipelineSteps: PipelineStep[] = [
     owner: "auto",
     status: "waiting_approval",
     pendingCount: 1,
-    href: "/ads",
+    href: "/publishing",
   },
   {
     key: "customers",
@@ -81,7 +81,7 @@ export const pipelineSteps: PipelineStep[] = [
     owner: "auto",
     status: "running",
     lastRunAt: "2026-09-10T08:00:00+07:00",
-    href: "/email",
+    href: "/customers",
   },
 ];
 

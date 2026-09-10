@@ -1,87 +1,67 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { cn } from "@/lib/format";
-import { navSections } from "./nav";
+import { navItems, settingsItem, type NavItem } from "./nav";
 
-function isActive(pathname: string, search: string, href: string) {
-  const [path, query] = href.split("?");
-  if (pathname !== path) return false;
-  const wantTab = query ? new URLSearchParams(query).get("tab") : null;
-  const curTab = new URLSearchParams(search).get("tab");
-  if (!wantTab) return !curTab;
-  return curTab === wantTab;
+function Item({ item, active }: { item: NavItem; active: boolean }) {
+  return (
+    <Link
+      href={item.href}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition-colors",
+        active ? "bg-jade-soft font-semibold text-jade-ink" : "text-ink-2 hover:bg-surface hover:text-ink",
+      )}
+    >
+      <span
+        className={cn(
+          "grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[5px] border text-[10.5px] font-bold",
+          active ? "border-jade bg-jade text-white" : "border-border bg-surface text-ink-3",
+        )}
+      >
+        {item.mark}
+      </span>
+      <span className="flex-1 truncate">{item.label}</span>
+      {item.badge ? <span className="num text-[11px] font-semibold text-amber">{item.badge}</span> : null}
+    </Link>
+  );
 }
 
 export function Sidebar() {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const search = searchParams.toString();
-
   return (
-    <aside className="fixed inset-y-0 left-0 z-20 hidden w-[var(--sidebar-w)] flex-col border-r border-border bg-bg-elevated md:flex">
-      <div className="flex items-center gap-2.5 px-4 pt-4 pb-3">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-[13px] font-black text-white shadow-sm">
-          B
-        </div>
+    <aside className="sticky top-0 hidden h-screen w-[var(--sidebar-w)] shrink-0 flex-col gap-5 border-r border-border bg-ground-2 px-3 py-[18px] md:flex">
+      <div className="flex items-center gap-2.5 px-1.5">
+        <div className="grid h-[30px] w-[30px] place-items-center rounded-lg bg-jade text-[14px] font-bold text-white">B</div>
         <div className="leading-tight">
           <div className="text-[13px] font-bold text-ink">BAOR AI OS</div>
-          <div className="text-[10.5px] text-faint">Marketing Automation OS</div>
+          <div className="text-[11px] text-ink-2">Marketing cho fanpage</div>
         </div>
       </div>
-
-      <nav className="scroll-thin flex-1 overflow-y-auto px-2 pb-4">
-        {navSections.map((section) => (
-          <div key={section.label} className="mt-3">
-            <div className="eyebrow px-2 pb-1">{section.label}</div>
-            <ul className="space-y-[1px]">
-              {section.items.map((item) => {
-                const active = isActive(pathname, search, item.href);
-                return (
-                  <li key={item.href}>
-                    <Link
-                      href={item.href}
-                      className={cn(
-                        "group flex items-center gap-2 rounded-md px-2 py-[5px] text-[12.5px] transition-colors",
-                        active
-                          ? "bg-primary-soft font-semibold text-primary-text"
-                          : "text-muted hover:bg-surface-soft hover:text-ink",
-                      )}
-                    >
-                      <span className="w-4 text-center text-[13px]" aria-hidden>
-                        {item.emoji}
-                      </span>
-                      <span className="flex-1 truncate">{item.label}</span>
-                      {item.badge !== undefined && item.badge > 0 && (
-                        <span
-                          className={cn(
-                            "rounded-full px-1.5 text-[10px] font-bold tabular-nums",
-                            item.badgeTone === "red"
-                              ? "bg-red-soft text-red"
-                              : item.badgeTone === "gold"
-                                ? "bg-gold-soft text-gold"
-                                : "bg-primary-soft text-primary-text",
-                          )}
-                        >
-                          {item.badge}
-                        </span>
-                      )}
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
+      <nav className="flex flex-col gap-0.5">
+        {navItems.map((item) => (
+          <Item key={item.href} item={item} active={pathname === item.href} />
         ))}
       </nav>
-
-      <div className="border-t border-border px-4 py-3 text-[10.5px] text-faint">
-        <div className="flex items-center gap-1.5">
-          <span className="dot-live inline-block h-1.5 w-1.5 rounded-full bg-primary" />
-          Agent đang chạy · 3 tác vụ nền
+      <div className="mt-auto flex flex-col gap-2">
+        <Item item={settingsItem} active={pathname === settingsItem.href} />
+        <div className="flex items-center gap-1.5 px-1.5 text-[11px] text-ink-3">
+          <span className="live" /> Agent đang chạy nền
         </div>
       </div>
     </aside>
+  );
+}
+
+export function MobileNav() {
+  const pathname = usePathname();
+  return (
+    <nav className="flex gap-1 overflow-x-auto border-b border-border bg-ground-2 px-3 py-2 md:hidden">
+      {[...navItems, settingsItem].map((item) => (
+        <Item key={item.href} item={item} active={pathname === item.href} />
+      ))}
+    </nav>
   );
 }

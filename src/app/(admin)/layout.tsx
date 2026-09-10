@@ -1,7 +1,6 @@
-import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
-import { Sidebar } from "@/components/layout/sidebar";
+import { Sidebar, MobileNav } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -9,13 +8,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   if (!user) redirect("/login");
 
   return (
-    <div className="min-h-screen">
-      <Suspense fallback={null}>
-        <Sidebar />
-      </Suspense>
-      <div className="md:pl-[var(--sidebar-w)]">
+    <div className="flex min-h-screen">
+      <Sidebar />
+      <div className="min-w-0 flex-1">
+        <MobileNav />
         <Topbar email={user.email} />
-        <main className="mx-auto max-w-[1280px] px-5 py-5">{children}</main>
+        <main className="w-full max-w-[1040px] px-4 pb-12 pt-3 md:px-7">{children}</main>
       </div>
     </div>
   );

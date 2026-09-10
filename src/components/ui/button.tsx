@@ -1,48 +1,31 @@
 import Link from "next/link";
 import { cn } from "@/lib/format";
 
-type Variant = "primary" | "secondary" | "ghost" | "danger" | "soft";
-type Size = "xs" | "sm" | "md";
+type Variant = "primary" | "outline" | "soft" | "ghost";
+type Size = "sm" | "md";
 
 const variantClass: Record<Variant, string> = {
-  primary:
-    "bg-primary text-white hover:bg-primary-strong shadow-[0_1px_0_rgba(0,0,0,0.06)] border border-primary-strong/40",
-  secondary: "bg-surface text-ink border border-border-strong hover:bg-surface-soft",
-  ghost: "bg-transparent text-muted hover:bg-surface-soft hover:text-ink",
-  danger: "bg-red-soft text-red border border-red/20 hover:bg-red/15",
-  soft: "bg-primary-soft text-primary-text hover:bg-primary/20 border border-primary/10",
+  primary: "bg-jade border-jade-2 text-white hover:bg-jade-2",
+  outline: "bg-surface border-border-2 text-ink hover:border-ink-3",
+  soft: "bg-jade-soft border-transparent text-jade-ink hover:bg-jade/20",
+  ghost: "bg-transparent border-transparent text-ink-2 hover:bg-ground-2 hover:text-ink",
 };
-
 const sizeClass: Record<Size, string> = {
-  xs: "h-6 px-2 text-[11px] gap-1",
-  sm: "h-7 px-2.5 text-[12px] gap-1.5",
-  md: "h-8.5 px-3.5 text-[13px] gap-2",
+  sm: "h-[26px] px-2.5 text-[12px]",
+  md: "h-8 px-3.5 text-[12.5px]",
 };
-
-interface BaseProps {
-  variant?: Variant;
-  size?: Size;
-  className?: string;
-  children: React.ReactNode;
-}
+const base =
+  "inline-flex cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-full border font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-jade disabled:cursor-not-allowed disabled:opacity-50";
 
 export function Button({
-  variant = "secondary",
+  variant = "outline",
   size = "sm",
   className,
   children,
   ...rest
-}: BaseProps & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+}: { variant?: Variant; size?: Size; className?: string; children: React.ReactNode } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
-    <button
-      className={cn(
-        "inline-flex items-center justify-center rounded-full font-medium whitespace-nowrap transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer",
-        variantClass[variant],
-        sizeClass[size],
-        className,
-      )}
-      {...rest}
-    >
+    <button className={cn(base, variantClass[variant], sizeClass[size], className)} {...rest}>
       {children}
     </button>
   );
@@ -50,21 +33,13 @@ export function Button({
 
 export function LinkButton({
   href,
-  variant = "secondary",
+  variant = "outline",
   size = "sm",
   className,
   children,
-}: BaseProps & { href: string }) {
+}: { href: string; variant?: Variant; size?: Size; className?: string; children: React.ReactNode }) {
   return (
-    <Link
-      href={href}
-      className={cn(
-        "inline-flex items-center justify-center rounded-full font-medium whitespace-nowrap transition-colors",
-        variantClass[variant],
-        sizeClass[size],
-        className,
-      )}
-    >
+    <Link href={href} className={cn(base, variantClass[variant], sizeClass[size], className)}>
       {children}
     </Link>
   );

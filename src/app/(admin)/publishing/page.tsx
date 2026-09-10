@@ -1,228 +1,128 @@
-import { Card, CardHeader } from "@/components/ui/card";
-import { PageHeader } from "@/components/ui/page-header";
-import { Pill, Dot } from "@/components/ui/pill";
+import { PageHead, Panel, PanelHeader } from "@/components/ui/card";
+import { Pill } from "@/components/ui/pill";
 import { Button } from "@/components/ui/button";
-import { FilterTabs } from "@/components/ui/filter-tabs";
-import { StatTile } from "@/components/ui/stat";
+import { Tiles, Tile } from "@/components/ui/stat";
 import { Table, Th, Td } from "@/components/ui/table";
-import { PlatformPill } from "@/components/ui/platform";
+import { platformLabel } from "@/components/ui/platform";
 import { scheduledPosts } from "@/lib/data/content";
-import { postStatusLabel } from "@/lib/labels";
-import { formatDateTime, formatNumber, formatTime, dateKey, cn } from "@/lib/format";
+import { adBudgetGuardrails, adCampaigns } from "@/lib/data/ads";
+import { adStatusLabel, postStatusLabel } from "@/lib/labels";
+import { formatNumber, formatTime, formatDate } from "@/lib/format";
 
-export const metadata = { title: "Lịch đăng – BAOR AI OS" };
+export const metadata = { title: "Đăng bài & quảng cáo – BAOR AI OS" };
 
-const weekDays = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
-// Tuần 07/09 – 13/09/2026 (Thứ 2 là 07/09)
-const weekStart = new Date("2026-09-07T00:00:00+07:00");
-
-export default async function PublishingPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ tab?: string }>;
-}) {
-  const { tab = "calendar" } = await searchParams;
+export default function PublishingPage() {
+  const g = adBudgetGuardrails;
+  const queue = scheduledPosts.filter((p) => p.status === "scheduled");
   const published = scheduledPosts.filter((p) => p.status === "published");
   const failed = scheduledPosts.filter((p) => p.status === "failed");
-  const queue = scheduledPosts
-    .filter((p) => p.status === "scheduled")
-    .sort((a, b) => a.scheduledFor.localeCompare(b.scheduledFor));
+  const avgReach = Math.round(published.reduce((n, p) => n + (p.reach ?? 0), 0) / Math.max(1, published.length));
+  // Gộp bài trùng tên trên nhiều kênh thành một dòng
+  const rows = Object.values(
+    scheduledPosts.reduce<Record<string, { id: string; title: string; at: string; platforms: string[]; status: string; reach?: number; error?: string }>>((acc, p) => {
+      const key = `${p.contentId}-${p.status}`;
+      if (!acc[key]) acc[key] = { id: p.id, title: p.title, at: p.scheduledFor, platforms: [], status: p.status, reach: p.reach, error: p.error };
+      acc[key].platforms.push(platformLabel(p.platform));
+      return acc;
+    }, {}),
+  ).sort((a, b) => b.at.localeCompare(a.at));
 
   return (
     <>
-      <PageHeader
-        emoji="📅"
-        title="Tự động đăng bài"
-        subtitle="Bước 5. Nội dung đã duyệt được xếp vào giờ vàng của từng nền tảng và tự đăng. Sau khi đăng, hệ thống theo dõi reach/tương tác để quyết định có đẩy ads hay không."
-        meta={
-          <>
-            <span className="flex items-center gap-1.5">
-              <Dot tone="green" live /> Scheduler đang chạy
-            </span>
-            <span>·</span>
-            <span>Múi giờ: Asia/Ho_Chi_Minh</span>
-            {failed.length > 0 && (
-              <>
-                <span>·</span>
-                <span className="font-medium text-red">⚠ {failed.length} bài đăng lỗi</span>
-              </>
-            )}
-          </>
-        }
-        actions={
-          <>
-            <Button variant="primary">🤖 Xếp lịch tự động tuần sau</Button>
-            <Button>+ Lên lịch thủ công</Button>
-          </>
-        }
+      <PageHead
+        title="Đăng bài & quảng cáo"
+        sub="Bài đã duyệt tự đăng đúng giờ vàng. Bài tốt được đề xuất chạy ads, nhưng tiền chỉ tiêu khi bạn duyệt."
+        action={<Button variant="primary" size="md">Xếp lịch tuần sau</Button>}
       />
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatTile label="Chờ đăng" value={String(queue.length)} hint="tuần này" />
-        <StatTile label="Đã đăng (7 ngày)" value={String(published.length)} delta={14.3} />
-        <StatTile
-          label="Reach trung bình / bài"
-          value={formatNumber(Math.round(published.reduce((n, p) => n + (p.reach ?? 0), 0) / published.length))}
-          delta={9.8}
-        />
-        <StatTile label="Lỗi đăng" value={String(failed.length)} hint="Token hết hạn" />
-      </div>
+      <Tiles>
+        <Tile label="Chờ đăng" value={String(queue.length)} hint="Tuần này" />
+        <Tile label="Đã đăng 7 ngày" value={String(published.length)} delta="▲ 14%" hint={`Reach TB ${formatNumber(avgReach)} / bài`} />
+        <Tile label="Ads đang chạy" value={String(adCampaigns.filter((a) => a.status === "active").length)} hint="Tối ưu mỗi 6 giờ" />
+        <Tile label="Lỗi đăng" value={String(failed.length)} hint={failed[0]?.error?.split(".")[0] ?? "Không có"} tone={failed.length ? "brick" : undefined} />
+      </Tiles>
 
-      <div className="mt-4">
-        <FilterTabs
-          basePath="/publishing"
-          active={tab}
-          tabs={[
-            { key: "calendar", label: "Lịch tuần", emoji: "🗓️" },
-            { key: "queue", label: "Hàng đợi", emoji: "⏳", count: queue.length },
-            { key: "results", label: "Kết quả", emoji: "📈", count: published.length },
-          ]}
-        />
-      </div>
-
-      {tab === "calendar" && (
-        <Card className="mt-4" padded={false}>
-          <div className="grid grid-cols-7 divide-x divide-border">
-            {weekDays.map((d, i) => {
-              const day = new Date(weekStart.getTime() + i * 86400000);
-              const key = dateKey(day);
-              const dayPosts = scheduledPosts.filter((p) => dateKey(p.scheduledFor) === key);
-              const isToday = i === 3;
+      <Panel>
+        <PanelHeader title="Lịch đăng" sub="Tuần này, mới nhất ở trên." />
+        <Table>
+          <thead>
+            <tr>
+              <Th>Giờ</Th>
+              <Th>Bài</Th>
+              <Th>Kênh</Th>
+              <Th right>Trạng thái</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const st = postStatusLabel[r.status as keyof typeof postStatusLabel];
               return (
-                <div key={d} className={cn("min-h-[220px]", isToday && "bg-primary-soft/30")}>
-                  <div className="flex items-center justify-between border-b border-border px-2.5 py-2">
-                    <span className={cn("text-[11px] font-bold", isToday ? "text-primary-text" : "text-faint")}>
-                      {d}
-                    </span>
-                    <span className={cn("text-[12px] font-semibold tabular-nums", isToday ? "text-primary-text" : "text-ink")}>
-                      {key.slice(8, 10)}/{key.slice(5, 7)}
-                    </span>
-                  </div>
-                  <div className="space-y-1.5 p-1.5">
-                    {dayPosts.map((p) => {
-                      const st = postStatusLabel[p.status];
-                      return (
-                        <div
-                          key={p.id}
-                          className={cn(
-                            "rounded-md border px-2 py-1.5 text-[11px]",
-                            p.status === "failed"
-                              ? "border-red/30 bg-red-soft"
-                              : p.status === "published"
-                                ? "border-primary/20 bg-primary-soft/60"
-                                : "border-border bg-surface",
-                          )}
-                        >
-                          <div className="flex items-center justify-between gap-1">
-                            <span className="font-semibold tabular-nums text-ink">{formatTime(p.scheduledFor)}</span>
-                            <PlatformPill platform={p.platform} short />
-                          </div>
-                          <div className="mt-0.5 line-clamp-2 text-ink">{p.title}</div>
-                          <Pill tone={st.tone} size="xs" className="mt-1">
-                            {st.label}
-                          </Pill>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+                <tr key={r.id}>
+                  <Td className="num whitespace-nowrap">
+                    {formatTime(r.at)} · {formatDate(r.at).slice(0, 5)}
+                  </Td>
+                  <Td className="font-semibold text-ink">{r.title}</Td>
+                  <Td>{r.platforms.join(" · ")}</Td>
+                  <Td right>
+                    {r.status === "failed" ? (
+                      <Button variant="outline">Đăng lại</Button>
+                    ) : (
+                      <Pill tone={st.tone} className="num">
+                        {st.label}
+                        {r.reach ? ` · ${formatNumber(r.reach)} reach` : ""}
+                      </Pill>
+                    )}
+                  </Td>
+                </tr>
               );
             })}
-          </div>
-        </Card>
-      )}
+          </tbody>
+        </Table>
+      </Panel>
 
-      {tab === "queue" && (
-        <Card className="mt-4">
-          <CardHeader icon="⏳" title="Hàng đợi đăng" subtitle="Bài sẽ tự đăng đúng giờ. Kéo thả để đổi thứ tự (sắp có)." />
-          <Table>
-            <thead>
-              <tr>
-                <Th>Giờ đăng</Th>
-                <Th>Nội dung</Th>
-                <Th>Nền tảng</Th>
-                <Th>Trạng thái</Th>
-                <Th></Th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...queue, ...failed].map((p) => {
-                const st = postStatusLabel[p.status];
+      <Panel>
+        <PanelHeader
+          title="Quảng cáo"
+          sub={`Hạn mức ${formatNumber(g.dailyCap)} ₫/ngày · ${formatNumber(g.monthlyCap / 1e6)} triệu/tháng. Tự dừng khi chi phí/lead vượt ${formatNumber(g.autoPauseCplAbove)} ₫.`}
+        />
+        <Table>
+          <thead>
+            <tr>
+              <Th>Chiến dịch</Th>
+              <Th right>Ngân sách/ngày</Th>
+              <Th right>Chi phí/lead</Th>
+              <Th right>Trạng thái</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {adCampaigns
+              .filter((a) => a.status !== "proposed")
+              .map((a) => {
+                const st = adStatusLabel[a.status];
+                const cpl = a.leads ? Math.round(a.spent / a.leads) : 0;
                 return (
-                  <tr key={p.id} className="hover:bg-bg-elevated">
-                    <Td className="tabular-nums font-medium text-ink">{formatDateTime(p.scheduledFor)}</Td>
+                  <tr key={a.id}>
                     <Td>
-                      <div className="text-ink">{p.title}</div>
-                      {p.error && <div className="text-[11.5px] text-red">⚠ {p.error}</div>}
+                      <div className="font-semibold text-ink">{a.name}</div>
+                      {a.aiNote && <div className="text-[12px] text-ink-2">{a.aiNote}</div>}
                     </Td>
-                    <Td><PlatformPill platform={p.platform} /></Td>
-                    <Td><Pill tone={st.tone}>{st.label}</Pill></Td>
-                    <Td className="text-right">
-                      {p.status === "failed" ? (
-                        <Button size="xs" variant="primary">Đăng lại</Button>
+                    <Td right className="num whitespace-nowrap">{formatNumber(a.dailyBudget)} ₫</Td>
+                    <Td right className={`num whitespace-nowrap ${cpl > g.autoPauseCplAbove ? "text-brick" : ""}`}>
+                      {cpl ? `${formatNumber(cpl)} ₫` : "—"}
+                    </Td>
+                    <Td right>
+                      {a.status === "pending_approval" ? (
+                        <Button variant="primary">Duyệt chạy</Button>
                       ) : (
-                        <Button size="xs" variant="ghost">Đổi giờ</Button>
+                        <Pill tone={st.tone}>{st.label}</Pill>
                       )}
                     </Td>
                   </tr>
                 );
               })}
-            </tbody>
-          </Table>
-        </Card>
-      )}
-
-      {tab === "results" && (
-        <Card className="mt-4">
-          <CardHeader
-            icon="📈"
-            title="Kết quả bài đã đăng"
-            subtitle="Bài vượt 3% tương tác sẽ được AI đề xuất chạy quảng cáo."
-          />
-          <Table>
-            <thead>
-              <tr>
-                <Th>Đăng lúc</Th>
-                <Th>Nội dung</Th>
-                <Th>Nền tảng</Th>
-                <Th className="text-right">Reach</Th>
-                <Th className="text-right">Tương tác</Th>
-                <Th className="text-right">Tỷ lệ</Th>
-                <Th></Th>
-              </tr>
-            </thead>
-            <tbody>
-              {published
-                .slice()
-                .sort((a, b) => (b.engagement ?? 0) - (a.engagement ?? 0))
-                .map((p) => {
-                  const rate = ((p.engagement ?? 0) / (p.reach ?? 1)) * 100;
-                  return (
-                    <tr key={p.id} className="hover:bg-bg-elevated">
-                      <Td className="tabular-nums text-muted">{formatDateTime(p.scheduledFor)}</Td>
-                      <Td className="font-medium text-ink">{p.title}</Td>
-                      <Td><PlatformPill platform={p.platform} /></Td>
-                      <Td className="text-right tabular-nums">{formatNumber(p.reach ?? 0)}</Td>
-                      <Td className="text-right tabular-nums">{formatNumber(p.engagement ?? 0)}</Td>
-                      <Td className="text-right">
-                        <Pill tone={rate >= 4 ? "green" : rate >= 3 ? "gold" : "neutral"} className="tabular-nums">
-                          {rate.toFixed(1)}%
-                        </Pill>
-                      </Td>
-                      <Td className="text-right">
-                        {rate >= 3 ? (
-                          <Button size="xs" variant="soft">📣 Đẩy ads</Button>
-                        ) : (
-                          <Button size="xs" variant="ghost">Chi tiết</Button>
-                        )}
-                      </Td>
-                    </tr>
-                  );
-                })}
-            </tbody>
-          </Table>
-        </Card>
-      )}
+          </tbody>
+        </Table>
+      </Panel>
     </>
   );
 }

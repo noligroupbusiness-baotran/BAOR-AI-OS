@@ -1,84 +1,71 @@
 @import "tailwindcss";
 
-/* Bảng màu: nền kem ấm, xanh lá chủ đạo, nhãn màu phụ (vàng, xanh dương, tím, đỏ) */
+/* Tone màu BAOR AI OS: xanh ngọc trên nền xương trắng ấm.
+   Một màu chủ đạo (jade), ba màu trạng thái (amber = chờ bạn, brick = lỗi/cần người, sky = thông tin),
+   một màu riêng cho mọi thứ do AI tạo (violet). */
 :root {
-  --bg: #f6f3ec;
-  --bg-elevated: #fbf9f4;
+  --ground: #f5f2ea;
+  --ground-2: #ece8dd;
   --surface: #ffffff;
-  --surface-soft: #f2efe6;
-  --border: #e5e0d3;
-  --border-strong: #d3cdbd;
-  --text: #1d1d1a;
-  --text-muted: #6d6b62;
-  --text-faint: #9c998d;
-
-  --primary: #1f7a4d;
-  --primary-strong: #175f3c;
-  --primary-soft: #e2f2e8;
-  --primary-text: #145c39;
-
-  --gold: #b7791f;
-  --gold-soft: #fbf0d6;
-  --blue: #2563eb;
-  --blue-soft: #e3ecfd;
-  --purple: #7c3aed;
-  --purple-soft: #efe6fd;
-  --red: #c62d2d;
-  --red-soft: #fbe4e4;
-  --orange: #d9640f;
-  --orange-soft: #fdebd9;
-  --teal: #0f766e;
-  --teal-soft: #d9f1ee;
-  --slate: #475569;
-  --slate-soft: #e8ecf1;
-
+  --border: #e2ddd0;
+  --border-2: #cfc9b9;
+  --ink: #1a1f1b;
+  --ink-2: #5e655f;
+  --ink-3: #9aa19b;
+  --jade: #1e7a4b;
+  --jade-2: #155d38;
+  --jade-soft: #ddefe3;
+  --jade-ink: #10472b;
+  --amber: #b7791f;
+  --amber-soft: #f8ecd2;
+  --brick: #c2413b;
+  --brick-soft: #f8e1df;
+  --violet: #6b4fbb;
+  --violet-soft: #eae4f8;
+  --sky: #2f5fd0;
+  --sky-soft: #e1e8fa;
+  --shadow: 0 1px 2px rgba(26, 31, 27, 0.05);
   --sidebar-w: 236px;
-  --radius: 10px;
+  --radius: 8px;
+  color-scheme: light;
 }
 
 @theme inline {
-  --color-bg: var(--bg);
-  --color-bg-elevated: var(--bg-elevated);
+  --color-ground: var(--ground);
+  --color-ground-2: var(--ground-2);
   --color-surface: var(--surface);
-  --color-surface-soft: var(--surface-soft);
   --color-border: var(--border);
-  --color-border-strong: var(--border-strong);
-  --color-ink: var(--text);
-  --color-muted: var(--text-muted);
-  --color-faint: var(--text-faint);
-  --color-primary: var(--primary);
-  --color-primary-strong: var(--primary-strong);
-  --color-primary-soft: var(--primary-soft);
-  --color-primary-text: var(--primary-text);
-  --color-gold: var(--gold);
-  --color-gold-soft: var(--gold-soft);
-  --color-blue: var(--blue);
-  --color-blue-soft: var(--blue-soft);
-  --color-purple: var(--purple);
-  --color-purple-soft: var(--purple-soft);
-  --color-red: var(--red);
-  --color-red-soft: var(--red-soft);
-  --color-orange: var(--orange);
-  --color-orange-soft: var(--orange-soft);
-  --color-teal: var(--teal);
-  --color-teal-soft: var(--teal-soft);
-  --color-slate: var(--slate);
-  --color-slate-soft: var(--slate-soft);
-  --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --color-border-2: var(--border-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-jade: var(--jade);
+  --color-jade-2: var(--jade-2);
+  --color-jade-soft: var(--jade-soft);
+  --color-jade-ink: var(--jade-ink);
+  --color-amber: var(--amber);
+  --color-amber-soft: var(--amber-soft);
+  --color-brick: var(--brick);
+  --color-brick-soft: var(--brick-soft);
+  --color-violet: var(--violet);
+  --color-violet-soft: var(--violet-soft);
+  --color-sky: var(--sky);
+  --color-sky-soft: var(--sky-soft);
+  --font-sans: "Be Vietnam Pro", "Segoe UI", system-ui, -apple-system, sans-serif;
 }
 
 html {
-  background: var(--bg);
-  color: var(--text);
+  background: var(--ground);
+  color: var(--ink);
   font-family: var(--font-sans);
-  font-size: 13.5px;
+  font-size: 13px;
+  line-height: 1.45;
   -webkit-font-smoothing: antialiased;
 }
 
 body {
-  background: var(--bg);
-  color: var(--text);
+  background: var(--ground);
+  color: var(--ink);
   margin: 0;
 }
 
@@ -87,65 +74,44 @@ body {
 }
 
 ::selection {
-  background: var(--primary-soft);
+  background: var(--jade-soft);
 }
 
-/* Nhãn mục nhỏ chữ hoa, dùng cho sidebar và tiêu đề khối */
-.eyebrow {
-  font-size: 10px;
-  letter-spacing: 0.12em;
+/* Nhãn nhỏ chữ hoa */
+.lbl {
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   font-weight: 600;
-  color: var(--text-faint);
+  color: var(--ink-3);
 }
 
-/* Thanh cuộn gọn */
-.scroll-thin::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-.scroll-thin::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: 999px;
+.num {
+  font-variant-numeric: tabular-nums;
 }
 
-/* Cây phân cấp: đường kẻ dọc bên trái */
-.tree-branch {
-  position: relative;
-  padding-left: 18px;
-}
-.tree-branch::before {
-  content: "";
-  position: absolute;
-  left: 6px;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  background: var(--border-strong);
-  border-radius: 2px;
-}
-.tree-branch[data-tone="green"]::before {
-  background: color-mix(in srgb, var(--primary) 55%, white);
-}
-.tree-branch[data-tone="blue"]::before {
-  background: color-mix(in srgb, var(--blue) 45%, white);
-}
-.tree-branch[data-tone="purple"]::before {
-  background: color-mix(in srgb, var(--purple) 45%, white);
-}
-.tree-branch[data-tone="gold"]::before {
-  background: color-mix(in srgb, var(--gold) 55%, white);
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
 }
 
-@keyframes pulse-dot {
-  0%,
-  100% {
-    opacity: 1;
-  }
+@keyframes blink {
   50% {
-    opacity: 0.35;
+    opacity: 0.3;
   }
 }
-.dot-live {
-  animation: pulse-dot 1.6s ease-in-out infinite;
+.live {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--jade);
+  animation: blink 1.8s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .live {
+    animation: none;
+  }
 }

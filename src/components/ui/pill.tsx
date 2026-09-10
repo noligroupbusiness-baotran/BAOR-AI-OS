@@ -1,44 +1,21 @@
 import { cn } from "@/lib/format";
 
-export type Tone =
-  | "green"
-  | "gold"
-  | "blue"
-  | "purple"
-  | "red"
-  | "orange"
-  | "teal"
-  | "slate"
-  | "neutral";
+export type Tone = "jade" | "amber" | "brick" | "violet" | "sky" | "neutral";
 
 const toneClass: Record<Tone, string> = {
-  green: "bg-primary-soft text-primary-text",
-  gold: "bg-gold-soft text-gold",
-  blue: "bg-blue-soft text-blue",
-  purple: "bg-purple-soft text-purple",
-  red: "bg-red-soft text-red",
-  orange: "bg-orange-soft text-orange",
-  teal: "bg-teal-soft text-teal",
-  slate: "bg-slate-soft text-slate",
-  neutral: "bg-surface-soft text-muted",
+  jade: "bg-jade-soft text-jade-ink",
+  amber: "bg-amber-soft text-amber",
+  brick: "bg-brick-soft text-brick",
+  violet: "bg-violet-soft text-violet",
+  sky: "bg-sky-soft text-sky",
+  neutral: "bg-ground-2 text-ink-2",
 };
 
-export function Pill({
-  tone = "neutral",
-  children,
-  className,
-  size = "sm",
-}: {
-  tone?: Tone;
-  children: React.ReactNode;
-  className?: string;
-  size?: "xs" | "sm";
-}) {
+export function Pill({ tone = "neutral", children, className }: { tone?: Tone; children: React.ReactNode; className?: string }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-full font-medium whitespace-nowrap",
-        size === "xs" ? "px-1.5 py-[1px] text-[10.5px]" : "px-2 py-[2px] text-[11.5px]",
+        "inline-flex h-5 items-center gap-1.5 whitespace-nowrap rounded-full px-2 text-[11px] font-semibold",
         toneClass[tone],
         className,
       )}
@@ -48,30 +25,10 @@ export function Pill({
   );
 }
 
-export function ScoreBadge({ score }: { score: number }) {
-  const tone: Tone = score >= 85 ? "green" : score >= 70 ? "gold" : "slate";
+export function Score({ value }: { value: number }) {
   return (
-    <Pill tone={tone} className="font-semibold tabular-nums">
-      <span aria-hidden>★</span> {score}
+    <Pill tone={value >= 85 ? "jade" : value >= 70 ? "amber" : "neutral"} className="num min-w-[40px] justify-center">
+      ★ {value}
     </Pill>
-  );
-}
-
-export function Dot({ tone = "green", live }: { tone?: Tone; live?: boolean }) {
-  const color: Record<Tone, string> = {
-    green: "bg-primary",
-    gold: "bg-gold",
-    blue: "bg-blue",
-    purple: "bg-purple",
-    red: "bg-red",
-    orange: "bg-orange",
-    teal: "bg-teal",
-    slate: "bg-slate",
-    neutral: "bg-faint",
-  };
-  return (
-    <span
-      className={cn("inline-block h-2 w-2 rounded-full", color[tone], live && "dot-live")}
-    />
   );
 }

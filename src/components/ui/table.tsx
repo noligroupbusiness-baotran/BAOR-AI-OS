@@ -1,35 +1,15 @@
 import { cn } from "@/lib/format";
 
-export function Table({ children, className }: { children: React.ReactNode; className?: string }) {
+export function Table({ children }: { children: React.ReactNode }) {
   return (
-    <div className={cn("overflow-x-auto scroll-thin", className)}>
-      <table className="w-full border-collapse text-[12.5px]">{children}</table>
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse text-[13px]">{children}</table>
     </div>
   );
 }
-
-export function Th({ children, className }: { children?: React.ReactNode; className?: string }) {
-  return (
-    <th
-      className={cn(
-        "eyebrow border-b border-border px-2.5 py-2 text-left font-semibold first:pl-0 last:pr-0",
-        className,
-      )}
-    >
-      {children}
-    </th>
-  );
+export function Th({ children, right }: { children?: React.ReactNode; right?: boolean }) {
+  return <th className={cn("lbl border-b border-border px-4 py-2 font-semibold", right ? "text-right" : "text-left")}>{children}</th>;
 }
-
-export function Td({ children, className }: { children?: React.ReactNode; className?: string }) {
-  return (
-    <td
-      className={cn(
-        "border-b border-border/70 px-2.5 py-2 align-top first:pl-0 last:pr-0",
-        className,
-      )}
-    >
-      {children}
-    </td>
-  );
+export function Td({ children, right, className }: { children?: React.ReactNode; right?: boolean; className?: string }) {
+  return <td className={cn("border-b border-border px-4 py-2.5 align-top [tr:last-child_&]:border-b-0", right && "text-right", className)}>{children}</td>;
 }

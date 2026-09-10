@@ -1,219 +1,124 @@
 import Link from "next/link";
-import { Card, CardHeader, SectionLabel } from "@/components/ui/card";
-import { PageHeader } from "@/components/ui/page-header";
-import { Pill, ScoreBadge, Dot } from "@/components/ui/pill";
-import { StatTile } from "@/components/ui/stat";
-import { LinkButton } from "@/components/ui/button";
-import { PlatformPill } from "@/components/ui/platform";
-import { dashboardKpis, pipelineSteps, recentActivity } from "@/lib/data/pipeline";
+import { PageHead, Panel, PanelHeader, Rows, Row } from "@/components/ui/card";
+import { Pill, Score } from "@/components/ui/pill";
+import { Tiles, Tile } from "@/components/ui/stat";
+import { Button, LinkButton } from "@/components/ui/button";
+import { platformLabel } from "@/components/ui/platform";
+import { pipelineSteps } from "@/lib/data/pipeline";
 import { contentItems, scheduledPosts } from "@/lib/data/content";
 import { adCampaigns } from "@/lib/data/ads";
 import { conversations } from "@/lib/data/customers";
-import { stepStatusLabel, ownerLabel } from "@/lib/labels";
-import { formatDateTime, formatNumber, cn } from "@/lib/format";
+import { insights } from "@/lib/data/insights";
+import { formatDate, formatTime, cn } from "@/lib/format";
 
-export const metadata = { title: "Trung tâm điều hành – BAOR AI OS" };
+export const metadata = { title: "Điều hành – BAOR AI OS" };
 
 export default function DashboardPage() {
-  const proposals = contentItems.filter((c) => c.status === "proposed");
+  const proposals = contentItems.filter((c) => c.status === "proposed").sort((a, b) => (b.score ?? 0) - (a.score ?? 0)).slice(0, 2);
   const adsPending = adCampaigns.filter((a) => a.status === "pending_approval");
   const needHuman = conversations.filter((c) => c.needsHuman);
-  const upcoming = scheduledPosts
-    .filter((p) => p.status === "scheduled")
-    .sort((a, b) => a.scheduledFor.localeCompare(b.scheduledFor))
-    .slice(0, 4);
-  const topPosts = scheduledPosts
-    .filter((p) => p.status === "published" && p.reach)
-    .sort((a, b) => (b.engagement ?? 0) - (a.engagement ?? 0))
-    .slice(0, 3);
+  const pending = proposals.length + adsPending.length + needHuman.length;
+  const upcoming = scheduledPosts.filter((p) => p.status === "scheduled").sort((a, b) => a.scheduledFor.localeCompare(b.scheduledFor)).slice(0, 3);
 
   return (
     <>
-      <PageHeader
-        emoji="🎛️"
-        title="Trung tâm điều hành"
-        subtitle="Toàn cảnh quy trình 8 bước: AI research và đề xuất, bạn làm nội dung, hệ thống tự đăng, chạy ads, chăm khách và gửi email."
-        meta={
-          <>
-            <span>Thứ 5, 10/09/2026</span>
-            <span>·</span>
-            <span className="flex items-center gap-1.5">
-              <Dot tone="green" live /> 3 agent đang chạy
-            </span>
-            <span>·</span>
-            <span className="font-medium text-gold">5 việc chờ bạn</span>
-          </>
-        }
-        actions={
-          <>
-            <LinkButton href="/content" variant="primary">
-              💡 Xem ý tưởng hôm nay
-            </LinkButton>
-            <LinkButton href="/approvals">✅ Hộp chờ duyệt</LinkButton>
-          </>
-        }
+      <PageHead
+        title="Hôm nay, thứ 5 · 10/09"
+        sub={`AI đã chuẩn bị sẵn. Bạn có ${pending} việc cần quyết, còn lại hệ thống tự chạy.`}
+        action={<Button variant="primary" size="md">Xử lý {pending} việc chờ</Button>}
       />
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        {dashboardKpis.map((k) => (
-          <StatTile key={k.label} label={k.label} value={k.value} delta={k.delta} hint={k.hint} />
-        ))}
+      <Tiles>
+        <Tile label="Tiếp cận 7 ngày" value="128.400" delta="▲ 12%" hint="Tất cả bài đăng" />
+        <Tile label="Lead mới" value="142" delta="▲ 22%" hint="Inbox, bình luận, ads" />
+        <Tile label="Chi phí / lead" value="29.900 ₫" delta="▼ 18%" hint="Thấp hơn là tốt" />
+        <Tile label="Ads tháng này" value="4,25 tr" delta="/ 12 tr" hint="Còn trong hạn mức" />
+      </Tiles>
+
+      <div className="mt-3.5 grid grid-cols-4 gap-1.5 md:grid-cols-8" aria-label="Quy trình 8 bước">
+        {pipelineSteps.map((s) => {
+          const wait = s.status === "waiting_approval" || s.owner === "human";
+          return (
+            <Link
+              key={s.key}
+              href={s.href}
+              className={cn(
+                "card flex min-h-[86px] flex-col gap-1.5 p-2.5 transition-colors hover:border-ink-3",
+                wait && "border-amber bg-[color-mix(in_srgb,var(--amber-soft)_55%,var(--surface))]",
+              )}
+            >
+              <span className="text-[10px] font-bold tracking-[0.06em] text-ink-3">BƯỚC {s.order}</span>
+              <span className="text-[12px] font-semibold leading-tight text-ink">{s.title}</span>
+              <span className={cn("mt-auto flex items-center gap-1.5 text-[11px] font-semibold", wait ? "text-amber" : "text-ink-2")}>
+                {s.status === "running" && !wait && <span className="live" style={{ width: 6, height: 6 }} />}
+                {s.pendingCount ? `${s.pendingCount} ${s.owner === "human" ? "đang làm" : "chờ bạn"}` : s.status === "done" ? "Xong" : "Đang chạy"}
+              </span>
+            </Link>
+          );
+        })}
       </div>
 
-      <Card className="mt-4" padded={false}>
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <div>
-            <SectionLabel tone="green">🔁 Quy trình tự động</SectionLabel>
-            <p className="mt-0.5 text-[12px] text-muted">
-              Mỗi ô là một bước. Ô vàng đang chờ bạn, ô xanh đang chạy nền.
-            </p>
-          </div>
-          <Link href="/settings?tab=automation" className="text-[12px] text-primary-text hover:underline">
-            Cấu hình tự động hóa →
-          </Link>
-        </div>
-        <div className="grid grid-cols-2 gap-px bg-border md:grid-cols-4 xl:grid-cols-8">
-          {pipelineSteps.map((s) => {
-            const st = stepStatusLabel[s.status];
-            const owner = ownerLabel[s.owner];
-            return (
-              <Link
-                key={s.key}
-                href={s.href}
-                className={cn(
-                  "group flex flex-col gap-2 bg-surface p-3 transition-colors hover:bg-bg-elevated",
-                  s.status === "waiting_approval" && "bg-gold-soft/40",
-                )}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-[10.5px] font-bold text-faint">BƯỚC {s.order}</span>
-                  <Pill tone={owner.tone} size="xs">
-                    {owner.emoji} {owner.label}
-                  </Pill>
-                </div>
-                <div className="text-[12.5px] font-semibold leading-snug text-ink">{s.title}</div>
-                <div className="line-clamp-2 text-[11px] text-muted">{s.description}</div>
-                <div className="mt-auto flex items-center justify-between pt-1">
-                  <Pill tone={st.tone} size="xs">
-                    {s.status === "running" && <Dot tone="green" live />}
-                    {st.label}
-                  </Pill>
-                  {s.pendingCount ? (
-                    <span className="text-[11px] font-semibold text-gold">{s.pendingCount} chờ</span>
-                  ) : s.lastRunAt ? (
-                    <span className="text-[10.5px] text-faint">{formatDateTime(s.lastRunAt)}</span>
-                  ) : null}
-                </div>
-              </Link>
-            );
-          })}
-        </div>
-      </Card>
-
-      <div className="mt-4 grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader
-            icon="🙋"
-            title="Việc cần bạn làm hôm nay"
-            subtitle="AI đã chuẩn bị sẵn, bạn chỉ cần duyệt hoặc hoàn thiện."
-            tone="gold"
-            action={<LinkButton href="/approvals" size="xs">Xem tất cả</LinkButton>}
-          />
-          <ul className="divide-y divide-border/70">
-            {proposals.slice(0, 3).map((c) => (
-              <li key={c.id} className="flex items-center gap-3 py-2">
-                <ScoreBadge score={c.score ?? 0} />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13px] font-medium text-ink">{c.title}</div>
-                  <div className="truncate text-[11.5px] text-muted">
-                    Ý tưởng nội dung · {c.pillar} · {c.hook}
-                  </div>
-                </div>
-                <LinkButton href={`/content?tab=proposed#${c.id}`} size="xs" variant="soft">
-                  Nhận viết
-                </LinkButton>
-              </li>
-            ))}
+      <div className="grid gap-3.5 md:grid-cols-[1.6fr_1fr]">
+        <Panel>
+          <PanelHeader title="Việc cần bạn" sub="Duyệt hoặc nhận làm, mỗi việc một nút." />
+          <Rows>
+            {proposals.map((c) => {
+              const ins = insights.find((i) => i.id === c.insightId);
+              return (
+                <Row
+                  key={c.id}
+                  lead={<Score value={c.score ?? 0} />}
+                  title={c.title}
+                  sub={`Ý tưởng ${contentFormat(c.format)} · từ insight “${ins?.title ?? ""}”`}
+                  action={<LinkButton href="/content" variant="soft">Nhận làm</LinkButton>}
+                />
+              );
+            })}
             {adsPending.map((a) => (
-              <li key={a.id} className="flex items-center gap-3 py-2">
-                <Pill tone="gold">📣 Ads</Pill>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13px] font-medium text-ink">{a.name}</div>
-                  <div className="truncate text-[11.5px] text-muted">
-                    {formatNumber(a.dailyBudget)} ₫/ngày · {a.aiNote}
-                  </div>
-                </div>
-                <LinkButton href="/ads" size="xs" variant="primary">
-                  Duyệt chạy
-                </LinkButton>
-              </li>
+              <Row
+                key={a.id}
+                lead={<Pill tone="amber">Ads</Pill>}
+                title={a.name}
+                sub={`${a.dailyBudget.toLocaleString("vi-VN")} ₫/ngày · ${a.aiNote}`}
+                action={<LinkButton href="/publishing?tab=ads" variant="primary">Duyệt chạy</LinkButton>}
+              />
             ))}
             {needHuman.map((c) => (
-              <li key={c.id} className="flex items-center gap-3 py-2">
-                <Pill tone="red">💬 Inbox</Pill>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13px] font-medium text-ink">{c.leadName}</div>
-                  <div className="truncate text-[11.5px] text-muted">
-                    {c.messages[c.messages.length - 1].text}
-                  </div>
-                </div>
-                <LinkButton href={`/customers?conv=${c.id}`} size="xs">
-                  Trả lời
-                </LinkButton>
-              </li>
+              <Row
+                key={c.id}
+                lead={<Pill tone="brick">Inbox</Pill>}
+                title={c.leadName}
+                sub={`“${c.messages[c.messages.length - 1].text}”`}
+                action={<LinkButton href={`/customers?conv=${c.id}`}>Trả lời</LinkButton>}
+              />
             ))}
-          </ul>
-        </Card>
+          </Rows>
+        </Panel>
 
-        <Card>
-          <CardHeader icon="📅" title="Sắp đăng" subtitle="Tự động đăng theo giờ vàng." tone="blue" />
-          <ul className="space-y-2.5">
+        <Panel>
+          <PanelHeader title="Sắp đăng" sub="Theo giờ vàng từng kênh." />
+          <Rows>
             {upcoming.map((p) => (
-              <li key={p.id} className="flex items-start gap-2">
-                <div className="w-[84px] shrink-0 whitespace-nowrap pt-0.5 text-[11px] font-semibold tabular-nums text-muted">
-                  {formatDateTime(p.scheduledFor)}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[12.5px] font-medium text-ink">{p.title}</div>
-                  <PlatformPill platform={p.platform} />
-                </div>
-              </li>
-            ))}
-          </ul>
-          <div className="mt-3 border-t border-border pt-3">
-            <SectionLabel tone="green">🏆 Bài tốt nhất tuần</SectionLabel>
-            <ul className="mt-2 space-y-2">
-              {topPosts.map((p, i) => (
-                <li key={p.id} className="flex items-center gap-2">
-                  <span className="w-4 text-[11px] font-bold text-faint">{i + 1}.</span>
-                  <div className="min-w-0 flex-1 truncate text-[12px] text-ink">{p.title}</div>
-                  <span className="text-[11px] tabular-nums text-muted">
-                    {formatNumber(p.reach ?? 0)} reach
+              <Row
+                key={p.id}
+                lead={
+                  <span className="num block text-[12.5px] font-semibold leading-tight text-ink-2">
+                    {formatTime(p.scheduledFor)}
+                    <br />
+                    <small className="font-normal">{formatDate(p.scheduledFor).slice(0, 5)}</small>
                   </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </Card>
+                }
+                title={p.title}
+                sub={platformLabel(p.platform)}
+              />
+            ))}
+          </Rows>
+        </Panel>
       </div>
-
-      <Card className="mt-4">
-        <CardHeader icon="🕒" title="Hoạt động gần đây" subtitle="Nhật ký hành động của AI, hệ thống và bạn." />
-        <ul className="space-y-2">
-          {recentActivity.map((a) => {
-            const o = ownerLabel[a.actor === "system" ? "auto" : a.actor];
-            return (
-              <li key={a.id} className="flex items-start gap-3 text-[12.5px]">
-                <span className="w-[78px] shrink-0 whitespace-nowrap tabular-nums text-faint">{formatDateTime(a.at)}</span>
-                <Pill tone={o.tone} size="xs">
-                  {o.emoji} {o.label}
-                </Pill>
-                <span className="text-ink">{a.message}</span>
-              </li>
-            );
-          })}
-        </ul>
-      </Card>
     </>
   );
+}
+
+function contentFormat(f: string) {
+  return { post: "bài viết", reel: "reel", carousel: "carousel", story: "story", article: "bài dài" }[f] ?? f;
 }

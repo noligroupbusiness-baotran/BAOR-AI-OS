@@ -3,15 +3,7 @@
 import { useState } from "react";
 import { cn } from "@/lib/format";
 
-export function Toggle({
-  defaultChecked = false,
-  label,
-  onChange,
-}: {
-  defaultChecked?: boolean;
-  label?: string;
-  onChange?: (v: boolean) => void;
-}) {
+export function Toggle({ defaultChecked = false, label }: { defaultChecked?: boolean; label?: string }) {
   const [on, setOn] = useState(defaultChecked);
   return (
     <button
@@ -19,21 +11,13 @@ export function Toggle({
       role="switch"
       aria-checked={on}
       aria-label={label}
-      onClick={() => {
-        setOn(!on);
-        onChange?.(!on);
-      }}
+      onClick={() => setOn(!on)}
       className={cn(
-        "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors",
-        on ? "bg-primary" : "bg-border-strong",
+        "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-jade",
+        on ? "bg-jade" : "bg-border-2",
       )}
     >
-      <span
-        className={cn(
-          "inline-block h-4 w-4 rounded-full bg-white shadow transition-transform",
-          on ? "translate-x-[18px]" : "translate-x-[2px]",
-        )}
-      />
+      <span className={cn("inline-block h-4 w-4 rounded-full bg-white shadow transition-transform", on ? "translate-x-[18px]" : "translate-x-[2px]")} />
     </button>
   );
 }
