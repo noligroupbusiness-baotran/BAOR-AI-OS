@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { Breadcrumb, ModuleGroups } from "@/components/shell/module-page";
 import { PageHead, Panel, PanelHeader } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Pill } from "@/components/ui/pill";
 import { Segment } from "@/components/ui/segment";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -12,6 +11,12 @@ import { CampaignTags, LinkToCampaignForm } from "@/components/campaigns/entity-
 import { campaignRepo } from "@/lib/campaigns/repository";
 import { readCampaignContext, withCampaignContext } from "@/lib/campaigns/context";
 import { transitionVideo } from "@/lib/actions/videos";
+import { uploadVideo } from "@/lib/actions/media";
+import { Field, inputClass } from "@/components/ui/field";
+import { SubmitButton } from "@/components/campaigns/submit-button";
+import { LinkButton } from "@/components/ui/button";
+import { listContent } from "@/lib/queries";
+import { fileUrl } from "@/lib/uploads";
 import { listVideos } from "@/lib/videos/repository";
 import { videoStatusLabel, type VideoStatus } from "@/lib/data/videos";
 import { formatDateTime, cn } from "@/lib/format";
@@ -28,8 +33,10 @@ const tabs: { key: VideoStatus | "all"; label: string }[] = [
   { key: "approved", label: "Đã phê duyệt" },
 ];
 
-export default async function VideoStudioPage({ searchParams }: { searchParams: Promise<{ tab?: string; campaign?: string; goal?: string; link?: string }> }) {
+export default async function VideoStudioPage({ searchParams }: { searchParams: Promise<{ tab?: string; campaign?: string; goal?: string; link?: string; upload?: string }> }) {
   const sp = await searchParams;
+  const scripts = listContent().filter((c) => (c.format === "reel" || c.format === "story") && c.status !== "dismissed");
+  const campaignsForUpload = campaignRepo.list().filter((c) => c.status !== "ended");
   const tab = tabs.some((t) => t.key === sp.tab) ? (sp.tab as VideoStatus | "all") : "all";
   const ctx = readCampaignContext(sp);
   const campaign = ctx.campaignId ? campaignRepo.get(ctx.campaignId) : undefined;
@@ -46,8 +53,35 @@ export default async function VideoStudioPage({ searchParams }: { searchParams: 
       <PageHead
         title="Video Studio"
         sub="Agent Edit Video dựng từ kịch bản đã duyệt và chuẩn bị phiên bản cho từng nền tảng. Video chỉ được đăng sau khi bạn phê duyệt, và việc đăng làm ở Đăng bài & Quảng cáo."
-        action={<Button variant="primary" size="md" disabled title="Kết nối Agent Edit Video ở giai đoạn sau">Tải video lên</Button>}
+        action={sp.upload === "1" ? undefined : <LinkButton href={withCampaignContext("/video-studio?upload=1", ctx)} variant="primary" size="md">Tải video lên</LinkButton>}
       />
+
+      {sp.upload === "1" && (
+        <Panel>
+          <PanelHeader title="Tải video lên" sub="Video quay tay hoặc do Agent gửi về. Sau khi tải, video vào “Chờ kiểm tra”, rồi gửi phê duyệt như bình thường. Tối đa 500 MB (MP4, MOV, WebM)." />
+          <form action={uploadVideo} encType="multipart/form-data" className="grid gap-3 p-4 md:grid-cols-2">
+            <Field label="Tên video" required><input name="title" required className={inputClass} placeholder="VD: Khách văn phòng nói gì sau lượt gội đầu tiên" /></Field>
+            <Field label="Tệp video" required><input type="file" name="file" required accept="video/mp4,video/quicktime,video/webm" className="block w-full text-[12.5px] text-ink-2 file:mr-2 file:rounded-full file:border file:border-border-2 file:bg-surface file:px-2.5 file:py-1 file:text-[12px] file:text-ink" /></Field>
+            <Field label="Kịch bản gốc (nếu có)" hint="Video kế thừa chiến dịch của kịch bản.">
+              <select name="contentId" defaultValue="" className={inputClass}><option value="">Không có</option>{scripts.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}</select>
+            </Field>
+            <div>
+              <span className="lbl">Phiên bản cho nền tảng</span>
+              <div className="mt-1.5 flex flex-wrap gap-3 text-[12.5px]">
+                {[["tiktok", "TikTok"], ["facebook", "Facebook"], ["instagram", "Instagram"], ["youtube", "YouTube"]].map(([v, l]) => (
+                  <label key={v} className="flex items-center gap-1.5"><input type="checkbox" name="platforms" value={v} defaultChecked={v === "tiktok"} className="accent-[var(--jade)]" />{l}</label>
+                ))}
+              </div>
+            </div>
+            <Field label="Gắn chiến dịch (nếu không có kịch bản)">
+              <select name="campaignId" defaultValue={ctx.campaignId ?? ""} className={inputClass}><option value="">Không gắn</option>{campaignsForUpload.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+            </Field>
+            <Field label="Ghi chú"><input name="note" className={inputClass} placeholder="VD: Bản quay tại quầy ngày 10/9" /></Field>
+            {ctx.channelGoalId && <input type="hidden" name="channelGoalId" value={ctx.channelGoalId} />}
+            <div className="flex gap-2 md:col-span-2"><SubmitButton pendingText="Đang tải lên…">Tải lên</SubmitButton><LinkButton href={withCampaignContext("/video-studio", ctx)} variant="ghost">Hủy</LinkButton></div>
+          </form>
+        </Panel>
+      )}
       <CampaignContextBar ctx={ctx} pathname="/video-studio" params={{ tab }} note={linkedIds ? "chỉ hiện video của chiến dịch" : undefined} />
 
       <div className="mt-3.5 grid grid-cols-2 gap-2.5 md:grid-cols-4">
@@ -87,6 +121,7 @@ export default async function VideoStudioPage({ searchParams }: { searchParams: 
                       Kịch bản: {v.contentId ? <Link href={`/content?tab=done&open=${v.contentId}`} className="text-jade hover:underline">{v.contentTitle ?? v.contentId}</Link> : <span className="text-ink-3">chưa gắn kịch bản</span>}
                     </div>
                     {v.note && <p className="mt-1 text-[12px] text-ink">{v.note}</p>}
+                    {v.uploadId && <video controls preload="metadata" src={fileUrl(v.uploadId)} className="mt-2 max-h-[220px] w-full max-w-[360px] rounded-md border border-border bg-black" />}
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                       <CampaignTags links={vLinks} />
                       <LinkToCampaignForm entityType="video" entityId={v.id} status={v.status} back={back} links={vLinks} compact open={sp.link === v.id} />

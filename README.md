@@ -99,6 +99,22 @@ Chiến dịch → Mục tiêu kênh → Insight → Nội dung → Video → Ph
 - Điều hành không còn dữ liệu mẫu: việc chờ xử lý, lịch hôm nay, trạng thái Agent đều suy ra từ CSDL, bộ chạy nền, sổ AI.
 - "Xóa dữ liệu mẫu" chỉ xóa bản ghi có ID mẫu, giữ dữ liệu người dùng tự tạo. Danh sách dài phân trang 25 mục (`?page=`).
 
+## Đơn hàng, Automation, Báo cáo, Trợ lý, Thương hiệu, Cảnh báo
+
+- **Đơn hàng** (`src/lib/orders`): tạo từ lead, giá theo danh mục (Quản lý mới được ghi giá khác), đơn thanh toán cập
+  nhật lead “Đã mua” và doanh thu chiến dịch. Kết quả chiến dịch tính từ lead / đơn / chi phí thật, chỉ dùng mẫu khi trống.
+- **Automation** (`src/lib/automation`): quy tắc “khi X thì Y” (tin nhắn, lead mới, lead im lặng, bài tương tác cao,
+  chiến dịch chậm, CPL cao) chạy ở làn luật; hành động tiêu tiền tạo đề xuất chờ duyệt. Kho câu trả lời chuẩn ở Cài đặt › FAQ.
+  Trang Automation có “Thử với một tin nhắn” (chạy khô).
+- **Báo cáo** (`src/lib/reports`): mục tiêu so với kết quả theo chiến dịch, kênh, nội dung, video, lead, đơn hàng, chi phí, ROAS.
+- **Trợ lý AI** (`src/lib/assistant.ts`): câu hỏi vận hành trả lời từ dữ liệu (làn luật); câu khác gọi Claude với ảnh chụp
+  hệ thống. **Insight**: AI rút từ inbox / lead / bài đăng kèm bằng chứng, trạng thái chờ duyệt.
+- **Thương hiệu**: logo, màu, font, khẩu hiệu, kho nhạc (tệp trong `DATA_DIR/uploads`, phục vụ qua `/api/files/<id>`).
+  Video Studio nhận tải video lên (500 MB).
+- **Cảnh báo ra ngoài**: Cài đặt › Cảnh báo, webhook JSON khi đăng bài lỗi, đồng bộ lỗi, AI chạm trần, bộ chạy nền lỗi.
+- **Xoay khóa**: `AUTH_SECRET_OLD=<cũ> AUTH_SECRET=<mới> npm run rotate-secret` mã hóa lại token rồi đặt khóa mới.
+- Token Meta: nhập “Token hết hạn ngày” trong Kết nối để hệ thống nhắc trước 7 ngày.
+
 ## Cấu trúc
 
 ```

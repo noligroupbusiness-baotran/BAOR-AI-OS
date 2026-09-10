@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "node --import tsx --test tests/*.test.ts",
-    "gate": "npm run lint && npm run test && npm run build"
+    "gate": "npm run lint && npm run test && npm run build",
+    "rotate-secret": "tsx scripts/rotate-secret.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.124.0",

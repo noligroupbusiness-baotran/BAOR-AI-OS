@@ -7,6 +7,7 @@ import { campaignRepo } from "@/lib/campaigns/repository";
 import { getAdGuardrails, getAutomation } from "@/lib/queries";
 import { applyRule, recordDecision } from "@/lib/router";
 import { logActivity } from "@/lib/activity";
+import { sendAlert } from "@/lib/alerts";
 import { connectorContext, finishRun, setIntegrationStatus, startRun } from "./config";
 import { connectorFor, connectors } from "./registry";
 import type { CheckResult } from "./types";
@@ -69,6 +70,7 @@ export async function syncChannelMetrics(): Promise<{ updated: number; errors: s
       errors.push(`${key}: ${msg}`);
       finishRun(runId, false, msg);
       setIntegrationStatus(key, { lastError: msg });
+      void sendAlert({ level: "error", title: `Đồng bộ ${key} lỗi`, text: msg, href: "/settings#syslog" });
     }
   }
   return { updated, errors };
@@ -121,6 +123,7 @@ export async function publishDuePosts(): Promise<{ published: number; failed: nu
       logActivity("system", `Đăng “${post.title}” thất bại: ${res.message}`, "publishing");
       finishRun(runId, false, res.message);
       out.failed++;
+      void sendAlert({ level: "error", title: `Đăng bài lỗi: ${post.title}`, text: res.message, href: "/publishing" });
     }
   }
   return out;

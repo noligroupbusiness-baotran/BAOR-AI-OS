@@ -2,8 +2,8 @@ import { PageHead, Panel, PanelHeader, Rows, Row } from "@/components/ui/card";
 import { Breadcrumb, ModuleGroups } from "@/components/shell/module-page";
 import { Pill } from "@/components/ui/pill";
 import { Button } from "@/components/ui/button";
-import { clearSampleData, resetSampleData, saveAccount, saveBrand, toggleAutomation } from "@/lib/actions/settings";
-import { getAutomation, getBrand } from "@/lib/queries";
+import { clearSampleData, resetSampleData, saveAccount, toggleAutomation } from "@/lib/actions/settings";
+import { getAutomation } from "@/lib/queries";
 import { getAdminEmail } from "@/lib/admin";
 import { automationSettings } from "@/lib/data/settings";
 import { cn } from "@/lib/format";
@@ -11,6 +11,7 @@ import { BackupPanel } from "@/components/settings/backup-panel";
 import { PeoplePanel, ProductsPanel } from "@/components/settings/catalog-panels";
 import { AiBudgetPanel, IntegrationsPanel, SystemLogPanel } from "@/components/settings/integration-panels";
 import { FaqPanel } from "@/components/settings/faq-panel";
+import { AlertsPanel, BrandPanel, MusicPanel } from "@/components/settings/brand-panels";
 
 export const metadata = { title: "Cài đặt – BAOR AI OS" };
 
@@ -19,7 +20,6 @@ const input = "mt-1 h-8 w-full rounded-md border border-border-2 bg-surface px-2
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ edit?: string; product?: string; person?: string; faq?: string }> }) {
   const { edit, product, person, faq } = await searchParams;
   const automation = getAutomation();
-  const brand = getBrand();
   const adminEmail = getAdminEmail();
 
   return (
@@ -64,17 +64,9 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         </Rows>
       </Panel>
 
-      <div className="grid gap-3.5 md:grid-cols-2">
-        <Panel id="brand">
-          <PanelHeader title="Thương hiệu & giọng văn" sub="AI dùng thông tin này khi viết nội dung và trả lời khách." />
-          <form action={saveBrand} className="grid gap-3 p-4">
-            <label className="block"><span className="lbl">Tên thương hiệu</span><input name="name" defaultValue={brand.name} className={input} placeholder="VD: BAOR Skincare" /></label>
-            <label className="block"><span className="lbl">Sản phẩm / dịch vụ chính</span><input name="products" defaultValue={brand.products} className={input} placeholder="VD: Serum vitamin C, combo 3 bước…" /></label>
-            <label className="block"><span className="lbl">Giọng văn</span><textarea name="voice" rows={3} defaultValue={brand.voice} className={cn(input, "h-auto py-2")} /></label>
-            <div><Button variant="primary" type="submit">Lưu</Button></div>
-          </form>
-        </Panel>
+      <BrandPanel />
 
+      <div className="grid gap-3.5 md:grid-cols-2">
         <Panel id="account">
           <PanelHeader title="Tài khoản quản trị" sub="Đổi email hoặc mật khẩu đăng nhập. Cần mật khẩu hiện tại để xác nhận." />
           <form action={saveAccount} className="grid gap-3 p-4">
@@ -86,7 +78,9 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         </Panel>
       </div>
 
+      <MusicPanel />
       <AiBudgetPanel />
+      <AlertsPanel />
       <SystemLogPanel />
 
       <Panel>

@@ -58,7 +58,7 @@ export interface CreateAction {
 export const createActions: CreateAction[] = [
   { key: "campaign", label: "Tạo chiến dịch", icon: Megaphone, moduleKey: "campaigns", href: "/campaigns/new" },
   { key: "content", label: "Tạo nội dung", icon: FilePlus2, moduleKey: "content", href: "/content?tab=mine&open=new" },
-  { key: "video", label: "Tải video lên", icon: Upload, moduleKey: "video-studio", href: "/video-studio", note: "chờ Agent" },
+  { key: "video", label: "Tải video lên", icon: Upload, moduleKey: "video-studio", href: "/video-studio?upload=1" },
   { key: "schedule", label: "Lên lịch đăng", icon: CalendarClock, moduleKey: "publishing", href: "/content?tab=done" },
   { key: "customer", label: "Thêm khách hàng", icon: UserPlus, moduleKey: "customers", href: "/customers?tab=leads&add=1" },
   { key: "automation", label: "Tạo quy tắc Automation", icon: Workflow, moduleKey: "automation", href: "/automation?add=1" },

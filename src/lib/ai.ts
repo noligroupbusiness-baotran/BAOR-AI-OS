@@ -6,6 +6,7 @@ import { getDb, schema } from "@/db";
 import { getBrand, listInsights, listPersonas } from "@/lib/queries";
 import { readIntegrationConfig } from "@/lib/connectors/config";
 import { aiBudgetAllows, recordAiCall, recordDecision } from "@/lib/router";
+import { sendAlert } from "@/lib/alerts";
 import { catalogRepo } from "@/lib/catalog/repository";
 
 // Bộ não AI của hệ thống. Khóa API lấy từ Cài đặt > Kết nối > Claude API, hoặc biến môi trường ANTHROPIC_API_KEY.
@@ -29,6 +30,7 @@ async function gate<T extends { usage?: { input_tokens: number; output_tokens: n
   const budget = aiBudgetAllows();
   if (!budget.ok) {
     recordDecision({ lane: "rule", domain: "content", subject, outcome: "chặn gọi AI", reason: budget.reason, needsApproval: false });
+    void sendAlert({ level: "warn", title: "AI chạm trần chi phí", text: budget.reason, href: "/settings#ai" });
     return { ok: false, error: `${budget.reason} Nâng trần ở Cài đặt › AI Agent nếu cần.` };
   }
   try {

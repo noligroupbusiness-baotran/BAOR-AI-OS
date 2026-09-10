@@ -13,6 +13,7 @@ export interface VideoRecord {
   platforms: string[];
   version: number;
   note: string;
+  uploadId: string | null;
   updatedAt: string;
 }
 

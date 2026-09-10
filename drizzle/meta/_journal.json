@@ -57,6 +57,13 @@
       "when": 1789061406596,
       "tag": "0007_insight_status",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1789061645437,
+      "tag": "0008_uploads",
+      "breakpoints": true
     }
   ]
 }

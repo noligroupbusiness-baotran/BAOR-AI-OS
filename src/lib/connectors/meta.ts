@@ -94,6 +94,7 @@ export const facebookPageConnector: Connector = {
     { key: "pageId", label: "Page ID" },
     { key: "pageToken", label: "Page Access Token", secret: true, hint: "Meta for Developers › Graph API Explorer, quyền pages_manage_posts, pages_read_engagement, pages_messaging" },
     { key: "appSecret", label: "App Secret", secret: true, hint: "Dùng để xác minh chữ ký webhook" },
+    { key: "tokenExpiresAt", label: "Token hết hạn ngày (YYYY-MM-DD)", hint: "Token trang dài hạn thường 60 ngày; hệ thống nhắc trước 7 ngày" },
   ],
   async check(ctx): Promise<CheckResult> {
     const { pageId, pageToken } = ctx.config;
@@ -135,6 +136,7 @@ export const metaAdsConnector: Connector = {
   fields: [
     { key: "adAccountId", label: "Ad Account ID (act_...)" },
     { key: "accessToken", label: "Access Token", secret: true, hint: "Quyền ads_read, ads_management" },
+    { key: "tokenExpiresAt", label: "Token hết hạn ngày (YYYY-MM-DD)", hint: "Hệ thống nhắc trước 7 ngày" },
   ],
   async check(ctx): Promise<CheckResult> {
     const { adAccountId, accessToken } = ctx.config;

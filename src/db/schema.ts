@@ -328,6 +328,7 @@ export const videos = sqliteTable("videos", {
   platforms: text("platforms").notNull().default("[]"), // JSON string[]
   version: integer("version").notNull().default(1),
   note: text("note").notNull().default(""),
+  uploadId: text("upload_id"), // tệp video trong bảng uploads (khi tải lên tay hoặc Agent gửi)
   updatedAt: text("updated_at").notNull(),
 });
 
@@ -459,3 +460,18 @@ export const automationRuns = sqliteTable(
   },
   (t) => [index("automation_runs_rule_idx").on(t.ruleId), index("automation_runs_at_idx").on(t.at)],
 );
+
+// ---------------------------------------------------------------------------
+// Tệp tải lên (logo, nhạc, video) lưu trong DATA_DIR/uploads; bảng này là danh mục.
+// ---------------------------------------------------------------------------
+export const uploads = sqliteTable("uploads", {
+  id: text("id").primaryKey(),
+  kind: text("kind").notNull(), // logo | music | video | image
+  name: text("name").notNull(), // tên gốc
+  fileName: text("file_name").notNull(), // tên trên đĩa
+  mime: text("mime").notNull().default(""),
+  size: integer("size").notNull().default(0),
+  meta: text("meta").notNull().default("{}"), // JSON: mood, durationSec...
+  uploadedBy: text("uploaded_by").notNull().default(""),
+  createdAt: text("created_at").notNull(),
+});

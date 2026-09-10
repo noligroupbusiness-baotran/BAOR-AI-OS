@@ -1,7 +1,7 @@
 // Dữ liệu cho vỏ ứng dụng (thanh trên, thanh bên): sức khỏe hệ thống và thông báo, tính từ dữ liệu thật.
 import { desc, eq, gte } from "drizzle-orm";
 import { getDb, schema } from "@/db";
-import { listIntegrationStatus, listRuns } from "@/lib/connectors/config";
+import { listIntegrationStatus, listRuns, readIntegrationConfig } from "@/lib/connectors/config";
 import { connectorCapabilities } from "@/lib/connectors/sync";
 import { schedulerState } from "@/lib/scheduler";
 import { getAiBudget, listDecisions } from "@/lib/router";
@@ -26,6 +26,17 @@ export function getHealth(): Health {
   const failed = listRuns(50).filter((r) => r.startedAt >= since && r.finishedAt && !r.ok);
   const issues: string[] = [];
   for (const i of integrations) if (i.lastCheckOk === false && i.lastError) issues.push(`${i.name}: ${i.lastError}`);
+  // Token sắp hết hạn (nhập tay ở Cài đặt › Kết nối).
+  const today = new Date().toISOString().slice(0, 10);
+  const soon = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+  for (const i of integrations) {
+    if (!i.connected) continue;
+    const exp = readIntegrationConfig(i.key).tokenExpiresAt;
+    if (exp && /^\d{4}-\d{2}-\d{2}$/.test(exp)) {
+      if (exp < today) issues.push(`${i.name}: token đã hết hạn ngày ${exp}. Vào Cài đặt › Kết nối để nhập token mới.`);
+      else if (exp <= soon) issues.push(`${i.name}: token hết hạn ngày ${exp} (trong 7 ngày). Chuẩn bị token mới.`);
+    }
+  }
   if (!s.running) issues.push("Bộ chạy nền chưa khởi động trong tiến trình này.");
   if (aiPct >= 80) issues.push(`Chi phí AI hôm nay đã dùng ${aiPct}% trần.`);
   for (const p of listPosts()) if (p.status === "failed") issues.push(`Đăng lỗi: “${p.title}”${p.error ? ` · ${p.error}` : ""}`);

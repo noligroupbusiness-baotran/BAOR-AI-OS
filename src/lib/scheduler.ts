@@ -2,6 +2,7 @@
 // Mỗi phút: đăng bài đến giờ. Mỗi giờ: đồng bộ số liệu kênh, luật CPL. Một tiến trình = một lịch.
 import { publishDuePosts, syncChannelMetrics } from "@/lib/connectors/sync";
 import { runScheduledRules } from "@/lib/automation/engine";
+import { sendAlert } from "@/lib/alerts";
 
 const g = globalThis as unknown as { __baorScheduler?: { timer: NodeJS.Timeout; lastHourly: number } };
 
@@ -34,7 +35,9 @@ async function tick() {
       if (rules.fired || rules.errors) parts.push(`automation ${rules.fired} lần${rules.errors ? `, ${rules.errors} lỗi` : ""}`);
     }
   } catch (e) {
-    parts.push(`lỗi: ${e instanceof Error ? e.message : String(e)}`);
+    const msg = e instanceof Error ? e.message : String(e);
+    parts.push(`lỗi: ${msg}`);
+    void sendAlert({ level: "error", title: "Bộ chạy nền gặp lỗi", text: msg, href: "/settings#syslog" });
   }
   state.lastResult = parts.join(" · ") || "không có việc";
 }
