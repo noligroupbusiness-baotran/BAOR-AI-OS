@@ -224,6 +224,15 @@ export const campaignResults: CampaignResult[] = [
   { campaignId: "cp_sale99", achievedValue: 212, leads: 95, orders: 212, revenue: 146280000, spent: 2720000, updatedAt: "2026-09-10T06:00:00+07:00", source: "sample" },
 ];
 
+// Đơn hàng mẫu: gắn lead và chiến dịch bằng ID thật để tab Kết quả và Báo cáo có doanh thu.
+export const sampleOrders: { id: string; leadId: string; campaignId: string; channelGoalId: string | null; productId: string; quantity: number; status: "new" | "paid" | "cancelled"; note: string; createdAt: string }[] = [
+  { id: "od_s99_1", leadId: "l4", campaignId: "cp_sale99", channelGoalId: "g_s99_email", productId: "pr_combo3", quantity: 1, status: "paid", note: "Đặt qua inbox sau email Sale 9.9", createdAt: "2026-09-08T10:15:00+07:00" },
+  { id: "od_s99_2", leadId: "l1", campaignId: "cp_sale99", channelGoalId: "g_s99_fbads", productId: "pr_combo3", quantity: 2, status: "paid", note: "Mua tặng bạn", createdAt: "2026-09-09T20:00:00+07:00" },
+  { id: "od_s99_3", leadId: "l5", campaignId: "cp_sale99", channelGoalId: "g_s99_fbads", productId: "pr_serum", quantity: 1, status: "new", note: "Chờ chuyển khoản", createdAt: "2026-09-10T08:30:00+07:00" },
+  { id: "od_md_1", leadId: "l_md3", campaignId: "cp_mocdiep_t10", channelGoalId: "g_md_fbads", productId: "pr_md_goi", quantity: 3, status: "paid", note: "Đăng ký cho 3 người", createdAt: "2026-09-10T09:00:00+07:00" },
+  { id: "od_care_1", leadId: "l_care2", campaignId: "cp_noli_chamsoc", channelGoalId: "g_care_zalo", productId: "pr_noli_care", quantity: 1, status: "new", note: "Đặt lại combo", createdAt: "2026-09-08T15:40:00+07:00" },
+];
+
 export const campaignLogs: { campaignId: string; at: string; actor: string; action: string; detail: string }[] = [
   { campaignId: "cp_mocdiep_t10", at: "2026-09-05T09:00:00+07:00", actor: "Anh Thư", action: "Tạo chiến dịch", detail: "Bản nháp với 5 mục tiêu kênh." },
   { campaignId: "cp_mocdiep_t10", at: "2026-09-05T16:00:00+07:00", actor: "Anh Thư", action: "Gửi phê duyệt", detail: "" },

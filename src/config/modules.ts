@@ -55,7 +55,7 @@ export const moduleGroups: Record<string, ModuleGroup[]> = {
     { name: "Phân Data", status: "planned" },
     { name: "Trạng thái chăm sóc", status: "active", href: "/customers?tab=inbox" },
     { name: "Lịch sử tương tác", status: "active", href: "/customers?tab=inbox" },
-    { name: "Đơn hàng", status: "planned" },
+    { name: "Đơn hàng", status: "active", href: "/customers?tab=orders" },
   ],
   automation: [
     { name: "Quy trình đang hoạt động", status: "planned" },

@@ -1,4 +1,4 @@
-import { and, count, inArray, isNull } from "drizzle-orm";
+import { and, count, eq, inArray, isNull } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "./schema";
 import { contentItems as seedContent, scheduledPosts as seedPosts } from "@/lib/data/content";
@@ -20,6 +20,7 @@ import {
   channelGoals as seedGoals,
   linkedRows,
   marketingLinks as seedLinks,
+  sampleOrders as seedOrders,
 } from "@/lib/data/campaigns";
 
 type Db = BetterSQLite3Database<typeof schema>;
@@ -120,8 +121,13 @@ export function seedAll(db: Db) {
 export function seedCatalogIfEmpty(db: Db) {
   const [{ n }] = db.select({ n: count() }).from(schema.people).all();
   const [{ v }] = db.select({ v: count() }).from(schema.videos).all();
-  if (n > 0 && v > 0) return;
-  db.transaction((tx) => seedCatalogData(tx));
+  if (!(n > 0 && v > 0)) db.transaction((tx) => seedCatalogData(tx));
+  // Đơn hàng mẫu cho CSDL đã nạp chiến dịch trước khi có bảng orders.
+  const [{ o }] = db.select({ o: count() }).from(schema.orders).all();
+  const [{ c }] = db.select({ c: count() }).from(schema.campaigns).all();
+  if (o === 0 && c > 0 && db.select().from(schema.campaigns).where(eq(schema.campaigns.id, "cp_sale99")).get()) {
+    db.transaction((tx) => seedOrdersData(tx));
+  }
 }
 
 function seedCatalogData(tx: Pick<Db, "insert">) {
@@ -143,6 +149,29 @@ export function seedCampaignsIfEmpty(db: Db) {
       .run();
     seedCampaignData(tx);
   });
+}
+
+function seedOrdersData(tx: Pick<Db, "insert">) {
+  const leadName = new Map([...seedLeads, ...linkedRows.leads].map((l) => [l.id, l.name]));
+  const productOf = new Map(seedProducts.map((p) => [p.id, p]));
+  tx.insert(schema.orders)
+    .values(
+      seedOrders.map((o) => {
+        const p = productOf.get(o.productId)!;
+        return { id: o.id, leadId: o.leadId, leadName: leadName.get(o.leadId) ?? "Khách", campaignId: o.campaignId, channelGoalId: o.channelGoalId, productId: o.productId, productName: p.name, quantity: o.quantity, unitPrice: p.price, total: p.price * o.quantity, status: o.status, note: o.note, createdBy: "seed", createdAt: o.createdAt, updatedAt: o.createdAt };
+      }),
+    )
+    .onConflictDoNothing()
+    .run();
+  tx.insert(schema.marketingLinks)
+    .values(
+      seedOrders.flatMap((o) => [
+        { id: `ml_${o.id}`, campaignId: o.campaignId, channelGoalId: o.channelGoalId, entityType: "order", entityId: o.id, status: o.status, ownerId: null, viaType: "lead", viaId: o.leadId, createdAt: o.createdAt },
+        ...(o.status === "paid" ? [{ id: `ml_${o.id}_rev`, campaignId: o.campaignId, channelGoalId: o.channelGoalId, entityType: "revenue", entityId: o.id, status: "paid", ownerId: null, viaType: "order", viaId: o.id, createdAt: o.createdAt }] : []),
+      ]),
+    )
+    .onConflictDoNothing()
+    .run();
 }
 
 // Chiến dịch mẫu + các bản ghi ở phân hệ khác mà chiến dịch liên kết tới (chỉ thêm khi chưa có).
@@ -194,6 +223,7 @@ function seedCampaignData(tx: Pick<Db, "insert">) {
   tx.insert(schema.campaignApprovals).values(seedApprovals).onConflictDoNothing().run();
   tx.insert(schema.campaignResults).values(seedResults).onConflictDoNothing().run();
   tx.insert(schema.campaignLogs).values(seedCampaignLogs.map((l) => ({ ...l, idemKey: null }))).run();
+  seedOrdersData(tx);
 }
 
 // Chỉ xóa bản ghi mẫu (theo ID nạp ban đầu). Dữ liệu người dùng tự tạo được giữ nguyên.
@@ -218,6 +248,7 @@ export function clearSampleOnly(db: Db) {
     people: seedPeople.map((p) => p.id),
     videos: seedVideos.map((v) => v.id),
     activityAt: recentActivity.map((a) => a.at),
+    orders: seedOrders.map((o) => o.id),
   };
   db.transaction((tx) => {
     tx.delete(schema.messages).where(inArray(schema.messages.conversationId, ids.convs)).run();
@@ -236,7 +267,8 @@ export function clearSampleOnly(db: Db) {
     tx.delete(schema.campaignLogs).where(inArray(schema.campaignLogs.campaignId, ids.campaigns)).run();
     tx.delete(schema.campaignResults).where(inArray(schema.campaignResults.campaignId, ids.campaigns)).run();
     tx.delete(schema.campaignApprovals).where(inArray(schema.campaignApprovals.id, ids.approvals)).run();
-    tx.delete(schema.marketingLinks).where(inArray(schema.marketingLinks.id, ids.links)).run();
+    tx.delete(schema.marketingLinks).where(inArray(schema.marketingLinks.id, [...ids.links, ...ids.orders.flatMap((o) => [`ml_${o}`, `ml_${o}_rev`])])).run();
+    tx.delete(schema.orders).where(inArray(schema.orders.id, ids.orders)).run();
     tx.delete(schema.channelGoals).where(inArray(schema.channelGoals.id, ids.goals)).run();
     tx.delete(schema.campaigns).where(inArray(schema.campaigns.id, ids.campaigns)).run();
     tx.delete(schema.videos).where(inArray(schema.videos.id, ids.videos)).run();
@@ -271,6 +303,7 @@ export function clearAll(db: Db) {
       schema.videos,
       schema.people,
       schema.products,
+      schema.orders,
     ]) {
       tx.delete(t).run();
     }

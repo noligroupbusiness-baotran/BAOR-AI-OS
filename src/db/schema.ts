@@ -382,3 +382,29 @@ export const syncRuns = sqliteTable(
   },
   (t) => [index("sync_runs_started_idx").on(t.startedAt)],
 );
+
+// ---------------------------------------------------------------------------
+// Đơn hàng: nguồn doanh thu thật cho chiến dịch và báo cáo. Mỗi đơn gắn lead, sản phẩm từ danh mục,
+// và chiến dịch / mục tiêu kênh (kế thừa từ lead nếu không chỉ định).
+// ---------------------------------------------------------------------------
+export const orders = sqliteTable(
+  "orders",
+  {
+    id: text("id").primaryKey(),
+    leadId: text("lead_id"),
+    leadName: text("lead_name").notNull().default(""),
+    campaignId: text("campaign_id"),
+    channelGoalId: text("channel_goal_id"),
+    productId: text("product_id"),
+    productName: text("product_name").notNull(),
+    quantity: integer("quantity").notNull().default(1),
+    unitPrice: integer("unit_price").notNull().default(0),
+    total: integer("total").notNull().default(0),
+    status: text("status").notNull(), // new | paid | cancelled
+    note: text("note").notNull().default(""),
+    createdBy: text("created_by").notNull().default(""),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (t) => [index("orders_campaign_idx").on(t.campaignId), index("orders_lead_idx").on(t.leadId)],
+);

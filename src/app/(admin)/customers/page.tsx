@@ -11,6 +11,9 @@ import { Field, inputClass } from "@/components/ui/field";
 import { SubmitButton } from "@/components/campaigns/submit-button";
 import { Pager, paginate } from "@/components/ui/pager";
 import { channelLabel } from "@/config/channels";
+import { OrdersTab } from "@/components/customers/orders-tab";
+import { currentActor } from "@/lib/permissions";
+import { listOrders } from "@/lib/orders/repository";
 import { listConversations, listEmailSequences, listLeads, listRules } from "@/lib/queries";
 import { leadSourceLabel, leadStageLabel } from "@/lib/labels";
 import { formatDateTime, formatNumber, formatTime, cn } from "@/lib/format";
@@ -23,8 +26,10 @@ export const metadata = { title: "Khách hàng & email – BAOR AI OS" };
 
 const stages: LeadStage[] = ["new", "contacted", "qualified", "won", "lost"];
 
-export default async function CustomersPage({ searchParams }: { searchParams: Promise<{ tab?: string; conv?: string; suggest?: string; link?: string; add?: string; page?: string }> }) {
-  const { tab = "inbox", conv, suggest, link, add, page } = await searchParams;
+export default async function CustomersPage({ searchParams }: { searchParams: Promise<{ tab?: string; conv?: string; suggest?: string; link?: string; add?: string; page?: string; lead?: string }> }) {
+  const { tab = "inbox", conv, suggest, link, add, page, lead: preselectLead } = await searchParams;
+  const actor = await currentActor();
+  const orderCount = listOrders().length;
   const convs = listConversations();
   const selected = convs.find((c) => c.id === conv) ?? convs[0];
   const leads = listLeads();
@@ -58,6 +63,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
           items={[
             { key: "inbox", label: `Hộp thư · ${convs.length}` },
             { key: "leads", label: `Lead · ${leads.length}` },
+            { key: "orders", label: `Đơn hàng · ${orderCount}` },
             { key: "rules", label: `Quy tắc trả lời · ${rules.length}` },
             { key: "email", label: `Email · ${seqs.length}` },
           ]}
@@ -184,7 +190,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
                     </div>
                   </Td>
                   <Td><div className="max-w-[260px] truncate">{l.lastMessage}</div><div className="num text-[11px] text-ink-3">{formatDateTime(l.lastMessageAt)}</div></Td>
-                  <Td className="num">{l.phone ?? l.email ?? "—"}</Td>
+                  <Td className="num">{l.phone ?? l.email ?? "—"}<div><Link href={`/customers?tab=orders&add=1&lead=${l.id}`} className="text-[11.5px] font-medium text-jade hover:underline">Tạo đơn</Link></div></Td>
                   <Td right>
                     <form action={setLeadStage} className="flex justify-end gap-1.5">
                       <input type="hidden" name="id" value={l.id} />
@@ -201,6 +207,8 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
           <Pager page={leadPage.page} pages={leadPage.pages} total={leadPage.total} hrefFor={(p) => `/customers?tab=leads&page=${p}`} label="lead" />
         </Panel>
       )}
+
+      {tab === "orders" && <OrdersTab add={add === "1"} page={page} actor={actor} preselectLead={preselectLead} />}
 
       {tab === "rules" && (
         <Panel>
