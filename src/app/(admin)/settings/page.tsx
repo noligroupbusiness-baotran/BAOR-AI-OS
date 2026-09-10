@@ -11,7 +11,7 @@ import { BackupPanel } from "@/components/settings/backup-panel";
 import { PeoplePanel, ProductsPanel } from "@/components/settings/catalog-panels";
 import { AiBudgetPanel, IntegrationsPanel, SystemLogPanel } from "@/components/settings/integration-panels";
 import { FaqPanel } from "@/components/settings/faq-panel";
-import { AlertsPanel, BrandPanel, MusicPanel } from "@/components/settings/brand-panels";
+import { AlertsPanel, AppLogoPanel, BrandPanel, MusicPanel } from "@/components/settings/brand-panels";
 
 export const metadata = { title: "Cài đặt – BAOR AI OS" };
 
@@ -67,6 +67,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       <BrandPanel />
 
       <div className="grid gap-3.5 md:grid-cols-2">
+        <AppLogoPanel />
         <Panel id="account">
           <PanelHeader title="Tài khoản quản trị" sub="Đổi email hoặc mật khẩu đăng nhập. Cần mật khẩu hiện tại để xác nhận." />
           <form action={saveAccount} className="grid gap-3 p-4">

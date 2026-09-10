@@ -75,7 +75,8 @@ export const moduleGroups: Record<string, ModuleGroup[]> = {
   settings: [
     { name: "Sản phẩm và bảng giá", status: "active", href: "/settings#products" },
     { name: "Nhận diện thương hiệu", status: "active", href: "/settings#brand" },
-    { name: "Logo, màu sắc và font chữ", status: "active", href: "/settings#brand" },
+    { name: "Màu sắc, font chữ, khẩu hiệu", status: "active", href: "/settings#brand" },
+    { name: "Logo giao diện quản trị", status: "active", href: "/settings#app-logo" },
     { name: "Kho nhạc", status: "active", href: "/settings#music" },
     { name: "Tài khoản nền tảng", status: "active", href: "/settings#integrations" },
     { name: "Nhân sự và phân quyền", status: "active", href: "/settings#people" },

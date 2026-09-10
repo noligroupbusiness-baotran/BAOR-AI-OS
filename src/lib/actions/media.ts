@@ -16,23 +16,7 @@ const fail = (path: string, msg: string): never => done(`${path}${path.includes(
 // ---------- Thương hiệu: logo, màu, font ----------
 
 export async function saveBrandIdentity(fd: FormData) {
-  const actor = await requirePermission("manager", "/settings#brand");
-  const logo = fd.get("logo");
-  if (logo instanceof File && logo.size > 0) {
-    const r = await saveUpload("logo", logo, actor.email);
-    if (!r.ok) return fail("/settings#brand", `Logo: ${r.error}`);
-    const old = getSetting("brand.logoUploadId");
-    if (old) deleteUpload(old);
-    setSetting("brand.logoUploadId", r.upload.id);
-  }
-  const logoDark = fd.get("logoDark");
-  if (logoDark instanceof File && logoDark.size > 0) {
-    const r = await saveUpload("logo", logoDark, actor.email, { variant: "dark" });
-    if (!r.ok) return fail("/settings#brand", `Logo nền tối: ${r.error}`);
-    const old = getSetting("brand.logoDarkUploadId");
-    if (old) deleteUpload(old);
-    setSetting("brand.logoDarkUploadId", r.upload.id);
-  }
+  await requirePermission("manager", "/settings#brand");
   const color = (k: string) => {
     const v = str(fd, k);
     return /^#[0-9a-fA-F]{6}$/.test(v) ? v : "";
@@ -41,17 +25,40 @@ export async function saveBrandIdentity(fd: FormData) {
   setSetting("brand.secondaryColor", color("secondaryColor"));
   setSetting("brand.font", str(fd, "font"));
   setSetting("brand.tagline", str(fd, "tagline"));
-  logActivity("human", "Cập nhật nhận diện thương hiệu (logo, màu, font).", "settings");
+  logActivity("human", "Cập nhật nhận diện thương hiệu (màu, font, khẩu hiệu).", "settings");
   done("/settings#brand", "Đã lưu nhận diện thương hiệu");
 }
 
-export async function removeLogo(fd: FormData) {
-  await requirePermission("manager", "/settings#brand");
-  const key = str(fd, "variant") === "dark" ? "brand.logoDarkUploadId" : "brand.logoUploadId";
+// ---------- Logo giao diện quản trị (góc trái sidebar) ----------
+// Tách riêng khỏi Thương hiệu: logo này chỉ hiện trên giao diện hệ thống, không in lên ảnh/video.
+
+const APP_LOGO_KEYS = { light: "ui.logoLightUploadId", dark: "ui.logoDarkUploadId" } as const;
+
+export async function saveAppLogo(fd: FormData) {
+  const actor = await requirePermission("manager", "/settings#app-logo");
+  let saved = 0;
+  for (const variant of ["light", "dark"] as const) {
+    const file = fd.get(variant === "light" ? "logoLight" : "logoDark");
+    if (!(file instanceof File) || file.size === 0) continue;
+    const r = await saveUpload("logo", file, actor.email, { use: "app", variant });
+    if (!r.ok) return fail("/settings#app-logo", `Logo nền ${variant === "light" ? "sáng" : "tối"}: ${r.error}`);
+    const old = getSetting(APP_LOGO_KEYS[variant]);
+    if (old) deleteUpload(old);
+    setSetting(APP_LOGO_KEYS[variant], r.upload.id);
+    saved++;
+  }
+  if (!saved) return fail("/settings#app-logo", "Chưa chọn tệp logo nào.");
+  logActivity("human", `${actor.name} cập nhật logo giao diện quản trị.`, "settings");
+  done("/settings#app-logo", "Đã lưu logo. Góc trái sẽ hiện logo mới.");
+}
+
+export async function removeAppLogo(fd: FormData) {
+  await requirePermission("manager", "/settings#app-logo");
+  const key = APP_LOGO_KEYS[str(fd, "variant") === "dark" ? "dark" : "light"];
   const old = getSetting(key);
   if (old) deleteUpload(old);
   setSetting(key, "");
-  done("/settings#brand", "Đã gỡ logo");
+  done("/settings#app-logo", "Đã gỡ logo");
 }
 
 // ---------- Kho nhạc ----------

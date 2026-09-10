@@ -10,8 +10,13 @@ OUT="$(cd "$(dirname "$0")/.." && pwd)/public/brand"
 mkdir -p "$OUT"
 command -v magick >/dev/null || { echo "Cần ImageMagick (brew install imagemagick)"; exit 1; }
 
-# 1. Xóa nền trắng (dung sai 12%), cắt sát, đệm 2% và giới hạn chiều rộng 1600px.
-magick "$SRC" -fuzz 12% -transparent white -trim +repage -resize 1600x -bordercolor none -border 2% "$OUT/baor-dark.png"
+# 1. Xóa nền trắng (dung sai 12%) nếu tệp chưa có nền trong suốt; cắt sát, đệm 2%, giới hạn chiều rộng 1600px.
+#    Tệp đã trong suốt thì giữ nguyên để không làm thủng vùng sáng bóng của chữ.
+if [ "$(magick "$SRC" -format '%[opaque]' info:)" = "True" ]; then
+  magick "$SRC" -fuzz 12% -transparent white -trim +repage -resize 1600x -bordercolor none -border 2% "$OUT/baor-dark.png"
+else
+  magick "$SRC" -trim +repage -resize 1600x -bordercolor none -border 2% "$OUT/baor-dark.png"
+fi
 
 # 2. Biến thể chữ sáng: lấy alpha làm khuôn, tô gradient vàng kem → vàng đồng để giữ chất "gold".
 W=$(magick identify -format %w "$OUT/baor-dark.png")
@@ -21,7 +26,8 @@ magick -size "${W}x${H}" gradient:"#f7ecd2-#d9b26f" \( "$OUT/baor-dark.png" -alp
 # 3. Biểu tượng vuông: cắt chữ B (khoảng 19% chiều rộng đầu tiên của phần chữ lớn), đóng khung vuông.
 crop_mark() {
   local in="$1" out="$2"
-  magick "$in" -gravity West -crop "19%x78%+0+0" +repage -trim +repage -bordercolor none -border 6% -gravity center -background none -extent "$(magick identify -format '%[fx:max(w,h)]x%[fx:max(w,h)]' "$in")" "$out"
+  # Cắt chữ B, cắt sát, rồi đóng khung vuông theo cạnh lớn nhất của chính chữ B (không phải cả wordmark).
+  magick "$in" -gravity West -crop "19%x78%+0+0" +repage -trim +repage -bordercolor none -border 8% -gravity center -background none -extent '%[fx:max(w,h)]x%[fx:max(w,h)]' "$out"
 }
 crop_mark "$OUT/baor-dark.png" "$OUT/baor-mark-dark.png"
 crop_mark "$OUT/baor-light.png" "$OUT/baor-mark-light.png"

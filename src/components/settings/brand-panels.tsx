@@ -5,7 +5,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Field, FormNotice, inputClass, textareaClass } from "@/components/ui/field";
 import { SubmitButton } from "@/components/campaigns/submit-button";
 import { saveBrand } from "@/lib/actions/settings";
-import { deleteMusic, removeLogo, saveAlerts, saveBrandIdentity, testAlert, uploadMusic } from "@/lib/actions/media";
+import { deleteMusic, removeAppLogo, saveAlerts, saveAppLogo, saveBrandIdentity, testAlert, uploadMusic } from "@/lib/actions/media";
 import { getBrand } from "@/lib/queries";
 import { getSetting } from "@/lib/admin";
 import { fileUrl, getUpload, listUploads } from "@/lib/uploads";
@@ -13,13 +13,60 @@ import { alertConfig } from "@/lib/alerts";
 import { listRuns } from "@/lib/connectors/config";
 import { formatDateTime, cn } from "@/lib/format";
 
-// Cài đặt › Thương hiệu: giọng văn + nhận diện (logo, màu, font). AI và Agent dựng video chỉ dùng thông tin ở đây.
+const fileInputClass = "block w-full text-[12.5px] text-ink-2 file:mr-2 file:rounded-full file:border file:border-border-2 file:bg-surface file:px-2.5 file:py-1 file:text-[12px] file:text-ink";
+
+// Cài đặt › Logo giao diện quản trị: chỉ dùng cho góc trái sidebar/topbar của hệ thống này.
+// Không liên quan tới logo in lên ảnh/video (phần Thương hiệu). Mỗi nền một tệp riêng.
+export function AppLogoPanel() {
+  const lightId = getSetting("ui.logoLightUploadId") ?? "";
+  const light = lightId ? getUpload(lightId) : undefined;
+  const darkId = getSetting("ui.logoDarkUploadId") ?? "";
+  const dark = darkId ? getUpload(darkId) : undefined;
+  return (
+    <Panel id="app-logo">
+      <PanelHeader title="Logo giao diện quản trị" sub="Hiện ở góc trên bên trái của hệ thống. Chữ tối cho nền sáng, chữ sáng cho nền tối. Không dùng cho ảnh hay video." />
+      <form action={saveAppLogo} className="grid gap-3 p-4">
+        <div className="flex items-center gap-3">
+          <div className="grid h-14 w-24 shrink-0 place-items-center overflow-hidden rounded-lg border border-border bg-[#f5f2ea] p-1">
+            {light ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={fileUrl(light.id)} alt="Logo cho nền sáng" className="h-full w-full object-contain" />
+            ) : (
+              <span className="text-[11px] text-[#5e655f]">Chưa có</span>
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <Field label="Nền sáng (chữ tối)" hint="PNG/SVG/WebP nền trong suốt, tối đa 3 MB."><input type="file" name="logoLight" accept="image/png,image/jpeg,image/svg+xml,image/webp" className={fileInputClass} /></Field>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="grid h-14 w-24 shrink-0 place-items-center overflow-hidden rounded-lg border border-border bg-[#121713] p-1">
+            {dark ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={fileUrl(dark.id)} alt="Logo cho nền tối" className="h-full w-full object-contain" />
+            ) : (
+              <span className="text-[11px] text-[#aab2ab]">Chưa có</span>
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <Field label="Nền tối (chữ sáng)" hint="Bỏ trống thì dùng logo nền sáng cho cả hai."><input type="file" name="logoDark" accept="image/png,image/jpeg,image/svg+xml,image/webp" className={fileInputClass} /></Field>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2"><SubmitButton pendingText="Đang tải lên…">Lưu logo</SubmitButton></div>
+      </form>
+      {(light || dark) && (
+        <div className="flex gap-2 border-t border-border px-4 py-2">
+          {light && <form action={removeAppLogo}><input type="hidden" name="variant" value="light" /><Button type="submit" variant="ghost">Gỡ logo nền sáng</Button></form>}
+          {dark && <form action={removeAppLogo}><input type="hidden" name="variant" value="dark" /><Button type="submit" variant="ghost">Gỡ logo nền tối</Button></form>}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+// Cài đặt › Thương hiệu: giọng văn + nhận diện (màu, font, khẩu hiệu) cho nội dung, ảnh và video do AI/Agent tạo.
 export function BrandPanel() {
   const brand = getBrand();
-  const logoId = getSetting("brand.logoUploadId") ?? "";
-  const logo = logoId ? getUpload(logoId) : undefined;
-  const logoDarkId = getSetting("brand.logoDarkUploadId") ?? "";
-  const logoDark = logoDarkId ? getUpload(logoDarkId) : undefined;
   const primary = getSetting("brand.primaryColor") || "#1e7a4b";
   const secondary = getSetting("brand.secondaryColor") || "#b7791f";
   const font = getSetting("brand.font") || "";
@@ -27,7 +74,7 @@ export function BrandPanel() {
   const input = `${inputClass}`;
   return (
     <Panel id="brand">
-      <PanelHeader title="Thương hiệu và nhận diện" sub="Giọng văn cho AI viết nội dung và trả lời khách; logo, màu sắc, font chữ cho ảnh và video. Sản phẩm và giá lấy từ danh mục phía trên." />
+      <PanelHeader title="Thương hiệu và nhận diện" sub="Giọng văn cho AI viết nội dung và trả lời khách; màu sắc, font chữ, khẩu hiệu cho ảnh và video do Agent dựng. Logo góc trái hệ thống chỉnh ở phần Logo giao diện quản trị." />
       <div className="grid gap-0 md:grid-cols-2">
         <form action={saveBrand} className="grid gap-3 border-b border-border p-4 md:border-b-0 md:border-r">
           <div className="text-[11.5px] font-semibold uppercase tracking-wide text-ink-3">Giọng văn</div>
@@ -36,36 +83,8 @@ export function BrandPanel() {
           <Field label="Giọng văn"><textarea name="voice" rows={3} defaultValue={brand.voice} className={textareaClass} /></Field>
           <div><SubmitButton>Lưu giọng văn</SubmitButton></div>
         </form>
-        <form action={saveBrandIdentity} className="grid gap-3 p-4" encType="multipart/form-data">
-          <div className="text-[11.5px] font-semibold uppercase tracking-wide text-ink-3">Logo, màu sắc, font chữ</div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="flex items-center gap-3">
-              <div className="grid h-14 w-20 shrink-0 place-items-center overflow-hidden rounded-lg border border-border bg-[#f5f2ea] p-1">
-                {logo ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={fileUrl(logo.id)} alt="Logo cho nền sáng" className="h-full w-full object-contain" />
-                ) : (
-                  <span className="text-[11px] text-[#5e655f]">Chưa có</span>
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <Field label="Logo cho nền sáng (chữ tối)" hint="PNG/SVG nền trong suốt, tối đa 3 MB."><input type="file" name="logo" accept="image/png,image/jpeg,image/svg+xml,image/webp" className="block w-full text-[12.5px] text-ink-2 file:mr-2 file:rounded-full file:border file:border-border-2 file:bg-surface file:px-2.5 file:py-1 file:text-[12px] file:text-ink" /></Field>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="grid h-14 w-20 shrink-0 place-items-center overflow-hidden rounded-lg border border-border bg-[#121713] p-1">
-                {logoDark ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={fileUrl(logoDark.id)} alt="Logo cho nền tối" className="h-full w-full object-contain" />
-                ) : (
-                  <span className="text-[11px] text-[#aab2ab]">Chưa có</span>
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <Field label="Logo cho nền tối (chữ sáng)" hint="Không có thì dùng logo nền sáng cho cả hai."><input type="file" name="logoDark" accept="image/png,image/jpeg,image/svg+xml,image/webp" className="block w-full text-[12.5px] text-ink-2 file:mr-2 file:rounded-full file:border file:border-border-2 file:bg-surface file:px-2.5 file:py-1 file:text-[12px] file:text-ink" /></Field>
-              </div>
-            </div>
-          </div>
+        <form action={saveBrandIdentity} className="grid gap-3 p-4">
+          <div className="text-[11.5px] font-semibold uppercase tracking-wide text-ink-3">Màu sắc, font chữ, khẩu hiệu</div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Màu chính"><div className="flex items-center gap-2"><input type="color" name="primaryColor" defaultValue={primary} className="h-8 w-12 cursor-pointer rounded border border-border-2 bg-surface" /><span className="num text-[12px] text-ink-2">{primary}</span></div></Field>
             <Field label="Màu phụ"><div className="flex items-center gap-2"><input type="color" name="secondaryColor" defaultValue={secondary} className="h-8 w-12 cursor-pointer rounded border border-border-2 bg-surface" /><span className="num text-[12px] text-ink-2">{secondary}</span></div></Field>
@@ -75,12 +94,6 @@ export function BrandPanel() {
           <div className="flex gap-2"><SubmitButton pendingText="Đang lưu…">Lưu nhận diện</SubmitButton></div>
         </form>
       </div>
-      {(logo || logoDark) && (
-        <div className="flex gap-2 border-t border-border px-4 py-2">
-          {logo && <form action={removeLogo}><input type="hidden" name="variant" value="light" /><Button type="submit" variant="ghost">Gỡ logo nền sáng</Button></form>}
-          {logoDark && <form action={removeLogo}><input type="hidden" name="variant" value="dark" /><Button type="submit" variant="ghost">Gỡ logo nền tối</Button></form>}
-        </div>
-      )}
     </Panel>
   );
 }
@@ -91,7 +104,7 @@ export function MusicPanel() {
   return (
     <Panel id="music">
       <PanelHeader title="Kho nhạc nền" sub="Agent Edit Video chỉ chọn nhạc từ kho này. Ghi rõ nguồn / bản quyền để tránh bị gỡ video." />
-      <form action={uploadMusic} encType="multipart/form-data" className="grid gap-3 border-b border-border bg-ground px-4 py-3 md:grid-cols-4">
+      <form action={uploadMusic} className="grid gap-3 border-b border-border bg-ground px-4 py-3 md:grid-cols-4">
         <Field label="Tệp nhạc (MP3, WAV, AAC, tối đa 25 MB)" className="md:col-span-2"><input type="file" name="file" required accept="audio/*" className="block w-full text-[12.5px] text-ink-2 file:mr-2 file:rounded-full file:border file:border-border-2 file:bg-surface file:px-2.5 file:py-1 file:text-[12px] file:text-ink" /></Field>
         <Field label="Tên hiển thị"><input name="title" className={inputClass} placeholder="VD: Nhẹ nhàng buổi sáng" /></Field>
         <Field label="Tâm trạng">

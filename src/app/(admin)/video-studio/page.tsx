@@ -59,7 +59,7 @@ export default async function VideoStudioPage({ searchParams }: { searchParams: 
       {sp.upload === "1" && (
         <Panel>
           <PanelHeader title="Tải video lên" sub="Video quay tay hoặc do Agent gửi về. Sau khi tải, video vào “Chờ kiểm tra”, rồi gửi phê duyệt như bình thường. Tối đa 500 MB (MP4, MOV, WebM)." />
-          <form action={uploadVideo} encType="multipart/form-data" className="grid gap-3 p-4 md:grid-cols-2">
+          <form action={uploadVideo} className="grid gap-3 p-4 md:grid-cols-2">
             <Field label="Tên video" required><input name="title" required className={inputClass} placeholder="VD: Khách văn phòng nói gì sau lượt gội đầu tiên" /></Field>
             <Field label="Tệp video" required><input type="file" name="file" required accept="video/mp4,video/quicktime,video/webm" className="block w-full text-[12.5px] text-ink-2 file:mr-2 file:rounded-full file:border file:border-border-2 file:bg-surface file:px-2.5 file:py-1 file:text-[12px] file:text-ink" /></Field>
             <Field label="Kịch bản gốc (nếu có)" hint="Video kế thừa chiến dịch của kịch bản.">
