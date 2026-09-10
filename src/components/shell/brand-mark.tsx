@@ -1,6 +1,6 @@
 import { cn } from "@/lib/format";
 
-// Logo góc trái: chữ BAOR (ảnh, hai biến thể theo nền) + nhãn "AI OS" và dòng phụ bằng chữ giao diện.
+// Logo góc trái: chữ BAOR (ảnh, hai biến thể theo nền) + dòng phụ bằng chữ giao diện.
 // Lớp only-light / only-dark (globals.css) chọn biến thể theo chế độ màu. Không có ảnh thì hiện ô chữ B.
 export interface BrandLogos {
   /** Chữ tối, dùng trên nền sáng. */
@@ -46,10 +46,7 @@ export function BrandMark({ logos, collapsed, className }: { logos: BrandLogos; 
   }
   return (
     <div className={cn("flex min-w-0 flex-col gap-[3px]", className)} title="BAOR AI OS">
-      <div className="flex items-end gap-2">
-        <Pair light={logos.light} dark={logos.dark} className="h-[22px] w-auto max-w-[128px] object-contain object-left" alt="BAOR" />
-        <span className="rounded-[5px] border border-border-2 px-1.5 text-[10px] font-bold leading-[16px] tracking-[0.12em] text-ink">AI OS</span>
-      </div>
+      <Pair light={logos.light} dark={logos.dark} className="h-[24px] w-auto max-w-[150px] object-contain object-left" alt="BAOR" />
       <div className="truncate text-[9.5px] font-semibold uppercase tracking-[0.18em] text-ink-3">Marketing Automation</div>
     </div>
   );
