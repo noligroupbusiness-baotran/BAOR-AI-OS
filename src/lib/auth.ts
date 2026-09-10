@@ -1,8 +1,8 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 
-// Tài khoản quản trị đọc từ biến môi trường (.env.local).
-// Giá trị mặc định chỉ dùng cho môi trường phát triển; hãy đổi ngay khi triển khai.
+// Tài khoản quản trị đọc từ biến môi trường (.env.local): ADMIN_EMAIL, ADMIN_PASSWORD.
+// Không có giá trị mặc định trong mã nguồn để tránh lộ thông tin đăng nhập trên git.
 export const SESSION_COOKIE = "baor_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 ngày
 
@@ -14,8 +14,8 @@ function getSecret(): Uint8Array {
 
 export function getAdminCredentials() {
   return {
-    email: process.env.ADMIN_EMAIL || "thanhbaotran.business@gmail.com",
-    password: process.env.ADMIN_PASSWORD || "123456",
+    email: process.env.ADMIN_EMAIL ?? "",
+    password: process.env.ADMIN_PASSWORD ?? "",
   };
 }
 
@@ -31,6 +31,8 @@ function safeEqual(a: string, b: string): boolean {
 
 export function verifyCredentials(email: string, password: string): boolean {
   const admin = getAdminCredentials();
+  // Chưa cấu hình tài khoản thì từ chối mọi đăng nhập.
+  if (!admin.email || !admin.password) return false;
   return (
     safeEqual(email.trim().toLowerCase(), admin.email.toLowerCase()) &&
     safeEqual(password, admin.password)

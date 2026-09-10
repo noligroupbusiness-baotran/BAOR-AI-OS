@@ -30,7 +30,7 @@ npm install
 npm run dev                  # http://localhost:3000
 ```
 
-Nếu chưa có `.env.local`, hệ thống dùng tài khoản mặc định trong `src/lib/auth.ts` (chỉ dành cho phát triển, hãy đổi trước khi triển khai thật).
+Chưa có `.env.local` (hoặc thiếu ADMIN_EMAIL / ADMIN_PASSWORD) thì mọi đăng nhập đều bị từ chối.
 
 ## Công nghệ
 
