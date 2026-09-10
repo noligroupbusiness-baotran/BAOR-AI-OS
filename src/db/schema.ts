@@ -408,3 +408,51 @@ export const orders = sqliteTable(
   },
   (t) => [index("orders_campaign_idx").on(t.campaignId), index("orders_lead_idx").on(t.leadId)],
 );
+
+// ---------------------------------------------------------------------------
+// Automation: quy tắc "khi X thì Y" chạy trên bộ định tuyến, và kho câu trả lời chuẩn (FAQ).
+// ---------------------------------------------------------------------------
+export const faqs = sqliteTable("faqs", {
+  id: text("id").primaryKey(),
+  question: text("question").notNull(),
+  keywords: text("keywords").notNull().default("[]"), // JSON string[] đã bỏ dấu, viết thường
+  answer: text("answer").notNull(),
+  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  hits: integer("hits").notNull().default(0),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const automationRules = sqliteTable("automation_rules", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+  trigger: text("trigger").notNull(), // message_received | lead_created | lead_stale | post_engagement_high | campaign_behind | ad_cpl_high
+  condition: text("condition").notNull().default("{}"), // JSON theo trigger
+  action: text("action").notNull(), // reply_faq | reply_price | mark_needs_human | set_stage | tag_lead | notify | propose_ad | pause_ad | request_approval
+  params: text("params").notNull().default("{}"), // JSON theo action
+  priority: integer("priority").notNull().default(100), // nhỏ chạy trước
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(false),
+  requiresApproval: integer("requires_approval", { mode: "boolean" }).notNull().default(false),
+  campaignId: text("campaign_id"),
+  status: text("status").notNull().default("draft"), // draft | active | paused | error
+  runs: integer("runs").notNull().default(0),
+  lastRunAt: text("last_run_at"),
+  lastError: text("last_error"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const automationRuns = sqliteTable(
+  "automation_runs",
+  {
+    id: text("id").primaryKey(),
+    ruleId: text("rule_id").notNull(),
+    at: text("at").notNull(),
+    entityType: text("entity_type"),
+    entityId: text("entity_id"),
+    ok: integer("ok", { mode: "boolean" }).notNull().default(true),
+    message: text("message").notNull().default(""),
+    decisionId: text("decision_id"),
+  },
+  (t) => [index("automation_runs_rule_idx").on(t.ruleId), index("automation_runs_at_idx").on(t.at)],
+);

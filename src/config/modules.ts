@@ -19,7 +19,7 @@ export const moduleGroups: Record<string, ModuleGroup[]> = {
   insights: [
     { name: "Chân dung khách hàng", status: "active", href: "/insights#personas" },
     { name: "Nỗi đau và mong muốn", status: "active", href: "/insights#personas" },
-    { name: "Câu hỏi thường gặp", status: "planned" },
+    { name: "Câu hỏi thường gặp", status: "active", href: "/settings#faq" },
     { name: "Đối thủ", status: "planned" },
     { name: "Xu hướng", status: "active", href: "/insights#channels" },
     { name: "Ngân hàng Insight", status: "active", href: "/insights#insights" },
@@ -58,11 +58,11 @@ export const moduleGroups: Record<string, ModuleGroup[]> = {
     { name: "Đơn hàng", status: "active", href: "/customers?tab=orders" },
   ],
   automation: [
-    { name: "Quy trình đang hoạt động", status: "planned" },
-    { name: "Bản nháp", status: "planned" },
-    { name: "Quy trình tạm dừng", status: "planned" },
-    { name: "Lịch sử chạy", status: "planned" },
-    { name: "Lỗi cần xử lý", status: "planned" },
+    { name: "Quy trình đang hoạt động", status: "active", href: "/automation?tab=active" },
+    { name: "Bản nháp", status: "active", href: "/automation?tab=draft" },
+    { name: "Quy trình tạm dừng", status: "active", href: "/automation?tab=paused" },
+    { name: "Lịch sử chạy", status: "active", href: "/automation?tab=runs" },
+    { name: "Lỗi cần xử lý", status: "active", href: "/automation?tab=error" },
   ],
   reports: [
     { name: "Hiệu quả nội dung", status: "planned" },

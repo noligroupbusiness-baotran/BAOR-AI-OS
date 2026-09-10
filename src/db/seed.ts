@@ -12,6 +12,7 @@ import { recentActivity } from "@/lib/data/pipeline";
 import { people as seedPeople } from "@/lib/data/people";
 import { products as seedProducts } from "@/lib/data/products";
 import { videos as seedVideos } from "@/lib/data/videos";
+import { defaultFaqs, defaultRules } from "@/lib/data/automation";
 import {
   campaignApprovals as seedApprovals,
   campaignLogs as seedCampaignLogs,
@@ -114,6 +115,7 @@ export function seedAll(db: Db) {
     tx.insert(schema.settings).values(settingRows).onConflictDoNothing().run();
     seedCampaignData(tx);
     seedCatalogData(tx);
+    seedAutomationData(tx);
   });
 }
 
@@ -128,6 +130,21 @@ export function seedCatalogIfEmpty(db: Db) {
   if (o === 0 && c > 0 && db.select().from(schema.campaigns).where(eq(schema.campaigns.id, "cp_sale99")).get()) {
     db.transaction((tx) => seedOrdersData(tx));
   }
+  const [{ r }] = db.select({ r: count() }).from(schema.automationRules).all();
+  if (r === 0) db.transaction((tx) => seedAutomationData(tx));
+}
+
+// Quy tắc Automation mặc định + kho câu trả lời chuẩn.
+function seedAutomationData(tx: Pick<Db, "insert">) {
+  const now = "2026-09-10T08:00:00+07:00";
+  tx.insert(schema.automationRules)
+    .values(defaultRules.map((r) => ({ id: r.id, name: r.name, description: r.description, trigger: r.trigger, condition: JSON.stringify(r.condition), action: r.action, params: JSON.stringify(r.params), priority: r.priority, enabled: r.enabled, requiresApproval: r.requiresApproval, campaignId: r.campaignId, status: r.enabled ? "active" : "draft", runs: 0, lastRunAt: null, lastError: null, createdAt: now, updatedAt: now })))
+    .onConflictDoNothing()
+    .run();
+  tx.insert(schema.faqs)
+    .values(defaultFaqs.map((f) => ({ id: f.id, question: f.question, keywords: JSON.stringify(f.keywords.map((k) => k.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").toLowerCase())), answer: f.answer, active: true, hits: 0, updatedAt: now })))
+    .onConflictDoNothing()
+    .run();
 }
 
 function seedCatalogData(tx: Pick<Db, "insert">) {

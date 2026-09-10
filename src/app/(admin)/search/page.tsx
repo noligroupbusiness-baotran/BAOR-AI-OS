@@ -17,7 +17,7 @@ import type { ContentStatus } from "@/lib/types";
 
 export const metadata = { title: "Tìm kiếm – BAOR AI OS" };
 
-const normalize = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
+const normalize = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
 
 interface Hit {
   title: string;

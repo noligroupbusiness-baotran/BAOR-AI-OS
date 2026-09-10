@@ -1,6 +1,7 @@
 // Bộ chạy nền trong tiến trình Next.js (khởi động từ src/instrumentation.ts).
 // Mỗi phút: đăng bài đến giờ. Mỗi giờ: đồng bộ số liệu kênh, luật CPL. Một tiến trình = một lịch.
-import { autoPauseAdsByCpl, publishDuePosts, syncChannelMetrics } from "@/lib/connectors/sync";
+import { publishDuePosts, syncChannelMetrics } from "@/lib/connectors/sync";
+import { runScheduledRules } from "@/lib/automation/engine";
 
 const g = globalThis as unknown as { __baorScheduler?: { timer: NodeJS.Timeout; lastHourly: number } };
 
@@ -29,8 +30,8 @@ async function tick() {
       state.lastHourlyAt = state.lastTickAt;
       const m = await syncChannelMetrics();
       parts.push(`đồng bộ ${m.updated} mục tiêu${m.errors.length ? `, lỗi ${m.errors.length}` : ""}`);
-      const paused = autoPauseAdsByCpl();
-      if (paused) parts.push(`tự dừng ${paused} quảng cáo`);
+      const rules = runScheduledRules();
+      if (rules.fired || rules.errors) parts.push(`automation ${rules.fired} lần${rules.errors ? `, ${rules.errors} lỗi` : ""}`);
     }
   } catch (e) {
     parts.push(`lỗi: ${e instanceof Error ? e.message : String(e)}`);

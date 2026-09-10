@@ -34,7 +34,7 @@ export const menu: MenuItem[] = [
   { key: "video-studio", href: "/video-studio", label: "Video Studio", description: "Video gốc, Agent dựng, kiểm tra, phê duyệt, phiên bản theo nền tảng.", icon: Clapperboard },
   { key: "publishing", href: "/publishing", label: "Đăng bài & Quảng cáo", description: "Lịch nội dung, hàng chờ, đã đăng, tài khoản kết nối, quảng cáo.", icon: CalendarClock },
   { key: "customers", href: "/customers", label: "Khách hàng", description: "Lead, khách hàng, phân data, chăm sóc, lịch sử tương tác, đơn hàng.", icon: Users },
-  { key: "automation", href: "/automation", label: "Automation", description: "Quy trình tự động, bản nháp, lịch sử chạy, lỗi cần xử lý.", icon: Workflow, building: true },
+  { key: "automation", href: "/automation", label: "Automation", description: "Quy trình tự động, bản nháp, lịch sử chạy, lỗi cần xử lý.", icon: Workflow },
   { key: "reports", href: "/reports", label: "Báo cáo", description: "Hiệu quả nội dung, video, quảng cáo, lead, chuyển đổi, doanh thu.", icon: BarChart3, building: true },
   { key: "settings", href: "/settings", label: "Cài đặt hệ thống", description: "Sản phẩm, thương hiệu, tài khoản nền tảng, nhân sự, AI Agent, bảo mật.", icon: Settings },
 ];
@@ -61,5 +61,5 @@ export const createActions: CreateAction[] = [
   { key: "video", label: "Tải video lên", icon: Upload, moduleKey: "video-studio", href: "/video-studio", note: "chờ Agent" },
   { key: "schedule", label: "Lên lịch đăng", icon: CalendarClock, moduleKey: "publishing", href: "/content?tab=done" },
   { key: "customer", label: "Thêm khách hàng", icon: UserPlus, moduleKey: "customers", href: "/customers?tab=leads&add=1" },
-  { key: "automation", label: "Tạo quy trình Automation", icon: Workflow, moduleKey: "automation", href: "/automation", note: "đang xây" },
+  { key: "automation", label: "Tạo quy tắc Automation", icon: Workflow, moduleKey: "automation", href: "/automation?add=1" },
 ];

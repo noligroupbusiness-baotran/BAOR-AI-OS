@@ -10,13 +10,14 @@ import { cn } from "@/lib/format";
 import { BackupPanel } from "@/components/settings/backup-panel";
 import { PeoplePanel, ProductsPanel } from "@/components/settings/catalog-panels";
 import { AiBudgetPanel, IntegrationsPanel, SystemLogPanel } from "@/components/settings/integration-panels";
+import { FaqPanel } from "@/components/settings/faq-panel";
 
 export const metadata = { title: "Cài đặt – BAOR AI OS" };
 
 const input = "mt-1 h-8 w-full rounded-md border border-border-2 bg-surface px-2.5 text-[13px] text-ink outline-none focus-visible:outline-2 focus-visible:outline-jade";
 
-export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ edit?: string; product?: string; person?: string }> }) {
-  const { edit, product, person } = await searchParams;
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ edit?: string; product?: string; person?: string; faq?: string }> }) {
+  const { edit, product, person, faq } = await searchParams;
   const automation = getAutomation();
   const brand = getBrand();
   const adminEmail = getAdminEmail();
@@ -27,6 +28,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       <PageHead title="Cài đặt hệ thống" sub="Nguồn dữ liệu chuẩn: sản phẩm và bảng giá, nhân sự, tài khoản nền tảng, thương hiệu, AI Agent." />
 
       <ProductsPanel editing={product} />
+      <FaqPanel editing={faq} />
       <PeoplePanel editing={person} />
 
       <IntegrationsPanel editing={edit} />
