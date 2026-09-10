@@ -4,9 +4,8 @@
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { channelDef, CHANNELS } from "@/config/channels";
-import { people } from "@/lib/data/people";
-import { products } from "@/lib/data/products";
-import { videos, videoStatusLabel } from "@/lib/data/videos";
+import { catalogRepo } from "@/lib/catalog/repository";
+import { videoStatusLabel, type VideoStatus } from "@/lib/data/videos";
 import { contentStatusLabel, leadStageLabel, postStatusLabel, adStatusLabel } from "@/lib/labels";
 import type { AdStatus, ContentStatus, LeadStage, PostStatus } from "@/lib/types";
 import { campaignAlerts, campaignProgress, overlapsMonth } from "./results";
@@ -71,9 +70,27 @@ export interface CampaignRepository {
   addLink(link: Omit<LinkedMarketingItem, "id" | "createdAt">): void;
   addApproval(a: Omit<CampaignApproval, "id" | "requestedAt" | "decidedBy" | "decidedAt" | "status"> & { status?: ApprovalStatus }): CampaignApproval;
   decideApprovals(campaignId: string, type: CampaignApproval["type"], status: ApprovalStatus, by: string, note?: string): void;
+  decideEntityApprovals(campaignId: string, entityType: LinkedEntityType, entityId: string, status: ApprovalStatus, by: string, note?: string): void;
   /** Ghi nhật ký. Trả về false nếu idemKey đã dùng (thao tác lặp). */
   log(campaignId: string, actor: string, action: string, detail?: string, idemKey?: string | null): boolean;
   hasIdem(idemKey: string): boolean;
+
+  update(id: string, patch: Partial<Omit<Campaign, "id" | "createdAt" | "createdBy" | "status">>): void;
+  /** Liên kết của một nhóm thực thể (để phân hệ khác hiện nhãn chiến dịch). */
+  linksForEntities(entityType: LinkedEntityType, entityIds: string[]): Map<string, EntityCampaignLink[]>;
+  removeLink(campaignId: string, entityType: LinkedEntityType, entityId: string): void;
+  /** Phân hệ nguồn đổi trạng thái → cập nhật trạng thái trong bảng liên kết. */
+  syncEntityStatus(entityType: LinkedEntityType, entityId: string, status: string): void;
+  /** Sao chép liên kết của thực thể nguồn sang thực thể sinh ra từ nó (VD: nội dung → bài đăng). */
+  inheritLinks(fromType: LinkedEntityType, fromId: string, toType: LinkedEntityType, toId: string, status: string): void;
+}
+
+export interface EntityCampaignLink {
+  campaignId: string;
+  campaignName: string;
+  channelGoalId: string | null;
+  channel: string | null;
+  status: string;
 }
 
 const parse = <T>(s: string, fallback: T): T => {
@@ -132,12 +149,12 @@ class SqliteCampaignRepository implements CampaignRepository {
     return getDb();
   }
 
-  people() {
-    return people;
+  people(): Person[] {
+    return catalogRepo.listPeople().map(({ id, name, role }) => ({ id, name, role }));
   }
 
-  products() {
-    return products;
+  products(): Product[] {
+    return catalogRepo.listProducts(true).map(({ id, name, brand, price, unit, description }) => ({ id, name, brand, price, unit, description }));
   }
 
   accounts(): PlatformAccount[] {
@@ -153,7 +170,7 @@ class SqliteCampaignRepository implements CampaignRepository {
     return out;
   }
 
-  private summarize(c: Campaign, goals: ChannelGoal[], connected: Record<string, boolean>, today: string): CampaignSummary {
+  private summarize(c: Campaign, goals: ChannelGoal[], connected: Record<string, boolean>, today: string, people: Person[], products: Product[]): CampaignSummary {
     const result = this.result(c.id) ?? null;
     return {
       ...c,
@@ -171,6 +188,8 @@ class SqliteCampaignRepository implements CampaignRepository {
     const allGoals = this.db.select().from(schema.channelGoals).all().map(toGoal);
     const connected = this.connectedMap();
     const today = new Date().toISOString().slice(0, 10);
+    const people = catalogRepo.listPeople(true);
+    const products = this.products();
     const q = filter.q ? normalize(filter.q.trim()) : "";
     return rows
       .filter((c) => (filter.status ? c.status === filter.status : true))
@@ -184,6 +203,8 @@ class SqliteCampaignRepository implements CampaignRepository {
           allGoals.filter((g) => g.campaignId === c.id),
           connected,
           today,
+          people,
+          products,
         ),
       );
   }
@@ -196,7 +217,7 @@ class SqliteCampaignRepository implements CampaignRepository {
   summary(id: string) {
     const c = this.get(id);
     if (!c) return undefined;
-    return this.summarize(c, this.goals(id), this.connectedMap(), new Date().toISOString().slice(0, 10));
+    return this.summarize(c, this.goals(id), this.connectedMap(), new Date().toISOString().slice(0, 10), catalogRepo.listPeople(true), this.products());
   }
 
   stats(today: string): CampaignStats {
@@ -241,7 +262,8 @@ class SqliteCampaignRepository implements CampaignRepository {
     const posts = postIds.length ? pick(db.select().from(schema.scheduledPosts).where(inArray(schema.scheduledPosts.id, postIds)).all()) : new Map();
     const ads = adIds.length ? pick(db.select().from(schema.adCampaigns).where(inArray(schema.adCampaigns.id, adIds)).all()) : new Map();
     const leads = leadIds.length ? pick(db.select().from(schema.leads).where(inArray(schema.leads.id, leadIds)).all()) : new Map();
-    const videoMap = new Map(videos.map((v) => [v.id, v]));
+    const videoIds = idsOf("video");
+    const videoMap = videoIds.length ? pick(db.select().from(schema.videos).where(inArray(schema.videos.id, videoIds)).all()) : new Map();
 
     return links.map((link) => {
       const missing: ResolvedLink = { link, title: `Không tìm thấy (${link.entityId})`, sub: "Bản ghi nguồn đã bị xóa hoặc chưa nạp.", statusLabel: link.status, entityStatus: link.status, found: false };
@@ -278,7 +300,7 @@ class SqliteCampaignRepository implements CampaignRepository {
         case "video": {
           const v = videoMap.get(link.entityId);
           if (!v) return missing;
-          return { link, title: v.title, sub: `${v.agent} · ${v.platforms.join(", ")}`, statusLabel: videoStatusLabel[v.status], entityStatus: v.status, found: true };
+          return { link, title: v.title, sub: `${v.agent} · bản ${v.version} · ${parse<string[]>(v.platforms, []).join(", ")}`, statusLabel: videoStatusLabel[v.status as VideoStatus]?.label ?? v.status, entityStatus: v.status, found: true };
         }
         default:
           return { ...missing, title: link.entityId, sub: "", found: true };
@@ -397,6 +419,14 @@ class SqliteCampaignRepository implements CampaignRepository {
       .run();
   }
 
+  decideEntityApprovals(campaignId: string, entityType: LinkedEntityType, entityId: string, status: ApprovalStatus, by: string, note = "") {
+    this.db
+      .update(schema.campaignApprovals)
+      .set({ status, decidedBy: by, decidedAt: nowIso(), ...(note ? { note } : {}) })
+      .where(and(eq(schema.campaignApprovals.campaignId, campaignId), eq(schema.campaignApprovals.entityType, entityType), eq(schema.campaignApprovals.entityId, entityId), eq(schema.campaignApprovals.status, "pending")))
+      .run();
+  }
+
   log(campaignId: string, actor: string, action: string, detail = "", idemKey: string | null = null): boolean {
     try {
       this.db.insert(schema.campaignLogs).values({ campaignId, at: nowIso(), actor, action, detail, idemKey }).run();
@@ -410,6 +440,58 @@ class SqliteCampaignRepository implements CampaignRepository {
   hasIdem(idemKey: string): boolean {
     const [{ n }] = this.db.select({ n: sql<number>`count(*)` }).from(schema.campaignLogs).where(eq(schema.campaignLogs.idemKey, idemKey)).all();
     return n > 0;
+  }
+
+  update(id: string, patch: Partial<Omit<Campaign, "id" | "createdAt" | "createdBy" | "status">>) {
+    const { productIds, ...rest } = patch;
+    this.db
+      .update(schema.campaigns)
+      .set({ ...rest, ...(productIds ? { productIds: JSON.stringify(productIds) } : {}), updatedAt: nowIso() })
+      .where(eq(schema.campaigns.id, id))
+      .run();
+  }
+
+  linksForEntities(entityType: LinkedEntityType, entityIds: string[]): Map<string, EntityCampaignLink[]> {
+    const out = new Map<string, EntityCampaignLink[]>();
+    if (entityIds.length === 0) return out;
+    const rows = this.db
+      .select({
+        entityId: schema.marketingLinks.entityId,
+        campaignId: schema.marketingLinks.campaignId,
+        channelGoalId: schema.marketingLinks.channelGoalId,
+        status: schema.marketingLinks.status,
+        campaignName: schema.campaigns.name,
+        channel: schema.channelGoals.channel,
+      })
+      .from(schema.marketingLinks)
+      .leftJoin(schema.campaigns, eq(schema.campaigns.id, schema.marketingLinks.campaignId))
+      .leftJoin(schema.channelGoals, eq(schema.channelGoals.id, schema.marketingLinks.channelGoalId))
+      .where(and(eq(schema.marketingLinks.entityType, entityType), inArray(schema.marketingLinks.entityId, entityIds)))
+      .all();
+    for (const r of rows) {
+      const list = out.get(r.entityId) ?? [];
+      list.push({ campaignId: r.campaignId, campaignName: r.campaignName ?? r.campaignId, channelGoalId: r.channelGoalId, channel: r.channel ?? null, status: r.status });
+      out.set(r.entityId, list);
+    }
+    return out;
+  }
+
+  removeLink(campaignId: string, entityType: LinkedEntityType, entityId: string) {
+    this.db
+      .delete(schema.marketingLinks)
+      .where(and(eq(schema.marketingLinks.campaignId, campaignId), eq(schema.marketingLinks.entityType, entityType), eq(schema.marketingLinks.entityId, entityId)))
+      .run();
+  }
+
+  syncEntityStatus(entityType: LinkedEntityType, entityId: string, status: string) {
+    this.db.update(schema.marketingLinks).set({ status }).where(and(eq(schema.marketingLinks.entityType, entityType), eq(schema.marketingLinks.entityId, entityId))).run();
+  }
+
+  inheritLinks(fromType: LinkedEntityType, fromId: string, toType: LinkedEntityType, toId: string, status: string) {
+    const src = this.db.select().from(schema.marketingLinks).where(and(eq(schema.marketingLinks.entityType, fromType), eq(schema.marketingLinks.entityId, fromId))).all();
+    for (const l of src) {
+      this.addLink({ campaignId: l.campaignId, channelGoalId: l.channelGoalId, entityType: toType, entityId: toId, status, ownerId: l.ownerId, viaType: fromType, viaId: fromId });
+    }
   }
 }
 

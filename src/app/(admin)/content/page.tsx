@@ -20,6 +20,7 @@ import { contentFormatLabel, contentStatusLabel } from "@/lib/labels";
 import { formatDateTime, cn } from "@/lib/format";
 import type { ContentStatus } from "@/lib/types";
 import { CampaignContextBar } from "@/components/campaigns/campaign-context";
+import { CampaignTags, LinkToCampaignForm } from "@/components/campaigns/entity-campaign";
 import { campaignRepo } from "@/lib/campaigns/repository";
 import { readCampaignContext, withCampaignContext } from "@/lib/campaigns/context";
 
@@ -27,7 +28,7 @@ export const metadata = { title: "Nội dung – BAOR AI OS" };
 
 const input = "h-8 w-full rounded-md border border-border-2 bg-surface px-2.5 text-[13px] text-ink outline-none focus-visible:outline-2 focus-visible:outline-jade";
 
-export default async function ContentPage({ searchParams }: { searchParams: Promise<{ tab?: string; open?: string; campaign?: string; goal?: string }> }) {
+export default async function ContentPage({ searchParams }: { searchParams: Promise<{ tab?: string; open?: string; campaign?: string; goal?: string; link?: string }> }) {
   const sp = await searchParams;
   const { tab = "proposed", open } = sp;
   // Ngữ cảnh chiến dịch (campaign_id, channel_goal_id) do phân hệ Chiến dịch truyền sang.
@@ -44,6 +45,8 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
   const list = listContent(statuses).filter((c) => (linkedIds ? linkedIds.has(c.id) : true));
   const insights = listInsights();
   const opened = open ?? (tab === "mine" ? list[0]?.id : undefined);
+  const links = campaignRepo.linksForEntities("content", list.map((c) => c.id));
+  const back = href(`/content?tab=${tab}${opened ? `&open=${opened}` : ""}`);
 
   return (
     <>
@@ -141,7 +144,13 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
                       {ins && <Pill>{ins.title}</Pill>}
                       {c.source === "ai" && <Pill tone="violet">AI</Pill>}
                       {c.scheduledFor && <Pill className="num">{formatDateTime(c.scheduledFor)}</Pill>}
+                      <CampaignTags links={links.get(c.id)} />
                     </div>
+                    {isOpen && (
+                      <div className="mt-1.5">
+                        <LinkToCampaignForm entityType="content" entityId={c.id} status={c.status} back={back} links={links.get(c.id)} compact open={sp.link === c.id} />
+                      </div>
+                    )}
                   </div>
                   <div className="flex gap-1.5">
                     {c.status === "proposed" && (

@@ -9,6 +9,9 @@ import { integrations as seedIntegrations, automationSettings } from "@/lib/data
 import { personas as seedPersonas, insights as seedInsights } from "@/lib/data/insights";
 import { platformResearch as seedResearch } from "@/lib/data/research";
 import { recentActivity } from "@/lib/data/pipeline";
+import { people as seedPeople } from "@/lib/data/people";
+import { products as seedProducts } from "@/lib/data/products";
+import { videos as seedVideos } from "@/lib/data/videos";
 import {
   campaignApprovals as seedApprovals,
   campaignLogs as seedCampaignLogs,
@@ -109,7 +112,23 @@ export function seedAll(db: Db) {
     ];
     tx.insert(schema.settings).values(settingRows).onConflictDoNothing().run();
     seedCampaignData(tx);
+    seedCatalogData(tx);
   });
+}
+
+// Cài đặt (sản phẩm, nhân sự) và Video Studio: nạp khi bảng còn trống, kể cả CSDL đã có dữ liệu cũ.
+export function seedCatalogIfEmpty(db: Db) {
+  const [{ n }] = db.select({ n: count() }).from(schema.people).all();
+  const [{ v }] = db.select({ v: count() }).from(schema.videos).all();
+  if (n > 0 && v > 0) return;
+  db.transaction((tx) => seedCatalogData(tx));
+}
+
+function seedCatalogData(tx: Pick<Db, "insert">) {
+  const now = "2026-09-10T08:00:00+07:00";
+  tx.insert(schema.products).values(seedProducts.map((p) => ({ ...p, active: true, updatedAt: now }))).onConflictDoNothing().run();
+  tx.insert(schema.people).values(seedPeople.map((p) => ({ ...p, active: true, updatedAt: now }))).onConflictDoNothing().run();
+  tx.insert(schema.videos).values(seedVideos.map((v) => ({ ...v, platforms: JSON.stringify(v.platforms) }))).onConflictDoNothing().run();
 }
 
 // Nạp dữ liệu mẫu phân hệ Chiến dịch khi bảng campaigns còn trống (kể cả CSDL đã có dữ liệu cũ).
@@ -199,6 +218,9 @@ export function clearAll(db: Db) {
       schema.marketingLinks,
       schema.channelGoals,
       schema.campaigns,
+      schema.videos,
+      schema.people,
+      schema.products,
     ]) {
       tx.delete(t).run();
     }

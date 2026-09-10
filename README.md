@@ -58,8 +58,14 @@ Chiến dịch → Mục tiêu kênh → Insight → Nội dung → Video → Ph
   thêm/sửa/tạm dừng mục tiêu kênh). Mọi hành động có nhật ký và khóa chống bấm lặp (`idem`).
 - Ngữ cảnh chiến dịch dùng chung: `src/lib/campaigns/context.ts` + `CampaignContextBar`. Ví dụ: mở
   `/content?campaign=<id>&goal=<id>` thì trang Nội dung tự lọc và bài mới tự gắn vào chiến dịch.
-- Dữ liệu mẫu: `src/lib/data/campaigns.ts` (4 chiến dịch, liên kết bằng ID thật), `people.ts`, `products.ts`,
-  `videos.ts`. Nguồn chuẩn sau này là Cài đặt › Nhân sự, Sản phẩm; Video Studio.
+- Cài đặt là nguồn chuẩn: bảng `products` (sản phẩm & bảng giá) và `people` (nhân sự & phân quyền) qua
+  `src/lib/catalog/repository.ts`; thêm/sửa/ngừng dùng ở `/settings#products`, `/settings#people`.
+- Video Studio: bảng `videos` (`src/lib/videos/repository.ts`, `src/lib/actions/videos.ts`): kiểm tra → gửi phê duyệt →
+  phê duyệt / yêu cầu chỉnh sửa; đồng bộ với Chờ phê duyệt của chiến dịch. Không tự đăng.
+- Gắn thực thể vào chiến dịch ngay tại phân hệ (Insight, Nội dung, Video, Quảng cáo, Lead) bằng
+  `LinkToCampaignForm`; nhãn chiến dịch hiện bằng `CampaignTags`. Bài đăng kế thừa liên kết của nội dung khi lên lịch.
+- Dữ liệu mẫu nạp lần đầu: `src/lib/data/campaigns.ts` (4 chiến dịch, liên kết bằng ID thật), `people.ts`,
+  `products.ts`, `videos.ts`. Sau khi nạp, sửa trong giao diện, không sửa tệp.
 - Chưa nối: API Facebook / TikTok / YouTube / Zalo OA, đăng bài thật, chạy ads thật, thu lead thật, Agent Edit Video,
   doanh thu thật. Tab Kết quả đang dùng số liệu mẫu trong `campaign_results`.
 
@@ -90,6 +96,30 @@ Nhận ý tưởng, soạn và lưu nháp, gửi duyệt, duyệt, lên lịch �
 - Nối Meta Graph API để đăng bài thật, nhận webhook inbox/bình luận, đọc số liệu; Marketing API cho ads.
 - Bộ chạy nền theo lịch (đăng bài đúng giờ, AI trả lời tự động, chuỗi email).
 - Gửi email thật qua SMTP.
+
+## Sao lưu dữ liệu (tự động 20 phút/lần)
+
+Server tự sao lưu toàn bộ CSDL SQLite ngay trong tiến trình app (`src/instrumentation.ts` → `src/lib/backup.ts`),
+không cần cron hay dịch vụ ngoài:
+
+- Chu kỳ mặc định 20 phút; bản đầu tiên 15 giây sau khi khởi động. Dùng API online backup của SQLite nên bản sao luôn
+  nhất quán dù app đang ghi. Dữ liệu không đổi kể từ lần trước thì bỏ qua.
+- Tệp `baor-YYYYMMDD-HHMMSS.db` (giờ UTC) trong `data/backups/` (Docker: volume `/app/data/backups`, không mất khi
+  cập nhật). Giữ 72 bản gần nhất (24 giờ) và mỗi ngày 1 bản trong 30 ngày, còn lại tự xóa.
+- Cài đặt › **Sao lưu dữ liệu**: xem trạng thái, bấm **Sao lưu ngay**, tải bản bất kỳ về máy (`/backups/<tên tệp>`).
+- Đẩy lên GitHub: đặt `BACKUP_GITHUB_REPO=owner/repo` (repo **private**, vì CSDL chứa khóa API và token) và
+  `BACKUP_GITHUB_TOKEN` (fine-grained PAT, quyền *Contents: Read and write* trên repo đó). Mỗi bản được nén gzip và
+  tải lên thư mục `backups/` qua GitHub Contents API, áp cùng chính sách giữ bản. Repo đã tạo sẵn:
+  `noligroupbusiness-baotran/BAOR-AI-OS-backups`.
+- Biến tùy chọn: `BACKUP_INTERVAL_MINUTES`, `BACKUP_DIR`, `BACKUP_KEEP`, `BACKUP_KEEP_DAYS`, `BACKUP_GITHUB_BRANCH`,
+  `BACKUP_GITHUB_DIR`, `BACKUP_DISABLED=1`.
+
+Khôi phục: dừng app, chép bản sao lưu đè lên `data/baor.db` (xóa `baor.db-wal`, `baor.db-shm` nếu có), khởi động lại.
+Bản trên GitHub thì `gunzip` trước. Trên VPS:
+
+```bash
+cd /opt/baor-ai-os && docker compose stop app && docker run --rm -v baor-ai-os_app_data:/d alpine sh -c 'cp /d/backups/baor-YYYYMMDD-HHMMSS.db /d/baor.db && rm -f /d/baor.db-wal /d/baor.db-shm' && docker compose start app
+```
 
 ## Chạy trên VPS (Docker + tự cập nhật khi push)
 

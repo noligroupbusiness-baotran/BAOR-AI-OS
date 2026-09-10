@@ -29,6 +29,10 @@ AUTH_SECRET=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
 DOMAIN=${DOMAIN:-mkt.baor.vn}
 # Cổng nội bộ của app trên máy chủ (proxy của VPS trỏ vào 127.0.0.1:APP_PORT).
 APP_PORT=${APP_PORT:-3200}
+# Sao lưu CSDL: tự chạy mỗi 20 phút vào volume /app/data/backups. Muốn đẩy thêm lên GitHub (repo PRIVATE)
+# thì bỏ dấu # hai dòng dưới; token là fine-grained PAT có quyền Contents: Read and write trên repo đó.
+#BACKUP_GITHUB_REPO=noligroupbusiness-baotran/BAOR-AI-OS-backups
+#BACKUP_GITHUB_TOKEN=github_pat_...
 ENV
 fi
 

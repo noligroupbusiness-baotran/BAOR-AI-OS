@@ -15,6 +15,7 @@ export async function claimIdea(fd: FormData) {
   const item = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, id)).get();
   if (!item) return done("/content", "Không tìm thấy ý tưởng");
   db.update(schema.contentItems).set({ status: "in_progress", assignee: "human" }).where(eq(schema.contentItems.id, id)).run();
+  campaignRepo.syncEntityStatus("content", id, "in_progress");
   logActivity("human", `Bạn nhận làm “${item.title}”.`, "creator");
   done("/content?tab=mine", "Đã chuyển vào bàn làm việc của bạn");
 }
@@ -22,6 +23,7 @@ export async function claimIdea(fd: FormData) {
 export async function dismissIdea(fd: FormData) {
   const id = str(fd, "id");
   getDb().update(schema.contentItems).set({ status: "dismissed" }).where(eq(schema.contentItems.id, id)).run();
+  campaignRepo.syncEntityStatus("content", id, "dismissed");
   done("/content", "Đã bỏ qua ý tưởng");
 }
 
@@ -33,6 +35,11 @@ export async function submitForReview(fd: FormData) {
     .set({ status: "review", ...(draft ? { draft } : {}) })
     .where(eq(schema.contentItems.id, id))
     .run();
+  campaignRepo.syncEntityStatus("content", id, "review");
+  for (const l of campaignRepo.linksForEntities("content", [id]).get(id) ?? []) {
+    const item = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, id)).get();
+    campaignRepo.addApproval({ campaignId: l.campaignId, channelGoalId: l.channelGoalId, type: "content", title: `Duyệt bài “${item?.title ?? id}”`, entityType: "content", entityId: id, requestedBy: "human", note: "" });
+  }
   done("/content?tab=mine", "Đã gửi duyệt");
 }
 
@@ -47,6 +54,8 @@ export async function approveContent(fd: FormData) {
   const db = getDb();
   const item = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, id)).get();
   db.update(schema.contentItems).set({ status: "approved" }).where(eq(schema.contentItems.id, id)).run();
+  campaignRepo.syncEntityStatus("content", id, "approved");
+  for (const l of campaignRepo.linksForEntities("content", [id]).get(id) ?? []) campaignRepo.decideEntityApprovals(l.campaignId, "content", id, "approved", "human");
   if (item) logActivity("human", `Bạn đã duyệt nội dung “${item.title}”.`, "creator");
   done("/content?tab=done", "Đã duyệt. Hệ thống sẽ xếp lịch đăng.");
 }
@@ -61,9 +70,11 @@ export async function scheduleContent(fd: FormData) {
   const item = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, id)).get();
   if (!item) return done("/content?tab=done", "Không tìm thấy nội dung");
   db.update(schema.contentItems).set({ status: "scheduled", scheduledFor: iso }).where(eq(schema.contentItems.id, id)).run();
-  db.insert(schema.scheduledPosts)
-    .values(platforms.map((p) => ({ id: newId("sp"), contentId: id, title: item.title, platform: p, scheduledFor: iso, status: "scheduled" })))
-    .run();
+  const posts = platforms.map((p) => ({ id: newId("sp"), contentId: id, title: item.title, platform: p, scheduledFor: iso, status: "scheduled" }));
+  db.insert(schema.scheduledPosts).values(posts).run();
+  // Bài đăng kế thừa chiến dịch và mục tiêu kênh của nội dung (truy ngược: publication ← content).
+  campaignRepo.syncEntityStatus("content", id, "scheduled");
+  for (const p of posts) campaignRepo.inheritLinks("content", id, "publication", p.id, "scheduled");
   logActivity("system", `Đã lên lịch “${item.title}” trên ${platforms.length} kênh.`, "publishing");
   done("/publishing", "Đã lên lịch đăng");
 }

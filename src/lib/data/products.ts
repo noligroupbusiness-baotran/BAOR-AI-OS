@@ -1,7 +1,7 @@
 import type { Product } from "@/lib/campaigns/types";
 
-// DỮ LIỆU MẪU danh mục sản phẩm / dịch vụ. Nguồn chuẩn sau này là Cài đặt › Sản phẩm và bảng giá.
-// AI không được tự nghĩ ra giá hay công dụng; mọi phân hệ đọc giá từ danh mục này.
+// DỮ LIỆU MẪU nạp lần đầu vào bảng products (Cài đặt › Sản phẩm và bảng giá).
+// Sau khi nạp, nguồn chuẩn là CSDL; AI không được tự nghĩ ra giá hay công dụng.
 export const products: Product[] = [
   { id: "pr_md_goi", name: "Gội dưỡng sinh", brand: "Mộc Diệp Spa", price: 39000, unit: "lượt", description: "Gội đầu dưỡng sinh 45 phút, sản phẩm đầu vào để khách trải nghiệm." },
   { id: "pr_md_vaigay", name: "Massage cổ vai gáy", brand: "Mộc Diệp Spa", price: 149000, unit: "lượt", description: "Liệu trình 60 phút cho dân văn phòng." },
@@ -11,7 +11,3 @@ export const products: Product[] = [
   { id: "pr_serum", name: "Serum vitamin C", brand: "BAOR Skincare", price: 390000, unit: "chai", description: "Sản phẩm chủ lực của fanpage." },
   { id: "pr_combo3", name: "Combo 3 bước", brand: "BAOR Skincare", price: 690000, unit: "bộ", description: "Sữa rửa mặt, serum, kem dưỡng." },
 ];
-
-export function productName(id: string): string {
-  return products.find((p) => p.id === id)?.name ?? id;
-}

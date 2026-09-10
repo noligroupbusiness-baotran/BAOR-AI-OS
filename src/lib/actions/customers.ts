@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { done, logActivity, nowIso } from "./common";
 import { suggestReply } from "@/lib/ai";
+import { campaignRepo } from "@/lib/campaigns/repository";
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 
@@ -20,6 +21,7 @@ export async function sendReply(fd: FormData) {
     .set({ lastMessage: text, lastMessageAt: nowIso(), stage: "contacted" })
     .where(eq(schema.leads.id, c.leadId))
     .run();
+  campaignRepo.syncEntityStatus("lead", c.leadId, "contacted");
   logActivity("human", `Bạn đã trả lời ${c.leadName}.`, "customers");
   done(`/customers?conv=${conv}`, "Đã gửi (khi nối Facebook, tin sẽ đi thật)");
 }
@@ -41,6 +43,7 @@ export async function setLeadStage(fd: FormData) {
   const id = str(fd, "id");
   const stage = str(fd, "stage");
   getDb().update(schema.leads).set({ stage }).where(eq(schema.leads.id, id)).run();
+  campaignRepo.syncEntityStatus("lead", id, stage);
   done("/customers?tab=leads", "Đã cập nhật giai đoạn");
 }
 

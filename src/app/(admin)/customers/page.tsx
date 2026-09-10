@@ -12,13 +12,15 @@ import { leadSourceLabel, leadStageLabel } from "@/lib/labels";
 import { formatDateTime, formatNumber, formatTime, cn } from "@/lib/format";
 import { platformLabel } from "@/components/ui/platform";
 import type { LeadStage, Platform } from "@/lib/types";
+import { CampaignTags, LinkToCampaignForm } from "@/components/campaigns/entity-campaign";
+import { campaignRepo } from "@/lib/campaigns/repository";
 
 export const metadata = { title: "Khách hàng & email – BAOR AI OS" };
 
 const stages: LeadStage[] = ["new", "contacted", "qualified", "won", "lost"];
 
-export default async function CustomersPage({ searchParams }: { searchParams: Promise<{ tab?: string; conv?: string; suggest?: string }> }) {
-  const { tab = "inbox", conv, suggest } = await searchParams;
+export default async function CustomersPage({ searchParams }: { searchParams: Promise<{ tab?: string; conv?: string; suggest?: string; link?: string }> }) {
+  const { tab = "inbox", conv, suggest, link } = await searchParams;
   const convs = listConversations();
   const selected = convs.find((c) => c.id === conv) ?? convs[0];
   const leads = listLeads();
@@ -26,6 +28,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
   const seqs = listEmailSequences();
   const needHuman = convs.filter((c) => c.needsHuman).length;
   const won = leads.filter((l) => l.stage === "won").length;
+  const leadLinks = campaignRepo.linksForEntities("lead", leads.map((l) => l.id));
 
   return (
     <>
@@ -117,14 +120,20 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
 
       {tab === "leads" && (
         <Panel>
-          <PanelHeader title="Danh sách lead" sub="AI tự tạo lead từ inbox và bình luận. Đổi giai đoạn bằng ô chọn." />
+          <PanelHeader title="Danh sách lead" sub="Mỗi lead ghi nhận đến từ chiến dịch, mục tiêu kênh và bài đăng / quảng cáo nào. Đổi giai đoạn bằng ô chọn." />
           <Table>
-            <thead><tr><Th>Khách</Th><Th>Nguồn</Th><Th>Tin nhắn cuối</Th><Th>Liên hệ</Th><Th right>Giai đoạn</Th></tr></thead>
+            <thead><tr><Th>Khách</Th><Th>Nguồn</Th><Th>Chiến dịch</Th><Th>Tin nhắn cuối</Th><Th>Liên hệ</Th><Th right>Giai đoạn</Th></tr></thead>
             <tbody>
               {leads.map((l) => (
                 <tr key={l.id}>
                   <Td className="font-semibold text-ink">{l.name}<div className="mt-0.5 flex flex-wrap gap-1">{l.tags.map((t) => <Pill key={t}>#{t}</Pill>)}</div></Td>
                   <Td>{platformLabel(l.platform as Platform)} · {leadSourceLabel[l.source] ?? l.source}</Td>
+                  <Td>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <CampaignTags links={leadLinks.get(l.id)} />
+                      <LinkToCampaignForm entityType="lead" entityId={l.id} status={l.stage} back="/customers?tab=leads" links={leadLinks.get(l.id)} compact open={link === l.id} />
+                    </div>
+                  </Td>
                   <Td><div className="max-w-[260px] truncate">{l.lastMessage}</div><div className="num text-[11px] text-ink-3">{formatDateTime(l.lastMessageAt)}</div></Td>
                   <Td className="num">{l.phone ?? l.email ?? "—"}</Td>
                   <Td right>

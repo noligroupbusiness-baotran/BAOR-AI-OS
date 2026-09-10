@@ -6,9 +6,9 @@ import { getCurrentUser } from "@/lib/auth";
 import { campaignRepo } from "@/lib/campaigns/repository";
 import { checkBudget, isValidDateRange } from "@/lib/campaigns/results";
 import { channelDef, EXECUTION_TYPES, METRICS } from "@/config/channels";
-import { people } from "@/lib/data/people";
-import { products } from "@/lib/data/products";
-import type { CampaignStatus, ChannelGoalStatus, NewCampaignInput, NewChannelGoalInput } from "@/lib/campaigns/types";
+import { catalogRepo } from "@/lib/catalog/repository";
+import type { CampaignStatus, ChannelGoalStatus, LinkedEntityType, NewCampaignInput, NewChannelGoalInput } from "@/lib/campaigns/types";
+import { withCampaignContext } from "@/lib/campaigns/context";
 import { campaignStatusLabel } from "@/lib/campaigns/labels";
 import { logActivity } from "./common";
 
@@ -62,7 +62,7 @@ function parseGoal(raw: unknown, fallbackStart: string, fallbackEnd: string): Ne
   const budget = Number(g.budget);
   if (!Number.isFinite(budget) || budget < 0) return `Ngân sách kênh ${def.label} không hợp lệ.`;
   const ownerId = String(g.ownerId ?? "");
-  if (!people.some((p) => p.id === ownerId)) return `Mục tiêu kênh ${def.label} cần người phụ trách.`;
+  if (!catalogRepo.getPerson(ownerId)?.active) return `Mục tiêu kênh ${def.label} cần người phụ trách đang hoạt động.`;
   const startDate = String(g.startDate ?? "") || fallbackStart;
   const endDate = String(g.endDate ?? "") || fallbackEnd;
   if (!isValidDateRange(startDate, endDate)) return `Thời gian của mục tiêu kênh ${def.label} không hợp lệ.`;
@@ -78,8 +78,8 @@ function parseCampaign(raw: unknown): NewCampaignInput | string {
   const objective = String(c.objective ?? "").trim();
   if (!objective) return "Cần nhập mục tiêu chung.";
   const ownerId = String(c.ownerId ?? "");
-  if (!people.some((p) => p.id === ownerId)) return "Cần chọn người quản lý chiến dịch.";
-  const productIds = Array.isArray(c.productIds) ? c.productIds.map(String).filter((id) => products.some((p) => p.id === id)) : [];
+  if (!catalogRepo.getPerson(ownerId)?.active) return "Cần chọn người quản lý chiến dịch đang hoạt động.";
+  const productIds = Array.isArray(c.productIds) ? c.productIds.map(String).filter((id) => catalogRepo.getProduct(id)?.active) : [];
   if (productIds.length === 0) return "Cần chọn ít nhất một sản phẩm hoặc dịch vụ.";
   const startDate = String(c.startDate ?? "");
   const endDate = String(c.endDate ?? "");
@@ -294,4 +294,101 @@ export async function pauseChannelGoal(fd: FormData) {
 }
 export async function resumeChannelGoal(fd: FormData) {
   await setGoalStatus(fd, "active", ["paused"], "Chạy lại");
+}
+
+
+// ---------- Sửa thông tin chung (bước 1–2) ----------
+
+export async function updateCampaign(fd: FormData) {
+  const by = await actor();
+  const id = str(fd, "id");
+  const idem = str(fd, "idem");
+  const c = campaignRepo.get(id);
+  if (!c) finish("/campaigns", "Không tìm thấy chiến dịch", "error");
+  const back = `/campaigns/${id}`;
+  if (idem && campaignRepo.hasIdem(idem)) finish(back, "Thay đổi này đã được lưu.", "error");
+  if (c.status === "ended") finish(back, "Chiến dịch đã kết thúc, không sửa được.", "error");
+
+  const parsed = parseCampaign({
+    name: str(fd, "name"),
+    objective: str(fd, "objective"),
+    targetMetric: str(fd, "targetMetric"),
+    targetValue: str(fd, "targetValue") ? num(fd, "targetValue") : null,
+    description: str(fd, "description"),
+    productIds: fd.getAll("productIds").map(String),
+    audience: str(fd, "audience"),
+    location: str(fd, "location"),
+    ownerId: str(fd, "ownerId"),
+    startDate: str(fd, "startDate"),
+    endDate: str(fd, "endDate"),
+    totalBudget: num(fd, "totalBudget"),
+    budgetNote: str(fd, "budgetNote"),
+    goals: [],
+  });
+  if (typeof parsed === "string") finish(`${back}?edit=1`, parsed, "error");
+  const budget = checkBudget(parsed.totalBudget, campaignRepo.goals(id));
+  if (budget.over) finish(`${back}?edit=1`, `Tổng ngân sách mới (${budget.total.toLocaleString("vi-VN")} ₫) nhỏ hơn ngân sách các kênh đã phân bổ (${budget.allocated.toLocaleString("vi-VN")} ₫).`, "error");
+
+  const changes: string[] = [];
+  if (parsed.name !== c.name) changes.push("tên");
+  if (parsed.objective !== c.objective || parsed.targetValue !== c.targetValue || parsed.targetMetric !== c.targetMetric) changes.push("mục tiêu chung");
+  if (parsed.totalBudget !== c.totalBudget) changes.push(`ngân sách ${c.totalBudget.toLocaleString("vi-VN")} → ${parsed.totalBudget.toLocaleString("vi-VN")} ₫`);
+  if (parsed.startDate !== c.startDate || parsed.endDate !== c.endDate) changes.push("thời gian");
+  if (parsed.ownerId !== c.ownerId) changes.push("người quản lý");
+  if (JSON.stringify(parsed.productIds) !== JSON.stringify(c.productIds)) changes.push("sản phẩm");
+  if (parsed.audience !== c.audience || parsed.location !== c.location || parsed.description !== c.description || parsed.budgetNote !== c.budgetNote) changes.push("mô tả");
+
+  campaignRepo.update(id, {
+    name: parsed.name,
+    objective: parsed.objective,
+    targetMetric: parsed.targetMetric,
+    targetValue: parsed.targetValue,
+    description: parsed.description,
+    productIds: parsed.productIds,
+    audience: parsed.audience,
+    location: parsed.location,
+    ownerId: parsed.ownerId,
+    startDate: parsed.startDate,
+    endDate: parsed.endDate,
+    totalBudget: parsed.totalBudget,
+    budgetNote: parsed.budgetNote,
+  });
+  // Chiến dịch đã qua phê duyệt: thay đổi quan trọng cần được xác nhận lại.
+  const major = changes.some((x) => x.startsWith("ngân sách") || x === "thời gian" || x === "mục tiêu chung");
+  if (major && (c.status === "approved" || c.status === "active" || c.status === "paused")) {
+    campaignRepo.addApproval({ campaignId: id, channelGoalId: null, type: "campaign_change", title: `Thay đổi ${changes.join(", ")}`, entityType: null, entityId: null, requestedBy: by, note: "Chiến dịch đã phê duyệt, thay đổi cần được xác nhận." });
+  }
+  campaignRepo.log(id, by, "Sửa thông tin chung", changes.length ? changes.join(", ") : "không có thay đổi", idem || null);
+  finish(back, changes.length ? `Đã lưu (${changes.join(", ")}).` : "Không có thay đổi nào.");
+}
+
+// ---------- Gắn / bỏ gắn thực thể của phân hệ khác vào chiến dịch ----------
+
+const linkable: LinkedEntityType[] = ["insight", "content", "video", "publication", "ad", "lead", "automation_run"];
+
+export async function linkEntityToCampaign(fd: FormData) {
+  const by = await actor();
+  const entityType = str(fd, "entityType") as LinkedEntityType;
+  const entityId = str(fd, "entityId");
+  const campaignId = str(fd, "campaignId");
+  const goalId = str(fd, "channelGoalId") || null;
+  const back = str(fd, "back") || "/dashboard";
+  if (!linkable.includes(entityType) || !entityId) finish(back, "Không gắn được mục này.", "error");
+  const c = campaignRepo.get(campaignId);
+  if (!c) finish(back, "Cần chọn chiến dịch.", "error");
+  const goal = goalId ? campaignRepo.goal(goalId) : undefined;
+  campaignRepo.addLink({ campaignId, channelGoalId: goal && goal.campaignId === campaignId ? goal.id : null, entityType, entityId, status: str(fd, "status") || "", ownerId: null, viaType: null, viaId: null });
+  campaignRepo.log(campaignId, by, "Gắn vào chiến dịch", `${entityType} ${entityId}`);
+  finish(withCampaignContext(back, {}), `Đã gắn vào chiến dịch “${c.name}”.`);
+}
+
+export async function unlinkEntityFromCampaign(fd: FormData) {
+  const by = await actor();
+  const entityType = str(fd, "entityType") as LinkedEntityType;
+  const entityId = str(fd, "entityId");
+  const campaignId = str(fd, "campaignId");
+  const back = str(fd, "back") || "/dashboard";
+  campaignRepo.removeLink(campaignId, entityType, entityId);
+  campaignRepo.log(campaignId, by, "Bỏ gắn khỏi chiến dịch", `${entityType} ${entityId}`);
+  finish(back, "Đã bỏ gắn khỏi chiến dịch.");
 }

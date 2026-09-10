@@ -6,13 +6,23 @@ import { Table, Th, Td } from "@/components/ui/table";
 import { aiGenerateIdeas } from "@/lib/actions/content";
 import { listInsights, listPersonas, listResearch } from "@/lib/queries";
 import { formatDateTime } from "@/lib/format";
+import { CampaignContextBar } from "@/components/campaigns/campaign-context";
+import { CampaignTags, LinkToCampaignForm } from "@/components/campaigns/entity-campaign";
+import { campaignRepo } from "@/lib/campaigns/repository";
+import { readCampaignContext, withCampaignContext } from "@/lib/campaigns/context";
 
 export const metadata = { title: "Nghiên cứu & Insight – BAOR AI OS" };
 
-export default function ResearchPage() {
+export default async function ResearchPage({ searchParams }: { searchParams: Promise<{ campaign?: string; goal?: string; link?: string }> }) {
+  const sp = await searchParams;
+  const ctx = readCampaignContext(sp);
+  const campaign = ctx.campaignId ? campaignRepo.get(ctx.campaignId) : undefined;
+  const linkedIds = campaign ? new Set(campaignRepo.links(campaign.id, ctx.channelGoalId).filter((l) => l.entityType === "insight").map((l) => l.entityId)) : null;
   const research = listResearch();
-  const insights = listInsights();
+  const insights = listInsights().filter((i) => (linkedIds ? linkedIds.has(i.id) : true));
   const personas = listPersonas();
+  const links = campaignRepo.linksForEntities("insight", insights.map((i) => i.id));
+  const back = withCampaignContext("/insights#insights", ctx);
 
   return (
     <>
@@ -27,7 +37,9 @@ export default function ResearchPage() {
         }
       />
 
-      <Panel className="mt-0" id="channels">
+      <CampaignContextBar ctx={ctx} pathname="/insights" params={{}} note={linkedIds ? "chỉ hiện insight của chiến dịch" : undefined} />
+
+      <Panel id="channels">
         <PanelHeader title="Kênh phù hợp" sub={`Cập nhật ${research[0] ? formatDateTime(research[0].updatedAt) : "—"} · chấm theo mức khớp với khách hàng mục tiêu.`} />
         <Table>
           <thead>
@@ -69,8 +81,9 @@ export default function ResearchPage() {
       </Panel>
 
       <Panel id="insights">
-        <PanelHeader title="Insight đang dùng" sub="Xếp theo độ tin cậy. Bấm nút phía trên để AI bung thành ý tưởng nội dung." />
+        <PanelHeader title="Insight đang dùng" sub="Xếp theo độ tin cậy. Mỗi insight gắn với chiến dịch, mục tiêu kênh, nhóm khách và nguồn phát hiện." />
         <Rows>
+          {insights.length === 0 && <li className="px-4 py-8 text-center text-[12.5px] text-ink-2">{linkedIds ? "Chiến dịch này chưa gắn insight nào." : "Chưa có insight."}</li>}
           {insights.map((i, idx) => {
             const persona = personas.find((p) => p.id === i.personaId);
             return (
@@ -85,9 +98,11 @@ export default function ResearchPage() {
                 title={i.title}
                 sub={i.detail}
                 extra={
-                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                     {persona && <Pill>{persona.name.split(" – ")[1] ?? persona.name}</Pill>}
                     <Pill>{i.source}</Pill>
+                    <CampaignTags links={links.get(i.id)} />
+                    <LinkToCampaignForm entityType="insight" entityId={i.id} status="active" back={back} links={links.get(i.id)} compact open={sp.link === i.id} />
                   </div>
                 }
               />

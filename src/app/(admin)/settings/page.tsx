@@ -7,6 +7,8 @@ import { getAutomation, getBrand, listIntegrations } from "@/lib/queries";
 import { getAdminEmail } from "@/lib/admin";
 import { automationSettings } from "@/lib/data/settings";
 import { cn } from "@/lib/format";
+import { BackupPanel } from "@/components/settings/backup-panel";
+import { PeoplePanel, ProductsPanel } from "@/components/settings/catalog-panels";
 
 export const metadata = { title: "Cài đặt – BAOR AI OS" };
 
@@ -34,8 +36,8 @@ const fields: Record<string, { key: string; label: string; secret?: boolean; hin
   claude: [{ key: "apiKey", label: "API key", secret: true, hint: "sk-ant-..." }],
 };
 
-export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ edit?: string }> }) {
-  const { edit } = await searchParams;
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ edit?: string; product?: string; person?: string }> }) {
+  const { edit, product, person } = await searchParams;
   const integrations = listIntegrations();
   const automation = getAutomation();
   const brand = getBrand();
@@ -44,9 +46,12 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   return (
     <>
       <Breadcrumb items={[{ label: "Điều hành", href: "/dashboard" }, { label: "Cài đặt hệ thống" }]} />
-      <PageHead title="Cài đặt hệ thống" sub="Kết nối nền tảng, bật tắt từng bước tự động, thương hiệu và tài khoản quản trị." />
+      <PageHead title="Cài đặt hệ thống" sub="Nguồn dữ liệu chuẩn: sản phẩm và bảng giá, nhân sự, tài khoản nền tảng, thương hiệu, AI Agent." />
 
-      <Panel className="mt-0" id="integrations">
+      <ProductsPanel editing={product} />
+      <PeoplePanel editing={person} />
+
+      <Panel id="integrations">
         <PanelHeader title="Kết nối" sub="Khóa và token được lưu trong cơ sở dữ liệu trên máy chủ của bạn, không hiển thị lại." />
         <Rows>
           {integrations.map((i) => {
@@ -151,6 +156,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           <form action={resetSampleData}><Button type="submit" variant="ghost">Nạp lại dữ liệu mẫu</Button></form>
         </div>
       </Panel>
+
+      <BackupPanel />
       <ModuleGroups moduleKey="settings" />
     </>
   );

@@ -15,6 +15,13 @@
       "when": 1789053927953,
       "tag": "0001_campaigns",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1789055734962,
+      "tag": "0002_catalog_videos",
+      "breakpoints": true
     }
   ]
 }

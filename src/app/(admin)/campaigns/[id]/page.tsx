@@ -6,12 +6,15 @@ import { LinkButton } from "@/components/ui/button";
 import { CampaignStatusPill } from "@/components/campaigns/status";
 import { ConfirmAction } from "@/components/campaigns/confirm-action";
 import { ActivityTab, ApprovalsTab, GoalsTab, OverviewTab, ResultsTab } from "@/components/campaigns/detail-tabs";
+import { CampaignEditForm } from "@/components/campaigns/campaign-edit-form";
+import { checkBudget } from "@/lib/campaigns/results";
 import { campaignRepo } from "@/lib/campaigns/repository";
 import { activateCampaign, approveCampaign, endCampaign, pauseCampaign, requestCampaignChanges, submitCampaign } from "@/lib/actions/campaigns";
 import { formatCurrency, formatDate } from "@/lib/format";
 
 type Params = Promise<{ id: string }>;
 type Search = Promise<{ tab?: string; add?: string; edit?: string; goal?: string }>;
+// ?edit=1 ở tab Tổng quan = sửa thông tin chung; ?edit=<goalId> ở tab Mục tiêu = sửa mục tiêu kênh.
 
 export async function generateMetadata({ params }: { params: Params }) {
   const c = campaignRepo.get((await params).id);
@@ -46,8 +49,10 @@ export default async function CampaignDetailPage({ params, searchParams }: { par
   const owner = people.find((p) => p.id === campaign.ownerId)?.name ?? "Chưa phân công";
 
   const st = campaign.status;
+  const editingGeneral = tab === "overview" && sp.edit === "1" && st !== "ended";
   const actions = (
     <div className="flex flex-wrap gap-1.5">
+      {st !== "ended" && !editingGeneral && <LinkButton href={`/campaigns/${id}?edit=1`} size="md">Sửa thông tin</LinkButton>}
       {(st === "draft" || st === "needs_changes") && (
         <ConfirmAction action={submitCampaign} fields={{ id, idem: `${idem}_submit` }} label="Gửi phê duyệt" title="Gửi chiến dịch đi phê duyệt?" message={goals.length ? `Chiến dịch có ${goals.length} mục tiêu kênh, ngân sách ${formatCurrency(campaign.totalBudget)}. Sau khi gửi, bạn không sửa được cho tới khi có quyết định.` : "Chiến dịch chưa có mục tiêu kênh. Nên thêm ít nhất một kênh trước khi gửi."} confirmLabel="Gửi phê duyệt" variant="primary" size="md" />
       )}
@@ -93,7 +98,8 @@ export default async function CampaignDetailPage({ params, searchParams }: { par
         {tab === "activity" && <LinkButton href={`/content?campaign=${id}`} variant="ghost" className="ml-auto">Mở Nội dung trong ngữ cảnh chiến dịch</LinkButton>}
       </div>
 
-      {tab === "overview" && <OverviewTab campaign={campaign} goals={goals} result={result} people={people} products={products} alerts={alerts} logs={logs} />}
+      {editingGeneral && <CampaignEditForm campaign={campaign} people={people} products={products} allocated={checkBudget(campaign.totalBudget, goals).allocated} idem={`${idem}_edit`} />}
+      {tab === "overview" && !editingGeneral && <OverviewTab campaign={campaign} goals={goals} result={result} people={people} products={products} alerts={alerts} logs={logs} />}
       {tab === "goals" && <GoalsTab campaign={campaign} goals={goals} people={people} accounts={accounts} add={sp.add === "1"} edit={sp.edit} idem={idem} />}
       {tab === "activity" && <ActivityTab campaign={campaign} goals={goals} goalFilter={sp.goal?.trim() || null} />}
       {tab === "approvals" && <ApprovalsTab approvals={approvals} goals={goals} />}

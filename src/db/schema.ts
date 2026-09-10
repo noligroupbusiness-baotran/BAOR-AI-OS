@@ -283,3 +283,42 @@ export const campaignLogs = sqliteTable(
   },
   (t) => [uniqueIndex("campaign_logs_idem_uq").on(t.idemKey), index("campaign_logs_campaign_idx").on(t.campaignId)],
 );
+
+// ---------------------------------------------------------------------------
+// Cài đặt hệ thống = nguồn dữ liệu chuẩn: sản phẩm & bảng giá, nhân sự & phân quyền.
+// AI và các phân hệ không tự đặt giá hay nghĩ ra người phụ trách; tất cả đọc từ đây.
+// ---------------------------------------------------------------------------
+
+export const products = sqliteTable("products", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  brand: text("brand").notNull().default(""),
+  price: integer("price").notNull().default(0), // VND
+  unit: text("unit").notNull().default(""),
+  description: text("description").notNull().default(""),
+  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const people = sqliteTable("people", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  role: text("role").notNull().default(""),
+  email: text("email").notNull().default(""),
+  permission: text("permission").notNull().default("staff"), // admin | manager | staff
+  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  updatedAt: text("updated_at").notNull(),
+});
+
+// Video Studio: video do Agent dựng từ kịch bản (content_id); chỉ chuẩn bị, không tự đăng.
+export const videos = sqliteTable("videos", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  contentId: text("content_id"),
+  agent: text("agent").notNull().default("Agent Edit Video"),
+  status: text("status").notNull(), // editing | review | needs_changes | pending_approval | approved
+  platforms: text("platforms").notNull().default("[]"), // JSON string[]
+  version: integer("version").notNull().default(1),
+  note: text("note").notNull().default(""),
+  updatedAt: text("updated_at").notNull(),
+});

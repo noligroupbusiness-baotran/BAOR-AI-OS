@@ -1,7 +1,8 @@
 // Lớp dữ liệu cho màn Điều hành. Gom số liệu thật từ CSDL (nội dung, khách hàng, lịch đăng, lead)
 // với DỮ LIỆU MẪU (video, Agent, lịch hôm nay). Khi có API thật, chỉ thay ở đây.
 import { listContent, listConversations, listLeads, listPosts, pendingCounts } from "@/lib/queries";
-import { mockAgents, mockApprovals, mockTimeline, mockVideoPending, type AgentInfo, type ApprovalItem, type TimelineItem } from "@/lib/mock/dashboard";
+import { mockAgents, mockApprovals, mockTimeline, type AgentInfo, type ApprovalItem, type TimelineItem } from "@/lib/mock/dashboard";
+import { listVideos } from "@/lib/videos/repository";
 import { dateKey, TIME_ZONE } from "@/lib/format";
 import { campaignRepo } from "@/lib/campaigns/repository";
 
@@ -19,7 +20,7 @@ export function getOverview(): OverviewStats {
   const failed = posts.filter((p) => p.status === "failed").length;
   const workflowErrors = mockApprovals.filter((a) => a.kind === "workflow").length;
   return {
-    pendingApproval: listContent(["review"]).length + counts.ideas + mockVideoPending + campaignRepo.pendingApprovals().filter((a) => a.type === "campaign_change").length,
+    pendingApproval: listContent(["review"]).length + counts.ideas + listVideos("pending_approval").length + campaignRepo.pendingApprovals().filter((a) => a.type === "campaign_change").length,
     postsToday: posts.filter((p) => dateKey(p.scheduledFor) === today).length,
     leadsToday: listLeads().filter((l) => l.stage === "new" && dateKey(l.lastMessageAt) === today).length,
     alerts: failed + workflowErrors,
@@ -77,9 +78,21 @@ export function getPending(): PendingItem[] {
       priority: "high",
       kind: "campaign",
     }));
+  // Video chờ phê duyệt: đọc từ Video Studio.
+  const videos: ApprovalItem[] = listVideos("pending_approval").map((v) => ({
+    id: `ap-${v.id}`,
+    title: `Video “${v.title}” (bản dựng ${v.version})`,
+    module: "Video Studio",
+    moduleHref: "/video-studio?tab=pending_approval",
+    actor: v.agent,
+    actorType: "agent",
+    sentAt: v.updatedAt,
+    priority: "high",
+    kind: "video",
+  }));
   const order = { high: 0, medium: 1, low: 2 };
   const now = Date.now();
-  return [...mockApprovals, ...campaigns, ...convs, ...fromDb]
+  return [...mockApprovals.filter((a) => a.kind !== "video"), ...videos, ...campaigns, ...convs, ...fromDb]
     .sort((a, b) => order[a.priority] - order[b.priority] || b.sentAt.localeCompare(a.sentAt))
     .map((a) => ({ ...a, waited: waitedLabel(a.sentAt, now) }));
 }
