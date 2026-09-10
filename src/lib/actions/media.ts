@@ -25,6 +25,14 @@ export async function saveBrandIdentity(fd: FormData) {
     if (old) deleteUpload(old);
     setSetting("brand.logoUploadId", r.upload.id);
   }
+  const logoDark = fd.get("logoDark");
+  if (logoDark instanceof File && logoDark.size > 0) {
+    const r = await saveUpload("logo", logoDark, actor.email, { variant: "dark" });
+    if (!r.ok) return fail("/settings#brand", `Logo nền tối: ${r.error}`);
+    const old = getSetting("brand.logoDarkUploadId");
+    if (old) deleteUpload(old);
+    setSetting("brand.logoDarkUploadId", r.upload.id);
+  }
   const color = (k: string) => {
     const v = str(fd, k);
     return /^#[0-9a-fA-F]{6}$/.test(v) ? v : "";
@@ -37,11 +45,12 @@ export async function saveBrandIdentity(fd: FormData) {
   done("/settings#brand", "Đã lưu nhận diện thương hiệu");
 }
 
-export async function removeLogo() {
+export async function removeLogo(fd: FormData) {
   await requirePermission("manager", "/settings#brand");
-  const old = getSetting("brand.logoUploadId");
+  const key = str(fd, "variant") === "dark" ? "brand.logoDarkUploadId" : "brand.logoUploadId";
+  const old = getSetting(key);
   if (old) deleteUpload(old);
-  setSetting("brand.logoUploadId", "");
+  setSetting(key, "");
   done("/settings#brand", "Đã gỡ logo");
 }
 

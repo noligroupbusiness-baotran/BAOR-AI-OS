@@ -7,6 +7,7 @@ import { listVideos } from "@/lib/videos/repository";
 import { getPending } from "@/lib/dashboard-data";
 import { getHealth, getNotifications } from "@/lib/shell-data";
 import { actorFor } from "@/lib/permissions";
+import { getBrandLogos } from "@/lib/brand-logos";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     "/customers": counts.convs,
   };
   return (
-    <AppShell user={{ email: actor.email, name: actor.name, role: actor.role, permission: actor.permission }} badges={badges} health={getHealth()} notifications={getNotifications()}>
+    <AppShell user={{ email: actor.email, name: actor.name, role: actor.role, permission: actor.permission }} badges={badges} health={getHealth()} notifications={getNotifications()} logos={getBrandLogos()}>
       {children}
     </AppShell>
   );

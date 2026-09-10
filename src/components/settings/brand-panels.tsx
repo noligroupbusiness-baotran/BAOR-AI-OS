@@ -18,6 +18,8 @@ export function BrandPanel() {
   const brand = getBrand();
   const logoId = getSetting("brand.logoUploadId") ?? "";
   const logo = logoId ? getUpload(logoId) : undefined;
+  const logoDarkId = getSetting("brand.logoDarkUploadId") ?? "";
+  const logoDark = logoDarkId ? getUpload(logoDarkId) : undefined;
   const primary = getSetting("brand.primaryColor") || "#1e7a4b";
   const secondary = getSetting("brand.secondaryColor") || "#b7791f";
   const font = getSetting("brand.font") || "";
@@ -36,18 +38,32 @@ export function BrandPanel() {
         </form>
         <form action={saveBrandIdentity} className="grid gap-3 p-4" encType="multipart/form-data">
           <div className="text-[11.5px] font-semibold uppercase tracking-wide text-ink-3">Logo, màu sắc, font chữ</div>
-          <div className="flex items-center gap-3">
-            <div className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-lg border border-border bg-surface" style={{ background: primary }}>
-              {logo ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={fileUrl(logo.id)} alt="Logo thương hiệu" className="h-full w-full object-contain bg-white" />
-              ) : (
-                <span className="text-[11px] text-white/80">Chưa có</span>
-              )}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="flex items-center gap-3">
+              <div className="grid h-14 w-20 shrink-0 place-items-center overflow-hidden rounded-lg border border-border bg-[#f5f2ea] p-1">
+                {logo ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={fileUrl(logo.id)} alt="Logo cho nền sáng" className="h-full w-full object-contain" />
+                ) : (
+                  <span className="text-[11px] text-[#5e655f]">Chưa có</span>
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <Field label="Logo cho nền sáng (chữ tối)" hint="PNG/SVG nền trong suốt, tối đa 3 MB."><input type="file" name="logo" accept="image/png,image/jpeg,image/svg+xml,image/webp" className="block w-full text-[12.5px] text-ink-2 file:mr-2 file:rounded-full file:border file:border-border-2 file:bg-surface file:px-2.5 file:py-1 file:text-[12px] file:text-ink" /></Field>
+              </div>
             </div>
-            <div className="min-w-0 flex-1">
-              <Field label="Tải logo (PNG, SVG, JPG, WebP, tối đa 3 MB)"><input type="file" name="logo" accept="image/png,image/jpeg,image/svg+xml,image/webp" className="block w-full text-[12.5px] text-ink-2 file:mr-2 file:rounded-full file:border file:border-border-2 file:bg-surface file:px-2.5 file:py-1 file:text-[12px] file:text-ink" /></Field>
-              {logo && <div className="mt-1 text-[11.5px] text-ink-3">{logo.name} · {Math.round(logo.size / 1024)} KB</div>}
+            <div className="flex items-center gap-3">
+              <div className="grid h-14 w-20 shrink-0 place-items-center overflow-hidden rounded-lg border border-border bg-[#121713] p-1">
+                {logoDark ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={fileUrl(logoDark.id)} alt="Logo cho nền tối" className="h-full w-full object-contain" />
+                ) : (
+                  <span className="text-[11px] text-[#aab2ab]">Chưa có</span>
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <Field label="Logo cho nền tối (chữ sáng)" hint="Không có thì dùng logo nền sáng cho cả hai."><input type="file" name="logoDark" accept="image/png,image/jpeg,image/svg+xml,image/webp" className="block w-full text-[12.5px] text-ink-2 file:mr-2 file:rounded-full file:border file:border-border-2 file:bg-surface file:px-2.5 file:py-1 file:text-[12px] file:text-ink" /></Field>
+              </div>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -59,8 +75,11 @@ export function BrandPanel() {
           <div className="flex gap-2"><SubmitButton pendingText="Đang lưu…">Lưu nhận diện</SubmitButton></div>
         </form>
       </div>
-      {logo && (
-        <form action={removeLogo} className="border-t border-border px-4 py-2"><Button type="submit" variant="ghost">Gỡ logo</Button></form>
+      {(logo || logoDark) && (
+        <div className="flex gap-2 border-t border-border px-4 py-2">
+          {logo && <form action={removeLogo}><input type="hidden" name="variant" value="light" /><Button type="submit" variant="ghost">Gỡ logo nền sáng</Button></form>}
+          {logoDark && <form action={removeLogo}><input type="hidden" name="variant" value="dark" /><Button type="submit" variant="ghost">Gỡ logo nền tối</Button></form>}
+        </div>
       )}
     </Panel>
   );

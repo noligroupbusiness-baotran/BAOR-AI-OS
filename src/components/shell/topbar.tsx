@@ -10,12 +10,14 @@ import { cn, formatDateTime } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import type { Health } from "@/lib/shell-types";
 import type { ShellUser } from "./app-shell";
+import { BrandMark, type BrandLogos } from "./brand-mark";
 
 interface Props {
   user: ShellUser;
   unread: number;
   isDark: boolean;
   health: Health;
+  logos: BrandLogos;
   viewOnly: boolean;
   onToggleView: () => void;
   onToggleTheme: () => void;
@@ -43,7 +45,7 @@ function useOutsideClose(open: boolean, close: () => void) {
 const iconBtn = "grid h-9 w-9 cursor-pointer place-items-center rounded-full text-ink-2 hover:bg-ground-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-jade";
 const permissionName = { admin: "Quản trị", manager: "Quản lý", staff: "Nhân viên" } as const;
 
-export function Topbar({ user, unread, isDark, health, viewOnly, onToggleView, onToggleTheme, onOpenMobileMenu, onOpenNotifications, onOpenAssistant }: Props) {
+export function Topbar({ user, unread, isDark, health, logos, viewOnly, onToggleView, onToggleTheme, onOpenMobileMenu, onOpenNotifications, onOpenAssistant }: Props) {
   const pathname = usePathname();
   const router = useRouter();
   const current = findMenuByPath(pathname);
@@ -78,9 +80,8 @@ export function Topbar({ user, unread, isDark, health, viewOnly, onToggleView, o
         </button>
       )}
       {viewOnly && (
-        <Link href="/dashboard" className="flex shrink-0 items-center gap-2 text-[14px] font-bold text-ink">
-          <span className="grid h-7 w-7 place-items-center rounded-md bg-jade text-[12px] text-white">B</span>
-          BAOR AI OS
+        <Link href="/dashboard" className="flex shrink-0 items-center" aria-label="BAOR AI OS, về Điều hành">
+          <BrandMark logos={logos} />
         </Link>
       )}
       <h1 className={cn("min-w-0 truncate text-[15px] font-bold text-ink", viewOnly && "font-medium text-ink-2")}>{viewOnly ? `· ${current?.label ?? ""}` : current?.label ?? "BAOR AI OS"}</h1>

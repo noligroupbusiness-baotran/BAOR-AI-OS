@@ -9,6 +9,7 @@ import { AssistantPanel } from "./assistant-panel";
 import { Toast } from "@/components/ui/toast";
 import { applyTheme, effectiveTheme, readStore, sidebarStore, themeStore, viewModeStore } from "@/lib/client-store";
 import type { Health, NotificationItem } from "@/lib/shell-types";
+import type { BrandLogos } from "./brand-mark";
 import { cn } from "@/lib/format";
 
 export interface ShellUser {
@@ -20,7 +21,7 @@ export interface ShellUser {
 
 // Vỏ ứng dụng dùng chung. Hai chế độ: "dashboard" (đầy đủ thanh bên) và "view" (trang xem: ẩn thanh bên,
 // nội dung rộng, chỉ giữ thanh trên tối giản). Tự làm mới dữ liệu mỗi phút khi tab đang mở.
-export function AppShell({ user, badges, health, notifications, children }: { user: ShellUser; badges: Record<string, number>; health: Health; notifications: NotificationItem[]; children: React.ReactNode }) {
+export function AppShell({ user, badges, health, notifications, logos, children }: { user: ShellUser; badges: Record<string, number>; health: Health; notifications: NotificationItem[]; logos: BrandLogos; children: React.ReactNode }) {
   const router = useRouter();
   const sidebar = sidebarStore.use();
   const theme = themeStore.use();
@@ -60,6 +61,7 @@ export function AppShell({ user, badges, health, notifications, children }: { us
           badges={badges}
           user={user}
           health={health}
+          logos={logos}
         />
       )}
       <div className="flex min-w-0 flex-1 flex-col">
@@ -68,6 +70,7 @@ export function AppShell({ user, badges, health, notifications, children }: { us
           unread={unread}
           isDark={isDark}
           health={health}
+          logos={logos}
           viewOnly={viewOnly}
           onToggleView={() => viewModeStore.set(viewOnly ? "dashboard" : "view")}
           onToggleTheme={toggleTheme}

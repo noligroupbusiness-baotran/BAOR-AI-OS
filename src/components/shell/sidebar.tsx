@@ -7,6 +7,7 @@ import { menu } from "@/config/menu";
 import { cn } from "@/lib/format";
 import type { Health } from "@/lib/shell-types";
 import type { ShellUser } from "./app-shell";
+import { BrandMark, type BrandLogos } from "./brand-mark";
 
 interface Props {
   collapsed: boolean;
@@ -16,11 +17,12 @@ interface Props {
   badges: Record<string, number>;
   user: ShellUser;
   health: Health;
+  logos: BrandLogos;
 }
 
 const permissionName = { admin: "Quản trị", manager: "Quản lý", staff: "Nhân viên" } as const;
 
-export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile, badges, user, health }: Props) {
+export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile, badges, user, health, logos }: Props) {
   const pathname = usePathname();
 
   const nav = (
@@ -55,15 +57,9 @@ export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile
   );
 
   const brand = (
-    <div className={cn("flex items-center gap-2.5", collapsed && "justify-center")}>
-      <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-jade text-[14px] font-bold text-white">B</div>
-      {!collapsed && (
-        <div className="min-w-0 leading-tight">
-          <div className="truncate text-[13px] font-bold text-ink">BAOR AI OS</div>
-          <div className="truncate text-[11px] text-ink-2">Marketing Automation</div>
-        </div>
-      )}
-    </div>
+    <Link href="/dashboard" className="min-w-0 flex-1" aria-label="BAOR AI OS, về Điều hành">
+      <BrandMark logos={logos} collapsed={collapsed} />
+    </Link>
   );
 
   const dot = health.level === "error" ? "bg-brick" : health.level === "warn" ? "bg-amber" : "bg-jade";
