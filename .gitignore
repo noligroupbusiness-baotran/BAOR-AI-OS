@@ -43,5 +43,6 @@ next-env.d.ts
 # co so du lieu SQLite cuc bo
 /data
 
-# cau hinh cong cu dev cuc bo
-/.claude/
+# cau hinh cong cu dev cuc bo (giu launch.json de moi session mo giao dien duoc ngay)
+/.claude/*
+!/.claude/launch.json

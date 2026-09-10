@@ -32,6 +32,24 @@ npm run dev                  # http://localhost:3000
 
 Chưa có `.env.local` (hoặc thiếu ADMIN_EMAIL / ADMIN_PASSWORD) thì mọi đăng nhập đều bị từ chối.
 
+## Nhiều session làm song song (mỗi vị trí một session)
+
+`.claude/launch.json` (đã đưa vào repo) có sẵn một cấu hình dev server cho mỗi vị trí, mỗi cấu hình một cổng và một thư mục
+dữ liệu riêng để hai tiến trình không ghi cùng một tệp SQLite:
+
+| Cấu hình | Cổng | DATA_DIR | Vị trí |
+|---|---|---|---|
+| `baor-dev` | 3010 | `data` | dùng chung / điều phối |
+| `baor-campaigns` | 3011 | `data-campaigns` | Chiến dịch và Báo cáo |
+| `baor-content` | 3012 | `data-content` | Nội dung và Video |
+| `baor-ads` | 3013 | `data-ads` | Đăng bài và Quảng cáo |
+| `baor-customers` | 3014 | `data-customers` | Khách hàng và Automation |
+| `baor-infra` | 3015 | `data-infra` | Hạ tầng, bảo mật, deploy |
+
+Thư mục dữ liệu mới tự tạo với dữ liệu mẫu giống nhau. Mỗi session làm trên nhánh riêng (`feature/<vị trí>`), chỉ `git add`
+đúng tệp của mình, không sửa `src/db/schema.ts`, `drizzle/`, `src/db/seed.ts`, `src/config/`, `src/components/shell`,
+`next.config.ts` khi chưa báo session điều phối. Tài khoản dev: xem `.env.local`.
+
 ## Công nghệ
 
 - Next.js 16 (App Router, Server Actions, `proxy.ts` bảo vệ route) + TypeScript
