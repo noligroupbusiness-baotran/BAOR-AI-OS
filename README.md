@@ -79,4 +79,6 @@ Script tự cài Docker, tải code về `/opt/baor-ai-os`, tạo `.env` và kh�
 
 Cập nhật bản mới: `bash /opt/baor-ai-os/deploy/update.sh` (giữ chỉnh sửa cục bộ vào git stash trước khi cập nhật).
 
-Tự cập nhật khi push: vào GitHub > Settings > Secrets and variables > Actions, thêm `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`. Từ đó mỗi lần push, workflow `Deploy to VPS` sẽ cập nhật VPS.
+Tự cập nhật khi có commit mới trên GitHub (không cần secret): `install.sh` đã bật sẵn; VPS cài từ bản cũ thì chạy một lần `bash /opt/baor-ai-os/deploy/enable-auto-update.sh`. VPS kiểm tra GitHub mỗi 2 phút (systemd timer `baor-auto-update.timer`), có bản mới thì tự build lại. Xem nhật ký: `journalctl -u baor-auto-update -n 50`.
+
+Cách khác qua GitHub Actions: thêm `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` trong GitHub > Settings > Secrets and variables > Actions; chưa có secret thì workflow `Deploy to VPS` chỉ ghi chú và kết thúc thành công.

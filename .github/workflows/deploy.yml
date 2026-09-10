@@ -1,13 +1,18 @@
-# Tự động cập nhật VPS mỗi khi push.
-# Cần 3 secret trong GitHub (Settings > Secrets and variables > Actions):
+# Tự động cập nhật VPS mỗi khi push (tùy chọn).
+# Cách 1 (khuyên dùng, không cần secret): trên VPS chạy một lần
+#   bash /opt/baor-ai-os/deploy/enable-auto-update.sh
+# VPS sẽ tự kiểm tra GitHub mỗi 2 phút và cập nhật khi có commit mới.
+#
+# Cách 2: thêm 3 secret trong GitHub (Settings > Secrets and variables > Actions):
 #   VPS_HOST     IP hoặc tên miền VPS
 #   VPS_USER     user SSH (thường là root)
-#   VPS_SSH_KEY  nội dung private key SSH (khóa có quyền đăng nhập VPS)
+#   VPS_SSH_KEY  nội dung private key SSH
+# Chưa có secret thì workflow chỉ ghi chú và kết thúc thành công, không báo lỗi.
 name: Deploy to VPS
 
 on:
   push:
-    branches: [main, claude/relaxed-ritchie-tb1144]
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -18,7 +23,22 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      - name: Kiểm tra secret SSH
+        id: secrets
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          if [ -n "$VPS_HOST" ] && [ -n "$VPS_USER" ] && [ -n "$VPS_SSH_KEY" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Bỏ qua deploy qua SSH::Chưa có VPS_HOST / VPS_USER / VPS_SSH_KEY. VPS vẫn tự cập nhật nếu đã bật deploy/enable-auto-update.sh."
+          fi
+
       - name: Cập nhật ứng dụng trên VPS
+        if: steps.secrets.outputs.ready == 'true'
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.VPS_HOST }}

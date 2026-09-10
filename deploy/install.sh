@@ -52,3 +52,6 @@ else
   echo "Nếu chưa vào được: kiểm tra bản ghi DNS A của $DOMAIN_SET đã trỏ về $IP chưa (đổi xong chờ 5-30 phút)."
 fi
 echo "Xem log: docker compose -f $DIR/docker-compose.yml logs -f app"
+
+echo "==> Bật tự cập nhật khi GitHub có commit mới (mỗi 2 phút kiểm tra một lần)"
+bash "$DIR/deploy/enable-auto-update.sh" || echo "    Không bật được tự cập nhật; chạy tay: bash $DIR/deploy/enable-auto-update.sh"
