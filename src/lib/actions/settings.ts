@@ -3,7 +3,7 @@
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { done } from "./common";
-import { hashPassword, setSetting, verifyAdmin, getAdminEmail } from "@/lib/admin";
+import { setSetting } from "@/lib/admin";
 import { clearAll, seedAll } from "@/db/seed";
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
@@ -24,16 +24,9 @@ export async function saveBrand(fd: FormData) {
 
 export async function saveAccount(fd: FormData) {
   const email = str(fd, "email").toLowerCase();
-  const current = str(fd, "current");
-  const next = str(fd, "password");
   if (!email) return done("/settings", "Cần nhập email");
-  if (!verifyAdmin(getAdminEmail(), current)) return done("/settings", "Mật khẩu hiện tại không đúng");
   setSetting("admin.email", email);
-  if (next) {
-    if (next.length < 6) return done("/settings", "Mật khẩu mới cần ít nhất 6 ký tự");
-    setSetting("admin.passwordHash", hashPassword(next));
-  }
-  done("/settings", "Đã cập nhật tài khoản");
+  done("/settings", "Đã lưu email chủ fanpage");
 }
 
 export async function saveIntegration(fd: FormData) {

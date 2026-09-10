@@ -2,9 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Bell, ChevronDown, LogOut, Menu, Moon, Plus, Search, Sparkles, Sun, User } from "lucide-react";
+import { Bell, ChevronDown, Menu, Moon, Plus, Search, Sparkles, Sun, User } from "lucide-react";
 import { createActions, findMenuByPath, menu } from "@/config/menu";
-import { logoutAction } from "@/app/login/actions";
 import { cn } from "@/lib/format";
 import { Dialog } from "@/components/ui/dialog";
 import { Button, LinkButton } from "@/components/ui/button";
@@ -149,11 +148,6 @@ export function Topbar({ email, unread, isDark, onToggleTheme, onOpenMobileMenu,
               <a href="/settings#account" role="menuitem" onClick={() => setAccountOpen(false)} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] text-ink hover:bg-ground-2">
                 <User size={16} className="text-ink-3" aria-hidden /> Tài khoản
               </a>
-              <form action={logoutAction}>
-                <button type="submit" role="menuitem" className="flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[13px] text-ink hover:bg-ground-2">
-                  <LogOut size={16} className="text-ink-3" aria-hidden /> Đăng xuất
-                </button>
-              </form>
             </div>
           )}
         </div>

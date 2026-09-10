@@ -20,11 +20,10 @@ fi
 cd "$DIR"
 
 if [ ! -f .env ]; then
-  echo "==> Tạo tệp .env (đổi email/mật khẩu trong tệp này khi cần)"
+  echo "==> Tạo tệp .env (đổi email trong tệp này khi cần)"
   cat > .env <<ENV
+# Email chủ fanpage hiển thị trong giao diện (hệ thống không yêu cầu đăng nhập).
 ADMIN_EMAIL=${ADMIN_EMAIL:-thanhbaotran.business@gmail.com}
-ADMIN_PASSWORD=${ADMIN_PASSWORD:-123456}
-AUTH_SECRET=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
 # Tên miền của hệ thống (dùng khi chạy Caddy trong Docker).
 DOMAIN=${DOMAIN:-mkt.baor.vn}
 # Cổng nội bộ của app trên máy chủ (proxy của VPS trỏ vào 127.0.0.1:APP_PORT).

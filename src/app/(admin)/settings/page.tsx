@@ -132,12 +132,10 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         </Panel>
 
         <Panel id="account">
-          <PanelHeader title="Tài khoản quản trị" sub="Đổi email hoặc mật khẩu đăng nhập. Cần mật khẩu hiện tại để xác nhận." />
+          <PanelHeader title="Chủ fanpage" sub="Email hiển thị trong giao diện và dùng làm người nhận thông báo. Hệ thống không yêu cầu đăng nhập." />
           <form action={saveAccount} className="grid gap-3 p-4">
-            <label className="block"><span className="lbl">Email đăng nhập</span><input name="email" type="email" defaultValue={adminEmail} className={input} /></label>
-            <label className="block"><span className="lbl">Mật khẩu hiện tại</span><input name="current" type="password" required className={input} autoComplete="current-password" /></label>
-            <label className="block"><span className="lbl">Mật khẩu mới (để trống nếu không đổi)</span><input name="password" type="password" className={input} autoComplete="new-password" /></label>
-            <div><Button variant="primary" type="submit">Cập nhật</Button></div>
+            <label className="block"><span className="lbl">Email chủ fanpage</span><input name="email" type="email" defaultValue={adminEmail} className={input} /></label>
+            <div><Button variant="primary" type="submit">Lưu</Button></div>
           </form>
         </Panel>
       </div>

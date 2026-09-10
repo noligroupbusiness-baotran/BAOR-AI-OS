@@ -4,11 +4,10 @@ set -e
 cd "$(dirname "$0")"
 if [ ! -f .env.local ]; then
   cat > .env.local <<ENV
+# Email chủ fanpage hiển thị trong giao diện (không cần đăng nhập).
 ADMIN_EMAIL=thanhbaotran.business@gmail.com
-ADMIN_PASSWORD=123456
-AUTH_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
 ENV
-  echo "Đã tạo .env.local với tài khoản mặc định (đổi trong tệp này khi cần)."
+  echo "Đã tạo .env.local (đổi email trong tệp này khi cần)."
 fi
 [ -d node_modules ] || npm install
 echo "Mở trình duyệt tại http://localhost:3000"

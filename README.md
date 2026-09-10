@@ -11,40 +11,30 @@ Trung tâm điều hành marketing automation cho fanpage. Giao diện quản tr
 7. **Kết nối khách hàng** – hộp thư & bình luận, lead/CRM, quy tắc trả lời tự động.
 8. **Email marketing** – chuỗi tự động, chiến dịch.
 
-Kèm **Hộp chờ duyệt** gom mọi việc cần chủ fanpage quyết định, và **Cài đặt** (kết nối API, tự động hóa, tài khoản).
+Kèm **Hộp chờ duyệt** gom mọi việc cần chủ fanpage quyết định, và **Cài đặt** (kết nối API, tự động hóa, thương hiệu).
+
+Hệ thống **không có đăng nhập**: mở tên miền là vào thẳng dashboard. Chỉ triển khai trên mạng nội bộ hoặc chặn truy cập ở tầng proxy (Caddy basic auth, VPN, allowlist IP) nếu web công khai.
 
 ## Chạy thử
-
-Tạo tệp `.env.local` ở thư mục gốc (tệp này không đưa lên git):
-
-```bash
-ADMIN_EMAIL=ban@email.com
-ADMIN_PASSWORD=mat-khau-cua-ban
-AUTH_SECRET=chuoi-ngau-nhien-dai      # sinh bằng: openssl rand -hex 32
-```
-
-Rồi chạy:
 
 ```bash
 npm install
 npm run dev                  # http://localhost:3000
 ```
 
-Chưa có `.env.local` (hoặc thiếu ADMIN_EMAIL / ADMIN_PASSWORD) thì mọi đăng nhập đều bị từ chối.
+Tuỳ chọn: tạo `.env.local` với `ADMIN_EMAIL=ban@email.com` để hiển thị email chủ fanpage trong giao diện (đổi được trong Cài đặt).
 
 ## Công nghệ
 
-- Next.js 16 (App Router, Server Actions, `proxy.ts` bảo vệ route) + TypeScript
+- Next.js 16 (App Router, Server Actions) + TypeScript
 - Tailwind CSS 4, giao diện tiếng Việt, tone xanh ngọc / xương trắng, chữ Be Vietnam Pro
 - Cơ sở dữ liệu SQLite (Drizzle ORM) trong thư mục `data/`, tự tạo bảng và nạp dữ liệu mẫu lần đầu
-- Phiên đăng nhập: cookie HTTP-only ký bằng `jose`; mật khẩu đổi trong Cài đặt được băm scrypt
 - AI: Claude API (`claude-opus-5`) cho đề xuất ý tưởng, viết nháp, gợi ý trả lời khách; nhập khóa ở Cài đặt › Kết nối
 
 ## Cấu trúc
 
 ```
 src/app/(admin)/*      các trang quản trị (dashboard, research, content, publishing, customers, settings)
-src/app/login          đăng nhập (Server Action)
 src/components/ui      pill, button, card, stat, segment, table, toast, platform
 src/components/layout  sidebar, topbar, nav
 src/db/*               schema, kết nối SQLite, nạp dữ liệu mẫu
@@ -52,12 +42,12 @@ src/lib/actions/*      hành động server: nội dung, quảng cáo, khách h�
 src/lib/queries.ts     truy vấn đọc cho các trang
 src/lib/ai.ts          gọi Claude API
 src/lib/data/*         dữ liệu mẫu ban đầu
-src/lib/auth.ts        phiên đăng nhập; src/lib/admin.ts tài khoản quản trị
+src/lib/admin.ts       cài đặt chung (bảng settings), email chủ fanpage
 ```
 
 ## Đã hoạt động thật
 
-Nhận ý tưởng, soạn và lưu nháp, gửi duyệt, duyệt, lên lịch đăng; duyệt / tạm dừng / sửa ngân sách ads; trả lời khách, đổi giai đoạn lead, bật tắt quy tắc và chuỗi email; kết nối (lưu khóa), bật tắt tự động hóa, thương hiệu, đổi email/mật khẩu; xóa hoặc nạp lại dữ liệu mẫu. AI đề xuất ý tưởng, viết nháp và gợi ý trả lời khi có khóa Claude.
+Nhận ý tưởng, soạn và lưu nháp, gửi duyệt, duyệt, lên lịch đăng; duyệt / tạm dừng / sửa ngân sách ads; trả lời khách, đổi giai đoạn lead, bật tắt quy tắc và chuỗi email; kết nối (lưu khóa), bật tắt tự động hóa, thương hiệu, đổi email chủ fanpage; xóa hoặc nạp lại dữ liệu mẫu. AI đề xuất ý tưởng, viết nháp và gợi ý trả lời khi có khóa Claude.
 
 ## Giai đoạn tiếp theo
 

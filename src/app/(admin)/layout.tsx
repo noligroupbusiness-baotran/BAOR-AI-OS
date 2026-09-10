@@ -1,5 +1,4 @@
-import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/auth";
+import { getAdminEmail } from "@/lib/admin";
 import { AppShell } from "@/components/shell/app-shell";
 import { pendingCounts } from "@/lib/queries";
 import { mockVideoPending } from "@/lib/mock/dashboard";
@@ -7,8 +6,7 @@ import { mockVideoPending } from "@/lib/mock/dashboard";
 export const dynamic = "force-dynamic";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  const email = getAdminEmail();
   const counts = pendingCounts();
   const badges = {
     "/dashboard": counts.ideas + counts.ads + counts.convs + mockVideoPending,
@@ -18,7 +16,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     "/customers": counts.convs,
   };
   return (
-    <AppShell email={user.email} badges={badges}>
+    <AppShell email={email} badges={badges}>
       {children}
     </AppShell>
   );
