@@ -71,14 +71,28 @@ export function campaignAlerts(campaign: Campaign, goals: ChannelGoal[], connect
   const budget = checkBudget(campaign.totalBudget, goals);
   if (budget.over) out.push(`Ngân sách kênh (${budget.allocated.toLocaleString("vi-VN")} ₫) vượt ngân sách tổng (${budget.total.toLocaleString("vi-VN")} ₫).`);
   if ((campaign.status === "active" || campaign.status === "approved") && campaign.endDate < today) out.push("Đã qua ngày kết thúc nhưng chiến dịch chưa được đóng.");
+  const notConnected = new Set<string>();
   for (const g of goals) {
     if (g.status === "error") out.push(`Mục tiêu kênh ${channelDef(g.channel)?.label ?? g.channel} có lỗi.`);
     const def = channelDef(g.channel);
     const key = g.accountId ?? def?.integrationKey ?? null;
     const isConnected = key ? connected[key] === true : false;
-    if (!isConnected && (campaign.status === "active" || campaign.status === "approved")) {
-      out.push(`Tài khoản ${def?.label ?? g.channel} chưa kết nối.`);
-    }
+    if (!isConnected && (campaign.status === "active" || campaign.status === "approved")) notConnected.add(def?.label ?? g.channel);
   }
+  // Mỗi kênh chưa kết nối chỉ báo một lần, dù có nhiều mục tiêu trên kênh đó.
+  for (const label of notConnected) out.push(`Tài khoản ${label} chưa kết nối.`);
   return out;
+}
+
+// Nhãn thời gian ngắn cho danh sách: "còn 12 ngày", "bắt đầu sau 3 ngày", "đã qua hạn 2 ngày", "kết thúc hôm nay".
+export function timingLabel(startDate: string, endDate: string, today: string): { text: string; tone: "neutral" | "amber" | "brick" } {
+  const day = (d: string) => Math.round(Date.parse(`${d}T00:00:00Z`) / 86_400_000);
+  const t = day(today);
+  const s = day(startDate);
+  const e = day(endDate);
+  if (t < s) return { text: `bắt đầu sau ${s - t} ngày`, tone: "neutral" };
+  if (t > e) return { text: `đã qua hạn ${t - e} ngày`, tone: "brick" };
+  const left = e - t;
+  if (left === 0) return { text: "kết thúc hôm nay", tone: "amber" };
+  return { text: `còn ${left} ngày`, tone: left <= 3 ? "amber" : "neutral" };
 }

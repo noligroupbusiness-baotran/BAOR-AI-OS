@@ -25,8 +25,9 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
   }
   if (!verifyLogin(email, password)) {
     const r = guard.fail(keys);
-    if (r.locked) logActivity("system", `Khóa đăng nhập 15 phút cho ${email || "(trống)"} từ IP ${ip} vì sai mật khẩu liên tiếp.`, "security");
-    else logActivity("system", `Đăng nhập sai cho ${email || "(trống)"} từ IP ${ip}.`, "security");
+    // Chỉ ghi nhật ký khi bị khóa (mỗi lần sai đều ghi sẽ làm ngập Trung tâm thông báo); lần sai lẻ chỉ in ra log máy chủ.
+    if (r.locked) logActivity("system", `Khóa đăng nhập 15 phút cho ${email || "(trống)"} từ IP ${ip} sau 5 lần sai mật khẩu.`, "security");
+    else console.warn(`[BAOR] Đăng nhập sai cho ${email || "(trống)"} từ IP ${ip} (còn ${r.remaining} lần).`);
     guard.prune();
     return {
       error: r.locked

@@ -87,6 +87,11 @@ Chiến dịch → Mục tiêu kênh → Insight → Nội dung → Video → Ph
 - Chưa nối: API Facebook / TikTok / YouTube / Zalo OA, đăng bài thật, chạy ads thật, thu lead thật, Agent Edit Video,
   doanh thu thật. Tab Kết quả đang dùng số liệu mẫu trong `campaign_results`.
 
+- Danh sách chiến dịch: lọc theo tên, trạng thái, sản phẩm, người phụ trách, tháng, "chỉ chiến dịch có cảnh báo"; sắp xếp theo
+  mới cập nhật / trạng thái / sắp kết thúc / ngân sách / tiến độ; mỗi dòng có nhãn "còn N ngày", "bắt đầu sau N ngày", "đã qua hạn".
+- Trang chi tiết có **Nhân bản** (tạo bản nháp mới kèm mục tiêu kênh, không kèm liên kết) và **Xóa nháp** (chỉ Nháp / Cần chỉnh sửa,
+  chưa gắn hoạt động, cần Quản lý). Chiến dịch đã duyệt thì dùng Kết thúc, không xóa.
+
 ## Bộ định tuyến luật / AI và lớp kết nối nền tảng
 
 - **Bộ định tuyến** (`src/lib/router`): việc có dữ liệu nguồn và công thức → làn "rule", xử lý ngay (hạn mức quảng cáo,
@@ -135,8 +140,8 @@ Chiến dịch → Mục tiêu kênh → Insight → Nội dung → Video → Ph
 
 ## Bảo vệ và vận hành lâu dài
 
-- **Chặn dò mật khẩu** (`src/lib/login-guard.ts`): 5 lần sai trong 15 phút (theo email và theo IP) thì khóa 15 phút; lần sai
-  và lần khóa ghi vào nhật ký hoạt động (bước `security`). Bộ đếm nằm trong tiến trình, khởi động lại là xóa.
+- **Chặn dò mật khẩu** (`src/lib/login-guard.ts`): 5 lần sai trong 15 phút (theo email và theo IP) thì khóa 15 phút; lần khóa ghi vào
+  nhật ký hoạt động (bước `security`), lần sai lẻ chỉ in ra log máy chủ. Bộ đếm nằm trong tiến trình, khởi động lại là xóa.
 - **Header bảo mật** (`next.config.ts`): Content-Security-Policy (chỉ mã, font, ảnh từ chính hệ thống và Google Fonts),
   không cho nhúng iframe, nosniff, Referrer-Policy, HSTS.
 - **Kiểm tra cấu hình lúc khởi động** (`src/lib/env-check.ts`): thiếu hoặc yếu `AUTH_SECRET`, thiếu `ADMIN_EMAIL`,

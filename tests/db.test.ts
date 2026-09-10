@@ -15,6 +15,7 @@ let retention: typeof import("../src/lib/retention");
 let router: typeof import("../src/lib/router");
 let permissions: typeof import("../src/lib/permissions");
 let db: typeof import("../src/db");
+let campaigns: typeof import("../src/lib/campaigns/repository");
 
 before(async () => {
   engine = await import("../src/lib/automation/engine");
@@ -22,6 +23,7 @@ before(async () => {
   router = await import("../src/lib/router");
   permissions = await import("../src/lib/permissions");
   db = await import("../src/db");
+  campaigns = await import("../src/lib/campaigns/repository");
 });
 
 after(() => {
@@ -76,4 +78,33 @@ test("dọn dữ liệu: xóa nhật ký cũ hơn hạn, giữ nhật ký mới"
   const left = getDb().select().from(schema.activity).all().map((a) => a.message);
   assert.ok(left.includes("act_new"));
   assert.ok(!left.includes("act_old"));
+});
+
+test("chiến dịch: nhân bản ra bản nháp kèm mục tiêu kênh, xóa nháp dọn sạch bảng liên quan", () => {
+  const repo = campaigns.campaignRepo;
+  const src = repo.list().find((c) => c.goalCount > 0)!;
+  const copy = repo.duplicate(src.id, "test@local")!;
+  assert.equal(copy.status, "draft");
+  assert.equal(copy.name, `${src.name} (bản sao)`);
+  assert.equal(repo.goals(copy.id).length, src.goalCount);
+  assert.equal(repo.goals(copy.id).every((g) => g.status === "planned"), true);
+  assert.equal(repo.links(copy.id).length, 0, "không sao chép liên kết");
+  repo.log(copy.id, "test@local", "Nhân bản", "", null);
+  repo.deleteCampaign(copy.id);
+  assert.equal(repo.get(copy.id), undefined);
+  assert.equal(repo.goals(copy.id).length, 0);
+  assert.equal(repo.logs(copy.id).length, 0);
+  assert.ok(repo.get(src.id), "bản gốc còn nguyên");
+});
+
+test("chiến dịch: lọc theo cảnh báo và sắp xếp", () => {
+  const repo = campaigns.campaignRepo;
+  const all = repo.list();
+  const withAlerts = repo.list({ alerts: true });
+  assert.equal(withAlerts.every((c) => c.alerts > 0), true);
+  assert.ok(withAlerts.length <= all.length);
+  const byBudget = repo.list({ sort: "budget" }).map((c) => c.totalBudget);
+  assert.deepEqual(byBudget, [...byBudget].sort((a, b) => b - a));
+  const byEnding = repo.list({ sort: "ending" }).map((c) => c.endDate);
+  assert.deepEqual(byEnding, [...byEnding].sort());
 });

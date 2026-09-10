@@ -385,3 +385,31 @@ export async function unlinkEntityFromCampaign(fd: FormData) {
   campaignRepo.log(campaignId, by, "Bỏ gắn khỏi chiến dịch", `${entityType} ${entityId}`);
   finish(back, "Đã bỏ gắn khỏi chiến dịch.");
 }
+
+// ---------- Nhân bản và xóa nháp ----------
+
+export async function duplicateCampaign(fd: FormData) {
+  const by = await actor();
+  const id = str(fd, "id");
+  const idem = str(fd, "idem");
+  const c = campaignRepo.get(id);
+  if (!c) finish("/campaigns", "Không tìm thấy chiến dịch", "error");
+  if (idem && campaignRepo.hasIdem(idem)) finish(`/campaigns/${id}`, "Đã nhân bản rồi, không lặp lại.", "error");
+  const copy = campaignRepo.duplicate(id, by)!;
+  campaignRepo.log(copy.id, by, "Nhân bản", `Từ chiến dịch “${c.name}”`, idem || null);
+  logActivity("human", `Nhân bản chiến dịch “${c.name}” thành bản nháp mới.`, "campaigns");
+  finish(`/campaigns/${copy.id}`, "Đã tạo bản sao ở trạng thái Nháp. Sửa tên, thời gian và ngân sách trước khi gửi phê duyệt.");
+}
+
+export async function deleteDraftCampaign(fd: FormData) {
+  const a = await requirePermission("manager", "/campaigns");
+  const id = str(fd, "id");
+  const c = campaignRepo.get(id);
+  if (!c) finish("/campaigns", "Không tìm thấy chiến dịch", "error");
+  if (c.status !== "draft" && c.status !== "needs_changes") finish(`/campaigns/${id}`, "Chỉ xóa được chiến dịch ở trạng thái Nháp hoặc Cần chỉnh sửa. Chiến dịch đã duyệt thì dùng Kết thúc.", "error");
+  const links = campaignRepo.links(id);
+  if (links.length) finish(`/campaigns/${id}`, `Chiến dịch còn ${links.length} hoạt động đang gắn (nội dung, video, quảng cáo…). Gỡ liên kết trước khi xóa.`, "error");
+  campaignRepo.deleteCampaign(id);
+  logActivity("human", `${a.name} xóa bản nháp chiến dịch “${c.name}”.`, "campaigns");
+  finish("/campaigns", `Đã xóa bản nháp “${c.name}”.`);
+}

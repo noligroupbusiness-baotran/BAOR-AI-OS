@@ -8,13 +8,22 @@ import { ProgressBar } from "@/components/ui/progress";
 import { CampaignStatusPill } from "@/components/campaigns/status";
 import { campaignRepo } from "@/lib/campaigns/repository";
 import { campaignStatusLabel, campaignStatusOrder } from "@/lib/campaigns/labels";
-import type { CampaignFilter, CampaignStatus } from "@/lib/campaigns/types";
+import type { CampaignFilter, CampaignSort, CampaignStatus } from "@/lib/campaigns/types";
+import { timingLabel } from "@/lib/campaigns/results";
 import { formatCurrency, formatDate, cn } from "@/lib/format";
 import { Pager, paginate } from "@/components/ui/pager";
 
 export const metadata = { title: "Chiến dịch – BAOR AI OS" };
 
-type Search = { q?: string; status?: string; product?: string; owner?: string; month?: string; page?: string };
+type Search = { q?: string; status?: string; product?: string; owner?: string; month?: string; alerts?: string; sort?: string; page?: string };
+
+const sortOptions: { value: CampaignSort; label: string }[] = [
+  { value: "updated", label: "Mới cập nhật" },
+  { value: "status", label: "Theo trạng thái" },
+  { value: "ending", label: "Sắp kết thúc" },
+  { value: "budget", label: "Ngân sách lớn nhất" },
+  { value: "progress", label: "Tiến độ cao nhất" },
+];
 
 export default async function CampaignsPage({ searchParams }: { searchParams: Promise<Search> }) {
   const sp = await searchParams;
@@ -24,8 +33,10 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
     product: sp.product || undefined,
     owner: sp.owner || undefined,
     month: sp.month && /^\d{4}-\d{2}$/.test(sp.month) ? sp.month : undefined,
+    alerts: sp.alerts === "1" || undefined,
+    sort: sortOptions.some((o) => o.value === sp.sort) ? (sp.sort as CampaignSort) : undefined,
   };
-  const filtering = Object.values(filter).some(Boolean);
+  const filtering = Object.entries(filter).some(([k, v]) => k !== "sort" && Boolean(v));
   const today = new Date().toISOString().slice(0, 10);
   const stats = campaignRepo.stats(today);
   const list = campaignRepo.list(filter);
@@ -43,7 +54,7 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
     { label: "Đang thực hiện", value: String(stats.active), hint: "chiến dịch", icon: Megaphone, href: "/campaigns?status=active" },
     { label: "Chờ phê duyệt", value: String(stats.pendingApproval), hint: "cần bạn quyết định", icon: ClipboardCheck, tone: stats.pendingApproval ? "amber" : undefined, href: "/campaigns?status=pending_approval" },
     { label: "Ngân sách tháng này", value: formatCurrency(stats.monthBudget), hint: "chiến dịch chạm tháng " + today.slice(5, 7), icon: Wallet, href: `/campaigns?month=${today.slice(0, 7)}` },
-    { label: "Cảnh báo cần xử lý", value: String(stats.alerts), hint: "tài khoản, ngân sách, hạn", icon: AlertTriangle, tone: stats.alerts ? "brick" : undefined, href: "/campaigns" },
+    { label: "Cảnh báo cần xử lý", value: String(stats.alerts), hint: "tài khoản, ngân sách, hạn", icon: AlertTriangle, tone: stats.alerts ? "brick" : undefined, href: "/campaigns?alerts=1" },
   ];
 
   return (
@@ -74,7 +85,7 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
       </div>
 
       {/* Bộ lọc: biểu mẫu GET, chia sẻ được liên kết */}
-      <form method="get" action="/campaigns" className="card mt-3.5 grid gap-2 px-4 py-3 md:grid-cols-[1.4fr_1fr_1fr_1fr_1fr_auto] md:items-end">
+      <form method="get" action="/campaigns" className="card mt-3.5 grid gap-2 px-4 py-3 md:grid-cols-[1.4fr_1fr_1fr_1fr_1fr_1fr_auto] md:items-end">
         <label className="block">
           <span className="lbl">Tìm theo tên</span>
           <input name="q" defaultValue={filter.q ?? ""} className={`${inputClass} mt-1`} placeholder="Tên hoặc mục tiêu chiến dịch" />
@@ -110,10 +121,22 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
           <span className="lbl">Thời gian</span>
           <input type="month" name="month" defaultValue={filter.month ?? ""} className={`${inputClass} mt-1`} />
         </label>
+        <label className="block">
+          <span className="lbl">Sắp xếp</span>
+          <select name="sort" defaultValue={filter.sort ?? "updated"} className={`${inputClass} mt-1`}>
+            {sortOptions.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </label>
         <div className="flex gap-1.5">
           <Button type="submit" variant="soft" size="md">Lọc</Button>
           {filtering && <LinkButton href="/campaigns" variant="ghost" size="md">Xóa lọc</LinkButton>}
         </div>
+        <label className="flex items-center gap-2 text-[12.5px] text-ink-2 md:col-span-full">
+          <input type="checkbox" name="alerts" value="1" defaultChecked={!!filter.alerts} className="h-3.5 w-3.5 accent-jade" />
+          Chỉ chiến dịch đang có cảnh báo
+        </label>
       </form>
 
       <section className="card mt-3.5 overflow-hidden" aria-label="Danh sách chiến dịch">
@@ -141,7 +164,14 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
                   <div className="mt-1 truncate text-[12px] text-ink-3">{c.productNames.join(", ")}</div>
                 </div>
                 <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-[12px] lg:grid-cols-1">
-                  <div className="flex gap-1.5"><dt className="text-ink-3">Thời gian</dt><dd className="num text-ink">{formatDate(c.startDate)} – {formatDate(c.endDate)}</dd></div>
+                  <div className="flex flex-wrap gap-1.5">
+                    <dt className="text-ink-3">Thời gian</dt>
+                    <dd className="num text-ink">{formatDate(c.startDate)} – {formatDate(c.endDate)}</dd>
+                    {(c.status === "active" || c.status === "approved" || c.status === "paused") && (() => {
+                      const t = timingLabel(c.startDate, c.endDate, today);
+                      return <dd className={cn("text-[11.5px]", t.tone === "brick" ? "text-brick" : t.tone === "amber" ? "text-amber" : "text-ink-3")}>· {t.text}</dd>;
+                    })()}
+                  </div>
                   <div className="flex gap-1.5"><dt className="text-ink-3">Ngân sách</dt><dd className="num text-ink">{formatCurrency(c.totalBudget)}</dd></div>
                   <div className="flex gap-1.5"><dt className="text-ink-3">Kênh</dt><dd className="num text-ink">{c.channelCount} kênh · {c.goalCount} mục tiêu</dd></div>
                   <div className="flex gap-1.5"><dt className="text-ink-3">Phụ trách</dt><dd className="text-ink">{c.ownerName}</dd></div>

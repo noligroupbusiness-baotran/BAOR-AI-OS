@@ -151,12 +151,17 @@ export interface PlatformAccount {
   account: string | null;
 }
 
+export type CampaignSort = "updated" | "status" | "ending" | "budget" | "progress";
+
 export interface CampaignFilter {
   q?: string;
   status?: CampaignStatus | "";
   product?: string;
   owner?: string;
   month?: string; // YYYY-MM
+  /** Chỉ lấy chiến dịch đang có cảnh báo. */
+  alerts?: boolean;
+  sort?: CampaignSort;
 }
 
 // Dòng trong danh sách chiến dịch: chiến dịch + số liệu gộp từ mục tiêu kênh.

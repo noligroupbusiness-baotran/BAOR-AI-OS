@@ -9,7 +9,7 @@ import { ActivityTab, ApprovalsTab, GoalsTab, OverviewTab, ResultsTab } from "@/
 import { CampaignEditForm } from "@/components/campaigns/campaign-edit-form";
 import { checkBudget } from "@/lib/campaigns/results";
 import { campaignRepo } from "@/lib/campaigns/repository";
-import { activateCampaign, approveCampaign, endCampaign, pauseCampaign, requestCampaignChanges, submitCampaign } from "@/lib/actions/campaigns";
+import { activateCampaign, approveCampaign, deleteDraftCampaign, duplicateCampaign, endCampaign, pauseCampaign, requestCampaignChanges, submitCampaign } from "@/lib/actions/campaigns";
 import { formatCurrency, formatDate } from "@/lib/format";
 
 type Params = Promise<{ id: string }>;
@@ -70,6 +70,10 @@ export default async function CampaignDetailPage({ params, searchParams }: { par
       )}
       {st === "paused" && (
         <ConfirmAction action={activateCampaign} fields={{ id, idem: `${idem}_resume` }} label="Chạy lại" title="Chạy lại chiến dịch?" message="Các mục tiêu kênh đã tạm dừng sẽ chạy lại." confirmLabel="Chạy lại" variant="primary" size="md" />
+      )}
+      <ConfirmAction action={duplicateCampaign} fields={{ id, idem: `${idem}_dup` }} label="Nhân bản" title="Nhân bản chiến dịch này?" message={`Tạo bản nháp mới “${campaign.name} (bản sao)” với cùng mục tiêu, thời gian, ngân sách và ${goals.length} mục tiêu kênh. Không sao chép nội dung, quảng cáo hay kết quả.`} confirmLabel="Tạo bản sao" variant="ghost" size="md" />
+      {(st === "draft" || st === "needs_changes") && (
+        <ConfirmAction action={deleteDraftCampaign} fields={{ id }} label="Xóa nháp" title="Xóa bản nháp này?" message="Xóa hẳn chiến dịch cùng các mục tiêu kênh của nó. Không khôi phục được. Cần quyền Quản lý." confirmLabel="Xóa bản nháp" variant="ghost" size="md" danger />
       )}
       {(st === "active" || st === "paused" || st === "approved") && (
         <ConfirmAction action={endCampaign} fields={{ id, idem: `${idem}_end` }} label="Kết thúc" title="Kết thúc chiến dịch?" message="Không thể mở lại sau khi kết thúc. Kết quả được chốt và các mục tiêu kênh chuyển sang “Hoàn thành”." confirmLabel="Kết thúc chiến dịch" size="md" danger />

@@ -9,6 +9,7 @@ import { videoStatusLabel, type VideoStatus } from "@/lib/data/videos";
 import { contentStatusLabel, leadStageLabel, postStatusLabel, adStatusLabel } from "@/lib/labels";
 import type { AdStatus, ContentStatus, LeadStage, PostStatus } from "@/lib/types";
 import { campaignAlerts, campaignProgress, overlapsMonth } from "./results";
+import { campaignStatusOrder } from "./labels";
 import type {
   ApprovalStatus,
   Campaign,
@@ -28,6 +29,7 @@ import type {
   Person,
   PlatformAccount,
   Product,
+  CampaignSort,
 } from "./types";
 
 export interface ResolvedLink {
@@ -48,6 +50,8 @@ export interface CampaignRepository {
   list(filter?: CampaignFilter): CampaignSummary[];
   get(id: string): Campaign | undefined;
   summary(id: string): CampaignSummary | undefined;
+  duplicate(id: string, actor: string): Campaign | undefined;
+  deleteCampaign(id: string): void;
   stats(today: string): CampaignStats;
   goals(campaignId: string): ChannelGoal[];
   goal(id: string): ChannelGoal | undefined;
@@ -144,6 +148,22 @@ const normalize = (s: string) =>
     .replace(/Đ/g, "D")
     .toLowerCase();
 
+// Thứ tự hiển thị danh sách. "updated" giữ thứ tự CSDL (mới cập nhật trước).
+function sorter(sort: CampaignSort): (a: CampaignSummary, b: CampaignSummary) => number {
+  switch (sort) {
+    case "status":
+      return (a, b) => campaignStatusOrder.indexOf(a.status) - campaignStatusOrder.indexOf(b.status) || a.endDate.localeCompare(b.endDate);
+    case "ending":
+      return (a, b) => a.endDate.localeCompare(b.endDate);
+    case "budget":
+      return (a, b) => b.totalBudget - a.totalBudget;
+    case "progress":
+      return (a, b) => b.progress - a.progress;
+    default:
+      return () => 0;
+  }
+}
+
 class SqliteCampaignRepository implements CampaignRepository {
   private get db() {
     return getDb();
@@ -206,7 +226,45 @@ class SqliteCampaignRepository implements CampaignRepository {
           people,
           products,
         ),
-      );
+      )
+      .filter((c) => (filter.alerts ? c.alerts > 0 : true))
+      .sort(sorter(filter.sort ?? "updated"));
+  }
+
+  /** Nhân bản thành bản nháp mới (kèm mục tiêu kênh, không kèm liên kết, phê duyệt, kết quả). */
+  duplicate(id: string, actor: string): Campaign | undefined {
+    const c = this.get(id);
+    if (!c) return undefined;
+    const goals = this.goals(id);
+    const input: NewCampaignInput = {
+      name: `${c.name} (bản sao)`,
+      description: c.description,
+      objective: c.objective,
+      targetMetric: c.targetMetric,
+      targetValue: c.targetValue,
+      productIds: c.productIds,
+      audience: c.audience,
+      location: c.location,
+      startDate: c.startDate,
+      endDate: c.endDate,
+      totalBudget: c.totalBudget,
+      budgetNote: c.budgetNote,
+      ownerId: c.ownerId,
+      goals: goals.map((g) => ({ channel: g.channel, accountId: g.accountId, executionType: g.executionType, objective: g.objective, primaryMetric: g.primaryMetric, targetValue: g.targetValue, budget: g.budget, ownerId: g.ownerId, startDate: g.startDate, endDate: g.endDate })),
+    };
+    return this.create(input, actor, "draft");
+  }
+
+  /** Xóa hẳn một bản nháp: mục tiêu kênh, liên kết, phê duyệt, nhật ký, kết quả đi cùng. */
+  deleteCampaign(id: string) {
+    this.db.transaction((tx) => {
+      tx.delete(schema.marketingLinks).where(eq(schema.marketingLinks.campaignId, id)).run();
+      tx.delete(schema.campaignApprovals).where(eq(schema.campaignApprovals.campaignId, id)).run();
+      tx.delete(schema.campaignLogs).where(eq(schema.campaignLogs.campaignId, id)).run();
+      tx.delete(schema.campaignResults).where(eq(schema.campaignResults.campaignId, id)).run();
+      tx.delete(schema.channelGoals).where(eq(schema.channelGoals.campaignId, id)).run();
+      tx.delete(schema.campaigns).where(eq(schema.campaigns.id, id)).run();
+    });
   }
 
   get(id: string) {
