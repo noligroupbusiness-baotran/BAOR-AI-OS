@@ -1,0 +1,151 @@
+@import "tailwindcss";
+
+/* Bảng màu: nền kem ấm, xanh lá chủ đạo, nhãn màu phụ (vàng, xanh dương, tím, đỏ) */
+:root {
+  --bg: #f6f3ec;
+  --bg-elevated: #fbf9f4;
+  --surface: #ffffff;
+  --surface-soft: #f2efe6;
+  --border: #e5e0d3;
+  --border-strong: #d3cdbd;
+  --text: #1d1d1a;
+  --text-muted: #6d6b62;
+  --text-faint: #9c998d;
+
+  --primary: #1f7a4d;
+  --primary-strong: #175f3c;
+  --primary-soft: #e2f2e8;
+  --primary-text: #145c39;
+
+  --gold: #b7791f;
+  --gold-soft: #fbf0d6;
+  --blue: #2563eb;
+  --blue-soft: #e3ecfd;
+  --purple: #7c3aed;
+  --purple-soft: #efe6fd;
+  --red: #c62d2d;
+  --red-soft: #fbe4e4;
+  --orange: #d9640f;
+  --orange-soft: #fdebd9;
+  --teal: #0f766e;
+  --teal-soft: #d9f1ee;
+  --slate: #475569;
+  --slate-soft: #e8ecf1;
+
+  --sidebar-w: 236px;
+  --radius: 10px;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-surface: var(--surface);
+  --color-surface-soft: var(--surface-soft);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-ink: var(--text);
+  --color-muted: var(--text-muted);
+  --color-faint: var(--text-faint);
+  --color-primary: var(--primary);
+  --color-primary-strong: var(--primary-strong);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-text: var(--primary-text);
+  --color-gold: var(--gold);
+  --color-gold-soft: var(--gold-soft);
+  --color-blue: var(--blue);
+  --color-blue-soft: var(--blue-soft);
+  --color-purple: var(--purple);
+  --color-purple-soft: var(--purple-soft);
+  --color-red: var(--red);
+  --color-red-soft: var(--red-soft);
+  --color-orange: var(--orange);
+  --color-orange-soft: var(--orange-soft);
+  --color-teal: var(--teal);
+  --color-teal-soft: var(--teal-soft);
+  --color-slate: var(--slate);
+  --color-slate-soft: var(--slate-soft);
+  --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+html {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  margin: 0;
+}
+
+* {
+  border-color: var(--border);
+}
+
+::selection {
+  background: var(--primary-soft);
+}
+
+/* Nhãn mục nhỏ chữ hoa, dùng cho sidebar và tiêu đề khối */
+.eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--text-faint);
+}
+
+/* Thanh cuộn gọn */
+.scroll-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+}
+
+/* Cây phân cấp: đường kẻ dọc bên trái */
+.tree-branch {
+  position: relative;
+  padding-left: 18px;
+}
+.tree-branch::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--border-strong);
+  border-radius: 2px;
+}
+.tree-branch[data-tone="green"]::before {
+  background: color-mix(in srgb, var(--primary) 55%, white);
+}
+.tree-branch[data-tone="blue"]::before {
+  background: color-mix(in srgb, var(--blue) 45%, white);
+}
+.tree-branch[data-tone="purple"]::before {
+  background: color-mix(in srgb, var(--purple) 45%, white);
+}
+.tree-branch[data-tone="gold"]::before {
+  background: color-mix(in srgb, var(--gold) 55%, white);
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.dot-live {
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
