@@ -1,5 +1,6 @@
 // Dữ liệu cho vỏ ứng dụng (thanh trên, thanh bên): sức khỏe hệ thống và thông báo, tính từ dữ liệu thật.
 import { desc, eq, gte } from "drizzle-orm";
+import { envIssues } from "@/lib/env-check";
 import { getDb, schema } from "@/db";
 import { listIntegrationStatus, listRuns, readIntegrationConfig } from "@/lib/connectors/config";
 import { connectorCapabilities } from "@/lib/connectors/sync";
@@ -38,9 +39,10 @@ export function getHealth(): Health {
     }
   }
   if (!s.running) issues.push("Bộ chạy nền chưa khởi động trong tiến trình này.");
+  for (const e of envIssues()) if (e.level === "error") issues.push(`Cấu hình: ${e.text}`);
   if (aiPct >= 80) issues.push(`Chi phí AI hôm nay đã dùng ${aiPct}% trần.`);
   for (const p of listPosts()) if (p.status === "failed") issues.push(`Đăng lỗi: “${p.title}”${p.error ? ` · ${p.error}` : ""}`);
-  const level: Health["level"] = issues.some((x) => x.startsWith("Đăng lỗi") || x.includes("Bộ chạy nền")) ? "error" : issues.length ? "warn" : "ok";
+  const level: Health["level"] = issues.some((x) => x.startsWith("Đăng lỗi") || x.startsWith("Cấu hình:") || x.includes("Bộ chạy nền")) ? "error" : issues.length ? "warn" : "ok";
   return {
     level,
     summary: `${connected.length}/${real.length} nền tảng đã kết nối · bộ chạy nền ${s.running ? "đang chạy" : "chưa chạy"} · AI ${aiPct}% trần ngày`,

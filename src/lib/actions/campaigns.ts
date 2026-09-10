@@ -4,10 +4,11 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/auth";
 import { campaignRepo } from "@/lib/campaigns/repository";
+import { campaignTransitions, canTransition, goalTransitions, type CampaignAction } from "@/lib/campaigns/transitions";
 import { checkBudget, isValidDateRange } from "@/lib/campaigns/results";
 import { channelDef, EXECUTION_TYPES, METRICS } from "@/config/channels";
 import { catalogRepo } from "@/lib/catalog/repository";
-import type { CampaignStatus, ChannelGoalStatus, LinkedEntityType, NewCampaignInput, NewChannelGoalInput } from "@/lib/campaigns/types";
+import type { ChannelGoalStatus, LinkedEntityType, NewCampaignInput, NewChannelGoalInput } from "@/lib/campaigns/types";
 import { withCampaignContext } from "@/lib/campaigns/context";
 import { campaignStatusLabel } from "@/lib/campaigns/labels";
 import { logActivity } from "./common";
@@ -30,16 +31,6 @@ function finish(path: string, toast: string, tone: "ok" | "error" = "ok"): never
   const sep = path.includes("?") ? "&" : "?";
   redirect(`${path}${sep}toast=${encodeURIComponent(toast)}${tone === "error" ? "&tone=error" : ""}`);
 }
-
-// Chuyển trạng thái hợp lệ của chiến dịch.
-const transitions: Record<string, CampaignStatus[]> = {
-  submit: ["draft", "needs_changes"],
-  approve: ["pending_approval"],
-  request_changes: ["pending_approval"],
-  activate: ["approved", "paused"],
-  pause: ["active"],
-  end: ["active", "paused", "approved"],
-};
 
 // ---------- Tạo chiến dịch (4 bước, gửi từ CampaignWizard) ----------
 
@@ -150,14 +141,15 @@ export async function createCampaignAction(_prev: CreateCampaignState, fd: FormD
 
 // ---------- Chuyển trạng thái ----------
 
-async function transition(fd: FormData, kind: keyof typeof transitions, next: CampaignStatus, actionLabel: string, toast: string) {
+async function transition(fd: FormData, kind: CampaignAction, actionLabel: string, toast: string) {
+  const next = campaignTransitions[kind].to;
   const id = str(fd, "id");
   const by = kind === "submit" ? await actor() : (await requirePermission("manager", `/campaigns/${id}`)).email;
   const idem = str(fd, "idem");
   const c = campaignRepo.get(id);
   if (!c) finish("/campaigns", "Không tìm thấy chiến dịch", "error");
   if (idem && campaignRepo.hasIdem(idem)) finish(`/campaigns/${id}`, "Thao tác này đã được thực hiện, không lặp lại.", "error");
-  if (!transitions[kind].includes(c.status)) {
+  if (!canTransition(kind, c.status)) {
     finish(`/campaigns/${id}`, `Không thể ${actionLabel.toLowerCase()} khi chiến dịch đang ở trạng thái “${campaignStatusLabel[c.status].label}”.`, "error");
   }
   const note = str(fd, "note");
@@ -183,22 +175,22 @@ async function transition(fd: FormData, kind: keyof typeof transitions, next: Ca
 }
 
 export async function submitCampaign(fd: FormData) {
-  await transition(fd, "submit", "pending_approval", "Gửi phê duyệt", "Đã gửi phê duyệt");
+  await transition(fd, "submit", "Gửi phê duyệt", "Đã gửi phê duyệt");
 }
 export async function approveCampaign(fd: FormData) {
-  await transition(fd, "approve", "approved", "Phê duyệt", "Đã phê duyệt. Bấm “Kích hoạt” khi sẵn sàng chạy.");
+  await transition(fd, "approve", "Phê duyệt", "Đã phê duyệt. Bấm “Kích hoạt” khi sẵn sàng chạy.");
 }
 export async function requestCampaignChanges(fd: FormData) {
-  await transition(fd, "request_changes", "needs_changes", "Yêu cầu chỉnh sửa", "Đã trả về để chỉnh sửa");
+  await transition(fd, "request_changes", "Yêu cầu chỉnh sửa", "Đã trả về để chỉnh sửa");
 }
 export async function activateCampaign(fd: FormData) {
-  await transition(fd, "activate", "active", "Kích hoạt", "Chiến dịch đang thực hiện. Bài đăng và quảng cáo vẫn cần phê duyệt riêng.");
+  await transition(fd, "activate", "Kích hoạt", "Chiến dịch đang thực hiện. Bài đăng và quảng cáo vẫn cần phê duyệt riêng.");
 }
 export async function pauseCampaign(fd: FormData) {
-  await transition(fd, "pause", "paused", "Tạm dừng", "Đã tạm dừng chiến dịch và các mục tiêu kênh");
+  await transition(fd, "pause", "Tạm dừng", "Đã tạm dừng chiến dịch và các mục tiêu kênh");
 }
 export async function endCampaign(fd: FormData) {
-  await transition(fd, "end", "ended", "Kết thúc", "Đã kết thúc chiến dịch");
+  await transition(fd, "end", "Kết thúc", "Đã kết thúc chiến dịch");
 }
 
 // ---------- Mục tiêu kênh ----------
@@ -291,10 +283,10 @@ async function setGoalStatus(fd: FormData, next: ChannelGoalStatus, allowed: Cha
 }
 
 export async function pauseChannelGoal(fd: FormData) {
-  await setGoalStatus(fd, "paused", ["active", "planned"], "Tạm dừng");
+  await setGoalStatus(fd, "paused", [...goalTransitions.pause.from, "planned"], "Tạm dừng");
 }
 export async function resumeChannelGoal(fd: FormData) {
-  await setGoalStatus(fd, "active", ["paused"], "Chạy lại");
+  await setGoalStatus(fd, "active", goalTransitions.resume.from, "Chạy lại");
 }
 
 

@@ -115,6 +115,22 @@ Chiến dịch → Mục tiêu kênh → Insight → Nội dung → Video → Ph
 - **Xoay khóa**: `AUTH_SECRET_OLD=<cũ> AUTH_SECRET=<mới> npm run rotate-secret` mã hóa lại token rồi đặt khóa mới.
 - Token Meta: nhập “Token hết hạn ngày” trong Kết nối để hệ thống nhắc trước 7 ngày.
 
+## Bảo vệ và vận hành lâu dài
+
+- **Chặn dò mật khẩu** (`src/lib/login-guard.ts`): 5 lần sai trong 15 phút (theo email và theo IP) thì khóa 15 phút; lần sai
+  và lần khóa ghi vào nhật ký hoạt động (bước `security`). Bộ đếm nằm trong tiến trình, khởi động lại là xóa.
+- **Header bảo mật** (`next.config.ts`): Content-Security-Policy (chỉ mã, font, ảnh từ chính hệ thống và Google Fonts),
+  không cho nhúng iframe, nosniff, Referrer-Policy, HSTS.
+- **Kiểm tra cấu hình lúc khởi động** (`src/lib/env-check.ts`): thiếu hoặc yếu `AUTH_SECRET`, thiếu `ADMIN_EMAIL`,
+  `PUBLIC_URL`, `ANTHROPIC_API_KEY` → in cảnh báo ra log và hiện ở Tình trạng hệ thống (không làm sập server).
+- **Dọn dữ liệu cũ** (`src/lib/retention.ts`, chạy mỗi ngày trong bộ chạy nền): nhật ký hoạt động, quyết định router,
+  lịch sử automation, lần đồng bộ giữ 90 ngày; nhật ký chiến dịch và chi phí AI giữ 365 ngày (đổi bằng cài đặt
+  `retention.logsDays`, `retention.auditDays`, tối thiểu 7). Tệp tải lên không có bản ghi (và ngược lại) được dọn.
+- **Trang 404 / lỗi** theo giao diện: `src/app/not-found.tsx` (ngoài), `src/app/(admin)/not-found.tsx` (trong vỏ ứng dụng),
+  `src/app/global-error.tsx` (lỗi tầng root).
+- **Máy trạng thái chiến dịch** tách ở `src/lib/campaigns/transitions.ts`, có test (`tests/transitions.test.ts`).
+- Test: `npm test` chạy trên CSDL SQLite tạm (`tests/db.test.ts`) cho automation, router, phân quyền, dọn dữ liệu.
+
 ## Cấu trúc
 
 ```
