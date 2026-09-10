@@ -1,44 +1,22 @@
 import { PageHead, Panel, PanelHeader, Rows, Row } from "@/components/ui/card";
 import { Breadcrumb, ModuleGroups } from "@/components/shell/module-page";
 import { Pill } from "@/components/ui/pill";
-import { Button, LinkButton } from "@/components/ui/button";
-import { clearSampleData, disconnectIntegration, resetSampleData, saveAccount, saveBrand, saveIntegration, toggleAutomation } from "@/lib/actions/settings";
-import { getAutomation, getBrand, listIntegrations } from "@/lib/queries";
+import { Button } from "@/components/ui/button";
+import { clearSampleData, resetSampleData, saveAccount, saveBrand, toggleAutomation } from "@/lib/actions/settings";
+import { getAutomation, getBrand } from "@/lib/queries";
 import { getAdminEmail } from "@/lib/admin";
 import { automationSettings } from "@/lib/data/settings";
 import { cn } from "@/lib/format";
 import { BackupPanel } from "@/components/settings/backup-panel";
 import { PeoplePanel, ProductsPanel } from "@/components/settings/catalog-panels";
+import { AiBudgetPanel, IntegrationsPanel, SystemLogPanel } from "@/components/settings/integration-panels";
 
 export const metadata = { title: "Cài đặt – BAOR AI OS" };
 
 const input = "mt-1 h-8 w-full rounded-md border border-border-2 bg-surface px-2.5 text-[13px] text-ink outline-none focus-visible:outline-2 focus-visible:outline-jade";
 
-// Các trường cần nhập cho từng kết nối
-const fields: Record<string, { key: string; label: string; secret?: boolean; hint?: string }[]> = {
-  facebook_page: [
-    { key: "pageId", label: "Page ID" },
-    { key: "pageToken", label: "Page Access Token", secret: true, hint: "Lấy từ Meta for Developers › Graph API Explorer" },
-  ],
-  meta_ads: [
-    { key: "adAccountId", label: "Ad Account ID (act_...)" },
-    { key: "accessToken", label: "Access Token", secret: true },
-  ],
-  instagram: [{ key: "igUserId", label: "Instagram Business ID" }],
-  tiktok: [{ key: "accessToken", label: "Access Token", secret: true }],
-  zalo_oa: [{ key: "oaId", label: "OA ID" }, { key: "accessToken", label: "Access Token", secret: true }],
-  youtube: [{ key: "channelId", label: "Channel ID" }, { key: "accessToken", label: "Access Token", secret: true }],
-  website: [{ key: "siteUrl", label: "Địa chỉ website", hint: "https://tenmien.com" }, { key: "gaPropertyId", label: "GA4 Property ID" }],
-  email_provider: [
-    { key: "smtpUrl", label: "SMTP URL", secret: true, hint: "smtp://user:pass@host:587" },
-    { key: "from", label: "Tên và email gửi", hint: "BAOR <hello@tenmien.com>" },
-  ],
-  claude: [{ key: "apiKey", label: "API key", secret: true, hint: "sk-ant-..." }],
-};
-
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ edit?: string; product?: string; person?: string }> }) {
   const { edit, product, person } = await searchParams;
-  const integrations = listIntegrations();
   const automation = getAutomation();
   const brand = getBrand();
   const adminEmail = getAdminEmail();
@@ -51,50 +29,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       <ProductsPanel editing={product} />
       <PeoplePanel editing={person} />
 
-      <Panel id="integrations">
-        <PanelHeader title="Kết nối" sub="Khóa và token được lưu trong cơ sở dữ liệu trên máy chủ của bạn, không hiển thị lại." />
-        <Rows>
-          {integrations.map((i) => {
-            const editing = edit === i.key;
-            return (
-              <li key={i.key} className="border-b border-border last:border-b-0">
-                <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-4 py-2.5">
-                  <div>{i.connected ? <Pill tone="jade">Đã kết nối</Pill> : <Pill>Chưa kết nối</Pill>}</div>
-                  <div className="min-w-0">
-                    <div className="font-semibold text-ink">{i.name}</div>
-                    <div className="truncate text-[12px] text-ink-2">{i.account ?? i.description}</div>
-                  </div>
-                  <div className="flex gap-1.5">
-                    {!editing && <LinkButton href={`/settings?edit=${i.key}#${i.key}`} variant={i.connected ? "outline" : "primary"}>{i.connected ? "Sửa" : "Kết nối"}</LinkButton>}
-                    {i.connected && (
-                      <form action={disconnectIntegration}><input type="hidden" name="key" value={i.key} /><Button variant="ghost" type="submit">Ngắt</Button></form>
-                    )}
-                  </div>
-                </div>
-                {editing && (
-                  <form id={i.key} action={saveIntegration} className="grid gap-3 border-t border-border bg-ground px-4 py-3 md:grid-cols-2">
-                    <input type="hidden" name="key" value={i.key} />
-                    <label className="block md:col-span-2">
-                      <span className="lbl">Tên tài khoản hiển thị</span>
-                      <input name="account" defaultValue={i.account ?? ""} className={input} placeholder="VD: Fanpage BAOR" />
-                    </label>
-                    {(fields[i.key] ?? []).map((f) => (
-                      <label key={f.key} className="block">
-                        <span className="lbl">{f.label}</span>
-                        <input name={`cfg.${f.key}`} type={f.secret ? "password" : "text"} className={input} placeholder={f.hint ?? ""} autoComplete="off" />
-                      </label>
-                    ))}
-                    <div className="flex gap-2 md:col-span-2">
-                      <Button variant="primary" type="submit">Lưu kết nối</Button>
-                      <LinkButton href="/settings" variant="ghost">Hủy</LinkButton>
-                    </div>
-                  </form>
-                )}
-              </li>
-            );
-          })}
-        </Rows>
-      </Panel>
+      <IntegrationsPanel editing={edit} />
 
       <Panel id="automation">
         <PanelHeader title="Tự động hóa" sub="Bước có nhãn ‘cần bạn duyệt’ luôn chờ bạn trước khi thực hiện." />
@@ -148,6 +83,9 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           </form>
         </Panel>
       </div>
+
+      <AiBudgetPanel />
+      <SystemLogPanel />
 
       <Panel>
         <PanelHeader title="Dữ liệu" sub="Dữ liệu mẫu giúp bạn xem cách hệ thống vận hành. Xóa khi bắt đầu dùng thật." />

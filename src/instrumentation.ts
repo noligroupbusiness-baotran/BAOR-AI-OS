@@ -5,4 +5,7 @@ export async function register() {
   if (process.env.NEXT_PHASE === "phase-production-build") return;
   const { startBackupScheduler } = await import("@/lib/backup");
   startBackupScheduler();
+  // Bộ chạy nền marketing: đăng bài đến giờ, đồng bộ số liệu kênh, luật CPL.
+  const { startScheduler } = await import("@/lib/scheduler");
+  startScheduler();
 }

@@ -23,6 +23,7 @@ import { CampaignContextBar } from "@/components/campaigns/campaign-context";
 import { CampaignTags, LinkToCampaignForm } from "@/components/campaigns/entity-campaign";
 import { campaignRepo } from "@/lib/campaigns/repository";
 import { readCampaignContext, withCampaignContext } from "@/lib/campaigns/context";
+import { listIntegrationStatus } from "@/lib/connectors/config";
 
 export const metadata = { title: "Nội dung – BAOR AI OS" };
 
@@ -46,6 +47,15 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
   const insights = listInsights();
   const opened = open ?? (tab === "mine" ? list[0]?.id : undefined);
   const links = campaignRepo.linksForEntities("content", list.map((c) => c.id));
+  // Kênh lên lịch đăng: đọc từ Cài đặt › Kết nối, đánh dấu kênh chưa kết nối.
+  const connected = new Map(listIntegrationStatus().map((i) => [i.key, i.connected]));
+  const publishTargets: [string, string, boolean][] = [
+    ["facebook", "Facebook", connected.get("facebook_page") === true],
+    ["instagram", "Instagram", connected.get("instagram") === true],
+    ["tiktok", "TikTok", connected.get("tiktok") === true],
+    ["youtube", "YouTube", connected.get("youtube") === true],
+    ["zalo", "Zalo OA", connected.get("zalo_oa") === true],
+  ];
   const back = href(`/content?tab=${tab}${opened ? `&open=${opened}` : ""}`);
 
   return (
@@ -215,9 +225,10 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
                       <div>
                         <span className="lbl">Kênh</span>
                         <div className="mt-1 flex flex-wrap gap-3 text-[13px]">
-                          {[["facebook", "Facebook"], ["instagram", "Instagram"], ["tiktok", "TikTok"], ["zalo", "Zalo OA"]].map(([v, l]) => (
-                            <label key={v} className="flex items-center gap-1.5">
+                          {publishTargets.map(([v, l, on]) => (
+                            <label key={v} className="flex items-center gap-1.5" title={on ? undefined : "Chưa kết nối trong Cài đặt: bài sẽ chờ tới khi kết nối"}>
                               <input type="checkbox" name="platform" value={v} defaultChecked={v === "facebook"} className="accent-[var(--jade)]" /> {l}
+                              {!on && <span className="text-[11px] text-amber">chưa kết nối</span>}
                             </label>
                           ))}
                         </div>

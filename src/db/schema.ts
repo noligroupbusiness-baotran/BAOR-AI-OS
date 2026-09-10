@@ -111,7 +111,11 @@ export const integrations = sqliteTable("integrations", {
   description: text("description").notNull().default(""),
   connected: integer("connected", { mode: "boolean" }).notNull().default(false),
   account: text("account"),
-  config: text("config").notNull().default("{}"), // JSON: token, ids... (không hiển thị ra ngoài)
+  config: text("config").notNull().default("{}"), // JSON: token, ids... (giá trị bí mật được mã hóa, không hiển thị ra ngoài)
+  lastCheckedAt: text("last_checked_at"),
+  lastCheckOk: integer("last_check_ok", { mode: "boolean" }),
+  lastError: text("last_error"),
+  lastSyncAt: text("last_sync_at"),
 });
 
 // Cặp key/value: brand, voice, automation flags, admin_email, admin_password_hash, guardrails
@@ -322,3 +326,58 @@ export const videos = sqliteTable("videos", {
   note: text("note").notNull().default(""),
   updatedAt: text("updated_at").notNull(),
 });
+
+// ---------------------------------------------------------------------------
+// Bộ định tuyến luật / AI và lớp kết nối nền tảng.
+// ---------------------------------------------------------------------------
+
+// Mọi quyết định của hệ thống: đi làn "rule" (có dữ liệu + công thức) hay làn "ai" (thiếu dữ liệu nguồn).
+export const marketingDecisions = sqliteTable(
+  "marketing_decisions",
+  {
+    id: text("id").primaryKey(),
+    at: text("at").notNull(),
+    lane: text("lane").notNull(), // rule | ai | human
+    domain: text("domain").notNull(), // ads | reply | content | research | publish | sync
+    subject: text("subject").notNull(), // mô tả ngắn việc cần quyết
+    entityType: text("entity_type"),
+    entityId: text("entity_id"),
+    campaignId: text("campaign_id"),
+    outcome: text("outcome").notNull(), // kết luận ngắn
+    reason: text("reason").notNull().default(""),
+    confidence: integer("confidence"), // 0-100, chỉ với làn ai
+    sources: text("sources").notNull().default("[]"), // JSON string[]: nguồn tra cứu
+    needsApproval: integer("needs_approval", { mode: "boolean" }).notNull().default(false),
+    aiCallId: text("ai_call_id"),
+  },
+  (t) => [index("marketing_decisions_at_idx").on(t.at)],
+);
+
+// Sổ chi phí AI: mọi lần gọi mô hình đều ghi lại để so với trần ngân sách trong Cài đặt.
+export const aiCalls = sqliteTable("ai_calls", {
+  id: text("id").primaryKey(),
+  at: text("at").notNull(),
+  purpose: text("purpose").notNull(),
+  model: text("model").notNull(),
+  inputTokens: integer("input_tokens").notNull().default(0),
+  outputTokens: integer("output_tokens").notNull().default(0),
+  costVnd: integer("cost_vnd").notNull().default(0),
+  ok: integer("ok", { mode: "boolean" }).notNull().default(true),
+  error: text("error"),
+});
+
+// Nhật ký đồng bộ / đăng bài / webhook của từng kết nối.
+export const syncRuns = sqliteTable(
+  "sync_runs",
+  {
+    id: text("id").primaryKey(),
+    integrationKey: text("integration_key").notNull(),
+    kind: text("kind").notNull(), // check | metrics | publish | webhook | ads
+    startedAt: text("started_at").notNull(),
+    finishedAt: text("finished_at"),
+    ok: integer("ok", { mode: "boolean" }).notNull().default(false),
+    message: text("message").notNull().default(""),
+    items: integer("items").notNull().default(0),
+  },
+  (t) => [index("sync_runs_started_idx").on(t.startedAt)],
+);

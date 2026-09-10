@@ -80,7 +80,7 @@ export const moduleGroups: Record<string, ModuleGroup[]> = {
     { name: "Tài khoản nền tảng", status: "active", href: "/settings#integrations" },
     { name: "Nhân sự và phân quyền", status: "active", href: "/settings#people" },
     { name: "AI Agent", status: "active", href: "/settings#automation" },
-    { name: "Nhật ký hệ thống", status: "planned" },
+    { name: "Nhật ký hệ thống", status: "active", href: "/settings#syslog" },
     { name: "Bảo mật", status: "active", href: "/settings#account" },
   ],
 };

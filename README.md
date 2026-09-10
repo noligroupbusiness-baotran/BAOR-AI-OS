@@ -69,6 +69,23 @@ Chiến dịch → Mục tiêu kênh → Insight → Nội dung → Video → Ph
 - Chưa nối: API Facebook / TikTok / YouTube / Zalo OA, đăng bài thật, chạy ads thật, thu lead thật, Agent Edit Video,
   doanh thu thật. Tab Kết quả đang dùng số liệu mẫu trong `campaign_results`.
 
+## Bộ định tuyến luật / AI và lớp kết nối nền tảng
+
+- **Bộ định tuyến** (`src/lib/router`): việc có dữ liệu nguồn và công thức → làn "rule", xử lý ngay (hạn mức quảng cáo,
+  CPL, đủ điều kiện đăng, tin nhắn có số điện thoại / khiếu nại / hỏi giá). Thiếu dữ liệu nguồn → làn "ai" qua cổng
+  chung trong `src/lib/ai.ts`: kiểm tra trần chi phí (Cài đặt › AI), ghi sổ `ai_calls`, ghi quyết định
+  `marketing_decisions` với nhãn "cần người duyệt". AI chỉ được dùng giá / công dụng trong danh mục sản phẩm.
+- **Connector** (`src/lib/connectors`): giao diện chung `Connector` (kiểm tra, số liệu, đăng bài, webhook), danh bạ
+  `registry.ts`, cấu hình mã hóa AES-GCM bằng khóa suy từ `AUTH_SECRET` (`src/lib/secrets.ts`). Đã có adapter thật:
+  **Facebook Page** và **Meta Ads** (`meta.ts`). Các nền tảng khác khai báo trường nhưng adapter chưa xây.
+- **Bộ chạy nền** (`src/lib/scheduler.ts`, bật trong `instrumentation.ts`): mỗi phút đăng bài đến giờ (chỉ khi nội dung
+  đã duyệt và tài khoản đã kết nối), mỗi giờ đồng bộ số liệu về mục tiêu kênh và áp luật CPL. Nhật ký ở Cài đặt › Nhật ký hệ thống.
+- **Webhook**: `POST /api/webhooks/meta` (Messenger, xác minh chữ ký App Secret; `GET` trả challenge với verify token trong
+  Cài đặt) và `POST /api/webhooks/lead` (form website, header `x-baor-key`). Tin nhắn đến đi qua bộ định tuyến:
+  hỏi giá → trả lời từ bảng giá; có số điện thoại → lead “Đã liên hệ”; khiếu nại → chuyển người; còn lại → AI gợi ý.
+- Đặt `PUBLIC_URL=https://mkt.baor.vn` (hoặc `DOMAIN`) trên VPS để Cài đặt hiện đúng địa chỉ webhook.
+- Kiểm thử phần thuần: `npm test` (node:test + tsx). Gate đầy đủ: `npm run gate`.
+
 ## Cấu trúc
 
 ```

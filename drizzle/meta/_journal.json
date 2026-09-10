@@ -22,6 +22,13 @@
       "when": 1789055734962,
       "tag": "0002_catalog_videos",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1789058005253,
+      "tag": "0003_router_connectors",
+      "breakpoints": true
     }
   ]
 }
