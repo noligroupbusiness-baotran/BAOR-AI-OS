@@ -1,0 +1,31 @@
+# Chạy trên VPS: docker compose up -d --build
+# - app:   ứng dụng Next.js (cổng nội bộ 3000)
+# - caddy: reverse proxy, tự lấy SSL khi DOMAIN là tên miền thật
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    expose:
+      - "3000"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # DOMAIN=ai.tenmiencuaban.com  -> HTTPS tự động
+      # DOMAIN=:80                   -> chỉ HTTP, truy cập bằng IP
+      DOMAIN: ${DOMAIN:-:80}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  caddy_data:
+  caddy_config:

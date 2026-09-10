@@ -54,3 +54,16 @@ src/lib/auth.ts        xác thực
 
 - Backend agent: Claude API (research, insight, viết nội dung, trả lời khách), Meta Graph API + Marketing API, SMTP/Resend.
 - CSDL PostgreSQL thay cho dữ liệu mẫu; scheduler đăng bài; webhook Messenger.
+
+## Chạy trên VPS (Docker + tự cập nhật khi push)
+
+Cài lần đầu trên VPS Ubuntu/Debian (SSH vào VPS rồi chạy):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/noligroupbusiness-baotran/BAOR-AI-OS/claude/relaxed-ritchie-tb1144/deploy/install.sh | bash
+```
+
+Script tự cài Docker, tải code về `/opt/baor-ai-os`, tạo `.env` và khởi động. Sau đó mở `http://<IP-VPS>`.
+Muốn HTTPS: sửa `DOMAIN=ai.tenmien.com` trong `/opt/baor-ai-os/.env` (tên miền đã trỏ về IP VPS) rồi chạy `deploy/update.sh`.
+
+Tự cập nhật khi push: vào GitHub > Settings > Secrets and variables > Actions, thêm `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`. Từ đó mỗi lần push, workflow `Deploy to VPS` sẽ cập nhật VPS.

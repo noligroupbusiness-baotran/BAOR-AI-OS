@@ -1,0 +1,37 @@
+# Tự động cập nhật VPS mỗi khi push.
+# Cần 3 secret trong GitHub (Settings > Secrets and variables > Actions):
+#   VPS_HOST     IP hoặc tên miền VPS
+#   VPS_USER     user SSH (thường là root)
+#   VPS_SSH_KEY  nội dung private key SSH (khóa có quyền đăng nhập VPS)
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [main, claude/relaxed-ritchie-tb1144]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cập nhật ứng dụng trên VPS
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+            if [ ! -d /opt/baor-ai-os/.git ]; then
+              BRANCH="${GITHUB_REF_NAME}" bash <(curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${GITHUB_REF_NAME}/deploy/install.sh)
+            else
+              bash /opt/baor-ai-os/deploy/update.sh
+            fi
+          envs: GITHUB_REF_NAME,GITHUB_REPOSITORY
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
