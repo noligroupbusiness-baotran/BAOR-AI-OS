@@ -13,13 +13,17 @@ import type { AdStatus, Platform, PostStatus } from "@/lib/types";
 import { CampaignTags, LinkToCampaignForm } from "@/components/campaigns/entity-campaign";
 import { campaignRepo } from "@/lib/campaigns/repository";
 import { Pager, paginate } from "@/components/ui/pager";
+import { MonthCalendar, monthOf } from "@/components/publishing/month-calendar";
+import { Segment } from "@/components/ui/segment";
 
 export const metadata = { title: "Đăng bài & quảng cáo – BAOR AI OS" };
 
 const input = "h-8 rounded-md border border-border-2 bg-surface px-2.5 text-[13px] text-ink outline-none focus-visible:outline-2 focus-visible:outline-jade";
 
-export default async function PublishingPage({ searchParams }: { searchParams: Promise<{ edit?: string; link?: string; page?: string }> }) {
-  const { edit, link, page } = await searchParams;
+export default async function PublishingPage({ searchParams }: { searchParams: Promise<{ edit?: string; link?: string; page?: string; view?: string; month?: string }> }) {
+  const { edit, link, page, view: viewParam, month: monthParam } = await searchParams;
+  const view = viewParam === "calendar" ? "calendar" : "list";
+  const month = monthOf(monthParam);
   const g = getAdGuardrails();
   const posts = listPosts();
   const ads = listAds().filter((a) => a.status !== "rejected");
@@ -59,7 +63,17 @@ export default async function PublishingPage({ searchParams }: { searchParams: P
         <Tile label="Lỗi đăng" value={String(failed.length)} hint={failed[0]?.error?.split(".")[0] ?? "Không có"} tone={failed.length ? "brick" : undefined} />
       </Tiles>
 
-      <Panel>
+      <div className="mt-3.5"><Segment basePath="/publishing" active={view} items={[{ key: "list", label: "Danh sách" }, { key: "calendar", label: "Lịch tháng" }]} paramName="view" /></div>
+
+      {view === "calendar" && (
+        <MonthCalendar
+          month={month}
+          hrefFor={(m) => `/publishing?view=calendar&month=${m}`}
+          posts={posts.map((p) => ({ id: `${p.contentId}::${p.id}`, title: p.title, at: p.scheduledFor, platforms: [platformLabel(p.platform as Platform)], status: p.status as PostStatus }))}
+        />
+      )}
+
+      {view === "list" && <Panel>
         <PanelHeader title="Lịch đăng" sub="Mới nhất ở trên. Lên lịch bài mới ở mục Nội dung › Đã duyệt." />
         <Table>
           <thead>
@@ -91,7 +105,7 @@ export default async function PublishingPage({ searchParams }: { searchParams: P
           </tbody>
         </Table>
         <Pager page={rowPage.page} pages={rowPage.pages} total={rowPage.total} hrefFor={(p) => `/publishing?page=${p}`} label="bài" />
-      </Panel>
+      </Panel>}
 
       <Panel>
         <PanelHeader
