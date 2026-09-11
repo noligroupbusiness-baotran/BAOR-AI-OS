@@ -63,7 +63,10 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
       </div>
       {sampleCount > 0 && <p className="mt-2 text-[12px] text-ink-3">{sampleCount} chiến dịch đang dùng số liệu mẫu vì chưa có lead, đơn hoặc chi phí thật. Số sẽ tự thay khi có dữ liệu.</p>}
 
-      <div className="mt-3.5 overflow-x-auto"><Segment basePath={`/reports${f.month || f.campaignId ? `?${new URLSearchParams({ ...(f.month ? { month: f.month } : {}), ...(f.campaignId ? { campaign: f.campaignId } : {}) }).toString()}` : ""}`} active={tab} items={tabs} /></div>
+      <div className="mt-3.5 flex flex-wrap items-center justify-between gap-2">
+        <div className="overflow-x-auto"><Segment basePath={`/reports${f.month || f.campaignId ? `?${new URLSearchParams({ ...(f.month ? { month: f.month } : {}), ...(f.campaignId ? { campaign: f.campaignId } : {}) }).toString()}` : ""}`} active={tab} items={tabs} /></div>
+        <a href={`/api/export/report?${new URLSearchParams({ tab, ...(f.month ? { month: f.month } : {}), ...(f.campaignId ? { campaign: f.campaignId } : {}) }).toString()}`} className="inline-flex h-7 items-center rounded-full border border-border-2 px-3 text-[12px] font-medium text-ink hover:bg-ground-2" title="Tệp CSV mở bằng Excel, cần quyền Quản lý">Tải CSV tab này</a>
+      </div>
 
       {tab === "overview" && (
         <Panel>

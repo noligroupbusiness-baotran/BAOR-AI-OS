@@ -124,6 +124,7 @@ export function MusicPanel() {
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2"><span className="font-semibold text-ink">{String(t.meta.title || t.name)}</span><Pill>{String(t.meta.mood || "chung")}</Pill><span className="num text-[11px] text-ink-3">{Math.round(t.size / 1024 / 1024 * 10) / 10} MB</span></div>
                 <div className="text-[12px] text-ink-2">{t.meta.license ? String(t.meta.license) : <span className="text-amber">Chưa ghi nguồn / bản quyền</span>} · {formatDateTime(t.createdAt)}</div>
+                <audio controls preload="none" src={fileUrl(t.id)} className="mt-1.5 h-8 w-full max-w-[420px]" aria-label={`Nghe thử ${String(t.meta.title || t.name)}`} />
                 <audio controls preload="none" src={fileUrl(t.id)} className="mt-1.5 h-8 w-full max-w-[360px]" />
               </div>
               <form action={deleteMusic}><input type="hidden" name="id" value={t.id} /><Button type="submit" variant="ghost">Xóa</Button></form>
