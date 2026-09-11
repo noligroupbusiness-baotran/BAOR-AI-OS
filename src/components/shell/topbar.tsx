@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Activity, Bell, ChevronDown, LayoutDashboard, LogOut, Menu, Moon, Plus, PanelsTopLeft, Search, Sparkles, Sun, User } from "lucide-react";
+import { Activity, Bell, ChevronDown, Keyboard, KeyRound, LayoutDashboard, LogOut, Menu, Monitor, Moon, Plus, PanelsTopLeft, Search, Sparkles, Sun, User } from "lucide-react";
+import { themeModeLabel, type ThemeMode } from "@/lib/client-store";
 import { createActions, findMenuByPath } from "@/config/menu";
 import { logoutAction } from "@/app/login/actions";
 import { cn, formatDateTime } from "@/lib/format";
@@ -16,6 +17,7 @@ interface Props {
   user: ShellUser;
   unread: number;
   isDark: boolean;
+  themeMode: ThemeMode;
   health: Health;
   logos: BrandLogos;
   viewOnly: boolean;
@@ -24,6 +26,7 @@ interface Props {
   onOpenMobileMenu: () => void;
   onOpenNotifications: () => void;
   onOpenAssistant: () => void;
+  onOpenShortcuts: () => void;
 }
 
 function useOutsideClose(open: boolean, close: () => void) {
@@ -45,7 +48,7 @@ function useOutsideClose(open: boolean, close: () => void) {
 const iconBtn = "grid h-9 w-9 cursor-pointer place-items-center rounded-full text-ink-2 hover:bg-ground-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-jade";
 const permissionName = { admin: "Quản trị", manager: "Quản lý", staff: "Nhân viên" } as const;
 
-export function Topbar({ user, unread, isDark, health, logos, viewOnly, onToggleView, onToggleTheme, onOpenMobileMenu, onOpenNotifications, onOpenAssistant }: Props) {
+export function Topbar({ user, unread, isDark, themeMode, health, logos, viewOnly, onToggleView, onToggleTheme, onOpenMobileMenu, onOpenNotifications, onOpenAssistant, onOpenShortcuts }: Props) {
   const pathname = usePathname();
   const router = useRouter();
   const current = findMenuByPath(pathname);
@@ -61,14 +64,17 @@ export function Topbar({ user, unread, isDark, health, logos, viewOnly, onToggle
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
-      if (e.key === "/" && tag !== "INPUT" && tag !== "TEXTAREA") {
+      const typing = tag === "INPUT" || tag === "TEXTAREA";
+      if ((e.key === "/" && !typing) || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k")) {
         e.preventDefault();
-        searchRef.current?.focus();
+        // Trên điện thoại ô tìm kiếm ẩn: mở trang tìm kiếm.
+        if (searchRef.current && searchRef.current.offsetParent !== null) searchRef.current.focus();
+        else router.push("/search");
       }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, []);
+  }, [router]);
 
   const dot = health.level === "error" ? "bg-brick" : health.level === "warn" ? "bg-amber" : "bg-jade";
 
@@ -105,13 +111,19 @@ export function Topbar({ user, unread, isDark, health, logos, viewOnly, onToggle
             name="q"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Tìm chiến dịch, nội dung, video, khách hàng…  (phím /)"
-            className="h-9 w-full rounded-full border border-border-2 bg-surface pl-9 pr-3 text-[13px] text-ink outline-none placeholder:text-ink-3 focus-visible:outline-2 focus-visible:outline-jade"
+            placeholder="Tìm chiến dịch, nội dung, video, khách hàng…"
+            className="h-9 w-full rounded-full border border-border-2 bg-surface pl-9 pr-12 text-[13px] text-ink outline-none placeholder:text-ink-3 focus-visible:outline-2 focus-visible:outline-jade"
           />
+          <kbd aria-hidden className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded border border-border-2 bg-ground px-1.5 font-sans text-[10.5px] leading-[16px] text-ink-3">/</kbd>
         </label>
       </form>
 
-      <div className="ml-auto flex items-center gap-1">
+      {/* Điện thoại: ô tìm kiếm ẩn, dùng nút mở trang tìm kiếm */}
+      <Link href="/search" aria-label="Tìm kiếm" className={cn(iconBtn, "ml-auto md:hidden")}>
+        <Search size={18} />
+      </Link>
+
+      <div className="flex items-center gap-1 md:ml-auto">
         {!viewOnly && (
           <div ref={createRef} className="relative">
             <Button variant="primary" size="md" onClick={() => setCreateOpen((v) => !v)} aria-haspopup="menu" aria-expanded={createOpen}>
@@ -178,8 +190,8 @@ export function Topbar({ user, unread, isDark, health, logos, viewOnly, onToggle
           {viewOnly ? <LayoutDashboard size={18} /> : <PanelsTopLeft size={18} />}
         </button>
 
-        <button type="button" onClick={onToggleTheme} aria-label={isDark ? "Chuyển sang chế độ sáng" : "Chuyển sang chế độ tối"} className={iconBtn}>
-          {isDark ? <Sun size={18} /> : <Moon size={18} />}
+        <button type="button" onClick={onToggleTheme} aria-label={`Chế độ màu: ${themeModeLabel[themeMode]}. Bấm để đổi.`} title={`Chế độ màu: ${themeModeLabel[themeMode]}`} className={iconBtn}>
+          {themeMode === "system" ? <Monitor size={18} /> : isDark ? <Sun size={18} /> : <Moon size={18} />}
         </button>
 
         <div ref={accountRef} className="relative">
@@ -193,9 +205,17 @@ export function Topbar({ user, unread, isDark, health, logos, viewOnly, onToggle
                 <div className="truncate">{user.role} · {permissionName[user.permission]}</div>
                 <div className="truncate text-ink-3">{user.email}</div>
               </div>
-              <Link href="/settings#people" role="menuitem" onClick={() => setAccountOpen(false)} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] text-ink hover:bg-ground-2">
-                <User size={16} className="text-ink-3" aria-hidden /> Nhân sự và phân quyền
+              <Link href="/account" role="menuitem" onClick={() => setAccountOpen(false)} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] text-ink hover:bg-ground-2">
+                <KeyRound size={16} className="text-ink-3" aria-hidden /> Tài khoản của tôi
               </Link>
+              {user.permission === "admin" && (
+                <Link href="/settings#people" role="menuitem" onClick={() => setAccountOpen(false)} className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] text-ink hover:bg-ground-2">
+                  <User size={16} className="text-ink-3" aria-hidden /> Nhân sự và phân quyền
+                </Link>
+              )}
+              <button type="button" role="menuitem" onClick={() => { setAccountOpen(false); onOpenShortcuts(); }} className="flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[13px] text-ink hover:bg-ground-2">
+                <Keyboard size={16} className="text-ink-3" aria-hidden /> <span className="flex-1">Phím tắt</span><kbd className="rounded border border-border-2 px-1 font-sans text-[10.5px] text-ink-3">?</kbd>
+              </button>
               <form action={logoutAction}>
                 <button type="submit" role="menuitem" className="flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[13px] text-ink hover:bg-ground-2">
                   <LogOut size={16} className="text-ink-3" aria-hidden /> Đăng xuất

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
-import { menu } from "@/config/menu";
+import { menu, menuGroupLabel, menuGroupOrder } from "@/config/menu";
 import { cn } from "@/lib/format";
 import type { Health } from "@/lib/shell-types";
 import type { ShellUser } from "./app-shell";
@@ -27,7 +27,10 @@ export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile
 
   const nav = (
     <nav aria-label="Phân hệ" className="flex flex-col gap-0.5">
-      {menu.map((m) => {
+      {menuGroupOrder.map((g, gi) => (
+        <div key={g} className={cn("flex flex-col gap-0.5", gi > 0 && (collapsed ? "mt-2 border-t border-border pt-2" : "mt-3"))}>
+          {!collapsed && <div className="px-2.5 pb-1 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-ink-3">{menuGroupLabel[g]}</div>}
+          {menu.filter((m) => m.group === g).map((m) => {
         const active = pathname === m.href || pathname.startsWith(m.href + "/");
         const Icon = m.icon;
         const badge = badges[m.href];
@@ -39,6 +42,7 @@ export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile
             aria-current={active ? "page" : undefined}
             aria-label={collapsed ? m.label : undefined}
             data-tip={collapsed ? m.label : undefined}
+            title={m.hotkey ? `${m.label} (Alt+${m.hotkey})` : undefined}
             className={cn(
               "relative flex h-10 items-center gap-3 rounded-lg px-2.5 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-jade",
               active ? "bg-jade-soft font-semibold text-jade-ink" : "text-ink-2 hover:bg-surface hover:text-ink",
@@ -52,7 +56,9 @@ export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile
             {collapsed && badge ? <span className="absolute right-2 top-1.5 h-1.5 w-1.5 rounded-full bg-amber" aria-hidden /> : null}
           </Link>
         );
-      })}
+          })}
+        </div>
+      ))}
     </nav>
   );
 

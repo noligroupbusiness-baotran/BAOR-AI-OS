@@ -50,3 +50,9 @@ export function effectiveTheme(mode: ThemeMode): "light" | "dark" {
   if (typeof window === "undefined") return "light";
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
+
+// Thứ tự bấm nút chế độ màu: theo hệ thống → sáng → tối → theo hệ thống.
+export function nextThemeMode(mode: ThemeMode): ThemeMode {
+  return mode === "system" ? "light" : mode === "light" ? "dark" : "system";
+}
+export const themeModeLabel: Record<ThemeMode, string> = { light: "Sáng", dark: "Tối", system: "Theo hệ thống" };
