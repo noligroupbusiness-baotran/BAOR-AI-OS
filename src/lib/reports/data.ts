@@ -22,6 +22,8 @@ export interface CampaignRow {
   name: string;
   status: CampaignStatus;
   objective: string;
+  startDate: string;
+  endDate: string;
   targetMetric: string;
   targetValue: number | null;
   achieved: number;
@@ -55,6 +57,8 @@ export function campaignRows(f: ReportFilter = {}): CampaignRow[] {
         name: c.name,
         status: c.status,
         objective: c.objective,
+        startDate: c.startDate,
+        endDate: c.endDate,
         targetMetric: c.targetMetric,
         targetValue: c.targetValue,
         achieved: r?.achievedValue ?? 0,
