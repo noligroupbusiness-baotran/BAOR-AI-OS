@@ -57,7 +57,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
 
       <Tiles>
         <Tile label="Hội thoại" value={String(convs.length)} hint="Từ inbox và bình luận" />
-        <Tile label="Cần bạn" value={String(needHuman)} hint="Khách chờ chốt / gọi lại" tone={needHuman ? "brick" : undefined} />
+        <Tile label="Cần bạn" value={String(needHuman)} hint="Khách chờ chốt / gọi lại" tone={needHuman ? "amber" : undefined} />
         <Tile label="Lead" value={String(leads.length)} hint={`${won} đã mua`} />
         <Tile label="Chuỗi email đang chạy" value={String(seqs.filter((s) => s.active).length)} hint={`${formatNumber(seqs.reduce((n, s) => n + s.subscribers, 0))} người trong chuỗi`} />
       </Tiles>
@@ -91,7 +91,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
                     {last && <time className="num text-[11px] font-normal text-ink-3">{formatTime(last.at)}</time>}
                   </div>
                   <div className="mt-px truncate text-[12px] text-ink-2">{last?.text}</div>
-                  <div className="mt-1.5">{c.needsHuman ? <Pill tone="brick">Cần bạn</Pill> : <Pill tone="violet">AI đang xử lý</Pill>}</div>
+                  <div className="mt-1.5">{c.needsHuman ? <Pill tone="amber">Cần bạn</Pill> : <Pill tone="violet">AI đang xử lý</Pill>}</div>
                 </Link>
               );
             })}
