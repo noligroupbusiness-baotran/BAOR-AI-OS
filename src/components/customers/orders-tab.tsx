@@ -1,4 +1,5 @@
 import { Panel, PanelHeader } from "@/components/ui/card";
+import { ListFilter } from "@/components/ui/list-filter";
 import { Pill } from "@/components/ui/pill";
 import { Button, LinkButton } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -87,7 +88,7 @@ export function OrdersTab({ add, page, actor, preselectLead }: { add: boolean; p
         <PanelHeader
           title="Đơn hàng"
           sub={`${paid.length} đơn đã thanh toán · doanh thu ${formatCurrency(revenue)} · ${orders.filter((o) => o.status === "new").length} đơn chờ thanh toán.`}
-          action={add ? undefined : <LinkButton href={`${back}&add=1`} variant="primary">Tạo đơn hàng</LinkButton>}
+          action={<div className="flex items-center gap-2">{orders.length > 5 && <ListFilter target="orders-table" placeholder="Lọc khách, sản phẩm…" />}{!add && <LinkButton href={`${back}&add=1`} variant="primary">Tạo đơn hàng</LinkButton>}</div>}
         />
         {orders.length === 0 ? (
           <EmptyState title="Chưa có đơn hàng" hint="Tạo đơn từ lead khi khách chốt. Đơn đã thanh toán là nguồn doanh thu thật cho Chiến dịch và Báo cáo." action={<LinkButton href={`${back}&add=1`} variant="primary">Tạo đơn hàng</LinkButton>} />
@@ -97,11 +98,11 @@ export function OrdersTab({ add, page, actor, preselectLead }: { add: boolean; p
               <thead>
                 <tr><Th>Khách</Th><Th>Sản phẩm</Th><Th>Chiến dịch</Th><Th right>Thành tiền</Th><Th right>Trạng thái</Th></tr>
               </thead>
-              <tbody>
+              <tbody id="orders-table">
                 {paged.items.map((o) => {
                   const st = orderStatusLabel[o.status];
                   return (
-                    <tr key={o.id}>
+                    <tr key={o.id} data-search={`${o.leadName} ${o.productName} ${o.campaignName ?? ""} ${o.status}`}>
                       <Td className="font-semibold text-ink">{o.leadName}<div className="num text-[11px] font-normal text-ink-3">{formatDateTime(o.createdAt)}</div></Td>
                       <Td>{o.productName} × {o.quantity}<div className="num text-[11px] text-ink-3">{formatCurrency(o.unitPrice)}/đv{o.note ? ` · ${o.note}` : ""}</div></Td>
                       <Td><div className="flex flex-wrap gap-1"><CampaignTags links={links.get(o.id)} />{!links.get(o.id)?.length && <span className="text-ink-3">—</span>}</div></Td>

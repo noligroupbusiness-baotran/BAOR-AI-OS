@@ -1,4 +1,5 @@
 import { Panel, PanelHeader } from "@/components/ui/card";
+import { ListFilter } from "@/components/ui/list-filter";
 import { Pill } from "@/components/ui/pill";
 import { Button, LinkButton } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -17,7 +18,7 @@ export function FaqPanel({ editing }: { editing?: string }) {
       <PanelHeader
         title="Câu trả lời chuẩn cho khách"
         sub="Tin nhắn chứa đủ các từ khóa của một câu sẽ được trả lời ngay bằng câu đã duyệt, không gọi AI. Càng nhiều câu chuẩn, càng ít chi phí AI."
-        action={editing === "new" ? undefined : <LinkButton href="/settings?faq=new#faq" variant="primary">Thêm câu trả lời</LinkButton>}
+        action={<div className="flex items-center gap-2">{items.length > 5 && <ListFilter target="faq" placeholder="Lọc câu hỏi, từ khóa…" />}{editing !== "new" && <LinkButton href="/settings?faq=new#faq" variant="primary">Thêm câu trả lời</LinkButton>}</div>}
       />
       {editing === "new" && <FaqForm />}
       {items.length === 0 && editing !== "new" ? (
@@ -25,7 +26,7 @@ export function FaqPanel({ editing }: { editing?: string }) {
       ) : (
         <ul className="m-0 list-none p-0">
           {items.map((f) => (
-            <li key={f.id} className={cn("border-b border-border last:border-b-0", current?.id === f.id && "bg-jade-soft/20")}>
+            <li key={f.id} data-search={`${f.question} ${f.keywords.join(" ")} ${f.answer}`} className={cn("border-b border-border last:border-b-0", current?.id === f.id && "bg-jade-soft/20")}>
               <div className="grid grid-cols-[1fr_auto] items-start gap-3 px-4 py-2.5">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">

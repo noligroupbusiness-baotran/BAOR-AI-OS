@@ -160,6 +160,14 @@ Chiến dịch → Mục tiêu kênh → Insight → Nội dung → Video → Ph
 - **Xoay khóa**: `AUTH_SECRET_OLD=<cũ> AUTH_SECRET=<mới> npm run rotate-secret` mã hóa lại token rồi đặt khóa mới.
 - Token Meta: nhập “Token hết hạn ngày” trong Kết nối để hệ thống nhắc trước 7 ngày.
 
+## Tiện ích giao diện
+
+- Báo cáo: nút "Tải CSV tab này" xuất đúng tab và bộ lọc đang xem (`/api/export/report`, cần Quản lý).
+- Đăng bài: chuyển Danh sách / Lịch tháng (`?view=calendar&month=`), màu theo trạng thái, bấm bài mở nội dung gốc.
+- Danh sách dài (sản phẩm, nhân sự, câu trả lời chuẩn, đơn hàng) có ô lọc nhanh chạy trong trình duyệt (`ListFilter`,
+  dòng mang `data-search`), hiện khi có hơn 5 dòng. Kho nhạc nghe thử ngay trong trang.
+- Điều hành có "Kết quả tháng", "Chiến dịch đang chạy", "Hoạt động gần đây"; Cài đặt có thanh mục dính ở đầu trang.
+
 ## Bảo vệ và vận hành lâu dài
 
 - **Chặn dò mật khẩu** (`src/lib/login-guard.ts`): 5 lần sai trong 15 phút (theo email và theo IP) thì khóa 15 phút; lần khóa ghi vào

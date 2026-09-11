@@ -1,4 +1,5 @@
 import { Panel, PanelHeader } from "@/components/ui/card";
+import { ListFilter } from "@/components/ui/list-filter";
 import { Pill } from "@/components/ui/pill";
 import { Button, LinkButton } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -17,7 +18,7 @@ export function ProductsPanel({ editing }: { editing?: string }) {
       <PanelHeader
         title="Sản phẩm và bảng giá"
         sub="Nguồn giá và mô tả chuẩn. AI và các phân hệ chỉ dùng thông tin ở đây, không tự đặt giá."
-        action={editing === "new" ? undefined : <LinkButton href="/settings?product=new#products" variant="primary">Thêm sản phẩm</LinkButton>}
+        action={<div className="flex items-center gap-2">{items.length > 5 && <ListFilter target="products" placeholder="Lọc sản phẩm, thương hiệu…" />}{editing !== "new" && <LinkButton href="/settings?product=new#products" variant="primary">Thêm sản phẩm</LinkButton>}</div>}
       />
       {editing === "new" && <ProductForm />}
       {items.length === 0 && editing !== "new" ? (
@@ -25,7 +26,7 @@ export function ProductsPanel({ editing }: { editing?: string }) {
       ) : (
         <ul className="m-0 list-none p-0">
           {items.map((p) => (
-            <li key={p.id} className={cn("border-b border-border last:border-b-0", current?.id === p.id && "bg-jade-soft/20")}>
+            <li key={p.id} data-search={`${p.name} ${p.brand} ${p.description}`} className={cn("border-b border-border last:border-b-0", current?.id === p.id && "bg-jade-soft/20")}>
               <div className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-2.5">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
@@ -91,7 +92,7 @@ export function PeoplePanel({ editing }: { editing?: string }) {
       <PanelHeader
         title="Nhân sự và phân quyền"
         sub="Người phụ trách chiến dịch, mục tiêu kênh, nội dung và chăm sóc khách. Chỉ nhân sự đang hoạt động mới được phân công mới."
-        action={editing === "new" ? undefined : <LinkButton href="/settings?person=new#people" variant="primary">Thêm nhân sự</LinkButton>}
+        action={<div className="flex items-center gap-2">{items.length > 5 && <ListFilter target="people" placeholder="Lọc tên, vai trò, email…" />}{editing !== "new" && <LinkButton href="/settings?person=new#people" variant="primary">Thêm nhân sự</LinkButton>}</div>}
       />
       {editing === "new" && <PersonForm />}
       {items.length === 0 && editing !== "new" ? (
@@ -99,7 +100,7 @@ export function PeoplePanel({ editing }: { editing?: string }) {
       ) : (
         <ul className="m-0 list-none p-0">
           {items.map((p) => (
-            <li key={p.id} className={cn("border-b border-border last:border-b-0", current?.id === p.id && "bg-jade-soft/20")}>
+            <li key={p.id} data-search={`${p.name} ${p.role} ${p.email}`} className={cn("border-b border-border last:border-b-0", current?.id === p.id && "bg-jade-soft/20")}>
               <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-4 py-2.5">
                 <span className={cn("grid h-8 w-8 place-items-center rounded-full text-[12px] font-bold", p.active ? "bg-jade-soft text-jade-ink" : "bg-ground-2 text-ink-3")} aria-hidden>
                   {p.name.split(" ").slice(-1)[0]?.slice(0, 1).toUpperCase()}
