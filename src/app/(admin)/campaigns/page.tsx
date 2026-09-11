@@ -159,19 +159,16 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
                     <Link href={`/campaigns/${c.id}`} className="text-[13.5px] font-semibold text-ink hover:underline">{c.name}</Link>
                     <CampaignStatusPill status={c.status} />
                     {c.alerts > 0 && <span className="inline-flex items-center gap-1 text-[11.5px] font-medium text-brick"><AlertTriangle size={12} aria-hidden />{c.alerts} cảnh báo</span>}
+                    {(c.status === "active" || c.status === "approved" || c.status === "paused") && (() => {
+                      const t = timingLabel(c.startDate, c.endDate, today);
+                      return <span className={cn("text-[11.5px]", t.tone === "brick" ? "text-brick" : t.tone === "amber" ? "text-amber" : "text-ink-3")}>{t.text}</span>;
+                    })()}
                   </div>
                   <div className="mt-0.5 text-[12.5px] text-ink-2">{c.objective}</div>
                   <div className="mt-1 truncate text-[12px] text-ink-3">{c.productNames.join(", ")}</div>
                 </div>
                 <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-[12px] lg:grid-cols-1">
-                  <div className="flex flex-wrap gap-1.5">
-                    <dt className="text-ink-3">Thời gian</dt>
-                    <dd className="num text-ink">{formatDate(c.startDate)} – {formatDate(c.endDate)}</dd>
-                    {(c.status === "active" || c.status === "approved" || c.status === "paused") && (() => {
-                      const t = timingLabel(c.startDate, c.endDate, today);
-                      return <dd className={cn("text-[11.5px]", t.tone === "brick" ? "text-brick" : t.tone === "amber" ? "text-amber" : "text-ink-3")}>· {t.text}</dd>;
-                    })()}
-                  </div>
+                  <div className="flex gap-1.5"><dt className="text-ink-3">Thời gian</dt><dd className="num text-ink">{formatDate(c.startDate)} – {formatDate(c.endDate)}</dd></div>
                   <div className="flex gap-1.5"><dt className="text-ink-3">Ngân sách</dt><dd className="num text-ink">{formatCurrency(c.totalBudget)}</dd></div>
                   <div className="flex gap-1.5"><dt className="text-ink-3">Kênh</dt><dd className="num text-ink">{c.channelCount} kênh · {c.goalCount} mục tiêu</dd></div>
                   <div className="flex gap-1.5"><dt className="text-ink-3">Phụ trách</dt><dd className="text-ink">{c.ownerName}</dd></div>

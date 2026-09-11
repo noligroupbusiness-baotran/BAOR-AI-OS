@@ -15,6 +15,23 @@ import { AlertsPanel, AppLogoPanel, BrandPanel, MusicPanel } from "@/components/
 
 export const metadata = { title: "Cài đặt – BAOR AI OS" };
 
+const sections = [
+  { id: "products", label: "Sản phẩm" },
+  { id: "faq", label: "Câu trả lời chuẩn" },
+  { id: "people", label: "Nhân sự" },
+  { id: "integrations", label: "Kết nối" },
+  { id: "automation", label: "Tự động hóa" },
+  { id: "brand", label: "Thương hiệu" },
+  { id: "app-logo", label: "Logo" },
+  { id: "account", label: "Tài khoản" },
+  { id: "music", label: "Kho nhạc" },
+  { id: "ai", label: "Chi phí AI" },
+  { id: "alerts", label: "Cảnh báo" },
+  { id: "syslog", label: "Nhật ký" },
+  { id: "backup", label: "Sao lưu" },
+  { id: "sample", label: "Dữ liệu mẫu" },
+];
+
 const input = "mt-1 h-8 w-full rounded-md border border-border-2 bg-surface px-2.5 text-[13px] text-ink outline-none focus-visible:outline-2 focus-visible:outline-jade";
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ edit?: string; product?: string; person?: string; faq?: string }> }) {
@@ -26,6 +43,17 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
     <>
       <Breadcrumb items={[{ label: "Điều hành", href: "/dashboard" }, { label: "Cài đặt hệ thống" }]} />
       <PageHead title="Cài đặt hệ thống" sub="Nguồn dữ liệu chuẩn: sản phẩm và bảng giá, nhân sự, tài khoản nền tảng, thương hiệu, AI Agent." />
+
+      {/* Điều hướng theo mục: trang dài, nhảy thẳng tới khối cần chỉnh. Panel có scroll-mt nên không bị thanh trên che. */}
+      <nav aria-label="Mục cài đặt" className="sticky top-[calc(var(--topbar-h)+8px)] z-30 -mx-1 mb-1 overflow-x-auto px-1">
+        <ul className="m-0 flex list-none gap-1.5 rounded-full border border-border bg-ground/95 p-1 backdrop-blur">
+          {sections.map((sct) => (
+            <li key={sct.id}>
+              <a href={`#${sct.id}`} className="block whitespace-nowrap rounded-full px-3 py-1 text-[12px] font-medium text-ink-2 hover:bg-surface hover:text-ink focus-visible:outline-2 focus-visible:outline-jade">{sct.label}</a>
+            </li>
+          ))}
+        </ul>
+      </nav>
 
       <ProductsPanel editing={product} />
       <FaqPanel editing={faq} />
@@ -84,8 +112,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       <AlertsPanel />
       <SystemLogPanel />
 
-      <Panel>
-        <PanelHeader title="Dữ liệu" sub="Dữ liệu mẫu giúp bạn xem cách hệ thống vận hành. Xóa khi bắt đầu dùng thật." />
+      <Panel id="sample">
+        <PanelHeader title="Dữ liệu mẫu" sub="Dữ liệu mẫu giúp bạn xem cách hệ thống vận hành. Xóa khi bắt đầu dùng thật; dữ liệu bạn tự tạo được giữ nguyên." />
         <div className="flex flex-wrap gap-2 p-4">
           <form action={clearSampleData}><Button type="submit">Xóa dữ liệu mẫu</Button></form>
           <form action={resetSampleData}><Button type="submit" variant="ghost">Nạp lại dữ liệu mẫu</Button></form>

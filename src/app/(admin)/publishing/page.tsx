@@ -74,7 +74,7 @@ export default async function PublishingPage({ searchParams }: { searchParams: P
                   <Td className="num whitespace-nowrap">{formatTime(r.at)} · {formatDate(r.at).slice(0, 5)}</Td>
                   <Td className="font-semibold text-ink">
                     {r.title}
-                    {r.error && <div className="text-[12px] font-normal text-brick">{r.error}</div>}
+                    {r.error && <div className={cn("text-[12px] font-normal", r.status === "failed" ? "text-brick" : "text-amber")}>{r.error}</div>}
                     <div className="mt-1 flex flex-wrap gap-1"><CampaignTags links={r.ids.flatMap((id) => postLinks.get(id) ?? []).filter((l, i, arr) => arr.findIndex((x) => x.campaignId === l.campaignId) === i)} /></div>
                   </Td>
                   <Td>{r.platforms.join(" · ")}</Td>
