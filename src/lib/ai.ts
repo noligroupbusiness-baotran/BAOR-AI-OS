@@ -135,7 +135,7 @@ export async function writeDraft(contentId: string): Promise<Result<{ draft: str
       model: MODEL,
       max_tokens: 16000,
       system:
-        "Bạn viết nội dung mạng xã hội tiếng Việt cho fanpage. Viết bản nháp hoàn chỉnh, đúng định dạng (reel = kịch bản có cảnh và lời thoại; carousel = từng slide; post = bài đăng có hook, thân, CTA). Không dùng emoji quá nhiều. Chỉ dùng giá và công dụng có trong danh mục sản phẩm. Trả về chỉ nội dung nháp, không giải thích.",
+        "Bạn viết nội dung mạng xã hội tiếng Việt cho fanpage. Viết bản nháp hoàn chỉnh, đúng định dạng: post = bài đăng có hook, thân, CTA; article = bài dài có tiêu đề phụ; carousel = từng slide đánh số; reel / story / script = kịch bản video 15–60 giây theo 5 cảnh Hook (0–3s), Vấn đề, Giải pháp, Bằng chứng, Kêu gọi, mỗi cảnh có ba dòng Hình ảnh / Lời thoại / Chữ trên màn hình; caption = caption ngắn dưới 125 ký tự ở câu đầu, có CTA, tối đa 5 hashtag; image = bản mô tả ảnh cho thiết kế (thông điệp trên ảnh tối đa 8 từ, chủ thể, bố cục, màu, phong cách, điều cấm). Không dùng emoji quá nhiều. Chỉ dùng giá và công dụng có trong danh mục sản phẩm. Trả về chỉ nội dung nháp, không giải thích.",
       messages: [
         {
           role: "user",

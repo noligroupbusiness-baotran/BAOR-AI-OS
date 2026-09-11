@@ -6,7 +6,10 @@ import { done, logActivity, newId, nowIso } from "./common";
 import { generateIdeas, writeDraft } from "@/lib/ai";
 import { campaignRepo } from "@/lib/campaigns/repository";
 import { withCampaignContext } from "@/lib/campaigns/context";
-import { requirePermission } from "@/lib/permissions";
+import { requirePermission, currentActor } from "@/lib/permissions";
+import { getSetting } from "@/lib/admin";
+import { deleteUpload, saveUpload } from "@/lib/uploads";
+import { imageBriefTemplate, kindOf, scriptTemplate } from "@/lib/content/formats";
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 
@@ -100,6 +103,7 @@ export async function createIdea(fd: FormData) {
       pillar: str(fd, "pillar") || "Khác",
       hook: str(fd, "hook"),
       outline: "[]",
+      draft: prefillDraft(str(fd, "format") || "post", title, str(fd, "hook")),
       assignee: "human",
       createdAt: nowIso(),
       score: null,
@@ -126,4 +130,57 @@ export async function aiWriteDraft(fd: FormData) {
   const result = await writeDraft(id);
   if (!result.ok) return done(`/content?tab=mine&open=${id}`, result.error);
   done(`/content?tab=mine&open=${id}`, "AI đã viết bản nháp, bạn sửa rồi gửi duyệt");
+}
+
+// ---------- Kịch bản video / Caption / Hình ảnh ----------
+
+// Bài mới thuộc loại kịch bản hoặc hình ảnh được điền sẵn khung để người viết không bắt đầu từ trang trắng.
+function prefillDraft(format: string, title: string, hook: string): string | null {
+  const kind = kindOf(format);
+  if (kind === "script") return scriptTemplate(title);
+  if (kind === "image") {
+    return imageBriefTemplate({ title, hook, primaryColor: getSetting("brand.primaryColor") || undefined, secondaryColor: getSetting("brand.secondaryColor") || undefined, font: getSetting("brand.font") || undefined, tagline: getSetting("brand.tagline") || undefined });
+  }
+  return null;
+}
+
+/** Chèn khung kịch bản hoặc brief ảnh vào bản nháp đang có (nối vào cuối, không xóa chữ đã viết). */
+export async function insertTemplate(fd: FormData) {
+  const id = str(fd, "id");
+  const db = getDb();
+  const item = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, id)).get();
+  if (!item) return done("/content", "Không tìm thấy nội dung");
+  const tpl = prefillDraft(item.format, item.title, item.hook);
+  if (!tpl) return done(`/content?tab=mine&open=${id}`, "Định dạng này không có khung mẫu.");
+  const draft = item.draft?.trim() ? `${item.draft.trim()}\n\n${tpl}` : tpl;
+  db.update(schema.contentItems).set({ draft }).where(eq(schema.contentItems.id, id)).run();
+  done(`/content?tab=mine&open=${id}`, "Đã chèn khung mẫu vào bản nháp");
+}
+
+/** Đính kèm ảnh (PNG/JPG/WebP, tối đa 8 MB) cho bài: ảnh sản phẩm, ảnh đã thiết kế, ảnh AI tạo. */
+export async function attachContentImage(fd: FormData) {
+  const actor = await currentActor();
+  const id = str(fd, "id");
+  const back = `/content?tab=mine&open=${id}`;
+  const file = fd.get("file");
+  const db = getDb();
+  const item = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, id)).get();
+  if (!item) return done("/content", "Không tìm thấy nội dung");
+  if (!(file instanceof File) || file.size === 0) return done(`${back}&tone=error`, "Chưa chọn tệp ảnh.");
+  const r = await saveUpload("image", file, actor.email, { contentId: id, title: item.title });
+  if (!r.ok) return done(`${back}&tone=error`, `Ảnh: ${r.error}`);
+  if (item.assetUploadId) deleteUpload(item.assetUploadId);
+  db.update(schema.contentItems).set({ assetUploadId: r.upload.id }).where(eq(schema.contentItems.id, id)).run();
+  logActivity("human", `${actor.name} đính kèm ảnh cho “${item.title}”.`, "creator");
+  done(back, "Đã đính kèm ảnh");
+}
+
+export async function removeContentImage(fd: FormData) {
+  const id = str(fd, "id");
+  const db = getDb();
+  const item = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, id)).get();
+  if (!item) return done("/content", "Không tìm thấy nội dung");
+  if (item.assetUploadId) deleteUpload(item.assetUploadId);
+  db.update(schema.contentItems).set({ assetUploadId: null }).where(eq(schema.contentItems.id, id)).run();
+  done(`/content?tab=mine&open=${id}`, "Đã gỡ ảnh");
 }

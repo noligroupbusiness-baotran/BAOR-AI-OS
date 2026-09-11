@@ -27,9 +27,9 @@ export const moduleGroups: Record<string, ModuleGroup[]> = {
   content: [
     { name: "Ý tưởng", status: "active", href: "/content?tab=proposed" },
     { name: "Bài viết", status: "active", href: "/content?tab=mine" },
-    { name: "Kịch bản video", status: "planned" },
-    { name: "Caption", status: "planned" },
-    { name: "Hình ảnh", status: "planned" },
+    { name: "Kịch bản video", status: "active", href: "/content?tab=mine&kind=script" },
+    { name: "Caption", status: "active", href: "/content?tab=mine&kind=caption" },
+    { name: "Hình ảnh", status: "active", href: "/content?tab=mine&kind=image" },
     { name: "Nội dung chờ duyệt", status: "active", href: "/content?tab=mine" },
   ],
   "video-studio": [

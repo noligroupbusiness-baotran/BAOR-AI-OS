@@ -16,6 +16,8 @@ export const contentItems = sqliteTable("content_items", {
   createdAt: text("created_at").notNull(),
   score: integer("score"),
   source: text("source").notNull().default("seed"), // seed | ai | manual
+  /** Ảnh đính kèm (uploads.id) cho định dạng hình ảnh hoặc ảnh minh họa bài. */
+  assetUploadId: text("asset_upload_id"),
 });
 
 export const scheduledPosts = sqliteTable("scheduled_posts", {

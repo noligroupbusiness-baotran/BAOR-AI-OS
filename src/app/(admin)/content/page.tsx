@@ -14,7 +14,13 @@ import {
   saveDraft,
   scheduleContent,
   submitForReview,
+  insertTemplate,
+  attachContentImage,
+  removeContentImage,
 } from "@/lib/actions/content";
+import { IMAGE_SPECS, kindLabel, kindOf, type ContentKind } from "@/lib/content/formats";
+import { CaptionHelper, ScriptHelper } from "@/components/content/format-helpers";
+import { fileUrl, getUpload } from "@/lib/uploads";
 import { countContent, listContent, listInsights } from "@/lib/queries";
 import { contentFormatLabel, contentStatusLabel } from "@/lib/labels";
 import { formatDateTime, cn } from "@/lib/format";
@@ -29,7 +35,7 @@ export const metadata = { title: "Nội dung – BAOR AI OS" };
 
 const input = "h-8 w-full rounded-md border border-border-2 bg-surface px-2.5 text-[13px] text-ink outline-none focus-visible:outline-2 focus-visible:outline-jade";
 
-export default async function ContentPage({ searchParams }: { searchParams: Promise<{ tab?: string; open?: string; campaign?: string; goal?: string; link?: string }> }) {
+export default async function ContentPage({ searchParams }: { searchParams: Promise<{ tab?: string; open?: string; campaign?: string; goal?: string; link?: string; kind?: string }> }) {
   const sp = await searchParams;
   const { tab = "proposed", open } = sp;
   // Ngữ cảnh chiến dịch (campaign_id, channel_goal_id) do phân hệ Chiến dịch truyền sang.
@@ -43,7 +49,12 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
     done: ["approved", "scheduled", "published"],
   };
   const statuses = groups[tab] ?? groups.proposed;
-  const list = listContent(statuses).filter((c) => (linkedIds ? linkedIds.has(c.id) : true));
+  const kinds: ContentKind[] = ["text", "script", "caption", "image"];
+  const kind = kinds.includes(sp.kind as ContentKind) ? (sp.kind as ContentKind) : null;
+  const all = listContent(statuses).filter((c) => (linkedIds ? linkedIds.has(c.id) : true));
+  const list = kind ? all.filter((c) => kindOf(c.format) === kind) : all;
+  const kindCount = (k: ContentKind) => all.filter((c) => kindOf(c.format) === k).length;
+  const kindHref = (k: ContentKind | null) => href(`/content?tab=${tab}${k ? `&kind=${k}` : ""}`);
   const insights = listInsights();
   const opened = open ?? (tab === "mine" ? list[0]?.id : undefined);
   const links = campaignRepo.linksForEntities("content", list.map((c) => c.id));
@@ -88,6 +99,14 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
         />
       </div>
 
+      <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-[12px]">
+        <span className="text-ink-3">Loại:</span>
+        <Link href={kindHref(null)} className={cn("rounded-full border px-2.5 py-0.5", !kind ? "border-jade/40 bg-jade-soft font-semibold text-jade-ink" : "border-border-2 text-ink-2 hover:bg-ground-2")}>Tất cả · {all.length}</Link>
+        {kinds.map((k) => (
+          <Link key={k} href={kindHref(k)} className={cn("rounded-full border px-2.5 py-0.5", kind === k ? "border-jade/40 bg-jade-soft font-semibold text-jade-ink" : "border-border-2 text-ink-2 hover:bg-ground-2")}>{kindLabel[k]} · {kindCount(k)}</Link>
+        ))}
+      </div>
+
       {tab === "mine" && open === "new" && (
         <Panel>
           <PanelHeader title="Bài mới" sub={campaign ? `Bạn tự viết. Bài sẽ tự gắn vào chiến dịch “${campaign.name}”.` : "Bạn tự viết, không qua AI."} />
@@ -100,11 +119,12 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
             </label>
             <label className="block">
               <span className="lbl">Định dạng</span>
-              <select name="format" className={cn(input, "mt-1")}>
+              <select name="format" defaultValue={kind === "script" ? "script" : kind === "caption" ? "caption" : kind === "image" ? "image" : "post"} className={cn(input, "mt-1")}>
                 {Object.entries(contentFormatLabel).map(([k, v]) => (
-                  <option key={k} value={k}>{v}</option>
+                  <option key={k} value={k}>{v}{kindOf(k) !== "text" ? ` (${kindLabel[kindOf(k)]})` : ""}</option>
                 ))}
               </select>
+              <span className="mt-1 block text-[11px] text-ink-3">Kịch bản video và Hình ảnh được điền sẵn khung mẫu.</span>
             </label>
             <label className="block">
               <span className="lbl">Trụ cột</span>
@@ -173,7 +193,8 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
                       <form action={approveContent}><input type="hidden" name="id" value={c.id} /><Button variant="primary" type="submit">Duyệt</Button></form>
                     )}
                     {c.status === "in_progress" && !isOpen && <LinkButton href={href(`/content?tab=mine&open=${c.id}`)} variant="soft">Soạn</LinkButton>}
-                    {c.status === "approved" && !isOpen && <LinkButton href={href(`/content?tab=done&open=${c.id}`)} variant="primary">Lên lịch</LinkButton>}
+                    {c.status === "approved" && kindOf(c.format) === "script" && <LinkButton href={href(`/video-studio?upload=1&content=${c.id}`)} variant="soft">Tạo video</LinkButton>}
+                    {c.status === "approved" && !isOpen && kindOf(c.format) !== "script" && <LinkButton href={href(`/content?tab=done&open=${c.id}`)} variant="primary">Lên lịch</LinkButton>}
                   </div>
                 </div>
 
@@ -186,22 +207,31 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
 
                 {isOpen && (c.status === "in_progress" || c.status === "review") && (
                   <div className="border-t border-border px-4 py-3">
-                    <form action={saveDraft} className="grid gap-3">
+                    <form id={`draft-${c.id}`} action={saveDraft} className="grid gap-3">
                       <input type="hidden" name="id" value={c.id} />
                       <label className="block">
-                        <span className="lbl">Hook</span>
+                        <span className="lbl">{kindOf(c.format) === "image" ? "Thông điệp trên ảnh" : "Hook"}</span>
                         <input name="hook" defaultValue={c.hook} className={cn(input, "mt-1")} />
                       </label>
                       <label className="block">
-                        <span className="lbl">Bản nháp</span>
+                        <span className="lbl">{kindOf(c.format) === "script" ? "Kịch bản" : kindOf(c.format) === "caption" ? "Caption" : kindOf(c.format) === "image" ? "Mô tả ảnh (brief)" : "Bản nháp"}</span>
                         <textarea
                           name="draft"
-                          rows={10}
+                          rows={kindOf(c.format) === "caption" ? 6 : 10}
                           defaultValue={c.draft ?? ""}
                           placeholder="Viết bản nháp ở đây, hoặc bấm “AI viết nháp”."
                           className="mt-1 w-full rounded-md border border-border-2 bg-surface px-3 py-2 text-[13px] leading-relaxed text-ink outline-none focus-visible:outline-2 focus-visible:outline-jade"
                         />
                       </label>
+                      {kindOf(c.format) === "caption" && <CaptionHelper formId={`draft-${c.id}`} />}
+                      {kindOf(c.format) === "script" && <ScriptHelper formId={`draft-${c.id}`} />}
+                      {kindOf(c.format) === "image" && (
+                        <div className="rounded-md border border-border bg-ground px-3 py-2 text-[12px] text-ink-2">
+                          <div className="font-semibold text-ink">Kích thước cần xuất</div>
+                          <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5">{IMAGE_SPECS.map((sp2) => <span key={sp2.platform} title={sp2.note}>{sp2.label}: <span className="num text-ink">{sp2.ratio}</span> ({sp2.size})</span>)}</div>
+                          <div className="mt-1 text-[11px] text-ink-3">Chữ trên ảnh không quá 20% diện tích; màu và font lấy từ Cài đặt › Thương hiệu.</div>
+                        </div>
+                      )}
                       {c.outline.length > 0 && (
                         <div className="text-[12px] text-ink-2">Dàn ý: {c.outline.map((o, k) => `${k + 1}. ${o}`).join(" · ")}</div>
                       )}
@@ -209,8 +239,35 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
                         <Button type="submit">Lưu nháp</Button>
                         <Button type="submit" variant="primary" formAction={submitForReview}>Gửi duyệt</Button>
                         <Button type="submit" variant="soft" formAction={aiWriteDraft}>AI viết nháp</Button>
+                        {(kindOf(c.format) === "script" || kindOf(c.format) === "image") && <Button type="submit" variant="ghost" formAction={insertTemplate}>Chèn khung mẫu</Button>}
                       </div>
                     </form>
+                    {(() => {
+                      const asset = c.assetUploadId ? getUpload(c.assetUploadId) : undefined;
+                      return (
+                        <div className="mt-3 grid gap-2 border-t border-border pt-3 md:grid-cols-[auto_1fr] md:items-center">
+                          {asset ? (
+                            <div className="flex items-center gap-3">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={fileUrl(asset.id)} alt={asset.name} className="h-20 w-20 rounded-md border border-border object-cover" />
+                              <div className="text-[12px] text-ink-2">
+                                <div className="font-medium text-ink">{asset.name}</div>
+                                <div className="num">{Math.round(asset.size / 1024)} KB</div>
+                                <form action={removeContentImage}><input type="hidden" name="id" value={c.id} /><button type="submit" className="mt-1 cursor-pointer text-[12px] text-brick hover:underline">Gỡ ảnh</button></form>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="text-[12px] text-ink-3">{kindOf(c.format) === "image" ? "Chưa có ảnh. Tải ảnh đã thiết kế lên để duyệt." : "Ảnh minh họa (tùy chọn)."}</div>
+                          )}
+                          <form action={attachContentImage} className="flex flex-wrap items-center gap-2">
+                            <input type="hidden" name="id" value={c.id} />
+                            <input type="file" name="file" required accept="image/png,image/jpeg,image/webp" className="block text-[12px] text-ink-2 file:mr-2 file:rounded-full file:border file:border-border-2 file:bg-surface file:px-2.5 file:py-1 file:text-[12px] file:text-ink" />
+                            <Button type="submit">{asset ? "Thay ảnh" : "Đính kèm ảnh"}</Button>
+                            <span className="text-[11px] text-ink-3">PNG, JPG, WebP, tối đa 8 MB</span>
+                          </form>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
 
@@ -238,8 +295,14 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
                   </div>
                 )}
 
-                {isOpen && (c.status === "scheduled" || c.status === "published") && c.draft && (
-                  <div className="whitespace-pre-line border-t border-border px-4 py-3 text-[12.5px] leading-relaxed text-ink">{c.draft}</div>
+                {isOpen && (c.status === "scheduled" || c.status === "published" || c.status === "approved") && c.draft && (
+                  <div className="border-t border-border px-4 py-3 text-[12.5px] leading-relaxed text-ink">
+                    {c.assetUploadId && getUpload(c.assetUploadId) && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={fileUrl(c.assetUploadId)} alt="" className="mb-2 max-h-56 rounded-md border border-border object-contain" />
+                    )}
+                    <div className="whitespace-pre-line">{c.draft}</div>
+                  </div>
                 )}
               </li>
             );

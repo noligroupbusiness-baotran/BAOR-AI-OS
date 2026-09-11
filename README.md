@@ -134,6 +134,11 @@ Chiến dịch → Mục tiêu kênh → Insight → Nội dung → Video → Ph
 - **Automation** (`src/lib/automation`): quy tắc “khi X thì Y” (tin nhắn, lead mới, lead im lặng, bài tương tác cao,
   chiến dịch chậm, CPL cao) chạy ở làn luật; hành động tiêu tiền tạo đề xuất chờ duyệt. Kho câu trả lời chuẩn ở Cài đặt › FAQ.
   Trang Automation có “Thử với một tin nhắn” (chạy khô).
+- **Nội dung theo loại** (`src/lib/content/formats.ts`): bài viết, kịch bản video (reel / story / script), caption, hình ảnh; lọc
+  bằng `?kind=`. Kịch bản: khung 5 cảnh Hook / Vấn đề / Giải pháp / Bằng chứng / Kêu gọi, mỗi cảnh ba dòng Hình ảnh / Lời thoại /
+  Chữ trên màn hình, bảng kiểm tra cảnh còn thiếu, kịch bản đã duyệt có nút "Tạo video" sang Video Studio. Caption: đếm ký tự,
+  hashtag, câu đầu 125 ký tự, CTA, giới hạn từng nền tảng (theo luật, không AI). Hình ảnh: brief điền sẵn màu / font / khẩu hiệu
+  từ Thương hiệu, kích thước từng nền tảng, đính kèm ảnh (`content_items.asset_upload_id`, migration 0009). AI viết nháp theo đúng loại.
 - **Phân Data** (`src/lib/customers/segments.ts`, Khách hàng › Phân data): chia khách theo luật, không AI: lead mới, đang chăm sóc
   (tin cuối ≤ 7 ngày), im lặng 7–30 ngày, nguội > 30 ngày, đã mua, mua từ 2 lần, đã mua chưa có đơn, mất; thêm nhóm động theo kênh
   và theo thẻ. Mỗi nhóm: xem danh sách, tải CSV (`/api/export/leads?segment=`, cần Quản lý), gắn thẻ cả nhóm, chuyển giai đoạn cả nhóm.

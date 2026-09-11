@@ -33,9 +33,9 @@ const tabs: { key: VideoStatus | "all"; label: string }[] = [
   { key: "approved", label: "Đã phê duyệt" },
 ];
 
-export default async function VideoStudioPage({ searchParams }: { searchParams: Promise<{ tab?: string; campaign?: string; goal?: string; link?: string; upload?: string }> }) {
+export default async function VideoStudioPage({ searchParams }: { searchParams: Promise<{ tab?: string; campaign?: string; goal?: string; link?: string; upload?: string; content?: string }> }) {
   const sp = await searchParams;
-  const scripts = listContent().filter((c) => (c.format === "reel" || c.format === "story") && c.status !== "dismissed");
+  const scripts = listContent().filter((c) => (c.format === "reel" || c.format === "story" || c.format === "script") && c.status !== "dismissed");
   const campaignsForUpload = campaignRepo.list().filter((c) => c.status !== "ended");
   const tab = tabs.some((t) => t.key === sp.tab) ? (sp.tab as VideoStatus | "all") : "all";
   const ctx = readCampaignContext(sp);
@@ -63,7 +63,7 @@ export default async function VideoStudioPage({ searchParams }: { searchParams: 
             <Field label="Tên video" required><input name="title" required className={inputClass} placeholder="VD: Khách văn phòng nói gì sau lượt gội đầu tiên" /></Field>
             <Field label="Tệp video" required><input type="file" name="file" required accept="video/mp4,video/quicktime,video/webm" className="block w-full text-[12.5px] text-ink-2 file:mr-2 file:rounded-full file:border file:border-border-2 file:bg-surface file:px-2.5 file:py-1 file:text-[12px] file:text-ink" /></Field>
             <Field label="Kịch bản gốc (nếu có)" hint="Video kế thừa chiến dịch của kịch bản.">
-              <select name="contentId" defaultValue="" className={inputClass}><option value="">Không có</option>{scripts.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}</select>
+              <select name="contentId" defaultValue={sp.content ?? ""} className={inputClass}><option value="">Không có</option>{scripts.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}</select>
             </Field>
             <div>
               <span className="lbl">Phiên bản cho nền tảng</span>

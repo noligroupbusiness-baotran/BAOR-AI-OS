@@ -97,7 +97,7 @@ export type ContentStatus =
   | "scheduled"
   | "published";
 
-export type ContentFormat = "post" | "reel" | "carousel" | "story" | "article";
+export type ContentFormat = "post" | "reel" | "carousel" | "story" | "article" | "script" | "caption" | "image";
 
 export interface ContentItem {
   id: string;
