@@ -15,10 +15,11 @@ import { CampaignContextBar } from "@/components/campaigns/campaign-context";
 import { CampaignTags, LinkToCampaignForm } from "@/components/campaigns/entity-campaign";
 import { campaignRepo } from "@/lib/campaigns/repository";
 import { readCampaignContext, withCampaignContext } from "@/lib/campaigns/context";
+import { CompetitorsPanel } from "@/components/insights/competitors-panel";
 
 export const metadata = { title: "Nghiên cứu & Insight – BAOR AI OS" };
 
-export default async function ResearchPage({ searchParams }: { searchParams: Promise<{ campaign?: string; goal?: string; link?: string; add?: string }> }) {
+export default async function ResearchPage({ searchParams }: { searchParams: Promise<{ campaign?: string; goal?: string; link?: string; add?: string; competitor?: string }> }) {
   const sp = await searchParams;
   const allInsights = listInsights();
   const proposed = allInsights.filter((i) => i.status === "proposed");
@@ -116,6 +117,8 @@ export default async function ResearchPage({ searchParams }: { searchParams: Pro
           </tbody>
         </Table>
       </Panel>
+
+      <CompetitorsPanel editing={sp.competitor} />
 
       <Panel id="personas">
         <PanelHeader title="Chân dung khách hàng" sub="Tỷ lệ trong tập khách và nỗi đau chính." />

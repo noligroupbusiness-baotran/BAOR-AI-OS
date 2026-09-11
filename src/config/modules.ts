@@ -20,7 +20,7 @@ export const moduleGroups: Record<string, ModuleGroup[]> = {
     { name: "Chân dung khách hàng", status: "active", href: "/insights#personas" },
     { name: "Nỗi đau và mong muốn", status: "active", href: "/insights#personas" },
     { name: "Câu hỏi thường gặp", status: "active", href: "/settings#faq" },
-    { name: "Đối thủ", status: "planned" },
+    { name: "Đối thủ", status: "active", href: "/insights#competitors" },
     { name: "Xu hướng", status: "active", href: "/insights#channels" },
     { name: "Ngân hàng Insight", status: "active", href: "/insights#insights" },
   ],

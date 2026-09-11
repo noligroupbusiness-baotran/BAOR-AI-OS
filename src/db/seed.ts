@@ -12,6 +12,7 @@ import { recentActivity } from "@/lib/data/pipeline";
 import { people as seedPeople } from "@/lib/data/people";
 import { products as seedProducts } from "@/lib/data/products";
 import { videos as seedVideos } from "@/lib/data/videos";
+import { competitors as seedCompetitors } from "@/lib/data/competitors";
 import { defaultFaqs, defaultRules } from "@/lib/data/automation";
 import {
   campaignApprovals as seedApprovals,
@@ -116,6 +117,7 @@ export function seedAll(db: Db) {
     seedCampaignData(tx);
     seedCatalogData(tx);
     seedAutomationData(tx);
+    seedCompetitorsData(tx);
   });
 }
 
@@ -132,6 +134,16 @@ export function seedCatalogIfEmpty(db: Db) {
   }
   const [{ r }] = db.select({ r: count() }).from(schema.automationRules).all();
   if (r === 0) db.transaction((tx) => seedAutomationData(tx));
+  const [{ cm }] = db.select({ cm: count() }).from(schema.competitors).all();
+  if (cm === 0) db.transaction((tx) => seedCompetitorsData(tx));
+}
+
+function seedCompetitorsData(tx: Db) {
+  const now = new Date().toISOString();
+  tx.insert(schema.competitors)
+    .values(seedCompetitors.map((c) => ({ ...c, channels: JSON.stringify(c.channels), offers: JSON.stringify(c.offers), strengths: JSON.stringify(c.strengths), weaknesses: JSON.stringify(c.weaknesses), active: true, updatedAt: now })))
+    .onConflictDoNothing()
+    .run();
 }
 
 // Quy tắc Automation mặc định + kho câu trả lời chuẩn.
@@ -266,6 +278,7 @@ export function clearSampleOnly(db: Db) {
     videos: seedVideos.map((v) => v.id),
     activityAt: recentActivity.map((a) => a.at),
     orders: seedOrders.map((o) => o.id),
+    competitors: seedCompetitors.map((c) => c.id),
   };
   db.transaction((tx) => {
     tx.delete(schema.messages).where(inArray(schema.messages.conversationId, ids.convs)).run();
@@ -286,6 +299,7 @@ export function clearSampleOnly(db: Db) {
     tx.delete(schema.campaignApprovals).where(inArray(schema.campaignApprovals.id, ids.approvals)).run();
     tx.delete(schema.marketingLinks).where(inArray(schema.marketingLinks.id, [...ids.links, ...ids.orders.flatMap((o) => [`ml_${o}`, `ml_${o}_rev`])])).run();
     tx.delete(schema.orders).where(inArray(schema.orders.id, ids.orders)).run();
+    tx.delete(schema.competitors).where(inArray(schema.competitors.id, ids.competitors)).run();
     tx.delete(schema.channelGoals).where(inArray(schema.channelGoals.id, ids.goals)).run();
     tx.delete(schema.campaigns).where(inArray(schema.campaigns.id, ids.campaigns)).run();
     tx.delete(schema.videos).where(inArray(schema.videos.id, ids.videos)).run();

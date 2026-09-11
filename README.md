@@ -134,6 +134,10 @@ Chiến dịch → Mục tiêu kênh → Insight → Nội dung → Video → Ph
 - **Automation** (`src/lib/automation`): quy tắc “khi X thì Y” (tin nhắn, lead mới, lead im lặng, bài tương tác cao,
   chiến dịch chậm, CPL cao) chạy ở làn luật; hành động tiêu tiền tạo đề xuất chờ duyệt. Kho câu trả lời chuẩn ở Cài đặt › FAQ.
   Trang Automation có “Thử với một tin nhắn” (chạy khô).
+- **Đối thủ** (`src/lib/insights/competitors.ts`, Nghiên cứu & Insight › Đối thủ, bảng `competitors`, migration 0010): theo dõi tay
+  tên, thương hiệu cạnh tranh, định vị, kênh + số theo dõi, bảng giá, điểm mạnh / yếu, ngày xem. So sánh giá tự động theo luật: ghép
+  gói đối thủ với sản phẩm cùng thương hiệu theo tên (bỏ dấu, bỏ từ dừng, khớp ≥ 50%), chênh lệch %, rẻ / ngang (< 10%) / đắt.
+  Cần Quản lý để sửa. Có 2 đối thủ mẫu cho Mộc Diệp Spa, xóa bằng "Xóa dữ liệu mẫu".
 - **Nội dung theo loại** (`src/lib/content/formats.ts`): bài viết, kịch bản video (reel / story / script), caption, hình ảnh; lọc
   bằng `?kind=`. Kịch bản: khung 5 cảnh Hook / Vấn đề / Giải pháp / Bằng chứng / Kêu gọi, mỗi cảnh ba dòng Hình ảnh / Lời thoại /
   Chữ trên màn hình, bảng kiểm tra cảnh còn thiếu, kịch bản đã duyệt có nút "Tạo video" sang Video Studio. Caption: đếm ký tự,

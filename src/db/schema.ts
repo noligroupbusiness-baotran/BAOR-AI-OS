@@ -165,6 +165,23 @@ export const platformResearch = sqliteTable("platform_research", {
   summary: text("summary").notNull().default(""),
 });
 
+// Đối thủ: theo dõi thủ công (tên, kênh, định vị, giá, điểm mạnh / yếu). So sánh giá tính theo luật với danh mục sản phẩm.
+export const competitors = sqliteTable("competitors", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  /** Thương hiệu của mình mà đối thủ này cạnh tranh (khớp products.brand), rỗng = chung. */
+  brand: text("brand").notNull().default(""),
+  positioning: text("positioning").notNull().default(""),
+  channels: text("channels").notNull().default("[]"), // JSON [{platform, url, followers}]
+  offers: text("offers").notNull().default("[]"), // JSON [{name, price, unit}]
+  strengths: text("strengths").notNull().default("[]"), // JSON string[]
+  weaknesses: text("weaknesses").notNull().default("[]"), // JSON string[]
+  note: text("note").notNull().default(""),
+  lastCheckedAt: text("last_checked_at"),
+  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  updatedAt: text("updated_at").notNull(),
+});
+
 export const activity = sqliteTable("activity", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   at: text("at").notNull(),

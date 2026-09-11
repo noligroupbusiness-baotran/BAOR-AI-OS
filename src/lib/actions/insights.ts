@@ -7,6 +7,7 @@ import { requirePermission, currentActor } from "@/lib/permissions";
 import { recordDecision } from "@/lib/router";
 import { logActivity } from "@/lib/activity";
 import { done } from "./common";
+import { deleteCompetitor, getCompetitor, parseChannels, parseOffers, saveCompetitor as saveCompetitorRow, splitLines } from "@/lib/insights/competitors";
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 const fail = (path: string, msg: string): never => done(`${path}${path.includes("?") ? "&" : "?"}tone=error`, msg);
@@ -45,4 +46,38 @@ export async function createInsight(fd: FormData) {
   getDb().insert(schema.insights).values({ id, title, detail, confidence, source, personaId: str(fd, "personaId") || null, createdAt: new Date().toISOString(), usedInContent: 0, status: "approved", origin: "manual", evidence: JSON.stringify(str(fd, "evidence") ? [str(fd, "evidence")] : []) }).run();
   logActivity("human", `${actor.name} thêm insight “${title}” (nguồn: ${source}).`, "insights");
   done("/insights#insights", "Đã thêm insight");
+}
+
+// ---------- Đối thủ (theo dõi thủ công) ----------
+
+export async function saveCompetitor(fd: FormData) {
+  const actor = await requirePermission("manager", "/insights#competitors");
+  const id = str(fd, "id") || undefined;
+  const name = str(fd, "name");
+  if (!name) return fail(`/insights?competitor=${id ?? "new"}#competitors`, "Cần nhập tên đối thủ.");
+  const lastChecked = str(fd, "lastCheckedAt");
+  const c = saveCompetitorRow({
+    id,
+    name,
+    brand: str(fd, "brand"),
+    positioning: str(fd, "positioning"),
+    channels: parseChannels(str(fd, "channels")),
+    offers: parseOffers(str(fd, "offers")),
+    strengths: splitLines(str(fd, "strengths")),
+    weaknesses: splitLines(str(fd, "weaknesses")),
+    note: str(fd, "note"),
+    lastCheckedAt: /^\d{4}-\d{2}-\d{2}$/.test(lastChecked) ? lastChecked : null,
+  });
+  logActivity("human", `${actor.name} ${id ? "cập nhật" : "thêm"} đối thủ “${c.name}” (${c.offers.length} gói giá).`, "insights");
+  done("/insights#competitors", id ? "Đã cập nhật đối thủ" : "Đã thêm đối thủ");
+}
+
+export async function removeCompetitor(fd: FormData) {
+  const actor = await requirePermission("manager", "/insights#competitors");
+  const id = str(fd, "id");
+  const c = getCompetitor(id);
+  if (!c) return fail("/insights#competitors", "Không tìm thấy đối thủ.");
+  deleteCompetitor(id);
+  logActivity("human", `${actor.name} xóa đối thủ “${c.name}”.`, "insights");
+  done("/insights#competitors", "Đã xóa đối thủ");
 }
