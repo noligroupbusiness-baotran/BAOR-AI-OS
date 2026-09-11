@@ -28,8 +28,13 @@ export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile
   const nav = (
     <nav aria-label="Phân hệ" className="flex flex-col gap-0.5">
       {menuGroupOrder.map((g, gi) => (
-        <div key={g} className={cn("flex flex-col gap-0.5", gi > 0 && (collapsed ? "mt-2 border-t border-border pt-2" : "mt-3"))}>
-          {!collapsed && <div className="px-2.5 pb-1 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-ink-3">{menuGroupLabel[g]}</div>}
+        <div key={g} className={cn("flex flex-col gap-px", gi > 0 && (collapsed ? "mt-2 border-t border-border pt-2" : "mt-4"))}>
+          {!collapsed && (
+            <div className="mb-1 flex items-center gap-2 px-2.5">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-3">{menuGroupLabel[g]}</span>
+              <span className="h-px flex-1 bg-border" aria-hidden />
+            </div>
+          )}
           {menu.filter((m) => m.group === g).map((m) => {
         const active = pathname === m.href || pathname.startsWith(m.href + "/");
         const Icon = m.icon;
@@ -44,16 +49,17 @@ export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile
             data-tip={collapsed ? m.label : undefined}
             title={m.hotkey ? `${m.label} (Alt+${m.hotkey})` : undefined}
             className={cn(
-              "relative flex h-10 items-center gap-3 rounded-lg px-2.5 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-jade",
-              active ? "bg-jade-soft font-semibold text-jade-ink" : "text-ink-2 hover:bg-surface hover:text-ink",
+              "group relative flex h-9 items-center gap-2.5 rounded-md px-2.5 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-jade",
+              active ? "bg-jade-soft/70 font-semibold text-jade-ink" : "text-ink-2 hover:bg-surface hover:text-ink",
               collapsed && "justify-center px-0",
             )}
           >
-            <Icon size={18} className={cn("shrink-0", active ? "text-jade" : "text-ink-3")} aria-hidden />
+            {active && <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-jade" aria-hidden />}
+            <Icon size={17} strokeWidth={active ? 2.25 : 1.75} className={cn("shrink-0 transition-colors", active ? "text-jade" : "text-ink-3 group-hover:text-ink-2")} aria-hidden />
             {!collapsed && <span className="flex-1 truncate">{m.label}</span>}
             {!collapsed && m.building && <span className="rounded-full border border-border-2 px-1.5 text-[10px] font-medium text-ink-3">đang xây</span>}
-            {!collapsed && badge ? <span className="num rounded-full bg-amber-soft px-1.5 text-[11px] font-semibold text-amber">{badge}</span> : null}
-            {collapsed && badge ? <span className="absolute right-2 top-1.5 h-1.5 w-1.5 rounded-full bg-amber" aria-hidden /> : null}
+            {!collapsed && badge ? <span className={cn("num inline-flex h-[18px] min-w-[20px] items-center justify-center rounded-full px-1.5 text-[11px] font-semibold", active ? "bg-jade/15 text-jade-ink" : "bg-amber-soft text-amber")}>{badge}</span> : null}
+            {collapsed && badge ? <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-amber" aria-hidden /> : null}
           </Link>
         );
           })}
@@ -100,7 +106,7 @@ export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile
     <>
       <aside
         className={cn(
-          "sticky top-0 hidden h-screen shrink-0 flex-col gap-4 border-r border-border bg-ground-2 px-3 py-4 transition-[width] duration-200 md:flex",
+          "sticky top-0 hidden h-screen shrink-0 flex-col gap-5 border-r border-border bg-ground-2 px-3 pb-4 pt-5 transition-[width] duration-200 md:flex",
           collapsed ? "w-[var(--sidebar-collapsed-w)]" : "w-[var(--sidebar-w)]",
         )}
       >
