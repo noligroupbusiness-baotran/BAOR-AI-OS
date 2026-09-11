@@ -134,6 +134,9 @@ Chiến dịch → Mục tiêu kênh → Insight → Nội dung → Video → Ph
 - **Automation** (`src/lib/automation`): quy tắc “khi X thì Y” (tin nhắn, lead mới, lead im lặng, bài tương tác cao,
   chiến dịch chậm, CPL cao) chạy ở làn luật; hành động tiêu tiền tạo đề xuất chờ duyệt. Kho câu trả lời chuẩn ở Cài đặt › FAQ.
   Trang Automation có “Thử với một tin nhắn” (chạy khô).
+- **Phân Data** (`src/lib/customers/segments.ts`, Khách hàng › Phân data): chia khách theo luật, không AI: lead mới, đang chăm sóc
+  (tin cuối ≤ 7 ngày), im lặng 7–30 ngày, nguội > 30 ngày, đã mua, mua từ 2 lần, đã mua chưa có đơn, mất; thêm nhóm động theo kênh
+  và theo thẻ. Mỗi nhóm: xem danh sách, tải CSV (`/api/export/leads?segment=`, cần Quản lý), gắn thẻ cả nhóm, chuyển giai đoạn cả nhóm.
 - **Báo cáo** (`src/lib/reports`): mục tiêu so với kết quả theo chiến dịch, kênh, nội dung, video, lead, đơn hàng, chi phí, ROAS.
 - **Trợ lý AI** (`src/lib/assistant.ts`): câu hỏi vận hành trả lời từ dữ liệu (làn luật); câu khác gọi Claude với ảnh chụp
   hệ thống. **Insight**: AI rút từ inbox / lead / bài đăng kèm bằng chứng, trạng thái chờ duyệt.

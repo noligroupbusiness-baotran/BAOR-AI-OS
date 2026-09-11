@@ -52,7 +52,7 @@ export const moduleGroups: Record<string, ModuleGroup[]> = {
   customers: [
     { name: "Lead mới", status: "active", href: "/customers?tab=leads" },
     { name: "Khách hàng", status: "active", href: "/customers?tab=leads" },
-    { name: "Phân Data", status: "planned" },
+    { name: "Phân Data", status: "active", href: "/customers?tab=segments" },
     { name: "Trạng thái chăm sóc", status: "active", href: "/customers?tab=inbox" },
     { name: "Lịch sử tương tác", status: "active", href: "/customers?tab=inbox" },
     { name: "Đơn hàng", status: "active", href: "/customers?tab=orders" },

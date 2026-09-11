@@ -7,6 +7,11 @@ import { suggestReply } from "@/lib/ai";
 import { campaignRepo } from "@/lib/campaigns/repository";
 import { ingestLead } from "@/lib/inbound";
 import { CHANNELS } from "@/config/channels";
+import { findSegment } from "@/lib/customers/segments";
+import { listLeads } from "@/lib/queries";
+import { listOrders } from "@/lib/orders/repository";
+import { requirePermission } from "@/lib/permissions";
+import type { LeadStage } from "@/lib/types";
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 
@@ -87,4 +92,48 @@ export async function toggleSequence(fd: FormData) {
   if (!s) return done("/customers?tab=email", "Không tìm thấy chuỗi");
   db.update(schema.emailSequences).set({ active: !s.active }).where(eq(schema.emailSequences.id, id)).run();
   done("/customers?tab=email", s.active ? "Đã tắt chuỗi email" : "Đã bật chuỗi email");
+}
+
+// ---------- Phân Data: thao tác cả nhóm ----------
+
+const STAGES: LeadStage[] = ["new", "contacted", "qualified", "won", "lost"];
+
+/** Gắn một thẻ cho mọi khách trong nhóm (bỏ qua khách đã có thẻ). */
+export async function tagSegment(fd: FormData) {
+  const actor = await requirePermission("manager", "/customers?tab=segments");
+  const key = str(fd, "segment");
+  const tag = str(fd, "tag").replace(/^#/, "").replace(/\s+/g, "-").toLowerCase();
+  const back = `/customers?tab=segments&segment=${encodeURIComponent(key)}`;
+  if (!tag) return done(`${back}&tone=error`, "Cần nhập tên thẻ.");
+  const seg = findSegment(key, listLeads(), listOrders());
+  if (!seg) return done(`/customers?tab=segments&tone=error`, "Không tìm thấy nhóm.");
+  let changed = 0;
+  const db = getDb();
+  for (const l of seg.leads) {
+    if (l.tags.includes(tag)) continue;
+    db.update(schema.leads).set({ tags: JSON.stringify([...l.tags, tag]) }).where(eq(schema.leads.id, l.id)).run();
+    changed++;
+  }
+  logActivity("human", `${actor.name} gắn thẻ #${tag} cho ${changed} khách trong nhóm “${seg.label}”.`, "customers");
+  done(back, `Đã gắn thẻ #${tag} cho ${changed} khách${changed < seg.leads.length ? ` (${seg.leads.length - changed} khách đã có thẻ)` : ""}.`);
+}
+
+/** Đổi giai đoạn cho cả nhóm, ví dụ chuyển nhóm nguội sang “Mất”. */
+export async function setSegmentStage(fd: FormData) {
+  const actor = await requirePermission("manager", "/customers?tab=segments");
+  const key = str(fd, "segment");
+  const stage = str(fd, "stage") as LeadStage;
+  const back = `/customers?tab=segments&segment=${encodeURIComponent(key)}`;
+  if (!STAGES.includes(stage)) return done(`${back}&tone=error`, "Giai đoạn không hợp lệ.");
+  const seg = findSegment(key, listLeads(), listOrders());
+  if (!seg) return done(`/customers?tab=segments&tone=error`, "Không tìm thấy nhóm.");
+  let changed = 0;
+  for (const l of seg.leads) {
+    if (l.stage === stage) continue;
+    getDb().update(schema.leads).set({ stage }).where(eq(schema.leads.id, l.id)).run();
+    campaignRepo.syncEntityStatus("lead", l.id, stage);
+    changed++;
+  }
+  logActivity("human", `${actor.name} chuyển ${changed} khách trong nhóm “${seg.label}” sang giai đoạn ${stage}.`, "customers");
+  done("/customers?tab=segments", `Đã chuyển ${changed} khách sang giai đoạn mới.`);
 }
