@@ -32,6 +32,11 @@ npm run dev                  # http://localhost:3000
 
 Chưa có `.env.local` (hoặc thiếu ADMIN_EMAIL / ADMIN_PASSWORD) thì mọi đăng nhập đều bị từ chối.
 
+## Tự đăng nhập khi phát triển
+
+Đặt `DEV_AUTO_LOGIN_EMAIL=dev@local.test` trong `.env.local`: khi chạy `next dev`, mở bất kỳ trang nào là vào thẳng quản trị với
+tài khoản đó (`src/proxy.ts`). Bản build production bỏ qua biến này hoàn toàn. Bỏ dòng đó khi muốn thử màn hình đăng nhập.
+
 ## Nhiều session làm song song (mỗi vị trí một session)
 
 `.claude/launch.json` (đã đưa vào repo) có sẵn một cấu hình dev server cho mỗi vị trí, mỗi cấu hình một cổng và một thư mục
