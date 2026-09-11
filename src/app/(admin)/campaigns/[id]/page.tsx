@@ -16,9 +16,12 @@ type Params = Promise<{ id: string }>;
 type Search = Promise<{ tab?: string; add?: string; edit?: string; goal?: string }>;
 // ?edit=1 ở tab Tổng quan = sửa thông tin chung; ?edit=<goalId> ở tab Mục tiêu = sửa mục tiêu kênh.
 
+// Kiểm tra tồn tại ngay ở bước metadata: chạy trước khi khung trang được gửi, nên mã HTTP là 404 thật
+// (nếu chỉ gọi notFound() trong page, khung đã stream với 200 vì có màn hình tải trung gian).
 export async function generateMetadata({ params }: { params: Params }) {
   const c = campaignRepo.get((await params).id);
-  return { title: `${c?.name ?? "Chiến dịch"} – BAOR AI OS` };
+  if (!c) notFound();
+  return { title: `${c.name} – BAOR AI OS` };
 }
 
 const tabs = [
