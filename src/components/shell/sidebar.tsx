@@ -3,8 +3,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
-import { menu } from "@/config/menu";
+import { menu, menuGroupLabel, menuGroupOrder } from "@/config/menu";
 import { cn } from "@/lib/format";
+import type { Health } from "@/lib/shell-types";
+import type { ShellUser } from "./app-shell";
+import { BrandMark, type BrandLogos } from "./brand-mark";
 
 interface Props {
   collapsed: boolean;
@@ -12,15 +15,27 @@ interface Props {
   mobileOpen: boolean;
   onCloseMobile: () => void;
   badges: Record<string, number>;
-  email: string;
+  user: ShellUser;
+  health: Health;
+  logos: BrandLogos;
 }
 
-export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile, badges, email }: Props) {
+const permissionName = { admin: "Quản trị", manager: "Quản lý", staff: "Nhân viên" } as const;
+
+export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile, badges, user, health, logos }: Props) {
   const pathname = usePathname();
 
   const nav = (
     <nav aria-label="Phân hệ" className="flex flex-col gap-0.5">
-      {menu.map((m) => {
+      {menuGroupOrder.map((g, gi) => (
+        <div key={g} className={cn("flex flex-col gap-px", gi > 0 && (collapsed ? "mt-2 border-t border-border pt-2" : "mt-4"))}>
+          {!collapsed && (
+            <div className="mb-1 flex items-center gap-2 px-2.5">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-3">{menuGroupLabel[g]}</span>
+              <span className="h-px flex-1 bg-border" aria-hidden />
+            </div>
+          )}
+          {menu.filter((m) => m.group === g).map((m) => {
         const active = pathname === m.href || pathname.startsWith(m.href + "/");
         const Icon = m.icon;
         const badge = badges[m.href];
@@ -32,48 +47,55 @@ export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile
             aria-current={active ? "page" : undefined}
             aria-label={collapsed ? m.label : undefined}
             data-tip={collapsed ? m.label : undefined}
+            title={m.hotkey ? `${m.label} (Alt+${m.hotkey})` : undefined}
             className={cn(
-              "flex h-10 items-center gap-3 rounded-lg px-2.5 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-jade",
-              active ? "bg-jade-soft font-semibold text-jade-ink" : "text-ink-2 hover:bg-surface hover:text-ink",
+              "group relative flex h-9 items-center gap-2.5 rounded-md px-2.5 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-jade",
+              active ? "bg-jade-soft/70 font-semibold text-jade-ink" : "text-ink-2 hover:bg-surface hover:text-ink",
               collapsed && "justify-center px-0",
             )}
           >
-            <Icon size={18} className={cn("shrink-0", active ? "text-jade" : "text-ink-3")} aria-hidden />
+            {active && <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-jade" aria-hidden />}
+            <Icon size={17} strokeWidth={active ? 2.25 : 1.75} className={cn("shrink-0 transition-colors", active ? "text-jade" : "text-ink-3 group-hover:text-ink-2")} aria-hidden />
             {!collapsed && <span className="flex-1 truncate">{m.label}</span>}
-            {!collapsed && badge ? <span className="num rounded-full bg-amber-soft px-1.5 text-[11px] font-semibold text-amber">{badge}</span> : null}
-            {collapsed && badge ? <span className="absolute right-2 top-1.5 h-1.5 w-1.5 rounded-full bg-amber" aria-hidden /> : null}
+            {!collapsed && m.building && <span className="rounded-full border border-border-2 px-1.5 text-[10px] font-medium text-ink-3">đang xây</span>}
+            {!collapsed && badge ? <span className={cn("num inline-flex h-[18px] min-w-[20px] items-center justify-center rounded-full px-1.5 text-[11px] font-semibold", active ? "bg-jade/15 text-jade-ink" : "bg-amber-soft text-amber")}>{badge}</span> : null}
+            {collapsed && badge ? <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-amber" aria-hidden /> : null}
           </Link>
         );
-      })}
+          })}
+        </div>
+      ))}
     </nav>
   );
 
   const brand = (
-    <div className={cn("flex items-center gap-2.5", collapsed && "justify-center")}>
-      <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-jade text-[14px] font-bold text-white">B</div>
-      {!collapsed && (
-        <div className="min-w-0 leading-tight">
-          <div className="truncate text-[13px] font-bold text-ink">BAOR AI OS</div>
-          <div className="truncate text-[11px] text-ink-2">Marketing Automation</div>
-        </div>
-      )}
-    </div>
+    <Link href="/dashboard" className="min-w-0 flex-1" aria-label="BAOR AI OS, về Điều hành">
+      <BrandMark logos={logos} collapsed={collapsed} />
+    </Link>
   );
+
+  const dot = health.level === "error" ? "bg-brick" : health.level === "warn" ? "bg-amber" : "bg-jade";
+  const statusText = health.level === "ok" ? "Hệ thống ổn định" : health.level === "warn" ? `${health.issues.length} việc cần chú ý` : "Có lỗi cần xử lý";
 
   const footer = (
     <div className="mt-auto flex flex-col gap-2 border-t border-border pt-3">
-      <div className={cn("flex items-center gap-2 px-2 text-[11.5px] text-ink-2", collapsed && "justify-center px-0")} title="Hệ thống đang hoạt động">
-        <span className="live" aria-hidden />
-        {!collapsed && <span>Hệ thống đang hoạt động</span>}
-      </div>
-      <div className={cn("flex items-center gap-2.5 rounded-lg px-2 py-1.5", collapsed && "justify-center px-0")} data-tip={collapsed ? email : undefined}>
+      <Link href="/settings#syslog" className={cn("flex items-center gap-2 rounded-md px-2 py-1 text-[11.5px] text-ink-2 hover:bg-surface hover:text-ink", collapsed && "justify-center px-0")} title={health.summary} data-tip={collapsed ? statusText : undefined}>
+        <span className={cn("live inline-block h-[7px] w-[7px] shrink-0 rounded-full", dot)} aria-hidden />
+        {!collapsed && (
+          <span className="min-w-0">
+            <span className="block truncate">{statusText}</span>
+            <span className="block truncate text-[10.5px] text-ink-3">{health.connectedCount}/{health.realCount} kết nối · bộ chạy nền {health.schedulerRunning ? "chạy" : "dừng"}</span>
+          </span>
+        )}
+      </Link>
+      <div className={cn("flex items-center gap-2.5 rounded-lg px-2 py-1.5", collapsed && "justify-center px-0")} data-tip={collapsed ? user.name : undefined}>
         <div className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-amber-soft text-[12px] font-bold text-amber" aria-hidden>
-          {email.slice(0, 1).toUpperCase()}
+          {user.name.split(" ").slice(-1)[0]?.slice(0, 1).toUpperCase() || "?"}
         </div>
         {!collapsed && (
           <div className="min-w-0 leading-tight">
-            <div className="truncate text-[12.5px] font-semibold text-ink">Chủ fanpage</div>
-            <div className="truncate text-[11px] text-ink-2">{email}</div>
+            <div className="truncate text-[12.5px] font-semibold text-ink">{user.name}</div>
+            <div className="truncate text-[11px] text-ink-2">{user.role} · {permissionName[user.permission]}</div>
           </div>
         )}
       </div>
@@ -82,10 +104,9 @@ export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile
 
   return (
     <>
-      {/* Máy tính */}
       <aside
         className={cn(
-          "sticky top-0 hidden h-screen shrink-0 flex-col gap-4 border-r border-border bg-ground-2 px-3 py-4 transition-[width] duration-200 md:flex",
+          "sticky top-0 hidden h-screen shrink-0 flex-col gap-5 border-r border-border bg-ground-2 px-3 pb-4 pt-5 transition-[width] duration-200 md:flex",
           collapsed ? "w-[var(--sidebar-collapsed-w)]" : "w-[var(--sidebar-w)]",
         )}
       >
@@ -105,7 +126,6 @@ export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile
         {footer}
       </aside>
 
-      {/* Điện thoại: menu trượt */}
       {mobileOpen && <div className="fixed inset-0 z-[55] bg-black/40 md:hidden" onClick={onCloseMobile} aria-hidden />}
       <aside
         aria-hidden={!mobileOpen}

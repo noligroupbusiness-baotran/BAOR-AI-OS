@@ -30,7 +30,12 @@ export function countContent(statuses: string[]) {
 }
 
 export function listInsights() {
-  return getDb().select().from(schema.insights).orderBy(desc(schema.insights.confidence)).all();
+  return getDb()
+    .select()
+    .from(schema.insights)
+    .orderBy(desc(schema.insights.confidence))
+    .all()
+    .map((i) => ({ ...i, evidence: parse<string[]>(i.evidence, []) }));
 }
 
 export function listPersonas() {

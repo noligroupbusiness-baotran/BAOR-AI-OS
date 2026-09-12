@@ -26,7 +26,7 @@ export function ModuleGroups({ moduleKey, title = "Nhóm chức năng" }: { modu
   const active = groups.filter((g) => g.status === "active").length;
   return (
     <Panel>
-      <PanelHeader title={title} sub={`${active}/${groups.length} nhóm đã có màn hình làm việc. Phần còn lại sẽ triển khai ở giai đoạn sau.`} />
+      <PanelHeader title={title} sub={active === groups.length ? `Cả ${groups.length} nhóm đã có màn hình làm việc.` : `${active}/${groups.length} nhóm đã có màn hình làm việc. Phần còn lại sẽ triển khai ở giai đoạn sau.`} />
       {groups.length === 0 ? (
         <EmptyState title="Chưa xác định nhóm chức năng" />
       ) : (

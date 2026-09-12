@@ -36,6 +36,18 @@ export const integrations: Integration[] = [
     connected: false,
   },
   {
+    key: "youtube",
+    name: "YouTube",
+    description: "Đăng video dài, Shorts và đọc số liệu kênh.",
+    connected: false,
+  },
+  {
+    key: "website",
+    name: "Website & Google Analytics",
+    description: "Theo dõi lượt truy cập, form đăng ký và nguồn khách từ website.",
+    connected: false,
+  },
+  {
     key: "email_provider",
     name: "Nhà cung cấp email",
     description: "SMTP / Resend / SendGrid / Mailchimp để gửi email marketing.",

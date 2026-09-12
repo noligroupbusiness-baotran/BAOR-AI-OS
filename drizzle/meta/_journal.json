@@ -8,6 +8,76 @@
       "when": 1789036606519,
       "tag": "0000_reflective_star_brand",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1789053927953,
+      "tag": "0001_campaigns",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1789055734962,
+      "tag": "0002_catalog_videos",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1789058005253,
+      "tag": "0003_router_connectors",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1789059175376,
+      "tag": "0004_people_login",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1789060603388,
+      "tag": "0005_orders",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1789060825138,
+      "tag": "0006_automation",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1789061406596,
+      "tag": "0007_insight_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1789061645437,
+      "tag": "0008_uploads",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1789104737700,
+      "tag": "0009_content_asset",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1789122329158,
+      "tag": "0010_competitors",
+      "breakpoints": true
     }
   ]
 }

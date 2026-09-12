@@ -1,0 +1,101 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "baor-dev",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "next",
+        "dev",
+        "--port",
+        "3010"
+      ],
+      "port": 3010,
+      "autoPort": false
+    },
+    {
+      "name": "baor-campaigns",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "DATA_DIR=data-campaigns",
+        "npx",
+        "next",
+        "dev",
+        "--port",
+        "3011"
+      ],
+      "port": 3011,
+      "autoPort": false
+    },
+    {
+      "name": "baor-content",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "DATA_DIR=data-content",
+        "npx",
+        "next",
+        "dev",
+        "--port",
+        "3012"
+      ],
+      "port": 3012,
+      "autoPort": false
+    },
+    {
+      "name": "baor-ads",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "DATA_DIR=data-ads",
+        "npx",
+        "next",
+        "dev",
+        "--port",
+        "3013"
+      ],
+      "port": 3013,
+      "autoPort": false
+    },
+    {
+      "name": "baor-customers",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "DATA_DIR=data-customers",
+        "npx",
+        "next",
+        "dev",
+        "--port",
+        "3014"
+      ],
+      "port": 3014,
+      "autoPort": false
+    },
+    {
+      "name": "baor-infra",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "DATA_DIR=data-infra",
+        "npx",
+        "next",
+        "dev",
+        "--port",
+        "3015"
+      ],
+      "port": 3015,
+      "autoPort": false
+    },
+    {
+      "name": "baor-backup-test",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "BACKUP_INTERVAL_MINUTES=1",
+        "npx",
+        "next",
+        "start",
+        "--port",
+        "3020"
+      ],
+      "port": 3020,
+      "autoPort": false
+    }
+  ]
+}

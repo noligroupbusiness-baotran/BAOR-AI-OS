@@ -16,6 +16,9 @@ export const contentFormatLabel: Record<string, string> = {
   carousel: "Carousel",
   story: "Story",
   article: "Bài dài",
+  script: "Kịch bản video",
+  caption: "Caption",
+  image: "Hình ảnh",
 };
 
 export const postStatusLabel: Record<PostStatus, { label: string; tone: Tone }> = {

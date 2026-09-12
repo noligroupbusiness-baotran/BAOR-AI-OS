@@ -1,8 +1,7 @@
 import Link from "next/link";
-import { AlertOctagon, CalendarCheck, ChevronRight, Clapperboard, FileText, MessageSquare } from "lucide-react";
+import { AlertOctagon, CalendarCheck, ChevronRight, Clapperboard, FileText, Megaphone, MessageSquare, Wallet } from "lucide-react";
 import { Pill } from "@/components/ui/pill";
-import { kindLabel, priorityLabel, type ApprovalItem } from "@/lib/mock/dashboard";
-import type { PendingItem } from "@/lib/dashboard-data";
+import { kindLabel, priorityLabel, type ApprovalItem, type PendingItem } from "@/lib/dashboard-types";
 import { cn } from "@/lib/format";
 
 const kindIcon: Record<ApprovalItem["kind"], typeof FileText> = {
@@ -11,6 +10,8 @@ const kindIcon: Record<ApprovalItem["kind"], typeof FileText> = {
   schedule: CalendarCheck,
   customer: MessageSquare,
   workflow: AlertOctagon,
+  campaign: Megaphone,
+  ad: Wallet,
 };
 
 // Một dòng việc chờ xử lý: cả dòng bấm được, một nút duy nhất "Xem và xử lý".

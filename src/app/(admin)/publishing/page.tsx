@@ -10,13 +10,20 @@ import { getAdGuardrails, listAds, listPosts } from "@/lib/queries";
 import { adStatusLabel, postStatusLabel } from "@/lib/labels";
 import { formatNumber, formatTime, formatDate, cn } from "@/lib/format";
 import type { AdStatus, Platform, PostStatus } from "@/lib/types";
+import { CampaignTags, LinkToCampaignForm } from "@/components/campaigns/entity-campaign";
+import { campaignRepo } from "@/lib/campaigns/repository";
+import { Pager, paginate } from "@/components/ui/pager";
+import { MonthCalendar, monthOf } from "@/components/publishing/month-calendar";
+import { Segment } from "@/components/ui/segment";
 
 export const metadata = { title: "Đăng bài & quảng cáo – BAOR AI OS" };
 
 const input = "h-8 rounded-md border border-border-2 bg-surface px-2.5 text-[13px] text-ink outline-none focus-visible:outline-2 focus-visible:outline-jade";
 
-export default async function PublishingPage({ searchParams }: { searchParams: Promise<{ edit?: string }> }) {
-  const { edit } = await searchParams;
+export default async function PublishingPage({ searchParams }: { searchParams: Promise<{ edit?: string; link?: string; page?: string; view?: string; month?: string }> }) {
+  const { edit, link, page, view: viewParam, month: monthParam } = await searchParams;
+  const view = viewParam === "calendar" ? "calendar" : "list";
+  const month = monthOf(monthParam);
   const g = getAdGuardrails();
   const posts = listPosts();
   const ads = listAds().filter((a) => a.status !== "rejected");
@@ -25,6 +32,8 @@ export default async function PublishingPage({ searchParams }: { searchParams: P
   const failed = posts.filter((p) => p.status === "failed");
   const avgReach = published.length ? Math.round(published.reduce((n, p) => n + (p.reach ?? 0), 0) / published.length) : 0;
   const spentMonth = ads.reduce((n, a) => n + a.spent, 0);
+  const postLinks = campaignRepo.linksForEntities("publication", posts.map((p) => p.id));
+  const adLinks = campaignRepo.linksForEntities("ad", ads.map((a) => a.id));
 
   type RowT = { ids: string[]; title: string; at: string; platforms: string[]; status: string; reach: number; error?: string | null };
   const rows = Object.values(
@@ -37,6 +46,7 @@ export default async function PublishingPage({ searchParams }: { searchParams: P
       return acc;
     }, {}),
   ).sort((a, b) => b.at.localeCompare(a.at));
+  const rowPage = paginate(rows, page);
 
   return (
     <>
@@ -53,7 +63,17 @@ export default async function PublishingPage({ searchParams }: { searchParams: P
         <Tile label="Lỗi đăng" value={String(failed.length)} hint={failed[0]?.error?.split(".")[0] ?? "Không có"} tone={failed.length ? "brick" : undefined} />
       </Tiles>
 
-      <Panel>
+      <div className="mt-3.5"><Segment basePath="/publishing" active={view} items={[{ key: "list", label: "Danh sách" }, { key: "calendar", label: "Lịch tháng" }]} paramName="view" /></div>
+
+      {view === "calendar" && (
+        <MonthCalendar
+          month={month}
+          hrefFor={(m) => `/publishing?view=calendar&month=${m}`}
+          posts={posts.map((p) => ({ id: `${p.contentId}::${p.id}`, title: p.title, at: p.scheduledFor, platforms: [platformLabel(p.platform as Platform)], status: p.status as PostStatus }))}
+        />
+      )}
+
+      {view === "list" && <Panel>
         <PanelHeader title="Lịch đăng" sub="Mới nhất ở trên. Lên lịch bài mới ở mục Nội dung › Đã duyệt." />
         <Table>
           <thead>
@@ -61,12 +81,16 @@ export default async function PublishingPage({ searchParams }: { searchParams: P
           </thead>
           <tbody>
             {rows.length === 0 && <tr><Td className="text-center text-ink-2">Chưa có bài nào.</Td></tr>}
-            {rows.map((r) => {
+            {rowPage.items.map((r) => {
               const st = postStatusLabel[r.status as PostStatus];
               return (
                 <tr key={r.ids.join()}>
                   <Td className="num whitespace-nowrap">{formatTime(r.at)} · {formatDate(r.at).slice(0, 5)}</Td>
-                  <Td className="font-semibold text-ink">{r.title}{r.error && <div className="text-[12px] font-normal text-brick">{r.error}</div>}</Td>
+                  <Td className="font-semibold text-ink">
+                    {r.title}
+                    {r.error && <div className={cn("text-[12px] font-normal", r.status === "failed" ? "text-brick" : "text-amber")}>{r.error}</div>}
+                    <div className="mt-1 flex flex-wrap gap-1"><CampaignTags links={r.ids.flatMap((id) => postLinks.get(id) ?? []).filter((l, i, arr) => arr.findIndex((x) => x.campaignId === l.campaignId) === i)} /></div>
+                  </Td>
                   <Td>{r.platforms.join(" · ")}</Td>
                   <Td right>
                     {r.status === "failed" ? (
@@ -80,7 +104,8 @@ export default async function PublishingPage({ searchParams }: { searchParams: P
             })}
           </tbody>
         </Table>
-      </Panel>
+        <Pager page={rowPage.page} pages={rowPage.pages} total={rowPage.total} hrefFor={(p) => `/publishing?page=${p}`} label="bài" />
+      </Panel>}
 
       <Panel>
         <PanelHeader
@@ -101,6 +126,10 @@ export default async function PublishingPage({ searchParams }: { searchParams: P
                   <Td>
                     <div className="font-semibold text-ink">{a.name}</div>
                     {a.aiNote && <div className="text-[12px] text-ink-2">{a.aiNote}</div>}
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                      <CampaignTags links={adLinks.get(a.id)} />
+                      <LinkToCampaignForm entityType="ad" entityId={a.id} status={a.status} back="/publishing" links={adLinks.get(a.id)} compact open={link === a.id} />
+                    </div>
                   </Td>
                   <Td right className="num whitespace-nowrap">
                     {editing ? (

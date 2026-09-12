@@ -3,8 +3,7 @@
 import { useState } from "react";
 import { Drawer } from "@/components/ui/dialog";
 import { StatusPill } from "@/components/ui/status";
-import { agentStatusLabel } from "@/lib/mock/dashboard";
-import type { SystemStatus } from "@/lib/dashboard-data";
+import { agentStatusLabel, type SystemStatus } from "@/lib/dashboard-types";
 import { cn, formatDateTime } from "@/lib/format";
 
 // Thanh tóm tắt tình trạng hệ thống (một dòng) + bảng trượt chi tiết Agent khi bấm "Xem chi tiết".
@@ -52,7 +51,7 @@ export function SystemStatusBar({ status }: { status: SystemStatus }) {
             ))}
           </ul>
         )}
-        <p className="px-4 py-4 text-[12px] text-ink-3">Agent chỉ chuẩn bị và đề xuất. Mọi việc xuất bản đều chờ anh phê duyệt.</p>
+        <p className="px-4 py-4 text-[12px] text-ink-3">Trạng thái Agent suy ra từ dữ liệu thật của từng phân hệ. Agent chỉ chuẩn bị và đề xuất; xuất bản và chi tiền đều chờ người phê duyệt.</p>
       </Drawer>
     </>
   );

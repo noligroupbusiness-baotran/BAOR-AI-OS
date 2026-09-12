@@ -1,18 +1,42 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { clearSessionCookie, createSessionToken, setSessionCookie } from "@/lib/auth";
-import { verifyAdmin } from "@/lib/admin";
+import { verifyLogin } from "@/lib/admin";
+import { clientIp, loginGuard } from "@/lib/login-guard";
+import { logActivity } from "@/lib/activity";
 
 export interface LoginState {
   error?: string;
 }
 
 export async function loginAction(_prev: LoginState, formData: FormData): Promise<LoginState> {
-  const email = String(formData.get("email") ?? "");
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");
-  if (!verifyAdmin(email, password)) return { error: "Email hoặc mật khẩu không đúng." };
-  await setSessionCookie(await createSessionToken(email.trim().toLowerCase()));
+  const h = await headers();
+  const ip = clientIp((n) => h.get(n));
+  const guard = loginGuard();
+  const keys = [`email:${email}`, `ip:${ip}`];
+
+  const locked = guard.lockedSeconds(keys);
+  if (locked > 0) {
+    return { error: `Đăng nhập sai quá nhiều lần. Thử lại sau ${Math.ceil(locked / 60)} phút.` };
+  }
+  if (!verifyLogin(email, password)) {
+    const r = guard.fail(keys);
+    // Chỉ ghi nhật ký khi bị khóa (mỗi lần sai đều ghi sẽ làm ngập Trung tâm thông báo); lần sai lẻ chỉ in ra log máy chủ.
+    if (r.locked) logActivity("system", `Khóa đăng nhập 15 phút cho ${email || "(trống)"} từ IP ${ip} sau 5 lần sai mật khẩu.`, "security");
+    else console.warn(`[BAOR] Đăng nhập sai cho ${email || "(trống)"} từ IP ${ip} (còn ${r.remaining} lần).`);
+    guard.prune();
+    return {
+      error: r.locked
+        ? "Đăng nhập sai quá nhiều lần. Tài khoản tạm khóa 15 phút."
+        : `Email hoặc mật khẩu không đúng, hoặc tài khoản chưa được cấp quyền đăng nhập.${r.remaining <= 2 ? ` Còn ${r.remaining} lần thử.` : ""}`,
+    };
+  }
+  guard.succeed(keys);
+  await setSessionCookie(await createSessionToken(email));
   redirect("/dashboard");
 }
 

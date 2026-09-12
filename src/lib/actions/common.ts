@@ -1,10 +1,6 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { getDb, schema } from "@/db";
-
-export function logActivity(actor: "ai" | "human" | "system", message: string, step = "") {
-  getDb().insert(schema.activity).values({ at: new Date().toISOString(), actor, message, step }).run();
-}
+export { logActivity } from "@/lib/activity";
 
 // Sau mỗi hành động: làm mới trang và hiện thông báo ngắn.
 export function done(path: string, toast: string): never {
