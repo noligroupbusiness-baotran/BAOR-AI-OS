@@ -149,6 +149,10 @@ Chiến dịch → Mục tiêu kênh → Insight → Nội dung → Video → Ph
   Chữ trên màn hình, bảng kiểm tra cảnh còn thiếu, kịch bản đã duyệt có nút "Tạo video" sang Video Studio. Caption: đếm ký tự,
   hashtag, câu đầu 125 ký tự, CTA, giới hạn từng nền tảng (theo luật, không AI). Hình ảnh: brief điền sẵn màu / font / khẩu hiệu
   từ Thương hiệu, kích thước từng nền tảng, đính kèm ảnh (`content_items.asset_upload_id`, migration 0009). AI viết nháp theo đúng loại.
+- **Dựng video tự động theo luật** (`scripts/video/`, `src/lib/video/auto-edit.ts`, Cài đặt › Dựng video): thả clip quay thô vào
+  `DATA_DIR/video-inbox`, bộ chạy nền chuyển lời nói thành chữ tại máy chủ (Whisper), cắt khoảng lặng, phụ đề nhấn từ khóa
+  (Barlow Condensed, vàng chuyển sắc, chữ nảy), phóng khung, logo, nhạc hạ âm, âm pop; video vào Video Studio › Chờ kiểm tra.
+  Không gọi AI. Máy chủ cần ffmpeg, ImageMagick, Python 3 + openai-whisper.
 - **Phân Data** (`src/lib/customers/segments.ts`, Khách hàng › Phân data): chia khách theo luật, không AI: lead mới, đang chăm sóc
   (tin cuối ≤ 7 ngày), im lặng 7–30 ngày, nguội > 30 ngày, đã mua, mua từ 2 lần, đã mua chưa có đơn, mất; thêm nhóm động theo kênh
   và theo thẻ. Mỗi nhóm: xem danh sách, tải CSV (`/api/export/leads?segment=`, cần Quản lý), gắn thẻ cả nhóm, chuyển giai đoạn cả nhóm.

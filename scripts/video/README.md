@@ -21,14 +21,19 @@ Kết quả in ra JSON: thời lượng vào / ra, số đoạn đã cắt, số
 | Luật | Giá trị |
 |---|---|
 | Cắt lặng dài hơn | 0,6 giây, ngưỡng -35 dB (clip có nhạc sẵn: `--silence-db -25`) |
-| Khung phụ đề | tối đa 6 từ hoặc 2,4 giây, ngắt ở dấu câu |
-| Từ khóa | số, năm, phần trăm, và danh sách `--keywords` |
-| Cỡ chữ | thường 58, từ khóa 100 (Arial Black, viết hoa, màu nhấn) |
-| Vị trí | canh giữa, đáy chữ cách mép dưới 430 px (vùng an toàn 9:16) |
+| Khung phụ đề | tối đa 5 từ hoặc 2,2 giây, ngắt ở dấu câu và chỗ ngừng > 0,35 giây, không cắt giữa cụm từ khóa, mỗi khung một điểm nhấn |
+| Từ khóa | số, năm, phần trăm, và danh sách `--keywords` (nhận cả cụm nhiều từ); phóng khung 5% trong 0,35 giây; âm pop tổng hợp, tối đa 1 lần / 3 giây |
+| Cỡ chữ | dòng phụ 48 nghiêng, từ khóa 200 Barlow Condensed ExtraBold viết hoa, vàng chuyển sắc, viền tối; chữ nảy 0,1 giây khi hiện |
+| Vị trí | khối chữ canh giữa ngang, tâm ở 60% chiều cao (chỉnh `--caption-y`) |
 | Logo | góc phải trên, rộng 220 px |
 | Nhạc | hạ âm khi có tiếng nói (sidechain), chuẩn hóa -16 LUFS |
 | Xuất | 1080×1920, 30 fps, H.264 CRF 20, AAC 160k |
 
-## Bước tiếp theo trong hệ thống
-Nối vào Video Studio: tải clip thô → chuyển chữ (job nền) → người sửa chữ và chọn từ khóa → bấm "Dựng" → video vào
-"Chờ kiểm tra". Cảnh phụ (B-roll) theo thẻ và xuất thêm 1:1 / 16:9 làm ở vòng sau.
+## Dựng tự động trong hệ thống (đã nối)
+Thả clip vào `DATA_DIR/video-inbox/` (đường dẫn hiện ở Cài đặt › Dựng video). Mỗi phút bộ chạy nền lấy một tệp, chạy hai
+bước trên (`src/lib/video/auto-edit.ts`), đưa video vào Kho tải lên và Video Studio › Chờ kiểm tra, ghi vào Nhật ký hệ thống.
+Tệp `.txt` cùng tên là gợi ý nhận dạng (kịch bản, từ chuyên ngành). Tệp xong → `da-xu-ly/`, lỗi → `loi/`.
+Cấu hình: từ khóa nhấn, màu nhấn, vị trí chữ, bộ nhận dạng, nhạc nền, bật/tắt (Cài đặt › Dựng video). Máy chủ cần
+ffmpeg, ImageMagick, Python 3 + openai-whisper; đặt `PYTHON_BIN` nếu python3 không ở PATH.
+
+Vòng sau: cảnh phụ (B-roll) theo thẻ, thẻ mở đầu / kết, xuất thêm 1:1 và 16:9, sửa chữ trước khi dựng.

@@ -4,6 +4,7 @@ import { publishDuePosts, syncChannelMetrics } from "@/lib/connectors/sync";
 import { runScheduledRules } from "@/lib/automation/engine";
 import { sendAlert } from "@/lib/alerts";
 import { pruneOldData } from "@/lib/retention";
+import { runAutoEditOnce } from "@/lib/video/auto-edit";
 
 const g = globalThis as unknown as { __baorScheduler?: { timer: NodeJS.Timeout; lastHourly: number; lastDaily: number } };
 
@@ -28,6 +29,9 @@ async function tick() {
   try {
     const p = await publishDuePosts();
     if (p.published || p.failed) parts.push(`đăng ${p.published}, lỗi ${p.failed}`);
+    // Dựng video tự động từ hộp thư vào (tối đa 1 tệp mỗi phút; chạy đồng bộ nên ghi rõ vào kết quả)
+    const v = runAutoEditOnce();
+    if (v.processed) parts.push(`dựng video ${v.ok ? "xong" : "lỗi"}`);
     if (!g.__baorScheduler || now - g.__baorScheduler.lastHourly >= 60 * 60 * 1000) {
       if (g.__baorScheduler) g.__baorScheduler.lastHourly = now;
       state.lastHourlyAt = state.lastTickAt;

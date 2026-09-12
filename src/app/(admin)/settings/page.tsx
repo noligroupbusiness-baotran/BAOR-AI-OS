@@ -12,6 +12,7 @@ import { PeoplePanel, ProductsPanel } from "@/components/settings/catalog-panels
 import { AiBudgetPanel, IntegrationsPanel, SystemLogPanel } from "@/components/settings/integration-panels";
 import { FaqPanel } from "@/components/settings/faq-panel";
 import { AlertsPanel, AppLogoPanel, BrandPanel, MusicPanel } from "@/components/settings/brand-panels";
+import { AutoEditPanel } from "@/components/settings/auto-edit-panel";
 
 export const metadata = { title: "Cài đặt – BAOR AI OS" };
 
@@ -25,6 +26,7 @@ const sections = [
   { id: "app-logo", label: "Logo" },
   { id: "account", label: "Tài khoản" },
   { id: "music", label: "Kho nhạc" },
+  { id: "auto-edit", label: "Dựng video" },
   { id: "ai", label: "Chi phí AI" },
   { id: "alerts", label: "Cảnh báo" },
   { id: "syslog", label: "Nhật ký" },
@@ -108,6 +110,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       </div>
 
       <MusicPanel />
+      <AutoEditPanel />
       <AiBudgetPanel />
       <AlertsPanel />
       <SystemLogPanel />

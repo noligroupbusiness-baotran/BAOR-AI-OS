@@ -135,3 +135,28 @@ export async function deleteUploadAction(fd: FormData) {
   deleteUpload(id);
   done("/settings", "Đã xóa tệp");
 }
+
+// ---------- Dựng video tự động (Agent Edit Video theo luật) ----------
+
+export async function saveAutoEdit(fd: FormData) {
+  await requirePermission("manager", "/settings#auto-edit");
+  setSetting("video.autoEdit", fd.get("enabled") ? "1" : "0");
+  setSetting("video.keywords", str(fd, "keywords").split(/[\n,]/).map((k) => k.trim()).filter(Boolean).join(","));
+  const accent = str(fd, "accent");
+  setSetting("video.accent", /^#[0-9a-fA-F]{6}$/.test(accent) ? accent : "");
+  const y = Number(str(fd, "captionY"));
+  setSetting("video.captionY", Number.isFinite(y) && y >= 0.3 && y <= 0.9 ? String(y) : "0.6");
+  setSetting("video.whisperModel", ["small", "medium", "large"].includes(str(fd, "model")) ? str(fd, "model") : "medium");
+  setSetting("video.musicUploadId", str(fd, "musicUploadId"));
+  logActivity("human", "Cập nhật cấu hình dựng video tự động.", "settings");
+  done("/settings#auto-edit", "Đã lưu cấu hình dựng video tự động");
+}
+
+export async function runAutoEditNow() {
+  await requirePermission("manager", "/settings#auto-edit");
+  const { pendingInbox, processInboxFile } = await import("@/lib/video/auto-edit");
+  const files = pendingInbox();
+  if (!files.length) return fail("/settings#auto-edit", "Hộp thư vào trống. Thả tệp .mov / .mp4 vào thư mục rồi bấm lại.");
+  const r = processInboxFile(files[0]);
+  done(`/settings${r.ok ? "" : "?tone=error"}#auto-edit`, r.ok ? `Dựng xong trong ${r.seconds} giây, video đang ở Video Studio › Chờ kiểm tra.` : `Lỗi: ${r.error.slice(0, 200)}`);
+}

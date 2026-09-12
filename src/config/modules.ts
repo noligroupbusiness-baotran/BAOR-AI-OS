@@ -35,6 +35,7 @@ export const moduleGroups: Record<string, ModuleGroup[]> = {
   "video-studio": [
     { name: "Video gốc", status: "active", href: "/video-studio?upload=1" },
     { name: "Video đang được Agent dựng", status: "active", href: "/video-studio?tab=editing" },
+    { name: "Dựng tự động từ hộp thư vào", status: "active", href: "/settings#auto-edit" },
     { name: "Video chờ kiểm tra", status: "active", href: "/video-studio?tab=review" },
     { name: "Video cần chỉnh sửa", status: "active", href: "/video-studio?tab=needs_changes" },
     { name: "Video chờ phê duyệt", status: "active", href: "/video-studio?tab=pending_approval" },
