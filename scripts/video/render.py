@@ -17,8 +17,8 @@ import argparse, json, re, subprocess, sys, tempfile, os, unicodedata
 CUT_SILENCE = 0.6      # giây: lặng dài hơn mức này thì cắt
 SILENCE_DB = -35       # ngưỡng coi là lặng
 KEEP_PAD = 0.12        # giữ lại một chút trước/sau tiếng nói để không cụt
-MAX_WORDS = 4
-MAX_SEC = 1.8
+MAX_WORDS = 5
+MAX_SEC = 2.2
 W, H = 1080, 1920
 FONT = "Helvetica Neue"
 
@@ -66,13 +66,29 @@ def remap(t, segs):
     return acc
 
 # ---------- 2. Gom từ thành khung ----------
-def chunks(words):
+PAUSE_BREAK = 0.35  # giây: ngừng giữa hai từ dài hơn mức này thì sang khung mới
+
+STOP = set(("và của cho là thì mà với để có một những các này đó khi từ trong ra vào lên xuống được bị đã sẽ đang rất cũng còn nhưng "
+            "hay hoặc tôi mình bạn anh chị em nó họ ở về theo như nếu vì việc khoảng quanh xung đấy đây kia nào đâu sao gì thế vậy "
+            "chẳng hạn ví dụ chính bằng cái con người lại nữa rồi xong luôn thôi mới chỉ đều cả mọi từng tầm đến tới qua sau trước "
+            "trên dưới giữa ngoài chúng ta hơn kém nhiều ít lắm quá thật thực đúng sai đúng thứ cách phải nên cần muốn thích biết").split())
+STOP = set(map(lambda x: x, STOP))
+
+def chunks(words, is_key=lambda t: False):
     out, cur = [], []
-    for w in words:
+    for i, w in enumerate(words):
+        nxt = words[i + 1] if i + 1 < len(words) else None
+        if cur and w["start"] - cur[-1]["end"] > PAUSE_BREAK:
+            out.append(cur); cur = []
+        # sang khung mới ngay trước từ khóa nếu khung hiện tại đã có ≥ 2 từ và chưa có từ khóa
+        if cur and len(cur) >= 2 and is_key(w) and not any(is_key(x) for x in cur):
+            out.append(cur); cur = []
         cur.append(w)
         span = cur[-1]["end"] - cur[0]["start"]
         endp = re.search(r"[.,!?…]$", w["word"].strip())
-        if len(cur) >= MAX_WORDS or span >= MAX_SEC or endp:
+        # không cắt giữa một cụm từ khóa ("chi" | "phí")
+        inside_phrase = is_key(w) and nxt is not None and is_key(nxt) and nxt["start"] - w["end"] <= PAUSE_BREAK
+        if (len(cur) >= MAX_WORDS or span >= MAX_SEC or endp) and not inside_phrase:
             out.append(cur); cur = []
     if cur:
         out.append(cur)
@@ -86,15 +102,33 @@ FONTS = os.path.join(HERE, "..", "..", "public", "fonts")
 FONT_SMALL = os.path.join(FONTS, "BeVietnamPro-MediumItalic.ttf")
 FONT_PLAIN = os.path.join(FONTS, "BeVietnamPro-SemiBold.ttf")
 FONT_BIG = os.path.join(FONTS, "Anton-Regular.ttf")
-SIZE_SMALL, SIZE_PLAIN, SIZE_BIG = 46, 58, 150
+SIZE_SMALL, SIZE_PLAIN, SIZE_BIG = 48, 60, 190
 MAX_LINE_W = 920
 BLOCK_CENTER_Y = 0.60   # tâm khối chữ theo tỷ lệ chiều cao
 ROW_GAP = 6
 
+def clean(word):
+    return nfd(re.sub(r"[^\w%-]", "", word))
+
+def mark_keywords(words, keywords):
+    """Đánh dấu w["key"] cho từ khóa, kể cả cụm nhiều từ ("chi phí", "kế hoạch") và số / năm / phần trăm."""
+    phrases = [tuple(nfd(k).split()) for k in keywords if k.strip()]
+    toks = [clean(w["word"]) for w in words]
+    for w, t in zip(words, toks):
+        w["key"] = bool(t) and bool(re.fullmatch(r"\d[\d.,-]*%?", t))
+    for ph in phrases:
+        n = len(ph)
+        for i in range(len(toks) - n + 1):
+            if all(toks[i + j] == ph[j] or (len(ph[j]) > 3 and ph[j] in toks[i + j]) for j in range(n)):
+                for j in range(n): words[i + j]["key"] = True
+    return words
+
 def is_key_factory(keywords):
+    """Giữ giao diện cũ: kiểm tra theo w["key"] nếu có, không thì theo từ đơn."""
     kw = [nfd(k) for k in keywords if k.strip()]
     def is_key(word):
-        w = nfd(re.sub(r"[^\w%-]", "", word))
+        if isinstance(word, dict): return bool(word.get("key"))
+        w = clean(word)
         if not w: return False
         if re.fullmatch(r"\d[\d.,-]*%?", w): return True
         return any(k == w or (len(k) > 3 and k in w) for k in kw)
@@ -110,10 +144,13 @@ def text_png(text, kind, accent, path):
     def build(size_args):
         if kind == "big":
             # mặt chữ trắng làm khuôn → tô gradient vàng sáng → vàng đậm; viền nâu tối; bóng mềm
-            run(["magick", "-background", "none", *_label(font, size_args, "white", text, []), "-trim", "+repage",
-                 "(", "+clone", "-alpha", "extract", ")", "-delete", "0",
-                 "(", "+clone", "-fill", "none", "-background", "none", "-sparse-color", "barycentric", f"0,0 #FFE68A 0,%[fx:h] #{accent}", ")",
-                 "+swap", "-compose", "CopyOpacity", "-composite", "+repage", path])
+            mask = path + ".mask.png"
+            run(["magick", "-background", "none", *_label(font, size_args, "white", text, []), "-trim", "+repage", "-alpha", "extract", mask])
+            mw, mh = subprocess.run(["magick", "identify", "-format", "%w %h", mask], capture_output=True, text=True).stdout.split()
+            h1 = max(1, int(int(mh) * 0.55)); h2 = max(1, int(mh) - h1)
+            # gradient 3 nấc: trắng kem → màu nhấn → vàng đậm, cắt theo khuôn chữ
+            run(["magick", "(", "-size", f"{mw}x{h1}", f"gradient:#FFF7C2-#{accent}", ")", "(", "-size", f"{mw}x{h2}", f"gradient:#{accent}-#E0A616", ")",
+                 "-append", mask, "-compose", "CopyOpacity", "-composite", "+repage", path])
             # viền tối + bóng: vẽ lại chữ với stroke rồi đặt gradient lên trên
             run(["magick", "-background", "none", *_label(font, size_args, "#3a2a05", text, ["-stroke", "#3a2a05", "-strokewidth", "9"]), "-trim", "+repage",
                  "(", "+clone", "-background", "black", "-shadow", "70x10+0+10", ")", "+swap", "-background", "none", "-layers", "merge", "+repage",
@@ -133,7 +170,13 @@ def text_png(text, kind, accent, path):
 def caption_rows(chunk, is_key, accent, tmp, idx):
     """Trả về các dòng [(png, w, h, start)] của một khung; start = lúc từ đầu dòng được nói."""
     items = [(w["word"].strip(), w["start"]) for w in chunk if w["word"].strip()]
-    flags = [is_key(t) for t, _ in items]
+    flags = [is_key(w) for w in chunk if w["word"].strip()]
+    if not any(flags) and len(items) >= 2:
+        # không có từ khóa: nhấn từ dài nhất không phải từ nối, để khung nào cũng có điểm nhìn như mẫu
+        stop_nfd = {nfd(x) for x in STOP}
+        cands = [(len(nfd(t)), i) for i, (t, _) in enumerate(items) if len(nfd(re.sub(r"[^\w]", "", t))) >= 5 and nfd(re.sub(r"[^\w]", "", t)) not in stop_nfd]
+        if cands:
+            flags[max(cands)[1]] = True
     rows = []
     if any(flags):
         i0 = flags.index(True); i1 = i0
@@ -157,6 +200,9 @@ def main():
     ap.add_argument("--input", required=True); ap.add_argument("--transcript", required=True); ap.add_argument("--out", required=True)
     ap.add_argument("--music"); ap.add_argument("--logo"); ap.add_argument("--keywords", default=""); ap.add_argument("--accent", default="F2C94C")
     ap.add_argument("--no-cut", action="store_true", help="không cắt khoảng lặng")
+    ap.add_argument("--caption-y", type=float, default=BLOCK_CENTER_Y, help="tâm khối chữ theo tỷ lệ chiều cao (0.6 = giữa dưới mặt)")
+    ap.add_argument("--no-punch", action="store_true", help="không phóng khung khi có từ khóa")
+    ap.add_argument("--grade", default="warm", help="bộ màu: warm | none")
     ap.add_argument("--silence-db", type=float, default=SILENCE_DB, help="ngưỡng lặng (dB), clip có nhạc nền sẵn cần -25")
     a = ap.parse_args()
 
@@ -166,16 +212,19 @@ def main():
     segs = [(0.0, total)] if a.no_cut else keep_segments(total, silences(a.input, a.silence_db))
     cut_total = sum(b - x for x, b in segs)
     words2 = [{"word": w["word"], "start": remap(w["start"], segs), "end": remap(w["end"], segs)} for w in words]
-    ch = chunks(words2)
+    is_key = is_key_factory(a.keywords.split(","))
+    mark_keywords(words2, a.keywords.split(","))
+    ch = chunks(words2, is_key)
 
     tmp = tempfile.mkdtemp()
-    is_key = is_key_factory(a.keywords.split(","))
     overlays = []  # (png, x, y, start, end)
     for i, c in enumerate(ch):
         rows = caption_rows(c, is_key, a.accent, tmp, i)
         total_h = sum(h for _, _, h, _ in rows) + ROW_GAP * (len(rows) - 1)
-        y = int(H * BLOCK_CENTER_Y - total_h / 2)
+        y = int(H * a.caption_y - total_h / 2)
         end_t = c[-1]["end"] + 0.10
+        if i + 1 < len(ch):
+            end_t = min(end_t, ch[i + 1][0]["start"] - 0.02)
         for png, w, h, st in rows:
             overlays.append((png, (W - w) // 2, y, st, end_t))
             y += h + ROW_GAP
@@ -186,7 +235,13 @@ def main():
 
     sel = "+".join(f"between(t,{x:.3f},{b:.3f})" for x, b in segs)
     inputs = ["-i", a.input, "-i", vig]
-    fc = (f"[0:v]fps=30,select='{sel}',setpts=N/30/TB,scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H}[base];"
+    # Phóng khung 5% trong 0,35 giây mỗi khi một từ khóa bắt đầu (crop theo t rồi scale lại), rồi bộ màu ấm nhẹ.
+    key_times = [w["start"] for c in ch for w in c if is_key(w)]
+    punch = "+".join(f"between(t,{t0:.3f},{t0 + 0.35:.3f})" for t0 in key_times[:400]) or "0"
+    zoom = f"(1+0.05*min(1,{punch}))" if not a.no_punch else "1"
+    grade = ",eq=contrast=1.06:saturation=1.08,colorbalance=rs=.03:gs=.0:bs=-.04:rm=.02:bm=-.02" if a.grade == "warm" else ""
+    fc = (f"[0:v]fps=30,select='{sel}',setpts=N/30/TB,scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
+          f"crop=w='iw/{zoom}':h='ih/{zoom}':x='(iw-ow)/2':y='(ih-oh)/2',scale={W}:{H}{grade}[base];"
           f"[base][1:v]overlay=0:0:format=auto[v0];[0:a]aselect='{sel}',asetpts=N/SR/TB[voice]")
     cur = "[v0]"
     for i, (png, x, y, s0, e0) in enumerate(overlays):
