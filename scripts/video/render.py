@@ -78,62 +78,77 @@ def chunks(words):
         out.append(cur)
     return out
 
-# ---------- 3. Phụ đề: vẽ từng khung thành PNG trong suốt (ImageMagick) ----------
-# Bố cục "nhấn xếp tầng" như video mẫu: dòng phụ nhỏ phía trên, TỪ KHÓA rất to ở giữa, dòng phụ nhỏ phía dưới.
+# ---------- 3. Phụ đề: mỗi dòng một PNG, hiện lần lượt theo lời nói ----------
+# Bố cục như video mẫu: dòng phụ nhỏ chữ nghiêng, TỪ KHÓA font hẹp cao (Anton) tô vàng chuyển sắc có viền tối,
+# dòng phụ tiếp theo bên dưới. Khối chữ đặt ở khoảng 60% chiều cao (dưới mặt), không sát đáy.
 HERE = os.path.dirname(os.path.abspath(__file__))
 FONTS = os.path.join(HERE, "..", "..", "public", "fonts")
-FONT_SMALL = os.path.join(FONTS, "BeVietnamPro-Medium.ttf")
-FONT_BIG = os.path.join(FONTS, "BeVietnamPro-Black.ttf")
-SIZE_SMALL, SIZE_PLAIN, SIZE_BIG = 50, 62, 132
-MAX_LINE_W = 940
+FONT_SMALL = os.path.join(FONTS, "BeVietnamPro-MediumItalic.ttf")
+FONT_PLAIN = os.path.join(FONTS, "BeVietnamPro-SemiBold.ttf")
+FONT_BIG = os.path.join(FONTS, "Anton-Regular.ttf")
+SIZE_SMALL, SIZE_PLAIN, SIZE_BIG = 46, 58, 150
+MAX_LINE_W = 920
+BLOCK_CENTER_Y = 0.60   # tâm khối chữ theo tỷ lệ chiều cao
+ROW_GAP = 6
 
 def is_key_factory(keywords):
     kw = [nfd(k) for k in keywords if k.strip()]
     def is_key(word):
-        w = nfd(re.sub(r"[^\w%]", "", word))
+        w = nfd(re.sub(r"[^\w%-]", "", word))
         if not w: return False
-        if re.fullmatch(r"\d[\d.,]*%?", w): return True
+        if re.fullmatch(r"\d[\d.,-]*%?", w): return True
         return any(k == w or (len(k) > 3 and k in w) for k in kw)
     return is_key
 
-def text_png(text, font, size, color, path, max_w=MAX_LINE_W, stroke=4):
-    """Một dòng chữ → PNG có viền đen mảnh và bóng mềm. Quá rộng thì tự thu để vừa max_w."""
-    base = ["magick", "-background", "none", "-font", font, "-fill", color]
-    def render(sz_args):
-        run(base + sz_args + ["-stroke", "black", "-strokewidth", str(stroke), f"label:{text}",
-             "-stroke", "none", "-fill", color] + sz_args + [f"label:{text}", "-gravity", "center", "-compose", "over", "-composite",
-             "(", "+clone", "-background", "black", "-shadow", "55x8+0+8", ")", "+swap", "-background", "none", "-layers", "merge", "+repage", "-trim", "+repage", path])
-        return int(subprocess.run(["magick", "identify", "-format", "%w", path], capture_output=True, text=True).stdout)
-    w = render(["-pointsize", str(size)])
-    if w > max_w:
-        render(["-size", f"{max_w}x{int(size * 1.4)}"])
+def _label(font, size_args, fill, text, extra):
+    return ["-font", font, *size_args, "-fill", fill, *extra, f"label:{text}"]
 
-def caption_png(chunk, is_key, accent, tmp, idx):
-    words = [w["word"].strip() for w in chunk if w["word"].strip()]
-    flags = [is_key(t) for t in words]
-    rows = []  # (text, font, size, color)
+def text_png(text, kind, accent, path):
+    """kind: small (nghiêng, trắng) | plain (đậm, trắng) | big (Anton, vàng chuyển sắc, viền tối, bóng)."""
+    font, size = {"small": (FONT_SMALL, SIZE_SMALL), "plain": (FONT_PLAIN, SIZE_PLAIN), "big": (FONT_BIG, SIZE_BIG)}[kind]
+    size_args = ["-pointsize", str(size)]
+    def build(size_args):
+        if kind == "big":
+            # mặt chữ trắng làm khuôn → tô gradient vàng sáng → vàng đậm; viền nâu tối; bóng mềm
+            run(["magick", "-background", "none", *_label(font, size_args, "white", text, []), "-trim", "+repage",
+                 "(", "+clone", "-alpha", "extract", ")", "-delete", "0",
+                 "(", "+clone", "-fill", "none", "-background", "none", "-sparse-color", "barycentric", f"0,0 #FFE68A 0,%[fx:h] #{accent}", ")",
+                 "+swap", "-compose", "CopyOpacity", "-composite", "+repage", path])
+            # viền tối + bóng: vẽ lại chữ với stroke rồi đặt gradient lên trên
+            run(["magick", "-background", "none", *_label(font, size_args, "#3a2a05", text, ["-stroke", "#3a2a05", "-strokewidth", "9"]), "-trim", "+repage",
+                 "(", "+clone", "-background", "black", "-shadow", "70x10+0+10", ")", "+swap", "-background", "none", "-layers", "merge", "+repage",
+                 path, "-gravity", "center", "-compose", "over", "-composite", "+repage", path])
+        else:
+            fill = "white"
+            run(["magick", "-background", "none", *_label(font, size_args, fill, text, ["-stroke", "black", "-strokewidth", "3"]),
+                 *_label(font, size_args, fill, text, []), "-gravity", "center", "-compose", "over", "-composite",
+                 "(", "+clone", "-background", "black", "-shadow", "60x6+0+6", ")", "+swap", "-background", "none", "-layers", "merge", "+repage", "-trim", "+repage", path])
+        return int(subprocess.run(["magick", "identify", "-format", "%w", path], capture_output=True, text=True).stdout)
+    w = build(size_args)
+    if w > MAX_LINE_W:
+        build(["-size", f"{MAX_LINE_W}x{int(size * 1.3)}"])
+    h = int(subprocess.run(["magick", "identify", "-format", "%h", path], capture_output=True, text=True).stdout)
+    return w, h
+
+def caption_rows(chunk, is_key, accent, tmp, idx):
+    """Trả về các dòng [(png, w, h, start)] của một khung; start = lúc từ đầu dòng được nói."""
+    items = [(w["word"].strip(), w["start"]) for w in chunk if w["word"].strip()]
+    flags = [is_key(t) for t, _ in items]
+    rows = []
     if any(flags):
-        # Cụm từ khóa = dãy từ khóa liền nhau đầu tiên; trước và sau là dòng phụ nhỏ.
         i0 = flags.index(True); i1 = i0
         while i1 + 1 < len(flags) and flags[i1 + 1]: i1 += 1
-        before = " ".join(words[:i0]); key = " ".join(words[i0:i1 + 1]); after = " ".join(words[i1 + 1:])
-        if before: rows.append((before, FONT_SMALL, SIZE_SMALL, "white"))
-        rows.append((re.sub(r"[.,!?…]+$", "", key).upper(), FONT_BIG, SIZE_BIG, f"#{accent}"))
-        if after: rows.append((after, FONT_SMALL, SIZE_SMALL, "white"))
+        groups = [(items[:i0], "small"), (items[i0:i1 + 1], "big"), (items[i1 + 1:], "small")]
     else:
-        rows.append((" ".join(words), FONT_BIG, SIZE_PLAIN, "white"))
-    pngs = []
-    for r, (text, font, size, color) in enumerate(rows):
+        groups = [(items, "plain")]
+    out = []
+    for r, (grp, kind) in enumerate(groups):
+        if not grp: continue
+        text = " ".join(t for t, _ in grp)
+        if kind == "big": text = re.sub(r"[.,!?…]+$", "", text).upper()
         p = os.path.join(tmp, f"r{idx}_{r}.png")
-        text_png(text, font, size, color, p)
-        pngs.append(p)
-    out = os.path.join(tmp, f"cap{idx}.png")
-    cmd = ["magick", "-background", "none"]
-    for k, p in enumerate(pngs):
-        if k: cmd += ["-size", "1x10", "xc:none"]
-        cmd += [p]
-    cmd += ["-gravity", "Center", "-append", "-gravity", "Center", "-extent", f"{W}x", "+repage", out]
-    run(cmd)
+        w, h = text_png(text, kind, accent, p)
+        out.append((p, w, h, grp[0][1]))
     return out
 
 # ---------- 4. Ghép ----------
@@ -155,20 +170,30 @@ def main():
 
     tmp = tempfile.mkdtemp()
     is_key = is_key_factory(a.keywords.split(","))
-    caps = []  # (png, start, end)
+    overlays = []  # (png, x, y, start, end)
     for i, c in enumerate(ch):
-        png = caption_png(c, is_key, a.accent, tmp, i)
-        caps.append((png, c[0]["start"], c[-1]["end"] + 0.08))
+        rows = caption_rows(c, is_key, a.accent, tmp, i)
+        total_h = sum(h for _, _, h, _ in rows) + ROW_GAP * (len(rows) - 1)
+        y = int(H * BLOCK_CENTER_Y - total_h / 2)
+        end_t = c[-1]["end"] + 0.10
+        for png, w, h, st in rows:
+            overlays.append((png, (W - w) // 2, y, st, end_t))
+            y += h + ROW_GAP
 
-    # Bộ lọc: chọn đoạn giữ → nối → scale/crop 9:16 → phủ từng khung phụ đề (enable theo thời gian) → logo
+    # Vùng tối mềm ở nửa dưới để chữ nổi (như mẫu)
+    vig = os.path.join(tmp, "vignette.png")
+    run(["magick", "-size", f"{W}x{H}", "gradient:none-black", "-channel", "A", "-evaluate", "multiply", "0.45", "+channel", vig])
+
     sel = "+".join(f"between(t,{x:.3f},{b:.3f})" for x, b in segs)
-    inputs = ["-i", a.input]
-    fc = f"[0:v]fps=30,select='{sel}',setpts=N/30/TB,scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H}[v0];[0:a]aselect='{sel}',asetpts=N/SR/TB[voice]"
+    inputs = ["-i", a.input, "-i", vig]
+    fc = (f"[0:v]fps=30,select='{sel}',setpts=N/30/TB,scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H}[base];"
+          f"[base][1:v]overlay=0:0:format=auto[v0];[0:a]aselect='{sel}',asetpts=N/SR/TB[voice]")
     cur = "[v0]"
-    for i, (png, s0, e0) in enumerate(caps):
+    for i, (png, x, y, s0, e0) in enumerate(overlays):
         inputs += ["-i", png]
         n = len(inputs) // 2 - 1
-        fc += f";{cur}[{n}:v]overlay=(W-w)/2:{H - 430}-h:enable='between(t,{s0:.3f},{e0:.3f})':format=auto[c{i}]"
+        # mỗi dòng hiện từ lúc từ đầu dòng được nói tới hết khung
+        fc += f";{cur}[{n}:v]overlay={x}:{y}:enable='between(t,{s0:.3f},{e0:.3f})':format=auto[c{i}]"
         cur = f"[c{i}]"
     vout, aout = cur, "[voice]"
     if a.logo:
