@@ -101,8 +101,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 FONTS = os.path.join(HERE, "..", "..", "public", "fonts")
 FONT_SMALL = os.path.join(FONTS, "BeVietnamPro-MediumItalic.ttf")
 FONT_PLAIN = os.path.join(FONTS, "BeVietnamPro-SemiBold.ttf")
-FONT_BIG = os.path.join(FONTS, "Anton-Regular.ttf")
-SIZE_SMALL, SIZE_PLAIN, SIZE_BIG = 48, 60, 190
+FONT_BIG = os.path.join(FONTS, "BarlowCondensed-ExtraBold.ttf")
+SIZE_SMALL, SIZE_PLAIN, SIZE_BIG = 48, 60, 200
 MAX_LINE_W = 920
 BLOCK_CENTER_Y = 0.60   # tâm khối chữ theo tỷ lệ chiều cao
 ROW_GAP = 6
@@ -194,6 +194,36 @@ def caption_rows(chunk, is_key, accent, tmp, idx):
         out.append((p, w, h, grp[0][1]))
     return out
 
+# ---------- 3b. Âm "pop" tổng hợp bằng công thức (không cần tệp), hoặc dùng tệp .wav người dùng đưa ----------
+import math, struct, wave
+
+def make_pop_track(times, total_sec, out_path, sample_wav=None, sr=48000):
+    n = int(total_sec * sr) + sr
+    buf = [0.0] * n
+    if sample_wav:
+        with wave.open(sample_wav, "rb") as w:
+            assert w.getsampwidth() == 2, "cần WAV 16-bit"
+            frames = w.readframes(w.getnframes()); ch = w.getnchannels(); wsr = w.getframerate()
+            raw = struct.unpack("<%dh" % (len(frames) // 2), frames)
+            mono = [raw[i] / 32768.0 for i in range(0, len(raw), ch)]
+            step = wsr / sr
+            pop = [mono[min(len(mono) - 1, int(i * step))] for i in range(int(len(mono) / step))]
+    else:
+        # pop: sóng 720 Hz trượt xuống 420 Hz trong 90 ms, tắt nhanh; thêm cú "thump" 110 Hz nhẹ
+        L = int(0.09 * sr); pop = []
+        for i in range(L):
+            t = i / sr; f = 720 - 300 * (i / L)
+            env = math.exp(-t * 38)
+            pop.append(0.55 * env * math.sin(2 * math.pi * f * t) + 0.25 * math.exp(-t * 25) * math.sin(2 * math.pi * 110 * t))
+    for t0 in times:
+        s0 = int(t0 * sr)
+        for i, v in enumerate(pop):
+            j = s0 + i
+            if j < n: buf[j] += v
+    with wave.open(out_path, "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr)
+        w.writeframes(struct.pack("<%dh" % n, *[max(-32767, min(32767, int(v * 0.6 * 32767))) for v in buf]))
+
 # ---------- 4. Ghép ----------
 def main():
     ap = argparse.ArgumentParser()
@@ -202,6 +232,8 @@ def main():
     ap.add_argument("--no-cut", action="store_true", help="không cắt khoảng lặng")
     ap.add_argument("--caption-y", type=float, default=BLOCK_CENTER_Y, help="tâm khối chữ theo tỷ lệ chiều cao (0.6 = giữa dưới mặt)")
     ap.add_argument("--no-punch", action="store_true", help="không phóng khung khi có từ khóa")
+    ap.add_argument("--no-pop", action="store_true", help="chữ từ khóa không nảy khi hiện")
+    ap.add_argument("--sfx", default="auto", help="âm pop khi từ khóa hiện: auto (tự tạo) | tệp .wav | none")
     ap.add_argument("--grade", default="warm", help="bộ màu: warm | none")
     ap.add_argument("--silence-db", type=float, default=SILENCE_DB, help="ngưỡng lặng (dB), clip có nhạc nền sẵn cần -25")
     a = ap.parse_args()
@@ -218,6 +250,7 @@ def main():
 
     tmp = tempfile.mkdtemp()
     overlays = []  # (png, x, y, start, end)
+    POP = [(1.14, 0.05), (1.07, 0.05)]  # (tỷ lệ phóng, thời gian giữ) rồi về 1.0: chữ "nảy" khi hiện
     for i, c in enumerate(ch):
         rows = caption_rows(c, is_key, a.accent, tmp, i)
         total_h = sum(h for _, _, h, _ in rows) + ROW_GAP * (len(rows) - 1)
@@ -225,8 +258,19 @@ def main():
         end_t = c[-1]["end"] + 0.10
         if i + 1 < len(ch):
             end_t = min(end_t, ch[i + 1][0]["start"] - 0.02)
-        for png, w, h, st in rows:
-            overlays.append((png, (W - w) // 2, y, st, end_t))
+        for r, (png, w, h, st) in enumerate(rows):
+            cx, cy = W // 2, y + h // 2
+            if not a.no_pop and h >= SIZE_BIG * 0.6:  # chỉ dòng từ khóa mới nảy
+                t0 = st
+                for k, (sc, dur) in enumerate(POP):
+                    pp = os.path.join(tmp, f"pop{i}_{r}_{k}.png")
+                    run(["magick", png, "-resize", f"{int(sc * 100)}%", pp])
+                    pw, ph = int(w * sc), int(h * sc)
+                    overlays.append((pp, cx - pw // 2, cy - ph // 2, t0, min(t0 + dur, end_t)))
+                    t0 += dur
+                overlays.append((png, (W - w) // 2, y, t0, end_t))
+            else:
+                overlays.append((png, (W - w) // 2, y, st, end_t))
             y += h + ROW_GAP
 
     # Vùng tối mềm ở nửa dưới để chữ nổi (như mẫu)
@@ -256,14 +300,29 @@ def main():
         n = len(inputs) // 2 - 1
         fc += f";[{n}:v]scale=220:-1[lg];{cur}[lg]overlay=W-w-48:64:format=auto[vl]"
         vout = "[vl]"
+    sfx_path = None
+    if a.sfx != "none":
+        sfx_path = os.path.join(tmp, "sfx.wav")
+        pop_times = sorted(set(round(t, 2) for t in key_times))
+        # tối đa 1 pop mỗi 3 giây để không mệt tai
+        kept, last = [], -9
+        for t in pop_times:
+            if t - last >= 3.0: kept.append(t); last = t
+        make_pop_track(kept, cut_total, sfx_path, a.sfx if a.sfx != "auto" else None)
+        inputs += ["-i", sfx_path]
+        nsfx = len(inputs) // 2 - 1
+        fc += f";[voice][{nsfx}:a]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[voice2]"
+        voice_lbl = "[voice2]"
+    else:
+        voice_lbl = "[voice]"
     if a.music:
         inputs += ["-stream_loop", "-1", "-i", a.music]
         n = len(inputs) // 2 - 1
         fc += (f";[{n}:a]atrim=0:{cut_total:.3f},volume=0.9[mus];[mus][voice]sidechaincompress=threshold=0.05:ratio=8:attack=40:release=400[duck];"
-               f"[voice][duck]amix=inputs=2:duration=first:dropout_transition=2,loudnorm=I=-16:TP=-1.5:LRA=11[aout]")
+               f"{voice_lbl}[duck]amix=inputs=2:duration=first:dropout_transition=2,loudnorm=I=-16:TP=-1.5:LRA=11[aout]")
         aout = "[aout]"
     else:
-        fc += ";[voice]loudnorm=I=-16:TP=-1.5:LRA=11[aout]"
+        fc += f";{voice_lbl}loudnorm=I=-16:TP=-1.5:LRA=11[aout]"
         aout = "[aout]"
 
     cmd = ["ffmpeg", "-hide_banner", "-y", *inputs, "-filter_complex", fc, "-map", vout, "-map", aout,
