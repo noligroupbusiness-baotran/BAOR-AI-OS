@@ -17,8 +17,8 @@ import argparse, json, re, subprocess, sys, tempfile, os, unicodedata
 CUT_SILENCE = 0.6      # giây: lặng dài hơn mức này thì cắt
 SILENCE_DB = -35       # ngưỡng coi là lặng
 KEEP_PAD = 0.12        # giữ lại một chút trước/sau tiếng nói để không cụt
-MAX_WORDS = 6
-MAX_SEC = 2.4
+MAX_WORDS = 4
+MAX_SEC = 1.8
 W, H = 1080, 1920
 FONT = "Helvetica Neue"
 
@@ -79,9 +79,12 @@ def chunks(words):
     return out
 
 # ---------- 3. Phụ đề: vẽ từng khung thành PNG trong suốt (ImageMagick) ----------
-FONT_REG = "/System/Library/Fonts/Supplemental/Arial Bold.ttf"
-FONT_BIG = "/System/Library/Fonts/Supplemental/Arial Black.ttf"
-SIZE_REG, SIZE_BIG = 58, 100
+# Bố cục "nhấn xếp tầng" như video mẫu: dòng phụ nhỏ phía trên, TỪ KHÓA rất to ở giữa, dòng phụ nhỏ phía dưới.
+HERE = os.path.dirname(os.path.abspath(__file__))
+FONTS = os.path.join(HERE, "..", "..", "public", "fonts")
+FONT_SMALL = os.path.join(FONTS, "BeVietnamPro-Medium.ttf")
+FONT_BIG = os.path.join(FONTS, "BeVietnamPro-Black.ttf")
+SIZE_SMALL, SIZE_PLAIN, SIZE_BIG = 50, 62, 132
 MAX_LINE_W = 940
 
 def is_key_factory(keywords):
@@ -93,45 +96,44 @@ def is_key_factory(keywords):
         return any(k == w or (len(k) > 3 and k in w) for k in kw)
     return is_key
 
-def word_png(text, big, accent, path):
-    """Một từ → PNG có viền đen và bóng nhẹ. Từ khóa: to, đậm, màu nhấn, viết hoa."""
-    font, size, color = (FONT_BIG, SIZE_BIG, f"#{accent}") if big else (FONT_REG, SIZE_REG, "white")
-    run(["magick", "-background", "none", "-font", font, "-pointsize", str(size), "-fill", color,
-         "-stroke", "black", "-strokewidth", "5", f"label:{text}",
-         "-stroke", "none", "-fill", color, f"label:{text}", "-gravity", "center", "-compose", "over", "-composite",
-         "(", "+clone", "-background", "black", "-shadow", "60x6+0+6", ")", "+swap", "-background", "none", "-layers", "merge", "+repage", "-trim", "+repage", path])
-    w = subprocess.run(["magick", "identify", "-format", "%w", path], capture_output=True, text=True).stdout
-    return int(w)
+def text_png(text, font, size, color, path, max_w=MAX_LINE_W, stroke=4):
+    """Một dòng chữ → PNG có viền đen mảnh và bóng mềm. Quá rộng thì tự thu để vừa max_w."""
+    base = ["magick", "-background", "none", "-font", font, "-fill", color]
+    def render(sz_args):
+        run(base + sz_args + ["-stroke", "black", "-strokewidth", str(stroke), f"label:{text}",
+             "-stroke", "none", "-fill", color] + sz_args + [f"label:{text}", "-gravity", "center", "-compose", "over", "-composite",
+             "(", "+clone", "-background", "black", "-shadow", "55x8+0+8", ")", "+swap", "-background", "none", "-layers", "merge", "+repage", "-trim", "+repage", path])
+        return int(subprocess.run(["magick", "identify", "-format", "%w", path], capture_output=True, text=True).stdout)
+    w = render(["-pointsize", str(size)])
+    if w > max_w:
+        render(["-size", f"{max_w}x{int(size * 1.4)}"])
 
 def caption_png(chunk, is_key, accent, tmp, idx):
-    """Cả khung: xếp từ thành dòng ≤ MAX_LINE_W, các dòng canh giữa, dồn về dưới."""
-    items = []
-    for j, w in enumerate(chunk):
-        txt = w["word"].strip()
-        if not txt: continue
-        big = is_key(txt)
-        p = os.path.join(tmp, f"w{idx}_{j}.png")
-        width = word_png(txt.upper() if big else txt, big, accent, p)
-        items.append((p, width))
-    lines, cur, cur_w = [], [], 0
-    gap = 16
-    for p, width in items:
-        if cur and cur_w + gap + width > MAX_LINE_W:
-            lines.append(cur); cur, cur_w = [], 0
-        cur.append(p); cur_w += (gap if cur_w else 0) + width
-    if cur: lines.append(cur)
-    line_pngs = []
-    for li, ln in enumerate(lines):
-        lp = os.path.join(tmp, f"l{idx}_{li}.png")
-        cmd = ["magick", "-background", "none"]
-        for k, p in enumerate(ln):
-            if k: cmd += ["-size", f"{gap}x1", "xc:none"]
-            cmd += [p]
-        cmd += ["-gravity", "South", "+append", "+repage", lp]
-        run(cmd)
-        line_pngs.append(lp)
+    words = [w["word"].strip() for w in chunk if w["word"].strip()]
+    flags = [is_key(t) for t in words]
+    rows = []  # (text, font, size, color)
+    if any(flags):
+        # Cụm từ khóa = dãy từ khóa liền nhau đầu tiên; trước và sau là dòng phụ nhỏ.
+        i0 = flags.index(True); i1 = i0
+        while i1 + 1 < len(flags) and flags[i1 + 1]: i1 += 1
+        before = " ".join(words[:i0]); key = " ".join(words[i0:i1 + 1]); after = " ".join(words[i1 + 1:])
+        if before: rows.append((before, FONT_SMALL, SIZE_SMALL, "white"))
+        rows.append((re.sub(r"[.,!?…]+$", "", key).upper(), FONT_BIG, SIZE_BIG, f"#{accent}"))
+        if after: rows.append((after, FONT_SMALL, SIZE_SMALL, "white"))
+    else:
+        rows.append((" ".join(words), FONT_BIG, SIZE_PLAIN, "white"))
+    pngs = []
+    for r, (text, font, size, color) in enumerate(rows):
+        p = os.path.join(tmp, f"r{idx}_{r}.png")
+        text_png(text, font, size, color, p)
+        pngs.append(p)
     out = os.path.join(tmp, f"cap{idx}.png")
-    run(["magick", "-background", "none", *line_pngs, "-gravity", "Center", "-append", "-gravity", "Center", "-extent", f"{W}x", "+repage", out])
+    cmd = ["magick", "-background", "none"]
+    for k, p in enumerate(pngs):
+        if k: cmd += ["-size", "1x10", "xc:none"]
+        cmd += [p]
+    cmd += ["-gravity", "Center", "-append", "-gravity", "Center", "-extent", f"{W}x", "+repage", out]
+    run(cmd)
     return out
 
 # ---------- 4. Ghép ----------
