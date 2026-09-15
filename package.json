@@ -8,8 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "test": "node --import tsx --test tests/*.test.ts",
-    "gate": "npm run lint && npm run test && npm run build",
-    "rotate-secret": "tsx scripts/rotate-secret.mts"
+    "gate": "npm run lint && npm run security && npm run test && npm run build",
+    "rotate-secret": "tsx scripts/rotate-secret.mts",
+    "security": "tsx scripts/security-check.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.124.0",
@@ -18,6 +19,7 @@
     "jose": "^6.2.12",
     "lucide-react": "^1.44.0",
     "next": "16.3.4",
+    "qrcode": "^1.5.4",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
@@ -25,6 +27,7 @@
     "@tailwindcss/postcss": "^4",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^20",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "drizzle-kit": "^0.31.10",

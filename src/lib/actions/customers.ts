@@ -10,12 +10,13 @@ import { CHANNELS } from "@/config/channels";
 import { findSegment } from "@/lib/customers/segments";
 import { listLeads } from "@/lib/queries";
 import { listOrders } from "@/lib/orders/repository";
-import { requirePermission } from "@/lib/permissions";
+import { currentActor, requirePermission } from "@/lib/permissions";
 import type { LeadStage } from "@/lib/types";
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 
 export async function sendReply(fd: FormData) {
+  await currentActor();
   const conv = str(fd, "conv");
   const text = str(fd, "text");
   if (!text) return done(`/customers?conv=${conv}`, "Chưa nhập tin nhắn");
@@ -35,6 +36,7 @@ export async function sendReply(fd: FormData) {
 
 // Thêm lead thủ công (từ menu Tạo mới › Thêm khách hàng hoặc nút trong tab Lead).
 export async function createLead(fd: FormData) {
+  await currentActor();
   const name = str(fd, "name");
   if (!name) return done("/customers?tab=leads&add=1&tone=error", "Cần nhập tên khách");
   const platformRaw = str(fd, "platform") || "facebook";
@@ -56,12 +58,14 @@ export async function createLead(fd: FormData) {
 }
 
 export async function handBackToAi(fd: FormData) {
+  await currentActor();
   const conv = str(fd, "conv");
   getDb().update(schema.conversations).set({ needsHuman: false }).where(eq(schema.conversations.id, conv)).run();
   done(`/customers?conv=${conv}`, "Đã giao lại cho AI");
 }
 
 export async function aiSuggest(fd: FormData) {
+  await currentActor();
   const conv = str(fd, "conv");
   const r = await suggestReply(conv);
   if (!r.ok) return done(`/customers?conv=${conv}`, r.error);
@@ -69,6 +73,7 @@ export async function aiSuggest(fd: FormData) {
 }
 
 export async function setLeadStage(fd: FormData) {
+  await currentActor();
   const id = str(fd, "id");
   const stage = str(fd, "stage");
   getDb().update(schema.leads).set({ stage }).where(eq(schema.leads.id, id)).run();
@@ -77,6 +82,7 @@ export async function setLeadStage(fd: FormData) {
 }
 
 export async function toggleRule(fd: FormData) {
+  await requirePermission("manager", "/customers");
   const id = str(fd, "id");
   const db = getDb();
   const r = db.select().from(schema.autoReplyRules).where(eq(schema.autoReplyRules.id, id)).get();
@@ -86,6 +92,7 @@ export async function toggleRule(fd: FormData) {
 }
 
 export async function toggleSequence(fd: FormData) {
+  await requirePermission("manager", "/customers");
   const id = str(fd, "id");
   const db = getDb();
   const s = db.select().from(schema.emailSequences).where(eq(schema.emailSequences.id, id)).get();

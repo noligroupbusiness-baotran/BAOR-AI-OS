@@ -494,3 +494,34 @@ export const uploads = sqliteTable("uploads", {
   uploadedBy: text("uploaded_by").notNull().default(""),
   createdAt: text("created_at").notNull(),
 });
+
+// ---------------------------------------------------------------------------
+// Bảo mật tài khoản: xác thực hai lớp (TOTP), mã dự phòng, phiên bản phiên (đăng xuất mọi thiết bị),
+// lần đăng nhập gần nhất; và nhật ký sự kiện bảo mật riêng (không lẫn với nhật ký hoạt động).
+// ---------------------------------------------------------------------------
+
+export const securityAccounts = sqliteTable("security_accounts", {
+  email: text("email").primaryKey(),
+  totpSecret: text("totp_secret"), // mã hóa AES-GCM (src/lib/secrets.ts); null = chưa thiết lập
+  totpEnabled: integer("totp_enabled", { mode: "boolean" }).notNull().default(false),
+  backupCodes: text("backup_codes").notNull().default("[]"), // JSON mảng scrypt hash, mỗi mã dùng một lần
+  sessionVersion: integer("session_version").notNull().default(1), // tăng lên = mọi phiên cũ hết hiệu lực
+  lastLoginAt: text("last_login_at"),
+  lastLoginIp: text("last_login_ip").notNull().default(""),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const securityEvents = sqliteTable(
+  "security_events",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    at: text("at").notNull(),
+    email: text("email").notNull().default(""),
+    ip: text("ip").notNull().default(""),
+    // login_ok | login_fail | login_locked | mfa_fail | logout | password_changed | mfa_enabled | mfa_disabled
+    // | backup_codes_regenerated | sessions_revoked | permission_changed | rate_limited
+    kind: text("kind").notNull(),
+    detail: text("detail").notNull().default(""),
+  },
+  (t) => [index("security_events_email_at_idx").on(t.email, t.at), index("security_events_at_idx").on(t.at)],
+);

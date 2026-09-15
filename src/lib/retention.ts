@@ -6,6 +6,7 @@ import { eq, lt } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { getSetting } from "@/lib/admin";
 import { listUploads, uploadsDir } from "@/lib/uploads";
+import { pruneSecurityEvents } from "@/lib/security";
 
 export interface RetentionPolicy {
   /** Nhật ký hoạt động, quyết định router, lịch sử automation, lần đồng bộ (ngày). */
@@ -31,6 +32,7 @@ export interface RetentionResult {
   syncRuns: number;
   campaignLogs: number;
   aiCalls: number;
+  securityEvents: number;
   orphanFiles: number;
   orphanRows: number;
 }
@@ -39,13 +41,14 @@ export function pruneOldData(policy: RetentionPolicy = retentionPolicy(), now = 
   const db = getDb();
   const logsBefore = new Date(now - policy.logsDays * 86_400_000).toISOString();
   const auditBefore = new Date(now - policy.auditDays * 86_400_000).toISOString();
-  const r: RetentionResult = { activity: 0, decisions: 0, automationRuns: 0, syncRuns: 0, campaignLogs: 0, aiCalls: 0, orphanFiles: 0, orphanRows: 0 };
+  const r: RetentionResult = { activity: 0, decisions: 0, automationRuns: 0, syncRuns: 0, campaignLogs: 0, aiCalls: 0, securityEvents: 0, orphanFiles: 0, orphanRows: 0 };
   r.activity = db.delete(schema.activity).where(lt(schema.activity.at, logsBefore)).run().changes;
   r.decisions = db.delete(schema.marketingDecisions).where(lt(schema.marketingDecisions.at, logsBefore)).run().changes;
   r.automationRuns = db.delete(schema.automationRuns).where(lt(schema.automationRuns.at, logsBefore)).run().changes;
   r.syncRuns = db.delete(schema.syncRuns).where(lt(schema.syncRuns.startedAt, logsBefore)).run().changes;
   r.campaignLogs = db.delete(schema.campaignLogs).where(lt(schema.campaignLogs.at, auditBefore)).run().changes;
   r.aiCalls = db.delete(schema.aiCalls).where(lt(schema.aiCalls.at, auditBefore)).run().changes;
+  r.securityEvents = pruneSecurityEvents(auditBefore);
   Object.assign(r, cleanOrphanUploads());
   return r;
 }

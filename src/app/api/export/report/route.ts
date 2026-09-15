@@ -2,6 +2,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { actorFor, can } from "@/lib/permissions";
 import { REPORT_CSV_TABS, reportCsv, type ReportCsvTab } from "@/lib/reports/csv";
 import { logActivity } from "@/lib/activity";
+import { RATE_RULES, limitOr429 } from "@/lib/rate-limit";
 
 // Xuất báo cáo CSV theo tab và bộ lọc của trang Báo cáo. Cần Quản lý.
 export const runtime = "nodejs";
@@ -11,6 +12,8 @@ export async function GET(req: Request) {
   if (!user) return new Response("Chưa đăng nhập", { status: 401 });
   const actor = actorFor(user.email);
   if (!can(actor, "manager")) return new Response("Cần quyền Quản lý để xuất báo cáo", { status: 403 });
+  const limited = limitOr429(`export:${actor.email}`, RATE_RULES.export);
+  if (limited) return limited;
   const sp = new URL(req.url).searchParams;
   const tab = (sp.get("tab") ?? "overview") as ReportCsvTab;
   if (!REPORT_CSV_TABS.includes(tab)) return new Response("Tab không hợp lệ", { status: 400 });

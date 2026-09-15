@@ -3,6 +3,10 @@ import { readIntegrationConfig, finishRun, startRun } from "@/lib/connectors/con
 import { parseMessengerWebhook, verifyMetaSignature } from "@/lib/connectors/meta";
 import { ingestInboundMessages } from "@/lib/inbound";
 import { getMetaVerifyToken } from "@/lib/webhooks";
+import { clientIp } from "@/lib/login-guard";
+import { RATE_RULES, limitOr429 } from "@/lib/rate-limit";
+
+const MAX_BODY = 1024 * 1024; // 1 MB, Meta gửi từng gói nhỏ
 
 // Webhook Meta (Messenger). Địa chỉ đăng ký trong Meta App: https://<tên miền>/api/webhooks/meta
 // GET: Meta xác minh bằng verify token (hiện trong Cài đặt › Kết nối). POST: tin nhắn khách, có chữ ký.
@@ -17,7 +21,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const limited = limitOr429(`webhook:${clientIp((n) => req.headers.get(n))}`, RATE_RULES.webhook);
+  if (limited) return limited;
+  if (Number(req.headers.get("content-length") ?? 0) > MAX_BODY) return NextResponse.json({ error: "payload quá lớn" }, { status: 413 });
   const raw = await req.text();
+  if (raw.length > MAX_BODY) return NextResponse.json({ error: "payload quá lớn" }, { status: 413 });
   const { appSecret } = readIntegrationConfig("facebook_page");
   const runId = startRun("facebook_page", "webhook");
   if (!verifyMetaSignature(appSecret ?? "", raw, req.headers.get("x-hub-signature-256"))) {

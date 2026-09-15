@@ -14,6 +14,7 @@ import { imageBriefTemplate, kindOf, scriptTemplate } from "@/lib/content/format
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 
 export async function claimIdea(fd: FormData) {
+  await currentActor();
   const id = str(fd, "id");
   const db = getDb();
   const item = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, id)).get();
@@ -25,6 +26,7 @@ export async function claimIdea(fd: FormData) {
 }
 
 export async function dismissIdea(fd: FormData) {
+  await currentActor();
   const id = str(fd, "id");
   getDb().update(schema.contentItems).set({ status: "dismissed" }).where(eq(schema.contentItems.id, id)).run();
   campaignRepo.syncEntityStatus("content", id, "dismissed");
@@ -32,6 +34,7 @@ export async function dismissIdea(fd: FormData) {
 }
 
 export async function submitForReview(fd: FormData) {
+  await currentActor();
   const id = str(fd, "id");
   const draft = str(fd, "draft");
   const db = getDb();
@@ -48,6 +51,7 @@ export async function submitForReview(fd: FormData) {
 }
 
 export async function saveDraft(fd: FormData) {
+  await currentActor();
   const id = str(fd, "id");
   getDb().update(schema.contentItems).set({ draft: str(fd, "draft"), hook: str(fd, "hook") || undefined }).where(eq(schema.contentItems.id, id)).run();
   done(`/content?tab=mine&open=${id}`, "Đã lưu bản nháp");
@@ -66,6 +70,7 @@ export async function approveContent(fd: FormData) {
 }
 
 export async function scheduleContent(fd: FormData) {
+  await currentActor();
   const id = str(fd, "id");
   const when = str(fd, "when"); // datetime-local (giờ VN)
   const platforms = fd.getAll("platform").map(String);
@@ -85,6 +90,7 @@ export async function scheduleContent(fd: FormData) {
 }
 
 export async function createIdea(fd: FormData) {
+  await currentActor();
   const title = str(fd, "title");
   // Ngữ cảnh chiến dịch (nếu mở từ phân hệ Chiến dịch): bài mới tự gắn campaign_id + channel_goal_id.
   const campaignId = str(fd, "campaignId") || null;
@@ -119,6 +125,7 @@ export async function createIdea(fd: FormData) {
 }
 
 export async function aiGenerateIdeas() {
+  await currentActor();
   const result = await generateIdeas(5);
   if (!result.ok) return done("/content", result.error);
   logActivity("ai", `AI đề xuất ${result.count} ý tưởng nội dung mới.`, "content");
@@ -126,6 +133,7 @@ export async function aiGenerateIdeas() {
 }
 
 export async function aiWriteDraft(fd: FormData) {
+  await currentActor();
   const id = str(fd, "id");
   const result = await writeDraft(id);
   if (!result.ok) return done(`/content?tab=mine&open=${id}`, result.error);
@@ -146,6 +154,7 @@ function prefillDraft(format: string, title: string, hook: string): string | nul
 
 /** Chèn khung kịch bản hoặc brief ảnh vào bản nháp đang có (nối vào cuối, không xóa chữ đã viết). */
 export async function insertTemplate(fd: FormData) {
+  await currentActor();
   const id = str(fd, "id");
   const db = getDb();
   const item = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, id)).get();
@@ -176,6 +185,7 @@ export async function attachContentImage(fd: FormData) {
 }
 
 export async function removeContentImage(fd: FormData) {
+  await currentActor();
   const id = str(fd, "id");
   const db = getDb();
   const item = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, id)).get();
