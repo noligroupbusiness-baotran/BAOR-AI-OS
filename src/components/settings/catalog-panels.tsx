@@ -152,7 +152,7 @@ function PersonForm({ person }: { person?: PersonRecord }) {
         </select>
       </Field>
       <Field label={person?.canLogin ? "Đổi mật khẩu đăng nhập (để trống nếu giữ)" : "Mật khẩu đăng nhập (cấp quyền vào hệ thống)"} hint="Nhân sự đăng nhập bằng email ở trên và mật khẩu này; quyền hạn áp theo lựa chọn bên cạnh.">
-        <input name="password" type="password" autoComplete="new-password" className={inputClass} placeholder="Ít nhất 6 ký tự" />
+        <input name="password" type="password" autoComplete="new-password" className={inputClass} placeholder="Ít nhất 10 ký tự, không chứa tên hay email" />
       </Field>
       <div className="flex gap-2 md:col-span-2">
         <SubmitButton pendingText="Đang lưu…">{person ? "Lưu thay đổi" : "Thêm nhân sự"}</SubmitButton>

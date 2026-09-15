@@ -96,6 +96,20 @@
       ],
       "port": 3020,
       "autoPort": false
+    },
+    {
+      "name": "baor-security",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "DATA_DIR=data-infra",
+        "npx",
+        "next",
+        "start",
+        "--port",
+        "3016"
+      ],
+      "port": 3016,
+      "autoPort": false
     }
   ]
 }

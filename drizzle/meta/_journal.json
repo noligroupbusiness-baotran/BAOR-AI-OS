@@ -78,6 +78,13 @@
       "when": 1789122329158,
       "tag": "0010_competitors",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1789457234299,
+      "tag": "0011_security",
+      "breakpoints": true
     }
   ]
 }

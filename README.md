@@ -175,19 +175,40 @@ Chiến dịch → Mục tiêu kênh → Insight → Nội dung → Video → Ph
 
 ## Bảo vệ và vận hành lâu dài
 
+Chi tiết, danh sách trước khi chạy thật và ứng phó sự cố: `docs/SECURITY.md`.
+
+- **Xác thực hai lớp** (`src/lib/totp.ts`, `src/lib/security.ts`, Tài khoản của tôi › Xác thực hai lớp): TOTP chuẩn RFC 6238
+  (Google Authenticator, Authy, 1Password...), 10 mã dự phòng dùng một lần, QR quét hoặc nhập khóa tay. Đăng nhập: mật khẩu →
+  `/login/verify` nhập mã (cookie tạm 5 phút). Mỗi mã chỉ dùng một lần. Tắt / tạo lại mã dự phòng cần mật khẩu + mã.
+- **Thu hồi phiên** (`src/lib/session-token.ts`, `src/lib/auth.ts`): token mang phiên bản phiên; đổi mật khẩu, "Đăng xuất mọi
+  thiết bị", quản trị đặt lại mật khẩu, ngừng nhân sự, đổi quyền, đổi email quản trị đều làm mọi cookie cũ hết hiệu lực ngay.
+- **Chính sách mật khẩu** (`src/lib/password-policy.ts`): ≥ 10 ký tự, ≥ 2 loại ký tự, không phổ biến, không chứa tên / email.
+  Áp cho Tài khoản của tôi, Cài đặt › Nhân sự, Cài đặt › Tài khoản quản trị.
+- **Sự kiện bảo mật** (bảng `security_events`): đăng nhập thành công/sai/khóa, mã hai lớp sai, đổi mật khẩu, bật/tắt hai lớp,
+  thu hồi phiên, đổi quyền, tải sao lưu, bị giới hạn tần suất; có email + IP; người dùng xem của mình ở Tài khoản của tôi;
+  giữ theo `retention.auditDays`. Quản trị thấy thêm "Tình trạng bảo mật hệ thống" (ai chưa bật hai lớp, AUTH_SECRET yếu...).
+- **Giới hạn tần suất** (`src/lib/rate-limit.ts`): đăng nhập 30 lượt / 10 phút / IP, mã hai lớp 10 lượt / 10 phút, webhook
+  120 lượt / phút / IP (thân tối đa 1 MB Meta, 64 KB lead), xuất CSV và tải sao lưu 20 lượt / phút / tài khoản, `/api/health` 60 / phút.
 - **Chặn dò mật khẩu** (`src/lib/login-guard.ts`): 5 lần sai trong 15 phút (theo email và theo IP) thì khóa 15 phút; lần khóa ghi vào
-  nhật ký hoạt động (bước `security`), lần sai lẻ chỉ in ra log máy chủ. Bộ đếm nằm trong tiến trình, khởi động lại là xóa.
+  nhật ký hoạt động (bước `security`) và sự kiện bảo mật. Bộ đếm nằm trong tiến trình, khởi động lại là xóa.
+- **Guard cho mọi Server Action**: `tests/action-guards.test.ts` đọc mã nguồn `src/lib/actions/*` và làm gate đỏ nếu một hàm export
+  thiếu `requirePermission` / `currentActor` / `getCurrentUser`. Tải sao lưu (`/backups/<tên>`) cần Quản trị.
+- **Tệp tải lên**: SVG phục vụ với CSP `sandbox` (không chạy script khi mở trực tiếp); loại không phải ảnh / âm thanh / video ép tải về.
+- **Kiểm tra bảo mật trong gate** (`npm run security`, `scripts/security-check.mts`): không có `.env*` / CSDL bị git theo dõi,
+  không có chuỗi giống khóa API / token / private key trong mã, `npm audit --audit-level=high` cho dependency chạy thật.
 - **Header bảo mật** (`next.config.ts`): Content-Security-Policy (chỉ mã, font, ảnh từ chính hệ thống và Google Fonts),
   không cho nhúng iframe, nosniff, Referrer-Policy, HSTS.
 - **Kiểm tra cấu hình lúc khởi động** (`src/lib/env-check.ts`): thiếu hoặc yếu `AUTH_SECRET`, thiếu `ADMIN_EMAIL`,
-  `PUBLIC_URL`, `ANTHROPIC_API_KEY` → in cảnh báo ra log và hiện ở Tình trạng hệ thống (không làm sập server).
+  `PUBLIC_URL`, `ANTHROPIC_API_KEY` → in cảnh báo ra log và hiện ở Tình trạng hệ thống (không làm sập server). Mẫu biến: `.env.example`.
+- **Giám sát**: `GET /api/health` trả `{ok, db, uptimeSec, responseMs}` không cần đăng nhập, không lộ gì nhạy cảm; trỏ UptimeRobot / cron vào đây.
 - **Dọn dữ liệu cũ** (`src/lib/retention.ts`, chạy mỗi ngày trong bộ chạy nền): nhật ký hoạt động, quyết định router,
   lịch sử automation, lần đồng bộ giữ 90 ngày; nhật ký chiến dịch và chi phí AI giữ 365 ngày (đổi bằng cài đặt
   `retention.logsDays`, `retention.auditDays`, tối thiểu 7). Tệp tải lên không có bản ghi (và ngược lại) được dọn.
 - **Trang 404 / lỗi** theo giao diện: `src/app/not-found.tsx` (ngoài), `src/app/(admin)/not-found.tsx` (trong vỏ ứng dụng),
   `src/app/global-error.tsx` (lỗi tầng root).
 - **Máy trạng thái chiến dịch** tách ở `src/lib/campaigns/transitions.ts`, có test (`tests/transitions.test.ts`).
-- Test: `npm test` chạy trên CSDL SQLite tạm (`tests/db.test.ts`) cho automation, router, phân quyền, dọn dữ liệu.
+- Test: `npm test` chạy trên CSDL SQLite tạm (`tests/db.test.ts`, `tests/security.test.ts`) cho automation, router, phân quyền,
+  dọn dữ liệu, hai lớp, thu hồi phiên; `tests/totp.test.ts` khớp vector RFC 6238.
 
 ## Cấu trúc
 
@@ -204,7 +225,7 @@ src/lib/actions/*      hành động server: nội dung, quảng cáo, khách h�
 src/lib/queries.ts     truy vấn đọc cho các trang
 src/lib/ai.ts          gọi Claude API
 src/lib/data/*         dữ liệu mẫu ban đầu
-src/lib/auth.ts        phiên đăng nhập; src/lib/admin.ts tài khoản quản trị
+src/lib/auth.ts        phiên đăng nhập; src/lib/admin.ts tài khoản quản trị; src/lib/security.ts hai lớp, thu hồi phiên, sự kiện bảo mật
 ```
 
 ## Đã hoạt động thật

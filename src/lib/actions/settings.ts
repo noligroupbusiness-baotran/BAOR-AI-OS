@@ -6,6 +6,9 @@ import { done } from "./common";
 import { hashPassword, setSetting, verifyAdmin, getAdminEmail } from "@/lib/admin";
 import { clearSampleOnly, seedAll } from "@/db/seed";
 import { requirePermission } from "@/lib/permissions";
+import { checkPassword } from "@/lib/password-policy";
+import { issueSession } from "@/lib/auth";
+import { logSecurityEvent, renameSecurityAccount, revokeAllSessions } from "@/lib/security";
 import { writeIntegrationConfig } from "@/lib/connectors/config";
 import { checkIntegration as runCheck } from "@/lib/connectors/sync";
 import { runSchedulerNow } from "@/lib/scheduler";
@@ -29,18 +32,37 @@ export async function saveBrand(fd: FormData) {
 }
 
 export async function saveAccount(fd: FormData) {
-  await requirePermission("admin", "/settings#account");
+  const actor = await requirePermission("admin", "/settings#account");
   const email = str(fd, "email").toLowerCase();
   const current = str(fd, "current");
   const next = str(fd, "password");
-  if (!email) return done("/settings", "Cần nhập email");
-  if (!verifyAdmin(getAdminEmail(), current)) return done("/settings", "Mật khẩu hiện tại không đúng");
-  setSetting("admin.email", email);
-  if (next) {
-    if (next.length < 6) return done("/settings", "Mật khẩu mới cần ít nhất 6 ký tự");
-    setSetting("admin.passwordHash", hashPassword(next));
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return done("/settings?tone=error#account", "Email không hợp lệ");
+  if (!verifyAdmin(getAdminEmail(), current)) {
+    logSecurityEvent("login_fail", { email: actor.email, detail: "sai mật khẩu hiện tại ở Cài đặt › Tài khoản quản trị" });
+    return done("/settings?tone=error#account", "Mật khẩu hiện tại không đúng");
   }
-  done("/settings", "Đã cập nhật tài khoản");
+  if (next) {
+    const policy = checkPassword(next, { email });
+    if (!policy.ok) return done("/settings?tone=error#account", `Mật khẩu mới: ${policy.reason}`);
+  }
+  const before = getAdminEmail().toLowerCase();
+  const changedEmail = before !== email;
+  if (changedEmail) {
+    setSetting("admin.email", email);
+    renameSecurityAccount(before, email);
+    logSecurityEvent("permission_changed", { email, detail: `đổi email quản trị từ ${before}` });
+  }
+  if (next) {
+    setSetting("admin.passwordHash", hashPassword(next));
+    logSecurityEvent("password_changed", { email, detail: "ở Cài đặt › Tài khoản quản trị" });
+  }
+  if (changedEmail || next) {
+    // Mọi phiên cũ (kể cả theo email cũ) hết hiệu lực; cấp lại phiên cho chính người đang thao tác.
+    if (changedEmail) revokeAllSessions(before);
+    revokeAllSessions(email);
+    await issueSession(email);
+  }
+  done("/settings#account", "Đã cập nhật tài khoản quản trị");
 }
 
 export async function saveIntegration(fd: FormData) {
@@ -61,6 +83,7 @@ export async function saveIntegration(fd: FormData) {
 }
 
 export async function checkIntegration(fd: FormData) {
+  await requirePermission("admin", "/settings#integrations");
   const key = str(fd, "key");
   const res = await runCheck(key);
   done(`/settings${res.ok ? "" : "?tone=error"}#${key}`, res.message);
@@ -75,6 +98,7 @@ export async function saveAiBudget(fd: FormData) {
 }
 
 export async function runBackgroundNow() {
+  await requirePermission("manager", "/settings#syslog");
   const result = await runSchedulerNow();
   done("/settings#syslog", `Đã chạy bộ chạy nền: ${result}`);
 }

@@ -2,9 +2,11 @@
 
 import { done, logActivity } from "./common";
 import { runBackup, formatBytes, type BackupResult } from "@/lib/backup";
+import { requirePermission } from "@/lib/permissions";
 
 // Nút "Sao lưu ngay" ở Cài đặt › Sao lưu dữ liệu.
 export async function backupNow() {
+  await requirePermission("admin", "/settings#backup");
   let r: BackupResult;
   try {
     r = await runBackup({ force: true, reason: "theo yêu cầu" });

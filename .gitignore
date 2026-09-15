@@ -47,3 +47,6 @@ next-env.d.ts
 # cau hinh cong cu dev cuc bo (giu launch.json de moi session mo giao dien duoc ngay)
 /.claude/*
 !/.claude/launch.json
+
+# mau bien moi truong (khong co gia tri that) duoc phep commit
+!.env.example

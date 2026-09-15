@@ -28,12 +28,14 @@ export async function approveAd(fd: FormData) {
 }
 
 export async function rejectAd(fd: FormData) {
+  await requirePermission("manager", "/publishing");
   const id = str(fd, "id");
   getDb().update(schema.adCampaigns).set({ status: "rejected" }).where(eq(schema.adCampaigns.id, id)).run();
   done("/publishing", "Đã từ chối chiến dịch");
 }
 
 export async function toggleAd(fd: FormData) {
+  await requirePermission("manager", "/publishing");
   const id = str(fd, "id");
   const db = getDb();
   const ad = db.select().from(schema.adCampaigns).where(eq(schema.adCampaigns.id, id)).get();
@@ -76,6 +78,7 @@ function budgetRule(adId: string, name: string, dailyBudget: number) {
 }
 
 export async function retryPost(fd: FormData) {
+  await requirePermission("manager", "/publishing");
   const id = str(fd, "id");
   getDb().update(schema.scheduledPosts).set({ status: "scheduled", error: null }).where(eq(schema.scheduledPosts.id, id)).run();
   done("/publishing", "Đã xếp đăng lại");
