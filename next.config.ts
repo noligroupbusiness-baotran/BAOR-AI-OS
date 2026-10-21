@@ -33,6 +33,9 @@ const nextConfig: NextConfig = {
   output: "standalone",
   // better-sqlite3 là module native, không bundle vào server.
   serverExternalPackages: ["better-sqlite3"],
+  // Không dùng next/image: tắt bộ tối ưu ảnh để /_next/image trả 404 (giảm bề mặt tấn công SSRF,
+  // vì đường dẫn này nằm ngoài matcher đăng nhập của proxy).
+  images: { unoptimized: true },
   // Tải logo / nhạc / video qua Server Action: nâng giới hạn thân yêu cầu (mặc định 1 MB).
   experimental: { serverActions: { bodySizeLimit: "600mb" } },
   // Header bảo mật cho mọi đường dẫn (webhook API cũng nhận, không ảnh hưởng vì chỉ trả JSON).
