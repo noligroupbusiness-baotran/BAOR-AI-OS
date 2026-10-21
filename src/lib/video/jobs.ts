@@ -130,9 +130,12 @@ export function activeJobCount(): number {
 export interface EditSettings {
   keywords: string;
   model: string;
+  /** "" = bài mặc định trong thư viện nhạc (DATA_DIR/video-assets/music), "none" = không nhạc, còn lại = id tệp tải lên. */
   musicUploadId: string;
-  /** #78c: âm pop tổng hợp ở chữ nhấn. Mặc định tắt cho tới khi OWNER quyết. */
+  /** #78c: SFX tổng hợp (tách ở chữ nhấn, vút khi vào minh hoạ). OWNER duyệt dùng 21/10/2026 → mặc định bật. */
   sfx: boolean;
+  /** Sửa chữ máy nghe sai: mỗi dòng "sai => đúng" (cùng số tiếng). */
+  corrections: string;
 }
 
 export function editSettings(): EditSettings {
@@ -140,7 +143,8 @@ export function editSettings(): EditSettings {
     keywords: getSetting("video.keywords") ?? "",
     model: getSetting("video.whisperModel") || "medium",
     musicUploadId: getSetting("video.musicUploadId") ?? "",
-    sfx: getSetting("video.sfx") === "1",
+    sfx: getSetting("video.sfx") !== "0",
+    corrections: getSetting("video.corrections") ?? "",
   };
 }
 
@@ -308,7 +312,7 @@ function runJob(job: VideoJob): Promise<void> {
   if (s.sfx) args.push("--sfx");
   const bdir = brollDir();
   if (fs.existsSync(path.join(bdir, "manifest.json"))) args.push(`--broll-dir=${bdir}`);
-  const music = s.musicUploadId ? listUploads("music").find((u) => u.id === s.musicUploadId) : undefined;
+  const music = s.musicUploadId && s.musicUploadId !== "none" ? listUploads("music").find((u) => u.id === s.musicUploadId) : undefined;
   const musicPath = music ? uploadPath(music) : null;
   if (music && musicPath) args.push(`--music=${musicPath}`, `--music-license=${String(music.meta.license ?? "")}`);
   const prevVersion = jobVersions(job.videoId).find((v) => v < job.version);
@@ -319,7 +323,14 @@ function runJob(job: VideoJob): Promise<void> {
   if (getSetting("video.engine") !== "legacy") {
     args.length = 0;
     args.push(path.join(process.cwd(), "scripts", "video", "esv_render.py"), `--input=${srcPath}`, `--job-dir=${dir}`, `--keywords=${s.keywords}`, `--model=${s.model}`);
+    if (s.corrections.trim()) args.push(`--corrections=${s.corrections}`);
+    if (!s.sfx) args.push("--no-sfx");
+    if (s.musicUploadId === "none") args.push("--no-music");
+    else if (music && musicPath) args.push(`--music=${musicPath}`, `--music-license=${String(music.meta.license ?? "")}`);
+    // Kế hoạch biên tập ở cấp video (DATA_DIR/video-jobs/<videoId>/plan.json, do biên tập lập) được ưu tiên và giữ qua mọi lần dựng lại.
+    const editorPlan = path.join(jobsRoot(), job.videoId, "plan.json");
     if (fs.existsSync(ownPlan)) args.push(`--plan=${ownPlan}`);
+    else if (fs.existsSync(editorPlan)) args.push(`--plan=${editorPlan}`);
     else if (prevPlan && fs.existsSync(prevPlan)) args.push(`--plan=${prevPlan}`);
     if (prevVersion && fs.existsSync(path.join(jobDir(job.videoId, prevVersion), "words_main.json"))) args.push(`--words=${path.join(jobDir(job.videoId, prevVersion), "words_main.json")}`);
   } else if (prevVersion) {

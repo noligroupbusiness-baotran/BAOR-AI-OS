@@ -37,14 +37,18 @@ export function AutoEditPanel() {
             </Field>
             <Field label="Nhạc nền" hint="Chỉ bài đã ghi giấy phép. Nhạc tự hạ khi có tiếng nói.">
               <select name="musicUploadId" defaultValue={s.musicUploadId} className={inputClass}>
-                <option value="">Không dùng nhạc</option>
+                <option value="">Bài mặc định của thư viện nhạc</option>
+                <option value="none">Không dùng nhạc</option>
                 {music.map((m) => <option key={m.id} value={m.id}>{String(m.meta.title || m.name)}{String(m.meta.license ?? "").trim() ? "" : " (chưa có giấy phép)"}</option>)}
               </select>
             </Field>
           </div>
+          <Field label="Sửa chữ nghe sai" hint={'Mỗi dòng "chữ máy nghe => chữ đúng", cùng số tiếng. Áp cho phụ đề và chữ nhấn ở lần dựng sau.'}>
+            <textarea name="corrections" rows={3} defaultValue={s.corrections} className={textareaClass} placeholder={"thái độc => thải độc\ncân ngặn => cân nặng"} />
+          </Field>
           <label className="flex items-start gap-2 text-[13px] text-ink">
             <input type="checkbox" name="sfx" defaultChecked={s.sfx} className="mt-0.5 h-3.5 w-3.5 accent-[var(--jade)]" />
-            <span>Âm “pop” ở chữ nhấn <span className="text-ink-3">(#78c chờ OWNER quyết; âm tổng hợp tại chỗ, không cần giấy phép; mặc định tắt)</span></span>
+            <span>Hiệu ứng âm thanh <span className="text-ink-3">(“tách” ở chữ nhấn, “vút” khi vào ảnh / clip minh hoạ; tổng hợp tại chỗ, không cần giấy phép; OWNER duyệt dùng)</span></span>
           </label>
           <div className="flex flex-wrap gap-2"><SubmitButton pendingText="Đang lưu…">Lưu cấu hình</SubmitButton></div>
           <div className="border-t border-border pt-3">
@@ -52,7 +56,7 @@ export function AutoEditPanel() {
             <p className="mt-1 text-[12px] text-ink-2">Clip được chèn 2,5 giây khi lời nói nhắc đúng từ khoá, không chèn ở 3 giây đầu. Clip thiếu giấy phép hoặc từ khoá không bao giờ được dùng.</p>
             {broll.length > 0 && (
               <ul className="m-0 mt-2 grid list-none gap-1 p-0 text-[12px]">
-                {broll.map((b) => (
+                {broll.slice(0, 12).map((b) => (
                   <li key={b.file} className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-ground px-2.5 py-1.5">
                     <span className="font-medium text-ink">{b.file}</span>
                     <span className="text-ink-2">{b.keywords.join(", ") || "chưa có từ khoá"}</span>
@@ -62,6 +66,7 @@ export function AutoEditPanel() {
                 ))}
               </ul>
             )}
+            {broll.length > 12 && <div className="mt-1 text-[12px] text-ink-3">… và {broll.length - 12} mục khác trong manifest.json</div>}
             <BrollDrop />
             <div className="mt-1 text-[11px] text-ink-3">Thư mục: <code className="break-all">{brollDir()}</code></div>
           </div>

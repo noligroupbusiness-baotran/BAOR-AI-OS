@@ -7,7 +7,9 @@ plan.json (bước biên tập; do người hoặc AI lập từ lời nói, ch�
   { "emphasis": [{"t": 5.08, "text": "KỊCH BẢN", "style": "blur|fade|shine", "end": 6.4}],
     "diagrams": [{"type": "compare", "t0":..,"t1":.., "wrong": {"t":.., "text":"..", "strike":..}},
                  {"type": "arrow", "t0":..,"t1":.., "top": {"t":..,"text":".."}, "bottom": {"t":..,"text":".."}}],
-    "zooms": [{"t": 5.0, "level": 1.10, "out": 7.0}], "breath": [[0, 16.5], [16.5, 36]] }
+    "zooms": [] (trống = tự đặt theo hồ sơ nhịp CHẬM/VỪA/NHANH, mục 6.5), "pace": "CHAM|VUA|NHANH" (tuỳ chọn), "content": "hướng dẫn" }
+  Thêm sơ đồ: {"type": "steps", "steps": [{"t","text"}]}, {"type": "mechanism"|"process", "top", "mid", "bottom"},
+  {"type": "fs06", "t0", "t1"} (khung toàn màn hình + người nói thu vào khung), {"type": "leak", "t0"} (vệt sáng chuyển chương).
 
 Đầu ra như pipeline.py (master.mp4, preview.mp4, report.json, phu-de.srt, transcript.txt, contact.jpg, checksums.sha256)
 để Video Studio đọc được. Không dùng ASS (ffmpeg máy này không có libass): vẽ bằng Pillow theo đúng số đo ESV.
@@ -286,7 +288,60 @@ def ring_icon(r, glyph):
             d.line([(cx + a[0], cy + a[1]), (cx + b[0], cy + b[1])], fill=(255, 255, 255, 255), width=4 * SS)
     elif glyph == "tick":
         d.line([(cx - k, cy), (cx - k * 0.25, cy + k * 0.7), (cx + k, cy - k * 0.7)], fill=rgb(GOLD2) + (255,), width=5 * SS, joint="curve")
+    elif glyph == "person":
+        hr = k * 0.42
+        d.ellipse([cx - hr, cy - k * 0.95, cx + hr, cy - k * 0.95 + 2 * hr], outline=(255, 255, 255, 255), width=3 * SS)
+        d.arc([cx - k * 0.85, cy - k * 0.02, cx + k * 0.85, cy + k * 1.6], 200, 340, fill=(255, 255, 255, 255), width=3 * SS)
+    elif glyph == "bubble":
+        d.rounded_rectangle([cx - k, cy - k * 0.75, cx + k, cy + k * 0.45], radius=k * 0.3, outline=(255, 255, 255, 255), width=3 * SS)
+        d.line([(cx - k * 0.45, cy + k * 0.45), (cx - k * 0.7, cy + k * 0.95), (cx - k * 0.05, cy + k * 0.45)], fill=(255, 255, 255, 255), width=3 * SS, joint="curve")
+    elif glyph == "heart":
+        pts = [(cx + k * 16 * math.sin(q) ** 3 / 17, cy - k * (13 * math.cos(q) - 5 * math.cos(2 * q) - 2 * math.cos(3 * q) - math.cos(4 * q)) / 17 - k * 0.05)
+               for q in np.linspace(0, 2 * math.pi, 60)]
+        d.line(pts + [pts[0]], fill=(255, 255, 255, 255), width=3 * SS, joint="curve")
+    elif glyph == "phone":
+        d.rounded_rectangle([cx - k * 0.5, cy - k * 0.9, cx + k * 0.5, cy + k * 0.9], radius=k * 0.15, outline=(255, 255, 255, 255), width=3 * SS)
+        d.line([(cx - k * 0.15, cy + k * 0.65), (cx + k * 0.15, cy + k * 0.65)], fill=(255, 255, 255, 255), width=3 * SS)
     return c.resize((s, s), Image.LANCZOS)
+
+
+def ease_out_back(u, s_=1.4):
+    u = min(1.0, max(0.0, u))
+    return 1 + (s_ + 1) * (u - 1) ** 3 + s_ * (u - 1) ** 2
+
+
+def ease_in_out_quint(u):
+    u = min(1.0, max(0.0, u))
+    return 16 * u ** 5 if u < 0.5 else 1 - (-2 * u + 2) ** 5 / 2
+
+
+def _put(layer, im, cx, cy, boxes, kind="gfx"):
+    x, y = int(round(cx - im.width / 2)), int(round(cy - im.height / 2))
+    layer.alpha_composite(im, (x, y - BAND_Y0))
+    boxes.append((kind, (x, y, x + im.width, y + im.height)))
+
+
+def _label_at(layer, img, x, cy, u, fade, boxes, dim=1.0):
+    """Nhãn kiểu B vào: fscx 92→100, alpha, 320 ms ease-out cubic (u đã tính)."""
+    lb = img.resize((max(1, int(img.width * (0.92 + 0.08 * u))), img.height), Image.LANCZOS)
+    lb = with_alpha(lb, u * fade * dim)
+    y = int(cy - lb.height / 2)
+    layer.alpha_composite(lb, (int(x), y - BAND_Y0))
+    boxes.append(("gfx", (int(x), y, int(x) + lb.width, y + lb.height)))
+
+
+def _vline(layer, x, y0, y1, p, fade, width=3, color=GOLD):
+    if p <= 0:
+        return
+    d = ImageDraw.Draw(layer)
+    d.line([(x, y0 - BAND_Y0), (x, y0 + (y1 - y0) * p - BAND_Y0)], fill=rgb(color) + (int(255 * fade),), width=width)
+
+
+def _head(layer, x, y, a, down=True, size=16):
+    d = ImageDraw.Draw(layer)
+    h = size / 2
+    pts = [(x - h, y - h - BAND_Y0), (x + h, y - h - BAND_Y0), (x, y + h - BAND_Y0)] if down else [(x - h, y + h - BAND_Y0), (x + h, y + h - BAND_Y0), (x, y - h - BAND_Y0)]
+    d.polygon(pts, fill=rgb(GOLD) + (int(255 * a),))
 
 
 def scale_in(img, u):
@@ -305,6 +360,8 @@ class Compare:
         self.w = d["wrong"]
         self.icon = ring_icon(38, "x")
         self.lbl = label_img(self.w["text"][:1].upper() + self.w["text"][1:])
+        self.right = [(r["t"], label_img(r["text"][:1].upper() + r["text"][1:])) for r in d.get("right", [])]
+        self.tick = ring_icon(38, "tick")
 
     def frame(self, t, layer, boxes):
         if not (self.t0 <= t < self.t1):
@@ -323,6 +380,8 @@ class Compare:
             dim = 1.0
             if strike_t and t >= strike_t:
                 dim = 1 - (1 - 0x8F / 255) * min(1.0, (t - strike_t) / 0.4)
+            if self.right and t >= self.right[0][0]:
+                dim = min(dim, 1 - (0x70 / 255) * min(1.0, (t - self.right[0][0]) / 0.4))
             lb = with_alpha(lb, u * fade * dim)
             x, y = 190, 1180 - lb.height // 2
             layer.alpha_composite(lb, (x, y - BAND_Y0))
@@ -332,6 +391,17 @@ class Compare:
                 d = ImageDraw.Draw(layer)
                 yy = 1180 - BAND_Y0 + 4
                 d.line([(x - 6, yy), (x - 6 + (lb.width + 12) * p, yy)], fill=(255, 255, 255, int(255 * fade)), width=4)
+        if self.right and t >= self.right[0][0]:
+            p = ease_cubic((t - self.right[0][0]) / 0.42)
+            d = ImageDraw.Draw(layer)
+            d.line([(96, 1240 - BAND_Y0), (96 + 464 * p, 1240 - BAND_Y0)], fill=rgb(GOLD) + (int(255 * fade),), width=2)
+        for k, (tr, img) in enumerate(self.right):
+            if t < tr:
+                continue
+            cy = 1300 + k * 100
+            _put(layer, with_alpha(scale_in(self.tick, (t - tr) / 0.30), fade), 130, cy, boxes)
+            if t >= tr + 0.09:
+                _label_at(layer, img, 190, cy, ease_cubic((t - tr - 0.09) / 0.32), fade, boxes)
 
 
 class Arrow:
@@ -375,6 +445,194 @@ class Arrow:
             boxes.append(("gfx", (x, y, x + im.width, y + im.height)))
 
 
+class Steps:
+    """Thanh N bước (5.3): cột trái x128, y1130–1450 chia N hàng; chấm 46 px vàng #E8C872 viền 1,5 #1E1408; số Timesbi 34 #0D0B0B;
+    nối dọc vàng 3 px; nhãn tại x172. Chấm 300 ms, số +60 ms 280 ms, nhãn +90 ms 320 ms; nét nối vẽ 260 ms từ t−60 ms;
+    bước trước mờ về &H60& trong 350 ms khi bước sau hiện."""
+
+    def __init__(self, d):
+        self.t0, self.t1 = d["t0"], d["t1"]
+        self.steps = d["steps"]
+        n = len(self.steps)
+        self.ys = [1130 + (320 / n) * (k + 0.5) for k in range(n)]
+        self.lbls = [label_img(x["text"][:1].upper() + x["text"][1:], fit_label(x["text"], 66, 800)) for x in self.steps]
+        fnum = font("Times New Roman Bold Italic.ttf", 34 * SS)
+        self.dots = []
+        for k in range(n):
+            c = Image.new("RGBA", (56 * SS, 56 * SS), (0, 0, 0, 0))
+            dd = ImageDraw.Draw(c)
+            dd.ellipse([5 * SS, 5 * SS, 51 * SS, 51 * SS], fill=rgb("#E8C872") + (255,), outline=rgb(DARK_BROWN) + (255,), width=int(1.5 * SS))
+            dd.text((28 * SS, 29 * SS), str(k + 1), font=fnum, fill=rgb("#0D0B0B") + (255,), anchor="mm")
+            self.dots.append(c.resize((56, 56), Image.LANCZOS))
+
+    def frame(self, t, layer, boxes):
+        if not (self.t0 <= t < self.t1):
+            return
+        fade = min(1.0, (self.t1 - t) / 0.25)
+        for k, st in enumerate(self.steps):
+            ts = st["t"]
+            if k > 0 and t >= ts - 0.06:
+                _vline(layer, 128, self.ys[k - 1] + 26, self.ys[k] - 26, ease_cubic((t - ts + 0.06) / 0.26), fade)
+            if t < ts:
+                continue
+            nxt = self.steps[k + 1]["t"] if k + 1 < len(self.steps) else None
+            dim = 1.0 if nxt is None or t < nxt else 1 - (0x60 / 255) * min(1.0, (t - nxt) / 0.35)
+            _put(layer, with_alpha(scale_in(self.dots[k], (t - ts) / 0.30), fade * dim), 128, self.ys[k], boxes)
+            if t >= ts + 0.09:
+                _label_at(layer, self.lbls[k], 172, self.ys[k], ease_cubic((t - ts - 0.09) / 0.32), fade, boxes, dim)
+
+
+class Vertical:
+    """Sơ đồ cơ chế dọc (5.3) và quy trình nối bước dọc: 2 vòng icon r42 tại (130,1182) và (130,1398), nhãn tại x190;
+    giữa: nét dọc (+100 ms, 380 ms) + đầu mũi tên (+420 ms). Cơ chế: mũi tên lên/xuống + chữ vàng (≤ 80 px) ở giữa."""
+
+    def __init__(self, d):
+        self.t0, self.t1 = d["t0"], d["t1"]
+        self.mech = d["type"] == "mechanism"
+        self.top, self.bottom, self.mid = d["top"], d["bottom"], d.get("mid")
+        self.ictop, self.icbot = ring_icon(42, d["top"].get("icon", "person")), ring_icon(42, d["bottom"].get("icon", "person"))
+        self.ltop = label_img(self.top["text"][:1].upper() + self.top["text"][1:], fit_label(self.top["text"], 66, 780))
+        self.lbot = label_img(self.bottom["text"][:1].upper() + self.bottom["text"][1:], fit_label(self.bottom["text"], 66, 780))
+        self.gold = render_gold(self.mid["text"][:1].upper() + self.mid["text"][1:], min(80, fit_size(self.mid["text"], 80, 700)))[0] if self.mid else None
+
+    def frame(self, t, layer, boxes):
+        if not (self.t0 <= t < self.t1):
+            return
+        fade = min(1.0, (self.t1 - t) / 0.25)
+        for (it, ic, lb, cy) in ((self.top, self.ictop, self.ltop, 1182), (self.bottom, self.icbot, self.lbot, 1398)):
+            if t >= it["t"]:
+                _put(layer, with_alpha(scale_in(ic, (t - it["t"]) / 0.30), fade), 130, cy, boxes)
+                if t >= it["t"] + 0.09:
+                    _label_at(layer, lb, 190, cy, ease_cubic((t - it["t"] - 0.09) / 0.32), fade, boxes)
+        tl = (self.mid or self.bottom)["t"] if self.mech else self.top["t"]
+        if t >= tl + 0.1:
+            _vline(layer, 130, 1232, 1348, ease_cubic((t - tl - 0.1) / 0.38), fade)
+        if t >= tl + 0.42:
+            a = ease_out_back((t - tl - 0.42) / 0.22) * fade
+            _head(layer, 130, 1346, min(1.0, a), down=True)
+            if self.mech:
+                _head(layer, 130, 1234, min(1.0, a), down=False)
+        if self.gold is not None and t >= self.mid["t"]:
+            u = ease_cubic((t - self.mid["t"]) / 0.38)
+            im = with_alpha(self.gold, u * fade)
+            x, cy = 190, 1290
+            layer.alpha_composite(im, (x, int(cy - im.height / 2) - BAND_Y0))
+            bb = im.getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox()
+            if bb:
+                boxes.append(("gfx", (x + bb[0], int(cy - im.height / 2) + bb[1], x + bb[2], int(cy - im.height / 2) + bb[3])))
+
+
+def fs06_clip(src, cropf, t0, d, out):
+    """FS-06 (Skill 5.4/5.5 b): nền là chính cảnh quay làm mờ mạnh (≈40 px @1080), giảm bão hoà 55 %, tối, vignette;
+    TR-PIP: người nói thu về khung góc vuông viền vàng góc trên phải (x615, y120, rộng 405) trong 0,6 s easeInOutQuint,
+    phóng ngược ra ở 0,6 s cuối. Nội suy affine dưới điểm ảnh (không làm tròn)."""
+    from PIL import ImageEnhance
+    n = max(2, int(round(d * FPS)))
+    vf = ",".join(["fps=30"] + ([cropf] if cropf else []) + [f"scale={W}:{H}:flags=lanczos", "format=rgb24"])
+    rd = subprocess.Popen(["ffmpeg", "-v", "error", "-ss", f"{t0:.3f}", "-i", src, "-frames:v", str(n), "-vf", vf, "-f", "rawvideo", "-"], stdout=subprocess.PIPE)
+    wr = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
+                           "-c:v", "libx264", "-preset", "medium", "-crf", "14", "-pix_fmt", "yuv420p", out], stdin=subprocess.PIPE)
+    yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
+    r = np.sqrt(((xx - W / 2) / (W * 0.62)) ** 2 + ((yy - H / 2) / (H * 0.62)) ** 2)
+    vig = np.clip(1.15 - 0.75 * r ** 2, 0.25, 1.0)[..., None]
+    last = None
+    for i in range(n):
+        buf = rd.stdout.read(W * H * 3)
+        if len(buf) == W * H * 3:
+            last = Image.frombytes("RGB", (W, H), buf)
+        fr = last
+        t = i / FPS
+        p = min(ease_in_out_quint(t / 0.6), ease_in_out_quint((d - t) / 0.6))
+        if p < 0.001:
+            wr.stdin.write(fr.tobytes())
+            continue
+        sm = fr.resize((270, 480), Image.BILINEAR).filter(ImageFilter.GaussianBlur(5))
+        sm = ImageEnhance.Brightness(ImageEnhance.Color(sm).enhance(0.45)).enhance(0.55)
+        bg = (np.asarray(sm.resize((W, H), Image.BICUBIC), dtype=np.float32) * vig).clip(0, 255).astype(np.uint8)
+        frame = Image.fromarray(bg).convert("RGBA")
+        x, y, w = 615 * p, 120 * p, W - (W - 405) * p
+        k = w / W
+        lay = fr.convert("RGBA").transform((W, H), Image.AFFINE, (1 / k, 0, -x / k, 0, 1 / k, -y / k), resample=Image.BICUBIC, fillcolor=(0, 0, 0, 0))
+        frame.alpha_composite(lay)
+        if p > 0.05:
+            ImageDraw.Draw(frame).rectangle([x - 1.5, y - 1.5, x + w + 1.5, y + w * H / W + 1.5], outline=rgb(GOLD) + (int(255 * min(1.0, (p - 0.05) / 0.2)),), width=3)
+        wr.stdin.write(frame.convert("RGB").tobytes())
+    rd.stdout.close()
+    rd.wait()
+    wr.stdin.close()
+    if wr.wait() != 0:
+        raise RuntimeError("không dựng được khung FS-06")
+
+
+def leak_clip(out, d=3.6):
+    """AN-12 chuyển chương bằng vệt sáng: light leak vàng ấm + 1 vệt chéo quét qua toàn khung (easeInOutQuint), 220 hạt bụi vàng; 3,6 s.
+    Lớp có alpha (gần với blend screen), chồng dưới logo và chữ."""
+    n = int(round(d * FPS))
+    sw, sh = 270, 480
+    Y, X = np.mgrid[0:sh, 0:sw].astype(np.float32)
+    X /= sw
+    Y /= sw
+    rng = np.random.default_rng(12)
+    px, py = rng.uniform(0, W, 220), rng.uniform(0, H, 220)
+    vx, vy = rng.uniform(-14, 14, 220), rng.uniform(-30, -6, 220)
+    ph, rr = rng.uniform(0, 6.28, 220), rng.uniform(1.2, 3.2, 220)
+    wr = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgba", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
+                           "-c:v", "png", "-pix_fmt", "rgba", out], stdin=subprocess.PIPE)
+    ang = math.radians(35)
+    for i in range(n):
+        t = i / FPS
+        u = t / d
+        e = ease_in_out_quint(u)
+        cx, cy = -0.25 + 1.5 * e, 0.25 + 0.9 * e
+        blob = np.exp(-(((X - cx) / 0.42) ** 2 + ((Y - cy) / 0.55) ** 2)) * (math.sin(math.pi * u) ** 1.3) * 0.8
+        su = min(1.0, max(0.0, (t - 0.6) / 1.8))
+        pos = -0.4 + 2.6 * ease_in_out_quint(su)
+        band = np.exp(-(((X * math.cos(ang) + Y * math.sin(ang)) - pos) / 0.05) ** 2) * (math.sin(math.pi * su) if 0 < su < 1 else 0.0) * 0.7
+        al = np.clip(blob + band, 0, 0.8)
+        warm = np.clip(band / (blob + band + 1e-6), 0, 1)
+        rgbm = np.stack([255 + 0 * warm, 205 + 40 * warm, 110 + 120 * warm], -1)
+        small = np.concatenate([rgbm, (al * 255)[..., None]], -1).astype(np.uint8)
+        img = Image.fromarray(small).resize((W, H), Image.BICUBIC)
+        dd = ImageDraw.Draw(img)
+        env = math.sin(math.pi * u) ** 0.8
+        for j in range(220):
+            x, y = px[j] + vx[j] * t, py[j] + vy[j] * t
+            a_ = int(255 * env * (0.35 + 0.35 * math.sin(ph[j] + 5 * t)))
+            if a_ > 8:
+                dd.ellipse([x - rr[j], y - rr[j], x + rr[j], y + rr[j]], fill=(255, 220, 140, a_))
+        wr.stdin.write(img.tobytes())
+    wr.stdin.close()
+    if wr.wait() != 0:
+        raise RuntimeError("không dựng được vệt sáng AN-12")
+
+
+def fit_emphasis(emph, windows):
+    """Skill 4: kết thúc cắt trước chữ nhấn kế 0,08 s và trước animation 0,12 s; < 0,6 s thì bỏ; trùng cửa sổ animation thì bỏ."""
+    emph = sorted(emph, key=lambda e: e.t0)
+    keep = []
+    for k, e in enumerate(emph):
+        if any(a <= e.t0 < b for a, b in windows):
+            continue
+        if k + 1 < len(emph):
+            e.t1 = min(e.t1, emph[k + 1].t0 - 0.08)
+        nxt = [a for a, b in windows if a > e.t0]
+        if nxt:
+            e.t1 = min(e.t1, min(nxt) - 0.12)
+        if e.t1 - e.t0 >= 0.6:
+            keep.append(e)
+    return keep
+
+
+def fit_label(text, fs=66, maxw=800):
+    f = font("Times New Roman Italic.ttf", fs)
+    w = f.getlength(text)
+    return fs if w <= maxw else max(52, int(fs * maxw / w))
+
+
+def make_diagram(d):
+    return {"compare": Compare, "arrow": Arrow, "steps": Steps, "mechanism": Vertical, "process": Vertical}[d["type"]](d)
+
+
 # ---------------------------------------------------------------- khung, mặt, zoom (ESV mục 1, 6)
 
 def face_center(src, info, n=12):
@@ -398,54 +656,73 @@ def face_center(src, info, n=12):
     return float(np.median(xs)), float(np.median(ys)), True
 
 
-def zoom_expr(zooms, breath, v="t"):
-    """z(t) = thở(×1,03) × nhấn(×1,07–1,12), cosine; biểu thức ffmpeg theo biến thời gian v."""
-    def seg(t0, t1, z0, z1):
-        return f"gte({v},{t0:.3f})*lt({v},{t1:.3f})*({z0 - 1:.4f}+{z1 - z0:.4f}*(1-cos(PI*({v}-{t0:.3f})/{t1 - t0:.3f}))/2)"
-    parts_b = []
-    for a, b in breath:
-        L = b - a
-        if L < 10:
-            continue
-        up = min(7.0, 0.45 * L)
-        s0, s1 = a + 0.4, a + 0.4 + up
-        e0 = b - 0.3 - 4.0
-        parts_b += [seg(s0, s1, 1.0, 1.03), f"gte({v},{s1:.3f})*lt({v},{e0:.3f})*0.03", seg(e0, e0 + 4.0, 1.03, 1.0)]
-    parts_e = []
-    for z in zooms:
-        ti, lv, to = z["t"], z["level"], z["out"]
-        parts_e += [seg(ti, ti + 0.8, 1.0, lv), f"gte({v},{ti + 0.8:.3f})*lt({v},{to:.3f})*{lv - 1:.4f}", seg(to, to + 0.9, lv, 1.0)]
-    zb = "(1+" + ("+".join(parts_b) if parts_b else "0") + ")"
-    ze = "(1+" + ("+".join(parts_e) if parts_e else "0") + ")"
-    return f"min(1.15,{zb}*{ze})"
+# Zoom r3 (Skill ESV mục 6.2, 6.5): một đường cong, một tâm (mặt), smootherstep S(u)=6u⁵−15u⁴+10u³ — vận tốc và gia tốc
+# bằng 0 ở hai đầu; KHÔNG zoom "thở"; tốc độ theo nhịp video. Biến khung của perspective: in = số khung + 1 → dùng (in−1).
+ZOOM_PROFILES = {  # (khung vào, khung ra, giữ tối thiểu s, giãn cách s) — [AI SUY LUẬN, đã render thử và đo], CHƯA CHỐT
+    "CHAM": (90, 75, 1.0, 4.0),
+    "VUA": (54, 45, 1.0, 3.0),
+    "NHANH": (30, 36, 0.8, 2.0),
+}
 
 
-def zoom_value(zooms, breath, t):
-    def seg(t0, t1, z0, z1):
-        return (z0 + (z1 - z0) * cos_ease((t - t0) / (t1 - t0))) if t0 <= t <= t1 else None
-    zb = 1.0
-    for a, b in breath:
-        L = b - a
-        if L < 10:
-            continue
-        up = min(7.0, 0.45 * L)
-        s0, s1, e0 = a + 0.4, a + 0.4 + min(7.0, 0.45 * L), b - 0.3 - 4.0
-        if s0 <= t <= s1:
-            zb = seg(s0, s1, 1.0, 1.03)
-        elif s1 < t < e0:
-            zb = 1.03
-        elif e0 <= t <= e0 + 4.0:
-            zb = seg(e0, e0 + 4.0, 1.03, 1.0)
-    ze = 1.0
+def zoom_expr(zooms, v="(in-1)"):
+    """z(f) = 1 + Σ (L−1)·[S((f−f_in)/N_in) − S((f−f_out)/N_out)]; mỗi lần zoom = {t, out, level, nin, nout} (giây / khung)."""
+    def S(a, n):
+        u = f"clip(({v}-{a})/{n},0,1)"
+        return f"(pow({u},3)*({u}*({u}*6-15)+10))"
+    parts = []
     for z in zooms:
-        ti, lv, to = z["t"], z["level"], z["out"]
-        if ti <= t <= ti + 0.8:
-            ze = seg(ti, ti + 0.8, 1.0, lv)
-        elif ti + 0.8 < t < to:
-            ze = lv
-        elif to <= t <= to + 0.9:
-            ze = seg(to, to + 0.9, lv, 1.0)
-    return min(1.15, zb * ze)
+        fi, fo = int(round(z["t"] * FPS)), int(round(z["out"] * FPS))
+        parts.append(f"{z['level'] - 1:.4f}*({S(fi, int(z['nin']))}-{S(fo, int(z['nout']))})")
+    return "(1+" + ("+".join(parts) if parts else "0") + ")"
+
+
+def zoom_at(zooms, f):
+    def S(u):
+        u = min(1.0, max(0.0, u))
+        return u ** 3 * (u * (u * 6 - 15) + 10)
+    return 1 + sum((z["level"] - 1) * (S((f - z["t"] * FPS) / z["nin"]) - S((f - z["out"] * FPS) / z["nout"])) for z in zooms)
+
+
+def pace_profile(units, words, n_cuts, dur, content=""):
+    """Skill ESV 6.5 bước 1: tốc độ nói (âm tiết/s trên thời gian có lời), mật độ cắt (mối/phút), loại nội dung → CHẬM / VỪA / NHANH."""
+    spoken = sum(u["end"] - u["start"] for u in units) or 1.0
+    syl = sum(1 for w in words if _clean(w["text"]))  # mỗi chữ cách nhau dấu cách = 1 âm tiết
+    rate = syl / spoken
+    cuts = n_cuts / max(dur / 60.0, 0.1)
+    v1 = "NHANH" if rate >= 4.5 else ("CHAM" if rate <= 3.5 else "VUA")
+    v2 = "NHANH" if cuts >= 12 else ("CHAM" if cuts <= 6 else "VUA")
+    c = (content or "").lower()
+    v3 = ("NHANH" if any(k in c for k in ("quảng cáo", "tuyển dụng", "hook", "tin nhanh")) else
+          "VUA" if any(k in c for k in ("giới thiệu", "hướng dẫn", "đào tạo")) else
+          "CHAM" if any(k in c for k in ("chia sẻ", "tâm sự", "kể chuyện")) else "")
+    if v3:
+        prof, why = v3, f"theo loại nội dung ({content})"
+    else:
+        prof = v1 if v1 == v2 else "VUA"
+        why = "2/2 tiêu chí đo" if v1 == v2 else "tiêu chí lệch nhau → VỪA"
+    return prof, {"syllablesPerSec": round(rate, 2), "cutsPerMin": round(cuts, 1), "content": content or "", "byRate": v1, "byCuts": v2, "byContent": v3, "why": why}
+
+
+def place_zooms(cands, prof, blocked, dur, cut_times=()):
+    """Đặt zoom ở ý quan trọng (mốc chữ nhấn): mức ×1,06–1,08; giữ ≥ hồ sơ; giãn cách ≥ hồ sơ; không chạm sơ đồ / FS / minh hoạ
+    (±1 s), không bắt đầu hay kết thúc trong ±0,5 s quanh mối cắt; zoom phải xong trước cuối video."""
+    nin, nout, hold, gap = ZOOM_PROFILES[prof]
+    out_list = []
+    for t, lv in sorted(cands):
+        t = max(0.3, t - 0.1)
+        o = t + nin / FPS + max(hold, 1.2)
+        end = o + nout / FPS
+        if end > dur - 0.5:
+            continue
+        if any(not (end + 1.0 <= a or t - 1.0 >= b) for a, b in blocked):
+            continue
+        if any(abs(x - c) < 0.5 for c in cut_times for x in (t, end)):
+            continue
+        if out_list and t - (out_list[-1]["out"] + out_list[-1]["nout"] / FPS) < gap:
+            continue
+        out_list.append({"t": round(t, 3), "out": round(o, 3), "level": min(1.08, max(1.06, lv)), "nin": nin, "nout": nout})
+    return out_list
 
 
 # ---------------------------------------------------------------- kế hoạch tự động (khi chưa có biên tập)
@@ -468,6 +745,87 @@ def _kw_hit(kw, spoken):
 IMG_EXT = (".jpg", ".jpeg", ".png", ".webp")
 
 
+def apply_corrections(words, text):
+    """Sửa chữ máy nghe sai theo danh sách OWNER/biên tập ("sai => đúng", cùng số tiếng): thay chữ, giữ mốc thời gian.
+    Từ đã được sửa coi như đã nghe rõ (người đã xác nhận)."""
+    pairs = []
+    for line in re.split(r"[\n;]", text or ""):
+        if "=>" not in line:
+            continue
+        a_, b_ = [x.strip() for x in line.split("=>", 1)]
+        wa, wb = a_.split(), b_.split()
+        if wa and len(wa) == len(wb):
+            pairs.append(([_clean(x) for x in wa], wb))
+    n = 0
+    for wa, wb in pairs:
+        for i in range(len(words) - len(wa) + 1):
+            if all(_clean(words[i + k]["text"]) == wa[k] for k in range(len(wa))):
+                for k in range(len(wa)):
+                    t = words[i + k]["text"]
+                    tail = t[len(t.rstrip(",.?!")):]
+                    words[i + k]["text"] = (wb[k][:1].upper() + wb[k][1:] if t[:1].isupper() else wb[k]) + tail
+                    words[i + k]["uncertain"] = False
+                    words[i + k]["p"] = 1.0
+                n += 1
+    return n
+
+
+def owner_decisions(data_dir):
+    try:
+        return json.load(open(os.path.join(data_dir, "video-assets", "owner-decisions.json"), encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def default_music(data_dir):
+    """Bài nhạc nền mặc định (có giấy phép) trong thư viện DATA_DIR/video-assets/music/manifest.json."""
+    d = os.path.join(data_dir, "video-assets", "music")
+    try:
+        items = json.load(open(os.path.join(d, "manifest.json"), encoding="utf-8"))
+    except (OSError, ValueError):
+        return None, ""
+    items = [x for x in items if str(x.get("license", "")).strip() and os.path.isfile(os.path.join(d, x.get("file", "")))]
+    items.sort(key=lambda x: not x.get("default"))
+    return (os.path.join(d, items[0]["file"]), items[0]["license"]) if items else (None, "")
+
+
+def synth_sfx(path, pops, whooshes, dur, sr=48000):
+    """SFX tổng hợp bằng công thức (không tệp ngoài, không vướng bản quyền): "tách" ngắn ở chữ nhấn,
+    "vút" (nhiễu lọc quét tần) khi vào ảnh / clip minh hoạ."""
+    n = int(round(dur * sr))
+    out = np.zeros(n, dtype=np.float32)
+    L = int(0.07 * sr)
+    tt = np.arange(L) / sr
+    f = 1400 * np.exp(-tt * 30) + 520
+    pop = (np.sin(2 * np.pi * np.cumsum(f) / sr) * np.exp(-tt * 55)).astype(np.float32) * 0.42
+    Lw = int(0.5 * sr)
+    x = np.arange(Lw) / Lw
+    nz = np.random.default_rng(7).standard_normal(Lw).astype(np.float32)
+    fc = 350 + 4200 * np.sin(np.pi * np.minimum(x * 1.25, 1.0)) ** 1.6
+    al = np.exp(-2 * np.pi * fc / sr).astype(np.float32)
+    y, st, hp = np.zeros(Lw, np.float32), 0.0, 0.0
+    for i in range(Lw):
+        st = al[i] * st + (1 - al[i]) * nz[i]
+        hp = 0.995 * hp + 0.005 * st  # bỏ ù trầm
+        y[i] = st - hp
+    wh = y * (np.sin(np.pi * x) ** 2)
+    wh = (wh / (np.max(np.abs(wh)) + 1e-9) * 0.5).astype(np.float32)
+    for snd, times, lead in ((pop, pops, 0.0), (wh, whooshes, 0.22)):
+        for t in times:
+            i = int(round((t - lead) * sr))
+            if i < 0 or i >= n:
+                continue
+            m_ = min(len(snd), n - i)
+            out[i:i + m_] += snd[:m_]
+    pcm = (np.clip(out, -1, 1) * 32767).astype(np.int16)
+    import wave
+    with wave.open(path, "wb") as w:
+        w.setnchannels(2)
+        w.setsampwidth(2)
+        w.setframerate(sr)
+        w.writeframes(np.repeat(pcm[:, None], 2, axis=1).tobytes())
+
+
 def broll_library(broll_dir):
     """Thư viện minh hoạ (clip + ảnh) từ manifest.json; chỉ mục có giấy phép, có tệp, có từ khoá."""
     mf = os.path.join(broll_dir, "manifest.json")
@@ -477,7 +835,7 @@ def broll_library(broll_dir):
     for it in json.load(open(mf, encoding="utf-8")):
         f = os.path.join(broll_dir, it.get("file", ""))
         kws = [P.norm(k) for k in it.get("keywords", []) if P.norm(k)]
-        if not str(it.get("license", "")).strip() or not os.path.isfile(f) or not kws:
+        if not str(it.get("license", "")).strip() or not os.path.isfile(f) or not kws or it.get("exclude"):
             continue
         is_img = f.lower().endswith(IMG_EXT)
         lib.append({**it, "path": f, "kw": kws, "dur": 99.0 if is_img else P.probe(f)["duration"]})
@@ -522,7 +880,7 @@ def image_clip(src, out, d):
 
 
 def auto_plan(words, dur, keywords):
-    """Kế hoạch theo luật (ESV mục 4, 6): chữ nhấn ít (≈1/30 s, cách ≥ 4 s), từ đã nghe rõ; zoom theo chữ nhấn; zoom thở.
+    """Kế hoạch theo luật (ESV mục 4): chữ nhấn ít (≈1/30 s, cách ≥ 4 s), từ đã nghe rõ. Zoom đặt lúc dựng theo hồ sơ nhịp (mục 6.5).
     Sơ đồ / animation cần hiểu nội dung (quy trình, cơ chế) nên KHÔNG tự tạo ở đây: để biên tập (người hoặc AI) lập."""
     ws = [w for w in words if not w.get("uncertain")]
     toks = [(_clean(w["text"]), w) for w in ws]
@@ -566,19 +924,7 @@ def auto_plan(words, dur, keywords):
         text = c["text"].upper() if c in top else c["text"][:1].upper() + c["text"][1:]
         style = "blur" if k == 0 else ("shine" if c is top[0] else "fade")
         emph.append({"t": round(c["t"], 2), "text": text, "style": style})
-    zooms = []
-    for e in emph:
-        z = {"t": round(max(0.2, e["t"] - 0.1), 2), "level": 1.12 if e["style"] == "shine" else 1.10, "out": round(min(dur - 1.0, e["t"] + 2.6), 2)}
-        if z["out"] - z["t"] > 1.8 and all(z["t"] - (x["out"] + 0.9) >= 1.7 for x in zooms):
-            zooms.append(z)
-    breath, a0 = [], 0.0
-    while a0 < dur - 1:
-        b0 = min(dur, a0 + 18.0)
-        if dur - b0 < 10:
-            b0 = dur
-        breath.append([round(a0, 2), round(b0, 2)])
-        a0 = b0
-    return {"by": "Luật tự động (chưa có biên tập AI)", "note": "Chữ nhấn theo từ khoá / cụm lặp / con số; không có sơ đồ.", "emphasis": emph, "diagrams": [], "zooms": zooms, "breath": breath}
+    return {"by": "Luật tự động (chưa có biên tập AI)", "note": "Chữ nhấn theo từ khoá / cụm lặp / con số; không có sơ đồ.", "emphasis": emph, "diagrams": []}
 
 
 # ---------------------------------------------------------------- chính
@@ -593,6 +939,11 @@ def main():
     ap.add_argument("--logo", default=os.path.join(P.ROOT, "public", "brand", "baor-light.png"))
     ap.add_argument("--model", default="medium")
     ap.add_argument("--model2", default="small")
+    ap.add_argument("--music", default="", help="bài nhạc nền; trống = bài mặc định trong DATA_DIR/video-assets/music/manifest.json")
+    ap.add_argument("--music-license", default="")
+    ap.add_argument("--no-music", action="store_true")
+    ap.add_argument("--no-sfx", action="store_true", help="tắt SFX tổng hợp (vút khi vào minh hoạ, tách khi chữ nhấn)")
+    ap.add_argument("--corrections", default="", help='sửa chữ nghe sai, mỗi dòng "sai => đúng" (cùng số tiếng)')
     a = ap.parse_args()
     job = P.Job(a.job_dir)
     os.makedirs(job.p("work"), exist_ok=True)
@@ -617,6 +968,7 @@ def main():
         job.progress("listen2", f"Nghe lại đối chiếu ({a.model2})", 30)
         second = P.transcribe(wav16, a.model2, "")
         P.mark_uncertain(words, second)
+    fixes = apply_corrections(words, a.corrections)
     for w in words:
         w.setdefault("end", w["start"] + 0.2)
         if "uncertain" not in w:
@@ -656,7 +1008,12 @@ def main():
     fsub_ss = font("Times New Roman Italic.ttf", 66 * SS)
     units = build_sub_units(words, fsub)
     emph = [Emphasis(e, words) for e in plan.get("emphasis", [])]
-    dias = [Compare(d) if d["type"] == "compare" else Arrow(d) for d in plan.get("diagrams", [])]
+    dias = [make_diagram(d) for d in plan.get("diagrams", []) if d["type"] in ("compare", "arrow", "steps", "mechanism", "process")]
+    fs_events = [d for d in plan.get("diagrams", []) if d["type"] == "fs06"]
+    leaks = [d for d in plan.get("diagrams", []) if d["type"] == "leak"]
+    anim_windows = [(d.t0, d.t1) for d in dias] + [(d["t0"], d["t1"]) for d in fs_events]
+    n_emph_plan = len(emph)
+    emph = fit_emphasis(emph, anim_windows)
     tdir = job.p("work", "txt")
     os.makedirs(tdir, exist_ok=True)
     sub_cache = {}
@@ -699,14 +1056,61 @@ def main():
         if f % 150 == 0:
             job.progress("draw", f"Vẽ lớp chữ {f}/{N} khung", 45 + int(25 * f / N))
 
-    # Âm thanh: giọng (lọc nhẹ, nén nhẹ, chuẩn −16 LUFS, đỉnh −2,5); chưa có nhạc có giấy phép trên Drive → không nhạc
-    job.progress("audio", "Âm thanh: lọc giọng, chuẩn −16 LUFS", 72)
+    # Âm thanh: giọng (lọc nhẹ, nén nhẹ) + nhạc nền có giấy phép (≈ −25 LUFS, nén theo giọng, vào 1 s / ra 2 s)
+    # + SFX tổng hợp; tổng chuẩn −16 LUFS, đỉnh −2,5 dBTP.
+    job.progress("audio", "Âm thanh: giọng, nhạc nền, SFX, chuẩn −16 LUFS", 72)
+    data_dir = os.environ.get("DATA_DIR", os.path.join(P.ROOT, "data"))
     voice = job.p("work", "voice.wav")
     P.sh(["ffmpeg", "-v", "error", "-y", "-i", src, "-vn", "-af", f"apad=whole_dur={dur:.6f},atrim=end={dur:.6f},highpass=f=70,acompressor=threshold=0.05:ratio=2.5:attack=10:release=200:makeup=2", "-ar", "48000", "-ac", "2", voice])
-    m = P.sh(["ffmpeg", "-hide_banner", "-i", voice, "-af", "loudnorm=I=-16:TP=-2.5:LRA=11:print_format=json", "-f", "null", "-"], check=False).stderr
+    mix = voice
+    music_path, music_lic = (a.music, a.music_license) if a.music else default_music(data_dir)
+    music_info = {"used": False, "reason": "tắt" if a.no_music else "thư viện nhạc chưa có bài có giấy phép"}
+    if music_path and not a.no_music and str(music_lic).strip():
+        mc = P.SKILL["audio"]["music"]
+        mdur = float(P.sh(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", music_path]).stdout.strip() or 0)
+        bed = job.p("work", "music_bed.wav")
+        if mdur < dur:  # bài ngắn hơn video: nối chính nó, giao nhau 3 s (không cụt nhịp ở chỗ nối)
+            reps = int(math.ceil(dur / max(1.0, mdur - 4))) + 1
+            ins = sum([["-i", music_path] for _ in range(reps)], [])
+            fcx, last = "", "[0:a]"
+            for k in range(1, reps):
+                fcx += f"{last}[{k}:a]acrossfade=d=4:c1=tri:c2=tri[x{k}];"
+                last = f"[x{k}]"
+            P.sh(["ffmpeg", "-v", "error", "-y", *ins, "-filter_complex", fcx + f"{last}atrim=0:{dur:.6f},aresample=48000[o]", "-map", "[o]", "-ac", "2", bed])
+        else:
+            P.sh(["ffmpeg", "-v", "error", "-y", "-i", music_path, "-af", f"atrim=0:{dur:.6f},aresample=48000", "-ac", "2", bed])
+        gain = -25.0  # Skill 8: volume=-25dB trên mp3 gốc; hạ thêm nếu A5 chưa đạt
+        a5 = None
+        for _ in range(4):
+            duck, mix = job.p("work", "music_duck.wav"), job.p("work", "mix.wav")
+            fcm = (f"[0:a]asplit=3[v1][v2][v3];[1:a]volume={gain:.2f}dB,afade=t=in:d={mc['fadeInSec']},"
+                   f"afade=t=out:st={max(0, dur - mc['fadeOutSec']):.3f}:d={mc['fadeOutSec']},apad=whole_dur={dur:.6f}[m];"
+                   f"[m][v1]sidechaincompress=threshold=0.03:ratio=6:attack=45:release=250[d];[d]asplit=2[d1][d2];"
+                   f"[v2][d1]amix=inputs=2:normalize=0:duration=first[mx]")
+            P.sh(["ffmpeg", "-v", "error", "-y", "-i", voice, "-i", bed, "-filter_complex", fcm, "-map", "[mx]", "-c:a", "pcm_s16le", mix,
+                  "-map", "[d2]", "-c:a", "pcm_s16le", duck, "-map", "[v3]", "-c:a", "pcm_s16le", job.p("work", "voice_ref.wav")])
+            a5 = P.a5_check(job.p("work", "voice_ref.wav"), duck)
+            if a5["pass"]:
+                break
+            gain -= a5["deficit"] + 1.0
+        music_info = {"used": True, "file": os.path.basename(music_path), "license": music_lic, "gainDb": round(gain, 1), "a5": a5}
+    sfx_info = {"used": False, "reason": "tắt"}
+    if not a.no_sfx:
+        pops = [float(e["t"]) for e in plan.get("emphasis", [])]
+        whs = [float(b["t0"]) for b in plan.get("broll", [])] + [float(d["t0"]) + 0.05 for d in plan.get("diagrams", []) if d["type"] in ("fs06", "leak")]
+        if pops or whs:
+            sfxw = job.p("work", "sfx.wav")
+            synth_sfx(sfxw, pops, whs, dur)
+            withsfx = job.p("work", "mix_sfx.wav")
+            # SFX dưới giọng ≈ 14 dB, không át lời
+            P.sh(["ffmpeg", "-v", "error", "-y", "-i", mix, "-i", sfxw, "-filter_complex",
+                  "[1:a]volume=-14dB[p];[0:a][p]amix=inputs=2:normalize=0:duration=first[o]", "-map", "[o]", "-c:a", "pcm_s16le", withsfx])
+            mix = withsfx
+            sfx_info = {"used": True, "pops": len(pops), "whooshes": len(whs), "source": "tổng hợp tại chỗ bằng công thức (không dùng tệp ngoài)"}
+    m = P.sh(["ffmpeg", "-hide_banner", "-i", mix, "-af", "loudnorm=I=-16:TP=-2.5:LRA=11:print_format=json", "-f", "null", "-"], check=False).stderr
     js = json.loads(m[m.rfind("{"):m.rfind("}") + 1])
     final = job.p("work", "final.wav")
-    P.sh(["ffmpeg", "-v", "error", "-y", "-i", voice, "-af",
+    P.sh(["ffmpeg", "-v", "error", "-y", "-i", mix, "-af",
           f"loudnorm=I=-16:TP=-2.5:LRA=11:measured_I={js['input_i']}:measured_TP={js['input_tp']}:measured_LRA={js['input_lra']}:measured_thresh={js['input_thresh']}:offset={js['target_offset']}:linear=true,"
           "aresample=192000,alimiter=limit=0.70:attack=1:release=80:level=false,aresample=48000", "-c:a", "pcm_s24le", final])
 
@@ -714,13 +1118,21 @@ def main():
     job.progress("encode", "Xuất bản chính 1080x1920", 78)
     # Zoom MƯỢT (ESV mục 6): biến đổi phối cảnh dưới điểm ảnh, làm trên khung gốc (vd 1216x2160) rồi mới thu về 1080x1920.
     # Không làm tròn kích thước theo từng khung (làm tròn gây giật 1–2 px). q = 1 − 1/z(t); tâm zoom A = mặt.
-    zx = zoom_expr(plan.get("zooms", []), plan.get("breath", [[0, dur]]), v="(in/30)")
+    blocked = anim_windows + [(float(b["t0"]), float(b["t1"])) for b in plan.get("broll", [])] + [(d["t0"], d["t0"] + 3.6) for d in leaks]
+    if plan.get("pace") in ZOOM_PROFILES:
+        prof, pace = plan["pace"], {"why": "biên tập chọn"}
+    else:
+        prof, pace = pace_profile(units, words, len(plan.get("broll", [])) + 2 * len(fs_events) + len(leaks), dur, plan.get("content", ""))
+    zooms = [z for z in plan.get("zooms", []) if "nin" in z]
+    if not zooms:
+        zooms = place_zooms([(e.t0, 1.08 if e.style == "shine" else (1.07 if e.style == "blur" else 1.06)) for e in emph], prof, blocked, dur)
+    zx = zoom_expr(zooms)
     if cropf:
         cw, chh = int(cropf.split("=")[1].split(":")[0]), int(cropf.split(":")[1])
     else:
         cw, chh = info["width"], info["height"]
     Ax, Ay = ax * cw, ay * chh
-    q = f"(1-1/({zx}))"
+    q = f"(1-1/{zx})"
     persp = (f"perspective=x0='{Ax:.3f}*{q}':y0='{Ay:.3f}*{q}':x1='{cw}-{cw - Ax:.3f}*{q}':y1='{Ay:.3f}*{q}':"
              f"x2='{Ax:.3f}*{q}':y2='{chh}-{chh - Ay:.3f}*{q}':x3='{cw}-{cw - Ax:.3f}*{q}':y3='{chh}-{chh - Ay:.3f}*{q}':interpolation=cubic:eval=frame")
     vf = ["fps=30"] + ([cropf] if cropf else []) + ["format=yuv444p", persp, f"scale={W}:{H}:flags=lanczos", "unsharp=5:5:0.3", "setsar=1",
@@ -735,8 +1147,8 @@ def main():
     for k, b in enumerate(plan.get("broll", [])):
         fpath = os.path.join(broll_dir, b["file"])
         meta = manifest.get(b["file"], {})
-        if not os.path.isfile(fpath) or not str(meta.get("license", "")).strip():
-            sys.stderr.write(f"Bỏ B-roll {b['file']}: thiếu tệp hoặc chưa ghi giấy phép trong manifest\n")
+        if not os.path.isfile(fpath) or not str(meta.get("license", "")).strip() or meta.get("exclude"):
+            sys.stderr.write(f"Bỏ B-roll {b['file']}: thiếu tệp, chưa ghi giấy phép hoặc bị loại ({meta.get('exclude', '')})\n")
             continue
         d = float(b["t1"]) - float(b["t0"])
         idx = 4 + len(brolls)
@@ -751,6 +1163,24 @@ def main():
                  f"[{last}][b{k}]overlay=0:0:enable='between(t,{float(b['t0']):.3f},{float(b['t1']):.3f})':eof_action=pass[bg{k + 1}];")
         last = f"bg{k + 1}"
         brolls.append({**b, "license": meta.get("license", ""), "source": meta.get("source", "")})
+    n_in = 4 + len(brolls)
+    for k, fsd in enumerate(fs_events):
+        t0_, d_ = float(fsd["t0"]), float(fsd["t1"]) - float(fsd["t0"])
+        job.progress("encode", f"Dựng khung FS-06 {k + 1}/{len(fs_events)}", 78)
+        clip = job.p("work", f"fs_{k}.mp4")
+        fs06_clip(src, cropf, t0_, d_, clip)
+        b_args += ["-i", clip]
+        b_fc += (f"[{n_in}:v]fps=30,setsar=1,format=yuv420p,setpts=PTS-STARTPTS+{t0_:.3f}/TB[fs{k}];"
+                 f"[{last}][fs{k}]overlay=0:0:enable='between(t,{t0_:.3f},{t0_ + d_:.3f})':eof_action=pass[fsb{k}];")
+        last, n_in = f"fsb{k}", n_in + 1
+    for k, lk in enumerate(leaks):
+        t0_ = float(lk["t0"])
+        clip = job.p("work", f"leak_{k}.mov")
+        leak_clip(clip, 3.6)
+        b_args += ["-i", clip]
+        b_fc += (f"[{n_in}:v]format=rgba,setpts=PTS-STARTPTS+{t0_:.3f}/TB[lk{k}];"
+                 f"[{last}][lk{k}]overlay=0:0:format=auto:enable='between(t,{t0_:.3f},{t0_ + 3.6:.3f})':eof_action=pass[lkb{k}];")
+        last, n_in = f"lkb{k}", n_in + 1
     fc = (f"[0:v]{','.join(vf)}[bg0];{b_fc}[{last}]null[bg];"
           f"[1:v]scale={logo_w}:-1:flags=lanczos,format=rgba,fade=t=in:st=0.3:d=0.6:alpha=1[lg];"
           f"[bg][lg]overlay=x='50-24*pow(1-min(max((t-0.3)/0.6\\,0)\\,1)\\,3)':y=120:eval=frame[l];"
@@ -822,7 +1252,12 @@ def main():
     pI, pTP = P.ebur(preview)
     add("D", "−16 LUFS ±1, đỉnh ≤ −2,0 (chính) / ≤ −1,0 (xem nhanh)", "pass" if mI is not None and abs(mI + 16) <= 1 and mTP <= -2.0 and pTP <= -1.0 else "fail", f"chính {mI} LUFS TP {mTP}; xem nhanh TP {pTP}")
     add("E", "Phụ đề / chữ nhấn theo mốc từng từ", "pass", f"{len(units)} câu phụ đề, {len(emph)} chữ nhấn, {len(dias)} sơ đồ; đặt theo mốc từ đã nghe rõ")
-    add("F", "Bố cục: logo vùng XANH, chữ vùng VÀNG", "blocker", "logo PNG rộng 440 tại (50,120): lố XANH như ESV đã biết (#98a)")
+    od = owner_decisions(os.environ.get("DATA_DIR", os.path.join(P.ROOT, "data")))
+    odq = f"OWNER duyệt {od.get('date', '')}: {od.get('quote', '')}"
+    if od.get("logoSize"):
+        add("F", "Bố cục: logo vùng XANH, chữ vùng VÀNG", "pass", f"logo PNG rộng 440 tại (50,120) lố XANH (#98a) — {odq}")
+    else:
+        add("F", "Bố cục: logo vùng XANH, chữ vùng VÀNG", "blocker", "logo PNG rộng 440 tại (50,120): lố XANH như ESV đã biết (#98a)")
     add("G", "Đồ hoạ trong VÀNG", "pass" if bad_zone == 0 else "fail", f"{bad_zone} khung có điểm ảnh ngoài VÀNG (+19 px)")
     add("H", "Phụ đề không chồng chữ nhấn / đồ hoạ", "pass" if overlap == 0 else "fail", f"{overlap} khung chồng")
     add("I", "Quét điểm ảnh chữ ngoài VÀNG", "pass" if bad_zone == 0 else "fail", f"{bad_zone} khung")
@@ -848,18 +1283,37 @@ def main():
         if y * 2 < RED[1] - 4 or (y + h_) * 2 > RED[3] + 4:
             out_red += 1
     add("J", "Mặt trong vùng ĐỎ ở mọi khung zoom", ("pass" if out_red == 0 else "fail") if sampled else "unmeasured", f"{sampled} mẫu có mặt, {out_red} mẫu lệch ĐỎ; tâm zoom theo mặt {'(dò được)' if face_ok else '(không dò được, giả định)'}")
-    add("K", "So với bản trước", "na", "bản đầu theo ESV")
+    add("K", "So với bản trước", "na", "chưa so khung tự động với bản trước (dựng lại từ RAW)")
     add("L", "Độ đọc chữ trắng trên nền sáng", "info", "kiểm bằng mắt khi duyệt")
     add("M", "Tiếng giống từng byte khi chỉ sửa hình", "na", "dựng từ RAW")
     add("N", "Màu logo theo nền", "info", "logo sáng (nền tối); cần OWNER xem")
     add("O", "Không lộ tên người / bí mật", "unmeasured", "cần người xem phụ đề")
-    b_note = "; ".join(f"B-roll {b['t0']:.1f}–{b['t1']:.1f}s {b['file']} ({b['license']})" for b in brolls) or "không B-roll"
-    add("P", "Nhạc / B-roll / font có giấy phép", "blocker", f"font Times New Roman chưa có giấy phép thương mại; không nhạc (Drive chưa có nhạc có giấy phép); {b_note}")
+    b_note = "; ".join(f"minh hoạ {b['t0']:.1f}–{b['t1']:.1f}s {b['file']}" for b in brolls) or "không minh hoạ"
+    m_note = f"nhạc {music_info['file']}" if music_info.get("used") else f"không nhạc ({music_info['reason']})"
+    pending_media = [b["file"] for b in brolls if "chờ OWNER" in str(b.get("license", ""))] + ([music_info["file"]] if music_info.get("used") and "chờ OWNER" in str(music_info["license"]) else [])
+    font_ok = bool(od.get("fontLicense"))
+    p_ok = font_ok and not pending_media
+    add("P", "Nhạc / B-roll / font có giấy phép", "pass" if p_ok else "blocker",
+        f"font Times New Roman: {'OWNER xác nhận' if font_ok else 'chưa có giấy phép thương mại'}; {m_note}; {b_note}; SFX tổng hợp" + (f" — {odq}" if p_ok else ""))
+    rev_kw = ("doanh thu", "thu nhập", "lợi nhuận", "kiếm được", "triệu", "tỷ", "lương")
+    rev = [round(u["start"], 1) for u in units if any(k in " ".join(w["text"].lower() for w in u["words"]) for k in rev_kw)]
+    add("Q", "Câu doanh thu / thu nhập / kết quả có dòng 'Kết quả cá nhân, không cam kết'", "pass" if not rev else "fail",
+        "không phát sinh" if not rev else f"{len(rev)} câu cần dòng phủ (vị trí trên 9:16 chưa có dữ liệu OWNER): {rev[:8]}")
+    onscreen = [e.text for e in emph] + [x for d in plan.get("diagrams", []) for x in
+                [d.get("wrong", {}).get("text", ""), d.get("top", {}).get("text", ""), d.get("bottom", {}).get("text", ""), d.get("mid", {}).get("text", "") if d.get("mid") else ""]
+                + [r["text"] for r in d.get("right", [])] + [st["text"] for st in d.get("steps", [])]]
+    nums = [x for x in onscreen if re.search(r"\d", x or "")]
+    add("R", "A21: số trên màn hình khớp kịch bản / SRT đã duyệt", "pass" if not nums else "unmeasured",
+        "không phát sinh (số thứ tự trong thanh bước không phải số liệu)" if not nums else f"CHƯA KIỂM — chờ bản đối chiếu OWNER duyệt: {nums}")
     uncertain = [{"t": round(w["start"], 2), "text": w["text"], "p": round(w.get("p", 0), 2)} for w in words if w.get("uncertain")]
-    blockers = ["Font Times New Roman chưa có giấy phép thương mại", "Logo vượt vùng logo — chờ OWNER chốt cỡ (#98a)"]
-    if brolls:
-        blockers.append("B-roll tư liệu OWNER: chờ OWNER xác nhận quyền dùng thương mại và sự đồng ý của người xuất hiện")
-    if uncertain:
+    blockers = []
+    if not font_ok:
+        blockers.append("Font Times New Roman chưa có giấy phép thương mại")
+    if not od.get("logoSize"):
+        blockers.append("Logo vượt vùng logo — chờ OWNER chốt cỡ (#98a)")
+    if pending_media:
+        blockers.append(f"Tư liệu chờ OWNER xác nhận quyền dùng: {', '.join(pending_media[:4])}")
+    if uncertain and not od.get("uncertainWords"):
         blockers.insert(0, f"{len(uncertain)} từ nghe chưa chắc đã bỏ khỏi phụ đề/chữ nhấn — cần OWNER nghe lại (#90, #92)")
     failed = [q["id"] for q in qa if q["status"] == "fail"]
     with open(job.p("checksums.sha256"), "w") as fsum:
@@ -869,13 +1323,14 @@ def main():
         "skill": {"skillId": "edu-hau-ky-video-916-phu-luc", "name": "Skill ESV", "version": "v0.3.1", "status": "DRAFT", "sourceUrl": "https://app.notion.com/p/4004ceb9517d81198fc4da9f9339234e", "engine": "esv_render.py (Pillow, không ASS)"},
         "input": {"file": os.path.basename(src), **info, "crop": cropf},
         "output": {"master": "master.mp4", "preview": "preview.mp4", "frames": N, "seconds": round(dur, 3), "cutSilence": False, "cuts": 0},
-        "transcript": {"words": len(words), "uncertain": uncertain, "secondModel": None if a.words else a.model2},
+        "transcript": {"words": len(words), "uncertain": uncertain, "corrections": fixes, "secondModel": None if a.words else a.model2},
         "captions": {"units": len(units)},
         "emphasis": [{"t": round(e.t0, 2), "text": e.text, "kind": e.style} for e in emph],
         "broll": {"events": brolls, "skipped": []},
-        "diagrams": [{"type": "compare" if isinstance(d, Compare) else "arrow", "t0": d.t0, "t1": d.t1} for d in dias],
-        "zoom": {"events": plan.get("zooms", []), "anchor": [round(ax, 3), round(ay, 3)], "faceDetected": face_ok},
-        "audio": {"lufs": mI, "truePeak": mTP, "previewTruePeak": pTP, "music": {"used": False, "reason": "Drive chưa có nhạc có giấy phép"}},
+        "diagrams": [{"type": d["type"], "t0": d["t0"], "t1": d.get("t1", d["t0"] + 3.6)} for d in plan.get("diagrams", [])],
+        "emphasisDropped": n_emph_plan - len(emph),
+        "zoom": {"formula": "r3 smootherstep, một tâm, không zoom thở", "profile": prof, "pace": pace, "events": zooms, "anchor": [round(ax, 3), round(ay, 3)], "faceDetected": face_ok},
+        "audio": {"lufs": mI, "truePeak": mTP, "previewTruePeak": pTP, "music": music_info, "sfx": sfx_info},
         "plan": {"by": plan.get("by", ""), "note": plan.get("note", "")},
         "qa": qa, "failed": failed, "blockers": blockers,
         "timings": job.timings, "elapsedSec": round(time.time() - job.t0, 1),

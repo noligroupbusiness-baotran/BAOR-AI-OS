@@ -120,11 +120,12 @@ export async function saveAutoEdit(fd: FormData) {
   setSetting("video.keywords", str(fd, "keywords").split(/[\n,]/).map((k) => k.trim()).filter(Boolean).join(","));
   setSetting("video.whisperModel", ["small", "medium", "large"].includes(str(fd, "model")) ? str(fd, "model") : "medium");
   const musicId = str(fd, "musicUploadId");
-  const music = musicId ? getUpload(musicId) : undefined;
+  const music = musicId && musicId !== "none" ? getUpload(musicId) : undefined;
   if (music && !String(music.meta.license ?? "").trim()) return fail("/settings#auto-edit", "Bài nhạc này chưa ghi giấy phép. Theo skill, nhạc thiếu giấy phép không được dùng.");
-  setSetting("video.musicUploadId", music ? musicId : "");
-  // #78c: SFX là quyết định của OWNER, mặc định tắt.
+  setSetting("video.musicUploadId", musicId === "none" ? "none" : music ? musicId : "");
+  // #78c: OWNER duyệt dùng SFX (21/10/2026).
   setSetting("video.sfx", fd.get("sfx") ? "1" : "0");
+  setSetting("video.corrections", str(fd, "corrections").split("\n").map((l) => l.trim()).filter((l) => l.includes("=>")).join("\n"));
   logActivity("human", "Cập nhật cấu hình dựng video tự động.", "settings");
   done("/settings#auto-edit", "Đã lưu cấu hình dựng video tự động");
 }
