@@ -4,7 +4,7 @@
 // không cần bảng mới. Mỗi lần dựng lại là một bản mới vN, không ghi đè, không xoá bản trước.
 import fs from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { getSetting } from "@/lib/admin";
@@ -217,13 +217,26 @@ function pythonBin(): string {
   return process.env.PYTHON_BIN || "python3";
 }
 
-function alive(pid: number | undefined): boolean {
-  if (!pid) return false;
+/** Còn sống VÀ đúng là bộ dựng của mình (sau khi máy khởi động lại, PID có thể đã thuộc tiến trình khác). */
+function isOurRenderer(pid: number | undefined): boolean {
+  if (!pid || pid === process.pid) return false;
   try {
     process.kill(pid, 0);
-    return true;
   } catch {
     return false;
+  }
+  const r = spawnSync("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8", timeout: 5_000 });
+  return r.status === 0 && r.stdout.includes("pipeline.py");
+}
+
+/** Dừng cả nhóm tiến trình (python + ffmpeg / whisper con), không để tiến trình con chạy mồ côi. */
+function killGroup(pid: number) {
+  try {
+    process.kill(-pid, "SIGKILL");
+  } catch {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {}
   }
 }
 
@@ -233,11 +246,7 @@ function recoverStale() {
   for (const j of allJobs()) {
     if (j.status !== "running") continue;
     // Tiến trình dựng của lần chạy trước còn sống: dừng hẳn trước khi xếp lại, để hai bộ dựng không cùng ghi một thư mục.
-    if (alive(j.pid)) {
-      try {
-        process.kill(j.pid!, "SIGKILL");
-      } catch {}
-    }
+    if (isOurRenderer(j.pid)) killGroup(j.pid!);
     if (j.runId) finishRun(j.runId, false, "Máy chủ khởi động lại giữa lúc dựng");
     writeJob({ ...j, status: "queued", pid: undefined, note: "Máy chủ khởi động lại giữa chừng, dựng lại từ đầu" });
   }
@@ -250,7 +259,7 @@ if (!(globalThis as unknown as { __baorVideoExitHook?: boolean }).__baorVideoExi
   (globalThis as unknown as { __baorVideoExitHook?: boolean }).__baorVideoExitHook = true;
   // Máy chủ tắt: dừng bộ dựng con, không để chạy mồ côi.
   process.once("exit", () => {
-    for (const c of children) c.kill("SIGKILL");
+    for (const c of children) if (c.pid) killGroup(c.pid);
   });
 }
 
@@ -307,13 +316,14 @@ function runJob(job: VideoJob): Promise<void> {
     if (pm) args.push(`--previous=${pm}`);
   }
   return new Promise((resolve) => {
-    const child = spawn(pythonBin(), args, { stdio: ["ignore", "pipe", "pipe"] });
+    // detached: bộ dựng chạy trong nhóm tiến trình riêng để dừng được cả ffmpeg / whisper con.
+    const child = spawn(pythonBin(), args, { stdio: ["ignore", "pipe", "pipe"], detached: true });
     children.add(child);
     writeJob({ ...job, status: "running", startedAt: started, runId, pid: child.pid });
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill("SIGKILL");
+      if (child.pid) killGroup(child.pid);
     }, JOB_TIMEOUT_MS);
     let err = "";
     child.stderr.on("data", (b: Buffer) => {

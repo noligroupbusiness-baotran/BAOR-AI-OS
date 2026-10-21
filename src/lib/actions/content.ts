@@ -215,6 +215,7 @@ export async function insertTemplate(fd: FormData) {
   const db = getDb();
   const item = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, id)).get();
   if (!item) return done("/content", "Không tìm thấy nội dung");
+  if (item.status !== "in_progress" && item.status !== "review") return done(`/content?tab=mine&open=${id}&tone=error`, "Nội dung đã duyệt: không sửa tại chỗ.");
   const tpl = prefillDraft(item.format, item.title, item.hook);
   if (!tpl) return done(`/content?tab=mine&open=${id}`, "Định dạng này không có khung mẫu.");
   const draft = item.draft?.trim() ? `${item.draft.trim()}\n\n${tpl}` : tpl;
@@ -231,6 +232,7 @@ export async function attachContentImage(fd: FormData) {
   const db = getDb();
   const item = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, id)).get();
   if (!item) return done("/content", "Không tìm thấy nội dung");
+  if (item.status !== "in_progress" && item.status !== "review") return done(`${back}&tone=error`, "Nội dung đã duyệt: không sửa tại chỗ.");
   if (!(file instanceof File) || file.size === 0) return done(`${back}&tone=error`, "Chưa chọn tệp ảnh.");
   const r = await saveUpload("image", file, actor.email, { contentId: id, title: item.title });
   if (!r.ok) return done(`${back}&tone=error`, `Ảnh: ${r.error}`);
@@ -246,6 +248,7 @@ export async function removeContentImage(fd: FormData) {
   const db = getDb();
   const item = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, id)).get();
   if (!item) return done("/content", "Không tìm thấy nội dung");
+  if (item.status !== "in_progress" && item.status !== "review") return done(`/content?tab=mine&open=${id}&tone=error`, "Nội dung đã duyệt: không sửa tại chỗ.");
   if (item.assetUploadId) deleteUpload(item.assetUploadId);
   db.update(schema.contentItems).set({ assetUploadId: null }).where(eq(schema.contentItems.id, id)).run();
   done(`/content?tab=mine&open=${id}`, "Đã gỡ ảnh");

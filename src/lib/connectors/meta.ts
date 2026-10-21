@@ -128,8 +128,16 @@ export async function publishPageVideo(ctx: ConnectorContext, req: VideoPublishR
     if (!r2.ok || j2.error || !j2.h) throw j2;
 
     const form = new URLSearchParams({ access_token: pageToken, title: req.title, description: req.description, fbuploader_video_file_chunk: j2.h });
-    const r3 = await ctx.fetch(`${GRAPH_VIDEO}/${pageId}/videos`, { method: "POST", body: form });
-    const j3 = await readJson<{ id?: string }>(r3);
+    // Từ đây lệnh đăng đã gửi: lỗi mạng / phản hồi hỏng nghĩa là Meta CÓ THỂ đã tạo bài → không tự thử lại.
+    let r3: Response;
+    let j3: { id?: string } & GraphError;
+    try {
+      r3 = await ctx.fetch(`${GRAPH_VIDEO}/${pageId}/videos`, { method: "POST", body: form });
+      j3 = await readJson<{ id?: string }>(r3);
+    } catch (e) {
+      return { ok: false, ambiguous: true, message: `Đã gửi lệnh đăng nhưng không nhận được phản hồi (${e instanceof Error ? e.message : e}). Kiểm tra trang trước khi thử lại.` };
+    }
+    if (j3.error?.message?.startsWith("Phản hồi không phải JSON")) return { ok: false, ambiguous: true, message: `${j3.error.message}. Kiểm tra trang trước khi thử lại.` };
     if (!r3.ok || j3.error || !j3.id) throw j3;
     return { ok: true, externalId: j3.id, message: `Meta nhận video (mã ${j3.id}), đang xác minh.` };
   } catch (e) {
@@ -141,7 +149,9 @@ export async function publishPageVideo(ctx: ConnectorContext, req: VideoPublishR
 export async function verifyPageVideo(ctx: ConnectorContext, externalId: string): Promise<VerifyPostResult> {
   const { pageToken } = ctx.config;
   try {
-    const v = await graph<{ id: string; permalink_url?: string; created_time?: string }>(ctx, externalId, { fields: "id,permalink_url,created_time", access_token: pageToken });
+    const v = await graph<{ id: string; permalink_url?: string; created_time?: string; status?: { video_status?: string } }>(ctx, externalId, { fields: "id,permalink_url,created_time,status", access_token: pageToken });
+    // permalink có thể có từ lúc video còn đang xử lý: nếu Meta trả trạng thái thì phải là "ready".
+    if (v.status?.video_status && v.status.video_status !== "ready") return { ok: false, message: `Video trên Meta đang ở trạng thái “${v.status.video_status}”, chưa hiển thị công khai.` };
     if (!v.permalink_url) return { ok: false, message: "Meta chưa trả đường dẫn bài (video có thể đang xử lý)." };
     const permalink = v.permalink_url.startsWith("http") ? v.permalink_url : `https://www.facebook.com${v.permalink_url}`;
     return { ok: true, permalink, publishedAt: v.created_time, message: "Đã đọc lại bài trên Facebook." };

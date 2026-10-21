@@ -15,7 +15,9 @@ export async function scheduleVideoAction(fd: FormData) {
   const actor = await requirePermission("manager", back);
   const when = str(fd, "when"); // datetime-local, giờ VN
   if (!when) return fail(back, "Cần chọn giờ đăng");
-  const r = scheduleVideoPosts({ videoId: str(fd, "id"), platforms: fd.getAll("platform").map(String), whenIso: new Date(`${when}:00+07:00`).toISOString(), caption: str(fd, "caption"), by: actor.name });
+  const at = new Date(`${when.length === 16 ? `${when}:00` : when}+07:00`);
+  if (Number.isNaN(at.getTime())) return fail(back, "Giờ đăng không hợp lệ");
+  const r = scheduleVideoPosts({ videoId: str(fd, "id"), platforms: fd.getAll("platform").map(String), whenIso: at.toISOString(), caption: str(fd, "caption"), by: actor.name });
   if (!r.ok) return fail(back, r.error);
   done("/publishing", r.mode === "dry_run" ? `Đã lên lịch ${r.created} bài ở chế độ thử (không đăng thật)` : `Đã lên lịch ${r.created} bài, đăng đúng giờ và xác minh trên nền tảng`);
 }

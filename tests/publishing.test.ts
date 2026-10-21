@@ -160,3 +160,43 @@ test("đăng thật (fetch giả): giành quyền nguyên tử, chống trùng, 
     admin.setSetting("publishing.dryRun", "1");
   }
 });
+
+test("chống trùng sau khi nền tảng đã nhận video; lỗi mơ hồ ở bước đăng không tự thử lại; bật chế độ thử thì bài thật bị giữ", async () => {
+  const d = db.getDb();
+  admin.setSetting("publishing.dryRun", "0");
+  seedVideo("v_amb", "approved");
+  const past = new Date(Date.now() - 60_000).toISOString();
+  assert.equal(pub.scheduleVideoPosts({ videoId: "v_amb", platforms: ["facebook"], whenIso: past, caption: "Bình luận bên dưới", by: "t" }).ok, true);
+  // Bước đăng cuối mất mạng → lỗi mơ hồ, đánh lỗi luôn, không xếp thử lại
+  const real = globalThis.fetch;
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    if (String(url).endsWith("/111/videos")) throw new Error("socket hang up");
+    return fakeMeta().f(url, init);
+  }) as typeof fetch;
+  try {
+    await pub.publishDueVideoPosts();
+  } finally {
+    globalThis.fetch = real;
+  }
+  let post = pub.videoPostsFor("v_amb")[0];
+  assert.equal(post.status, "failed");
+  assert.match(post.error ?? "", /Kiểm tra trang/);
+  // Bài lỗi nhưng đã có mã trên nền tảng: không lên lịch lại được
+  d.update(db.schema.scheduledPosts).set({ externalId: "VIDX" }).where(eq(db.schema.scheduledPosts.id, post.id)).run();
+  assert.match((pub.scheduleVideoPosts({ videoId: "v_amb", platforms: ["facebook"], whenIso: past, caption: "x", by: "t" }) as { error: string }).error, /trùng/);
+  // Bài thật đã lên lịch, sau đó bật chế độ thử → không gọi nền tảng
+  seedVideo("v_hold", "approved");
+  assert.equal(pub.scheduleVideoPosts({ videoId: "v_hold", platforms: ["facebook"], whenIso: past, caption: "Bình luận bên dưới", by: "t" }).ok, true);
+  admin.setSetting("publishing.dryRun", "1");
+  const { calls, f } = fakeMeta();
+  globalThis.fetch = f;
+  try {
+    await pub.publishDueVideoPosts();
+  } finally {
+    globalThis.fetch = real;
+  }
+  assert.equal(calls.length, 0);
+  post = pub.videoPostsFor("v_hold")[0];
+  assert.equal(post.status, "scheduled");
+  assert.match(post.error ?? "", /Chế độ thử/);
+});

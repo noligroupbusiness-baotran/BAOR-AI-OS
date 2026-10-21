@@ -231,14 +231,18 @@ export function runScheduledRules(): { fired: number; errors: number } {
           if (rule.action === "pause_ad") {
             if (ad.metaCampaignId) {
               // Quảng cáo đang chạy thật trên Meta: phải dừng trên Meta, không chỉ đổi trạng thái trong hệ thống.
+              // Ghi nhật ký theo kết quả thật trên Meta (pauseAd tự ghi khi thành công).
               void import("@/lib/ads/engine").then(({ pauseAd }) => pauseAd(ad.id, "Hệ thống", `Tự tạm dừng bởi quy tắc “${rule.name}”: ${message}`)).then((r) => {
-                if (!r.ok) void sendAlert({ level: "error", title: `Không dừng được quảng cáo “${ad.name}”`, text: r.error, href: "/publishing#ads" });
+                if (!r.ok) {
+                  logActivity("system", `${rule.name}: CHƯA dừng được ${message} — ${r.error}`, "automation");
+                  void sendAlert({ level: "error", title: `Không dừng được quảng cáo “${ad.name}”`, text: r.error, href: "/publishing#ads" });
+                }
               });
             } else {
               db.update(schema.adCampaigns).set({ status: "paused", aiNote: `Tự tạm dừng bởi quy tắc “${rule.name}”: ${message}` }).where(eq(schema.adCampaigns.id, ad.id)).run();
               campaignRepo.syncEntityStatus("ad", ad.id, "paused");
+              logActivity("system", `${rule.name}: tạm dừng ${message}`, "automation");
             }
-            logActivity("system", `${rule.name}: tạm dừng ${message}`, "automation");
           } else if (rule.action === "notify") logActivity("system", `${rule.name}: ${message}`, "automation");
           else continue;
           const d = recordDecision({ lane: "rule", domain: "ads", subject: rule.name, outcome: message, reason: `Quy tắc “${rule.name}”.`, entityType: "ad", entityId: ad.id, needsApproval: false });

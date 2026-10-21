@@ -4,11 +4,12 @@ import { and, eq, isNotNull } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { getSetting } from "@/lib/admin";
 import { logActivity } from "@/lib/activity";
+import { sendAlert } from "@/lib/alerts";
 import { campaignRepo } from "@/lib/campaigns/repository";
 import { connectorContext, readIntegrationConfig } from "@/lib/connectors/config";
-import { fileUrl } from "@/lib/uploads";
-import { authorizationStatus, gateForAd, getAuthorization, isSampleAd, vnDate } from "./authorization";
-import { createPausedDraft, fetchDailyInsights, setDailyBudget, setDeliveryStatus, type Audience } from "./meta-marketing";
+import { getUpload, uploadPath } from "@/lib/uploads";
+import { authorizationStatus, daysLeftInMonth, gateForAd, getAuthorization, isSampleAd, monthSpent, vnDate } from "./authorization";
+import { createPausedDraft, fetchDailyInsights, setDailyBudget, setDeliveryStatus, setObjectStatus, type Audience } from "./meta-marketing";
 
 const nowIso = () => new Date().toISOString();
 const newId = (p: string) => `${p}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
@@ -84,6 +85,7 @@ export async function pushDraftToMeta(adId: string): Promise<Result> {
   const db = getDb();
   const ad = db.select().from(schema.adCampaigns).where(eq(schema.adCampaigns.id, adId)).get();
   if (!ad?.postId) return { ok: false, error: "Quảng cáo này không gắn bài video" };
+  if (ad.status !== "proposed" && ad.status !== "pending_approval") return { ok: false, error: "Chỉ đẩy lên Meta nháp đang đề xuất hoặc chờ duyệt" };
   if (!metaConnected()) return { ok: false, error: "Chưa kết nối Meta Ads: nháp giữ trong hệ thống" };
   const auth = getAuthorization();
   const cfg = readIntegrationConfig("meta_ads");
@@ -91,10 +93,13 @@ export async function pushDraftToMeta(adId: string): Promise<Result> {
   const post = db.select().from(schema.scheduledPosts).where(eq(schema.scheduledPosts.id, ad.postId)).get();
   const pageId = readIntegrationConfig("facebook_page").pageId;
   if (!post?.externalId || !pageId) return { ok: false, error: "Thiếu mã video Facebook hoặc Page ID" };
-  const base = (process.env.APP_URL ?? "").replace(/\/$/, "");
+  // Ảnh bìa gửi thẳng lên Meta (image_hash): đường dẫn tệp của hệ thống cần đăng nhập nên Meta không tải được.
+  const thumb = post.thumbnailUploadId ? getUpload(post.thumbnailUploadId) : undefined;
+  const thumbPath = thumb ? uploadPath(thumb) : null;
+  if (!thumbPath) return { ok: false, error: "Bài video chưa có ảnh bìa" };
   const r = await createPausedDraft(
     connectorContext("meta_ads"),
-    { name: ad.name, dailyBudgetVnd: ad.dailyBudget, audience: parseAudience(ad.audienceJson), startAt: ad.startAt ?? nowIso(), endAt: ad.endAt ?? nowIso(), pageId, videoExternalId: post.externalId, thumbnailUrl: post.thumbnailUploadId && base ? `${base}${fileUrl(post.thumbnailUploadId)}` : "", message: post.caption ?? "" },
+    { name: ad.name, dailyBudgetVnd: ad.dailyBudget, audience: parseAudience(ad.audienceJson), startAt: ad.startAt ?? nowIso(), endAt: ad.endAt ?? nowIso(), pageId, videoExternalId: post.externalId, thumbnailPath: thumbPath, message: post.caption ?? "" },
     { campaignId: ad.metaCampaignId ?? undefined, adsetId: ad.metaAdsetId ?? undefined, creativeId: ad.metaCreativeId ?? undefined, adId: ad.metaAdId ?? undefined },
   );
   db.update(schema.adCampaigns).set({ metaCampaignId: r.ids.campaignId ?? null, metaAdsetId: r.ids.adsetId ?? null, metaCreativeId: r.ids.creativeId ?? null, metaAdId: r.ids.adId ?? null }).where(eq(schema.adCampaigns.id, adId)).run();
@@ -109,6 +114,9 @@ export async function activateAd(adId: string, by: string): Promise<Result> {
   const ad = db.select().from(schema.adCampaigns).where(eq(schema.adCampaigns.id, adId)).get();
   if (!ad) return { ok: false, error: "Không tìm thấy quảng cáo" };
   if (ad.status !== "pending_approval" && ad.status !== "paused") return { ok: false, error: "Chỉ bật được quảng cáo đang chờ duyệt hoặc tạm dừng" };
+  const onMeta = !!(ad.metaCampaignId || ad.metaAdsetId || ad.metaAdId);
+  if (onMeta && !(ad.metaCampaignId && ad.metaAdsetId && ad.metaAdId)) return { ok: false, error: "Nháp trên Meta còn dở dang: bấm Tạo trên Meta để hoàn tất trước khi bật" };
+  if (!onMeta && ad.postId && metaConnected()) return { ok: false, error: "Quảng cáo chưa nằm trên Meta: bấm Tạo trên Meta (tạm dừng) trước, rồi mới bật" };
   const gate = gateForAd(adId, ad.dailyBudget);
   if (!gate.ok) return { ok: false, error: gate.reason };
   if (ad.metaCampaignId && ad.metaAdsetId && ad.metaAdId) {
@@ -130,9 +138,13 @@ export async function pauseAd(adId: string, by: string, reason = ""): Promise<Re
   const db = getDb();
   const ad = db.select().from(schema.adCampaigns).where(eq(schema.adCampaigns.id, adId)).get();
   if (!ad) return { ok: false, error: "Không tìm thấy quảng cáo" };
-  if (ad.metaCampaignId && ad.metaAdsetId && ad.metaAdId && metaConnected()) {
+  // Có đối tượng trên Meta thì PHẢI dừng được trên Meta; không thì báo lỗi, không đánh dấu "đã dừng" giả.
+  if (ad.metaCampaignId || ad.metaAdsetId || ad.metaAdId) {
+    if (!metaConnected()) return { ok: false, error: "Mất kết nối Meta Ads: chưa dừng được trên Meta. Dừng tay trong Trình quản lý quảng cáo." };
     try {
-      await setDeliveryStatus(connectorContext("meta_ads"), { campaignId: ad.metaCampaignId, adsetId: ad.metaAdsetId, adId: ad.metaAdId }, "PAUSED");
+      const ids = [ad.metaCampaignId, ad.metaAdsetId, ad.metaAdId].filter((x): x is string => !!x);
+      if (ad.metaCampaignId && ad.metaAdsetId && ad.metaAdId) await setDeliveryStatus(connectorContext("meta_ads"), { campaignId: ad.metaCampaignId, adsetId: ad.metaAdsetId, adId: ad.metaAdId }, "PAUSED");
+      else for (const id of ids) await setObjectStatus(connectorContext("meta_ads"), id, "PAUSED");
     } catch (e) {
       return { ok: false, error: `Chưa dừng được trên Meta: ${e instanceof Error ? e.message : ""}. Dừng tay trong Trình quản lý quảng cáo.` };
     }
@@ -153,7 +165,8 @@ export async function changeDailyBudget(adId: string, vnd: number, by: string): 
     const gate = gateForAd(adId, vnd);
     if (!gate.ok) return { ok: false, error: gate.reason };
   }
-  if (ad.metaAdsetId && metaConnected()) {
+  if (ad.metaAdsetId) {
+    if (!metaConnected()) return { ok: false, error: "Mất kết nối Meta Ads: chưa đổi được ngân sách trên Meta" };
     try {
       await setDailyBudget(connectorContext("meta_ads"), ad.metaAdsetId, vnd);
     } catch (e) {
@@ -174,8 +187,11 @@ export async function syncAdInsights(): Promise<{ updated: number; errors: strin
   for (const ad of db.select().from(schema.adCampaigns).where(isNotNull(schema.adCampaigns.metaCampaignId)).all()) {
     if (ad.status !== "active" && ad.status !== "paused") continue;
     try {
-      const since = (ad.startAt ?? nowIso()).slice(0, 10);
-      const rows = await fetchDailyInsights(connectorContext("meta_ads"), ad.metaCampaignId!, since < today ? since : today, today);
+      // Chỉ đọc tháng hiện tại (đủ cho cổng chi tiêu); hàm đọc đi hết các trang kết quả.
+      const monthStart = `${today.slice(0, 7)}-01`;
+      const start = (ad.startAt ?? nowIso()).slice(0, 10);
+      const since = start > monthStart ? (start < today ? start : today) : monthStart;
+      const rows = await fetchDailyInsights(connectorContext("meta_ads"), ad.metaCampaignId!, since, today);
       db.transaction((tx) => {
         for (const r of rows) {
           tx.insert(schema.adSpendDaily).values({ adId: ad.id, ...r }).onConflictDoUpdate({ target: [schema.adSpendDaily.adId, schema.adSpendDaily.date], set: { spend: r.spend, impressions: r.impressions, clicks: r.clicks, leads: r.leads, thruplays: r.thruplays } }).run();
@@ -244,5 +260,46 @@ export async function autoOptimize(): Promise<{ paused: number; scaled: number }
       if ((await changeDailyBudget(ad.id, scale.budget, "AI (trong ủy quyền)")).ok) out.scaled++;
     }
   }
+  return out;
+}
+
+/**
+ * Mỗi giờ: giữ chi tiêu ĐANG CHẠY trong ủy quyền (không chỉ lúc bật).
+ * - Ủy quyền hết hạn / bị xoá → dừng mọi quảng cáo thật đang chạy.
+ * - Chạy quá ngày kết thúc → dừng.
+ * - Dự chi tháng vượt trần → dừng quảng cáo ngân sách lớn nhất trước cho tới khi về trong trần.
+ */
+export async function enforceAuthorization(): Promise<{ paused: number; failed: string[] }> {
+  const db = getDb();
+  const out = { paused: 0, failed: [] as string[] };
+  const auth = getAuthorization();
+  const st = authorizationStatus(auth);
+  const active = db.select().from(schema.adCampaigns).where(eq(schema.adCampaigns.status, "active")).all().filter((a) => !isSampleAd(a.id));
+  const stop = async (id: string, reason: string) => {
+    const r = await pauseAd(id, "Hệ thống", reason);
+    if (r.ok) out.paused++;
+    else out.failed.push(r.error);
+  };
+  if (!st.active) {
+    for (const a of active) await stop(a.id, `Tự dừng: ${st.reason}`);
+    return out;
+  }
+  const now = Date.now();
+  let running = active;
+  for (const a of active) {
+    if (a.endAt && Date.parse(a.endAt) < now) {
+      await stop(a.id, "Tự dừng: đã qua ngày kết thúc");
+      running = running.filter((x) => x.id !== a.id);
+    }
+  }
+  const spent = monthSpent();
+  const days = daysLeftInMonth();
+  const projected = () => spent + running.reduce((n, a) => n + a.dailyBudget, 0) * days;
+  for (const a of [...running].sort((x, y) => y.dailyBudget - x.dailyBudget)) {
+    if (projected() <= auth!.monthlyCapVnd) break;
+    await stop(a.id, `Tự dừng: dự chi tháng vượt trần ${auth!.monthlyCapVnd.toLocaleString("vi-VN")} ₫`);
+    running = running.filter((x) => x.id !== a.id);
+  }
+  if (out.failed.length) void sendAlert({ level: "error", title: "Không dừng được quảng cáo vượt ủy quyền", text: out.failed.join("; ").slice(0, 500), href: "/publishing#ads" });
   return out;
 }

@@ -14,7 +14,13 @@ export const newId = (prefix: string) => `${prefix}_${Date.now().toString(36)}${
 /** Gắn ?toast= vào trước phần #neo (nếu có): tham số đặt sau # thì trình duyệt coi là neo và thông báo không hiện. */
 export function withToast(path: string, toast: string): string {
   const i = path.indexOf("#");
-  const base = i >= 0 ? path.slice(0, i) : path;
-  const hash = i >= 0 ? path.slice(i) : "";
+  let base = i >= 0 ? path.slice(0, i) : path;
+  let hash = i >= 0 ? path.slice(i) : "";
+  // Dạng cũ "/x#neo?tone=error": đưa phần tham số lên trước neo.
+  const q = hash.indexOf("?");
+  if (q >= 0) {
+    base += (base.includes("?") ? "&" : "?") + hash.slice(q + 1);
+    hash = hash.slice(0, q);
+  }
   return `${base}${base.includes("?") ? "&" : "?"}toast=${encodeURIComponent(toast)}${hash}`;
 }

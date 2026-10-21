@@ -1,10 +1,12 @@
 // CP05: Meta Marketing API (v26.0). Theo tài liệu chính thức đọc ngày 21/10/2026:
 // - POST act_{id}/campaigns: name, objective (OUTCOME_*), status (chỉ ACTIVE/PAUSED khi tạo), special_ad_categories (bắt buộc; [] khi không thuộc nhóm đặc biệt)
 // - POST act_{id}/adsets: name, campaign_id, daily_budget, targeting, billing_event, optimization_goal, bid_strategy, start_time, end_time, status
-// - POST act_{id}/adcreatives: name, object_story_spec { page_id, video_data { video_id, image_url, message, call_to_action } }
+// - POST act_{id}/adimages: bytes (base64) → images.{tên}.hash (ảnh bìa không cần đường dẫn công khai)
+// - POST act_{id}/adcreatives: name, object_story_spec { page_id, video_data { video_id, image_hash, message, call_to_action } }
 // - POST act_{id}/ads: name, adset_id, creative {"creative_id"}, status
 // Luật của BAOR: mọi thứ tạo ra ở PAUSED. Bật (ACTIVE) chỉ qua cổng ủy quyền ngân sách (src/lib/ads/authorization.ts).
 // Chưa chạy với tài khoản quảng cáo thật: phải kiểm lại khi OWNER cấp quyền.
+import fs from "node:fs";
 import type { ConnectorContext } from "@/lib/connectors/types";
 import { readAdsInsights, type AdsInsightsResponse } from "@/lib/connectors/meta";
 
@@ -57,7 +59,8 @@ export interface DraftSpec {
   pageId: string;
   /** Mã video trên Facebook (bài video đã đăng và xác minh). */
   videoExternalId: string;
-  thumbnailUrl: string;
+  /** Ảnh bìa trên đĩa; tải lên adimages để lấy image_hash. */
+  thumbnailPath: string;
   message: string;
 }
 
@@ -93,10 +96,13 @@ export async function createPausedDraft(ctx: ConnectorContext, d: DraftSpec, exi
       ).id;
     }
     if (!ids.creativeId) {
+      const img = await call<{ images?: Record<string, { hash?: string }> }>(ctx, "POST", `${act}/adimages`, { bytes: fs.readFileSync(d.thumbnailPath).toString("base64") });
+      const hash = Object.values(img.images ?? {})[0]?.hash;
+      if (!hash) throw new MetaError("Meta không trả image_hash cho ảnh bìa");
       ids.creativeId = (
         await call<{ id: string }>(ctx, "POST", `${act}/adcreatives`, {
           name: `${d.name} · creative`,
-          object_story_spec: JSON.stringify({ page_id: d.pageId, video_data: { video_id: d.videoExternalId, image_url: d.thumbnailUrl, message: d.message, call_to_action: { type: "LEARN_MORE", value: { link: `https://www.facebook.com/${d.pageId}` } } } }),
+          object_story_spec: JSON.stringify({ page_id: d.pageId, video_data: { video_id: d.videoExternalId, image_hash: hash, message: d.message, call_to_action: { type: "LEARN_MORE", value: { link: `https://www.facebook.com/${d.pageId}` } } } }),
         })
       ).id;
     }
@@ -112,6 +118,11 @@ export async function setDeliveryStatus(ctx: ConnectorContext, ids: Pick<DraftId
   // Dừng: từ ngoài vào trong (chiến dịch trước) để ngắt chi tiêu sớm nhất. Bật: từ trong ra ngoài.
   const order = status === "PAUSED" ? [ids.campaignId, ids.adsetId, ids.adId] : [ids.adId, ids.adsetId, ids.campaignId];
   for (const id of order) await call(ctx, "POST", id, { status });
+}
+
+/** Đổi trạng thái một đối tượng (dùng khi nháp trên Meta còn dở dang). */
+export async function setObjectStatus(ctx: ConnectorContext, id: string, status: "ACTIVE" | "PAUSED"): Promise<void> {
+  await call(ctx, "POST", id, { status });
 }
 
 export async function setDailyBudget(ctx: ConnectorContext, adsetId: string, vnd: number): Promise<void> {
@@ -139,7 +150,21 @@ export function readDailyInsights(res: DailyInsightsResponse): DailyInsight[] {
   }).filter((r) => r.date);
 }
 
+/** Đọc chi phí theo ngày, đi hết các trang (paging.next) để không bỏ sót ngày nào. */
 export async function fetchDailyInsights(ctx: ConnectorContext, campaignId: string, since: string, until: string): Promise<DailyInsight[]> {
-  const res = await call<DailyInsightsResponse>(ctx, "GET", `${campaignId}/insights`, { fields: "spend,impressions,clicks,actions,video_thruplay_watched_actions", time_range: JSON.stringify({ since, until }), time_increment: "1" });
-  return readDailyInsights(res);
+  const out: DailyInsight[] = [];
+  let after: string | undefined;
+  for (let page = 0; page < 50; page++) {
+    const res = await call<DailyInsightsResponse & { paging?: { next?: string; cursors?: { after?: string } } }>(ctx, "GET", `${campaignId}/insights`, {
+      fields: "spend,impressions,clicks,actions,video_thruplay_watched_actions",
+      time_range: JSON.stringify({ since, until }),
+      time_increment: "1",
+      limit: "100",
+      ...(after ? { after } : {}),
+    });
+    out.push(...readDailyInsights(res));
+    after = res.paging?.next ? res.paging.cursors?.after : undefined;
+    if (!after) break;
+  }
+  return out;
 }

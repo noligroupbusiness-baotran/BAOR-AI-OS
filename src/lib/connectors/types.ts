@@ -36,6 +36,8 @@ export interface PublishResult {
   ok: boolean;
   externalId?: string;
   message: string;
+  /** Lỗi sau khi đã gửi lệnh đăng (mất mạng, phản hồi hỏng): nền tảng CÓ THỂ đã nhận bài. Không tự thử lại. */
+  ambiguous?: boolean;
 }
 
 /** CP04: đăng một video đã duyệt. Tệp đọc dạng luồng từ đĩa, không nạp cả tệp vào bộ nhớ. */

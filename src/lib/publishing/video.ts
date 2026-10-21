@@ -107,7 +107,8 @@ export function scheduleVideoPosts(input: { videoId: string; platforms: string[]
   // Chống đăng trùng: bài thật đã lên lịch/đã đăng thì không tạo lại; bài lỗi/huỷ cho phép tạo lại.
   const keys = platforms.map((p) => `${p}:${v.id}`);
   const existing = db.select().from(schema.scheduledPosts).where(inArray(schema.scheduledPosts.dedupeKey, keys)).all();
-  const live = existing.filter((e) => e.status !== "failed" && e.status !== "cancelled");
+  // Bài lỗi nhưng nền tảng ĐÃ nhận video (có externalId) vẫn tính là đã đăng: không lên lịch lại để tránh trùng.
+  const live = existing.filter((e) => (e.status !== "failed" && e.status !== "cancelled") || !!e.externalId);
   if (!dry && live.length) return { ok: false, error: `Video đã có bài trên ${live.map((e) => e.platform).join(", ")} (${live.map((e) => e.status).join(", ")}). Không đăng trùng.` };
   const thumb = makeThumbnail(masterPath, v.title, input.by);
   const rows = platforms.map((p) => ({
@@ -125,7 +126,7 @@ export function scheduleVideoPosts(input: { videoId: string; platforms: string[]
   }));
   db.transaction((tx) => {
     // Bài lỗi/huỷ cũ nhả khoá chống trùng để bài mới thay thế (lịch sử vẫn giữ).
-    if (!dry) for (const e of existing) tx.update(schema.scheduledPosts).set({ dedupeKey: null }).where(eq(schema.scheduledPosts.id, e.id)).run();
+    if (!dry) for (const e of existing.filter((x) => !x.externalId)) tx.update(schema.scheduledPosts).set({ dedupeKey: null }).where(eq(schema.scheduledPosts.id, e.id)).run();
     tx.insert(schema.scheduledPosts).values(rows).run();
   });
   for (const r of rows) campaignRepo.inheritLinks("video", v.id, "publication", r.id, "scheduled");
@@ -179,6 +180,12 @@ export async function publishDueVideoPosts(): Promise<{ published: number; teste
       out.tested++;
       continue;
     }
+    // Công tắc chế độ thử: đang bật thì không gọi nền tảng, kể cả bài đã lên lịch đăng thật từ trước (giữ lại, không đăng).
+    if (isDryRun()) {
+      db.update(schema.scheduledPosts).set({ error: "Chế độ thử đang bật: bài đăng thật được giữ lại, chưa gọi nền tảng." }).where(eq(schema.scheduledPosts.id, post.id)).run();
+      out.skipped++;
+      continue;
+    }
     const st = channelStatus(post.platform);
     if (!st.canPublish || !st.channel) {
       db.update(schema.scheduledPosts).set({ error: st.reason }).where(eq(schema.scheduledPosts.id, post.id)).run();
@@ -199,7 +206,8 @@ export async function publishDueVideoPosts(): Promise<{ published: number; teste
         out.published++;
       } else {
         const attempts = post.attempts + 1;
-        const retry = attempts < MAX_ATTEMPTS;
+        // Lỗi mơ hồ sau khi đã gửi lệnh đăng: không tự thử lại (có thể đã lên), để người kiểm tra trang.
+        const retry = attempts < MAX_ATTEMPTS && !res.ambiguous;
         db.update(schema.scheduledPosts)
           .set(retry ? { status: "scheduled", error: `${res.message} (thử lại lần ${attempts + 1})`, scheduledFor: new Date(Date.now() + attempts * 10 * 60_000).toISOString() } : { status: "failed", error: res.message })
           .where(eq(schema.scheduledPosts.id, post.id))

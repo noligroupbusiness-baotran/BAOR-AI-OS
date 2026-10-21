@@ -79,7 +79,7 @@ export function VideoPostsPanel() {
                   )}
                 </div>
                 <div className="flex gap-1.5">
-                  {p.status === "failed" && !p.externalId && <ConfirmAction action={retryVideoPostAction} fields={{ id: p.id }} label="Thử lại" title="Thử đăng lại?" message="Bài sẽ được đăng ở lượt chạy tới." confirmLabel="Thử lại" variant="soft" />}
+                  {p.status === "failed" && !p.externalId && <ConfirmAction action={retryVideoPostAction} fields={{ id: p.id }} label="Thử lại" title="Thử đăng lại?" message="Kiểm tra trang trước: nếu bài đã lên thì đừng thử lại để tránh đăng trùng. Bài sẽ được đăng ở lượt chạy tới." confirmLabel="Thử lại" variant="soft" />}
                   {p.status === "scheduled" && <ConfirmAction action={cancelVideoPostAction} fields={{ id: p.id }} label="Huỷ" title="Huỷ bài chờ đăng?" message="Bài không được đăng; có thể lên lịch lại sau." confirmLabel="Huỷ bài" danger />}
                 </div>
               </li>

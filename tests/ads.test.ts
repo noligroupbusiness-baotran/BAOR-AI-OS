@@ -39,7 +39,7 @@ test("cổng chi tiêu: không có / hết hạn ủy quyền thì chặn; vư�
   assert.equal(auth.daysLeftInMonth("2026-02-28"), 1);
 });
 
-function fakeMarketing(failAt?: string) {
+function fakeMarketing(failAt?: string, pages = false) {
   const calls: { path: string; params: URLSearchParams }[] = [];
   let n = 0;
   const f = (async (url: string, init?: RequestInit) => {
@@ -49,26 +49,33 @@ function fakeMarketing(failAt?: string) {
     calls.push({ path: p, params });
     const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status });
     if (failAt && p.endsWith(failAt)) return json({ error: { message: "lỗi thử" } }, 400);
+    if (p.endsWith("/adimages")) return json({ images: { "b.jpg": { hash: "HASH1" } } });
+    if (p.endsWith("/insights") && u.searchParams.get("after") === "CUR2") return json({ data: [{ date_start: "2026-10-21", spend: "80000", impressions: "3000", clicks: "30", actions: [] }] });
+    if (p.endsWith("/insights") && pages) return json({ data: [{ date_start: "2026-10-20", spend: "120000", impressions: "5000", clicks: "60", actions: [{ action_type: "lead", value: "3" }] }], paging: { cursors: { after: "CUR2" }, next: "https://graph.facebook.com/next" } });
     if (p.endsWith("/insights")) return json({ data: [{ date_start: "2026-10-20", spend: "120000", impressions: "5000", clicks: "60", actions: [{ action_type: "lead", value: "3" }], video_thruplay_watched_actions: [{ action_type: "video_view", value: "900" }] }] });
     return json({ id: `ID${++n}`, success: true });
   }) as typeof fetch;
   return { calls, f };
 }
 
-const spec = { name: "Video B1", dailyBudgetVnd: 150_000, audience: { countries: ["VN"], ageMin: 22, ageMax: 45, genders: [] }, startAt: "2026-10-22T00:00:00Z", endAt: "2026-10-29T00:00:00Z", pageId: "PAGE", videoExternalId: "VID", thumbnailUrl: "https://x/t.jpg", message: "msg" };
+const thumb = path.join(tmp, "b.jpg");
+fs.writeFileSync(thumb, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+const spec = { name: "Video B1", dailyBudgetVnd: 150_000, audience: { countries: ["VN"], ageMin: 22, ageMax: 45, genders: [] }, startAt: "2026-10-22T00:00:00Z", endAt: "2026-10-29T00:00:00Z", pageId: "PAGE", videoExternalId: "VID", thumbnailPath: thumb, message: "msg" };
 const ctx = (f: typeof fetch) => ({ config: { adAccountId: "act_1", accessToken: "token-gia" }, fetch: f });
 
 test("Meta: nháp tạo đủ 4 tầng, tất cả PAUSED, special_ad_categories, ngân sách VND; lỗi giữa chừng giữ phần đã tạo để thử lại không trùng", async () => {
   const { calls, f } = fakeMarketing();
   const r = await mm.createPausedDraft(ctx(f), spec);
   assert.equal(r.ok, true);
-  assert.deepEqual(calls.map((c) => c.path), ["act_1/campaigns", "act_1/adsets", "act_1/adcreatives", "act_1/ads"]);
+  assert.deepEqual(calls.map((c) => c.path), ["act_1/campaigns", "act_1/adsets", "act_1/adimages", "act_1/adcreatives", "act_1/ads"]);
   for (const c of calls) if (c.params.has("status")) assert.equal(c.params.get("status"), "PAUSED");
   assert.equal(calls[0].params.get("special_ad_categories"), "[]");
   assert.equal(calls[0].params.get("objective"), "OUTCOME_ENGAGEMENT");
   assert.equal(calls[1].params.get("daily_budget"), "150000");
   assert.deepEqual(JSON.parse(calls[1].params.get("targeting")!).geo_locations.countries, ["VN"]);
-  assert.equal(JSON.parse(calls[2].params.get("object_story_spec")!).video_data.video_id, "VID");
+  const story = JSON.parse(calls[3].params.get("object_story_spec")!);
+  assert.equal(story.video_data.video_id, "VID");
+  assert.equal(story.video_data.image_hash, "HASH1", "ảnh bìa gửi bằng image_hash, không cần đường dẫn công khai");
 
   const bad = fakeMarketing("act_1/adcreatives");
   const p = await mm.createPausedDraft(ctx(bad.f), spec);
@@ -77,7 +84,7 @@ test("Meta: nháp tạo đủ 4 tầng, tất cả PAUSED, special_ad_categories
   const again = fakeMarketing();
   const r2 = await mm.createPausedDraft(ctx(again.f), spec, p.ids);
   assert.equal(r2.ok, true);
-  assert.deepEqual(again.calls.map((c) => c.path), ["act_1/adcreatives", "act_1/ads"], "không tạo lại chiến dịch / nhóm");
+  assert.deepEqual(again.calls.map((c) => c.path), ["act_1/adimages", "act_1/adcreatives", "act_1/ads"], "không tạo lại chiến dịch / nhóm");
 });
 
 test("Meta: dừng từ chiến dịch vào trong, bật từ quảng cáo ra ngoài; đọc chi phí theo ngày", async () => {
@@ -87,6 +94,8 @@ test("Meta: dừng từ chiến dịch vào trong, bật từ quảng cáo ra ng
   assert.deepEqual(calls.map((c) => `${c.path}:${c.params.get("status")}`), ["C:PAUSED", "S:PAUSED", "A:PAUSED", "A:ACTIVE", "S:ACTIVE", "C:ACTIVE"]);
   const rows = await mm.fetchDailyInsights(ctx(fakeMarketing().f), "C", "2026-10-20", "2026-10-21");
   assert.deepEqual(rows, [{ date: "2026-10-20", spend: 120000, impressions: 5000, clicks: 60, leads: 3, thruplays: 900 }]);
+  const paged = await mm.fetchDailyInsights(ctx(fakeMarketing(undefined, true).f), "C", "2026-10-01", "2026-10-21");
+  assert.deepEqual(paged.map((r) => r.date), ["2026-10-20", "2026-10-21"], "đi hết các trang kết quả");
 });
 
 test("đề xuất tối ưu theo luật có căn cứ số liệu", () => {
@@ -124,4 +133,35 @@ test("bộ máy: không ủy quyền thì không bật; giảm ngân sách luôn
   d.update(db.schema.adCampaigns).set({ spent: 900_000, leads: 10 }).where(eq(db.schema.adCampaigns.id, "ad_t")).run();
   assert.equal((await engine.autoOptimize()).paused, 1);
   assert.equal(d.select().from(db.schema.adCampaigns).where(eq(db.schema.adCampaigns.id, "ad_t")).get()!.status, "paused");
+});
+
+test("quảng cáo trên Meta: mất kết nối thì KHÔNG báo đã dừng / đã đổi ngân sách; nháp dở dang không bật được", async () => {
+  const d = db.getDb();
+  auth.saveAuthorization(A());
+  d.insert(db.schema.adCampaigns).values({ id: "ad_meta", name: "Trên Meta", objective: "video_views", status: "active", dailyBudget: 100_000, spent: 0, impressions: 0, clicks: 0, leads: 0, audience: "", metaCampaignId: "C1", metaAdsetId: "S1", metaAdId: "A1" }).run();
+  const p = await engine.pauseAd("ad_meta", "OWNER");
+  assert.equal(p.ok, false);
+  assert.equal(d.select().from(db.schema.adCampaigns).where(eq(db.schema.adCampaigns.id, "ad_meta")).get()!.status, "active", "không đánh dấu dừng giả");
+  assert.equal((await engine.changeDailyBudget("ad_meta", 50_000, "OWNER")).ok, false);
+  d.insert(db.schema.adCampaigns).values({ id: "ad_half", name: "Dở dang", objective: "video_views", status: "pending_approval", dailyBudget: 100_000, spent: 0, impressions: 0, clicks: 0, leads: 0, audience: "", metaCampaignId: "C2" }).run();
+  assert.match((await engine.activateAd("ad_half", "OWNER") as { error: string }).error, /dở dang/);
+});
+
+test("giữ chi tiêu trong ủy quyền khi đang chạy: hết hạn thì dừng hết; vượt trần tháng thì dừng quảng cáo lớn nhất; quá ngày kết thúc thì dừng", async () => {
+  const d = db.getDb();
+  d.delete(db.schema.adCampaigns).run();
+  const mk = (id: string, daily: number, extra: Record<string, unknown> = {}) => d.insert(db.schema.adCampaigns).values({ id, name: id, objective: "video_views", status: "active", dailyBudget: daily, spent: 0, impressions: 0, clicks: 0, leads: 0, audience: "", ...extra }).run();
+  mk("ad_big", 300_000);
+  mk("ad_small", 50_000);
+  mk("ad_old", 10_000, { endAt: "2020-01-01T00:00:00Z" });
+  auth.saveAuthorization(A({ monthlyCapVnd: 100_000 * auth.daysLeftInMonth(), dailyCapVnd: 300_000 }));
+  const r = await engine.enforceAuthorization();
+  const st = (id: string) => d.select().from(db.schema.adCampaigns).where(eq(db.schema.adCampaigns.id, id)).get()!.status;
+  assert.equal(st("ad_old"), "paused", "quá ngày kết thúc");
+  assert.equal(st("ad_big"), "paused", "dừng quảng cáo lớn nhất để về trong trần tháng");
+  assert.equal(st("ad_small"), "active");
+  assert.equal(r.paused, 2);
+  auth.saveAuthorization(A({ validUntil: "2020-01-01" }));
+  await engine.enforceAuthorization();
+  assert.equal(st("ad_small"), "paused", "ủy quyền hết hạn thì dừng mọi quảng cáo đang chạy");
 });

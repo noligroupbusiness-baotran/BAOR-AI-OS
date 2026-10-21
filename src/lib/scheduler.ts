@@ -8,7 +8,7 @@ import { runAutoEditOnce } from "@/lib/video/auto-edit";
 import { notionConfigured, syncSecondBrain } from "@/lib/knowledge/sync";
 import { getSetting, setSetting } from "@/lib/admin";
 import { publishDueVideoPosts, syncVideoPostMetrics, verifyPublishingPosts } from "@/lib/publishing/video";
-import { autoOptimize, proposeFromVideoPosts, syncAdInsights } from "@/lib/ads/engine";
+import { autoOptimize, enforceAuthorization, proposeFromVideoPosts, syncAdInsights } from "@/lib/ads/engine";
 import { refreshProposals } from "@/lib/learning";
 
 const g = globalThis as unknown as { __baorScheduler?: { timer: NodeJS.Timeout; lastHourly: number; lastDaily: number } };
@@ -52,6 +52,9 @@ async function tick() {
       // Quảng cáo: đọc chi phí theo ngày, tự dừng khi vượt ngưỡng (tăng chỉ khi OWNER cho phép), đề xuất từ video tốt
       const ai = await syncAdInsights();
       if (ai.updated || ai.errors.length) parts.push(`chi phí ${ai.updated} quảng cáo${ai.errors.length ? `, lỗi ${ai.errors.length}` : ""}`);
+      // Giữ chi tiêu đang chạy trong ủy quyền (hết hạn, vượt trần tháng, quá ngày kết thúc → dừng)
+      const enf = await enforceAuthorization();
+      if (enf.paused || enf.failed.length) parts.push(`ủy quyền: dừng ${enf.paused}${enf.failed.length ? `, lỗi ${enf.failed.length}` : ""}`);
       const opt = await autoOptimize();
       if (opt.paused || opt.scaled) parts.push(`tối ưu: dừng ${opt.paused}, tăng ${opt.scaled}`);
       const prop = proposeFromVideoPosts();
