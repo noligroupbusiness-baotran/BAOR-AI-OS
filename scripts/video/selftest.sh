@@ -60,12 +60,14 @@ P
 # --- Bộ dựng Skill ESV r3: kế hoạch biên tập có đủ loại hiệu ứng (thanh bước, cơ chế dọc, so sánh có tick, quy trình, FS-06, vệt sáng)
 cat > "$W/plan-fx.json" <<'J'
 {"by": "selftest", "content": "hướng dẫn",
- "emphasis": [{"t": 1.0, "text": "Mở đầu", "style": "blur"}, {"t": 11.5, "text": "LẮNG NGHE", "style": "shine"}],
+ "emphasis": [{"t": 1.0, "text": "Mở đầu", "style": "blur"}, {"t": 11.0, "text": "LẮNG NGHE", "style": "shine"}],
  "diagrams": [{"type": "fs06", "t0": 2.0, "t1": 5.0}, {"type": "steps", "t0": 2.2, "t1": 5.0, "steps": [{"t": 2.4, "text": "một"}, {"t": 3.2, "text": "hai"}]},
   {"type": "leak", "t0": 5.2},
   {"type": "mechanism", "t0": 5.5, "t1": 7.4, "top": {"t": 5.6, "text": "trên", "icon": "person"}, "mid": {"t": 6.0, "text": "giữa"}, "bottom": {"t": 6.4, "text": "dưới", "icon": "person"}},
   {"type": "compare", "t0": 7.6, "t1": 9.6, "wrong": {"t": 7.7, "text": "sai", "strike": 8.2}, "right": [{"t": 8.6, "text": "đúng"}]},
-  {"type": "process", "t0": 9.7, "t1": 11.2, "top": {"t": 9.8, "text": "hỏi", "icon": "bubble"}, "bottom": {"t": 10.4, "text": "khen", "icon": "heart"}}],
+  {"type": "process", "t0": 9.7, "t1": 11.2, "top": {"t": 9.8, "text": "hỏi", "icon": "bubble"}, "bottom": {"t": 10.4, "text": "khen", "icon": "heart"}},
+  {"type": "chapter", "t0": 11.3, "t1": 12.4, "num": "2", "text": "chương"}, {"type": "quote", "t0": 12.5, "t1": 14.6, "text": "câu chốt, đúng nguyên lời"},
+  {"type": "fs05", "t0": 0.2, "t1": 1.9}, {"type": "fs01", "t0": 12.0, "t1": 14.6}],
  "broll": [{"t0": 12.5, "t1": 14.0, "file": "goi-dien.jpg"}, {"t0": 1.5, "t1": 2.5, "file": "khong-giay-phep.jpg"}]}
 J
 DATA_DIR="$W/data" python3 "$HERE/esv_render.py" --input "$W/raw.mp4" --job-dir "$W/esv-fx" --plan "$W/plan-fx.json" --words "$W/esv/words_main.json" 2>"$W/log-esv-fx.txt" | tail -1
@@ -76,7 +78,7 @@ qa = {q["id"]: q["status"] for q in r["qa"]}
 bad = [k for k in "ABCDEGHIQR" if qa.get(k) != "pass"]
 assert not bad, f"ESV hiệu ứng: bảng kiểm chưa đạt: {bad}"
 types = sorted({d["type"] for d in r["diagrams"]})
-assert types == ["compare", "fs06", "leak", "mechanism", "process", "steps"], types
+assert types == ["chapter", "compare", "fs01", "fs05", "fs06", "leak", "mechanism", "process", "quote", "steps"], types
 assert [b["file"] for b in r["broll"]["events"]] == ["goi-dien.jpg"], "chỉ ảnh có giấy phép được chèn"
 assert r["zoom"]["profile"] == "VUA" and "smootherstep" in r["zoom"]["formula"]
 print(f"SELFTEST ESV HIỆU ỨNG ĐẠT: {types}, zoom {r['zoom']['profile']} {len(r['zoom']['events'])} lần, SFX {r['audio']['sfx'].get('used')}")
