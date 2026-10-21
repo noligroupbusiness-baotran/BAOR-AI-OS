@@ -37,6 +37,20 @@ Cập nhật bởi MASTER sau mỗi checkpoint. Nguồn vận hành: `docs/BAOR_
 | Đưa lên mkt.baor.vn | OWNER nói MERGE | `main` chậm hơn nhánh làm việc |
 | Vá lỗ hổng Next.js | Phiên riêng (nhánh `fix/next-16.4.2-security`) | `npm run security` báo lỗi tới khi ghép |
 
+## Phản hồi OWNER cần xử lý
+
+- 21/10/2026, video B1 (yêu cầu chỉnh sửa): "chưa có chữ nhấn... chưa có animation.. như trong skill mình đưa".
+  Bộ dựng hiện chỉ chọn vài chữ nhấn (5 cho 3 phút) và animation (mục 3.3 của skill) vẫn chưa tự động. Việc tiếp theo của CP03:
+  tăng mật độ chữ nhấn theo skill, làm animation chữ / sơ đồ theo mục 3.3, rồi dựng lại B1 để OWNER so.
+
+## Phải làm trước khi bật đăng thật / quảng cáo thật (review vòng 4, P2)
+
+- Lỗi HTTP 5xx dạng JSON ở bước đăng video cuối vẫn tự thử lại (có thể đăng trùng) → coi là mơ hồ như lỗi mạng.
+- Lên lịch lại tay sau lỗi mơ hồ chưa có cảnh báo "kiểm tra trang trước".
+- enforceAuthorization bỏ quảng cáo dừng thất bại khỏi phép tính → các quảng cáo khác có thể vượt trần.
+- monthSpent tính thiếu khi Insights tháng này lỗi / chưa đồng bộ → ước theo ngân sách ngày × số ngày chạy, và báo lỗi Insights.
+- Windows (start.bat): không dừng được bộ dựng cũ khi khởi động lại (không có `ps`).
+
 ## Rủi ro / nợ đã biết (DEFERRED)
 
 - Build `next build` ở máy kéo cả `data/` vào `.next/standalone` (do instrumentation dùng fs động, có từ trước). Docker production không bị vì `.dockerignore` loại `data`. Không đóng gói standalone từ máy cá nhân.
@@ -44,6 +58,8 @@ Cập nhật bởi MASTER sau mỗi checkpoint. Nguồn vận hành: `docs/BAOR_
 - API Meta (đăng video, Marketing API) viết theo tài liệu chính thức nhưng chưa chạy với tài khoản thật.
 
 ## Nhật ký checkpoint
+
+- 21/10/2026 — Review vòng 4: APPROVE (0 P0/P1). Theo yêu cầu OWNER, làm mới toàn bộ dữ liệu thử ở máy để test lại từ đầu; bản lưu trữ ở `data/reset-archive-20261021-193350/` (CSDL + video). Giữ chỉ mục Second Brain, cài đặt, kết nối. Cờ `data.sampleCleared` chặn tự nạp lại dữ liệu mẫu.
 
 - 21/10/2026 — CP01 ĐẠT (commit 4c3c94f).
 - 21/10/2026 — CP02 + CP03 (2085ee3), review độc lập 2 vòng: sửa 3 P1 CP02 + 2 P1 (sửa nội dung đã duyệt; bỏ qua ghi chú duyệt video) và các P2.

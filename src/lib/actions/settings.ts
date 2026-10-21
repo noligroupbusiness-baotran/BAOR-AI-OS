@@ -115,11 +115,13 @@ export async function resetSampleData() {
   const db = getDb();
   clearSampleOnly(db);
   seedAll(db);
+  setSetting("data.sampleCleared", "0");
   done("/dashboard", "Đã nạp lại dữ liệu mẫu. Dữ liệu bạn tự tạo vẫn còn.");
 }
 
 export async function clearSampleData() {
   await requirePermission("admin", "/settings");
   clearSampleOnly(getDb());
+  setSetting("data.sampleCleared", "1");
   done("/dashboard", "Đã xóa dữ liệu mẫu, giữ nguyên dữ liệu bạn tự tạo. Hệ thống sẵn sàng nhận dữ liệu thật.");
 }

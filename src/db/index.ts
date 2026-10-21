@@ -25,9 +25,13 @@ export function getDb(): Db {
 
   const db = drizzle(sqlite, { schema });
   migrate(db, { migrationsFolder: path.join(process.cwd(), "drizzle") });
-  seedIfEmpty(db);
-  seedCampaignsIfEmpty(db);
-  seedCatalogIfEmpty(db);
+  // Đã xoá dữ liệu mẫu (Cài đặt › Xóa dữ liệu mẫu, hoặc làm mới dữ liệu thử): không tự nạp lại khi bảng trống.
+  const cleared = sqlite.prepare("select value from settings where key = 'data.sampleCleared'").get() as { value?: string } | undefined;
+  if (cleared?.value !== "1") {
+    seedIfEmpty(db);
+    seedCampaignsIfEmpty(db);
+    seedCatalogIfEmpty(db);
+  }
 
   globalForDb.__baorDb = db;
   globalForDb.__baorSqlite = sqlite;
