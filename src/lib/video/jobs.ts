@@ -307,7 +307,14 @@ function runJob(job: VideoJob): Promise<void> {
   const musicPath = music ? uploadPath(music) : null;
   if (music && musicPath) args.push(`--music=${musicPath}`, `--music-license=${String(music.meta.license ?? "")}`);
   const prevVersion = jobVersions(job.videoId).find((v) => v < job.version);
-  if (prevVersion) {
+  // Bộ dựng theo Skill ESV: dùng khi bản trước có kế hoạch dựng (chữ nhấn, sơ đồ, zoom do biên tập lập từ lời nói).
+  const prevPlan = prevVersion ? path.join(jobDir(job.videoId, prevVersion), "plan.json") : "";
+  if (prevPlan && fs.existsSync(prevPlan)) {
+    const pdir = jobDir(job.videoId, prevVersion!);
+    args.length = 0;
+    args.push(path.join(process.cwd(), "scripts", "video", "esv_render.py"), `--input=${srcPath}`, `--job-dir=${dir}`, `--plan=${prevPlan}`);
+    if (fs.existsSync(path.join(pdir, "words_main.json"))) args.push(`--words=${path.join(pdir, "words_main.json")}`);
+  } else if (prevVersion) {
     const pdir = jobDir(job.videoId, prevVersion);
     if (fs.existsSync(path.join(pdir, "words_main.json"))) args.push(`--reuse-dir=${pdir}`);
     const pjob = readJob(job.videoId, prevVersion);
