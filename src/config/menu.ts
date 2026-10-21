@@ -16,6 +16,7 @@ import {
   UserPlus,
   BrainCircuit,
   FlaskConical,
+  Sparkles,
 } from "lucide-react";
 
 // Thanh bên xếp theo dây chuyền thương hiệu cá nhân: tri thức → nghiên cứu → kịch bản → video → đăng → đo lường.
@@ -46,6 +47,7 @@ export const menu: MenuItem[] = [
   { key: "video-studio", href: "/video-studio", label: "Video Studio", description: "Video gốc, Agent dựng, kiểm tra, phê duyệt, phiên bản theo nền tảng.", icon: Clapperboard, group: "brand", hotkey: "5" },
   { key: "publishing", href: "/publishing", label: "Đăng bài & Quảng cáo", description: "Lịch nội dung, hàng chờ, đã đăng, tài khoản kết nối, quảng cáo.", icon: CalendarClock, group: "brand", hotkey: "6" },
   { key: "reports", href: "/reports", label: "Đo lường", description: "Hiệu quả nội dung, video, quảng cáo, lead, chuyển đổi, doanh thu.", icon: BarChart3, group: "brand", hotkey: "7" },
+  { key: "learning", href: "/insights/learning", label: "Học & cải tiến", description: "Phân tích kết quả thật, đề xuất cải tiến nội dung, Second Brain, Skill dựng video, quảng cáo.", icon: Sparkles, group: "brand" },
   { key: "customers", href: "/customers", label: "Khách hàng", description: "Lead, khách hàng, phân data, chăm sóc, lịch sử tương tác, đơn hàng.", icon: Users, group: "business", hotkey: "9" },
   { key: "insights", href: "/insights", label: "Insight khách hàng", description: "Chân dung khách hàng, nỗi đau, đối thủ, xu hướng, ngân hàng insight.", icon: Lightbulb, group: "business" },
   { key: "automation", href: "/automation", label: "Automation", description: "Quy trình tự động, bản nháp, lịch sử chạy, lỗi cần xử lý.", icon: Workflow, group: "business" },

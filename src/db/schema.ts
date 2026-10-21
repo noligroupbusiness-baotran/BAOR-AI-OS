@@ -704,3 +704,27 @@ export const videoFeedback = sqliteTable(
   },
   (t) => [index("video_feedback_video_idx").on(t.videoId)],
 );
+
+// CP06: đề xuất cải tiến từ số liệu thật (nội dung, video, quảng cáo, kiến thức, skill dựng video).
+// Mọi đề xuất là GIẢ THUYẾT kèm căn cứ và cỡ mẫu cho tới khi OWNER chấp nhận. Không tự sửa Second Brain hay skill.
+export const improvementProposals = sqliteTable(
+  "improvement_proposals",
+  {
+    id: text("id").primaryKey(),
+    /** Khoá chống trùng: cùng phát hiện thì cập nhật căn cứ, không tạo đề xuất mới. */
+    key: text("key").notNull(),
+    target: text("target").notNull(), // content | second_brain | video_skill | ads
+    title: text("title").notNull(),
+    detail: text("detail").notNull().default(""),
+    evidence: text("evidence").notNull().default("[]"), // JSON string[]
+    sampleSize: integer("sample_size").notNull().default(0),
+    confidence: text("confidence").notNull().default("low"), // low | medium | high
+    status: text("status").notNull().default("proposed"), // proposed | accepted | rejected | exported
+    decidedBy: text("decided_by"),
+    decidedAt: text("decided_at"),
+    note: text("note").notNull().default(""),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (t) => [uniqueIndex("improvement_proposals_key_idx").on(t.key)],
+);

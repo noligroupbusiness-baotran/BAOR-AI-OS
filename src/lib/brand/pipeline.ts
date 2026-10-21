@@ -1,5 +1,6 @@
 // Dây chuyền thương hiệu cá nhân: Second Brain → Nghiên cứu → Kịch bản → Video → Đăng → Quảng cáo → Đo lường.
 // Mỗi chặng chỉ đếm bản ghi thật trong CSDL; bản ghi mẫu (ID nạp ban đầu) được đếm riêng để không lẫn vào kết quả.
+import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { knowledgeStats } from "@/lib/knowledge";
 import { notionConfigured } from "@/lib/knowledge/sync";
@@ -194,15 +195,20 @@ export function getBrandPipeline(): BrandPipeline {
   if (as.pending_approval) actions.push({ stage: "Quảng cáo", text: `Duyệt ngân sách cho ${as.pending_approval} quảng cáo.`, href: "/publishing#ads" });
 
   // 7. Đo lường & học
-  const measuredPosts = db.select({ id: schema.scheduledPosts.id, reach: schema.scheduledPosts.reach }).from(schema.scheduledPosts).all().filter((p) => !samplePosts.has(p.id) && p.reach != null).length;
+  const measuredPosts = db.select({ id: schema.scheduledPosts.id, reach: schema.scheduledPosts.reach, views: schema.scheduledPosts.views }).from(schema.scheduledPosts).all().filter((p) => !samplePosts.has(p.id) && (p.reach != null || p.views != null)).length;
+  const waitingProposals = db.select({ id: schema.improvementProposals.id }).from(schema.improvementProposals).where(eq(schema.improvementProposals.status, "proposed")).all().length;
+  if (waitingProposals) actions.push({ stage: "Đo lường", text: `Xem ${waitingProposals} đề xuất cải tiến (giả thuyết từ số liệu thật): chấp nhận hoặc bỏ qua.`, href: "/insights/learning" });
   const measure: Stage = {
     key: "measure",
     step: 7,
     name: "Đo lường",
-    href: "/reports",
-    state: measuredPosts ? "working" : "not_started",
+    href: waitingProposals ? "/insights/learning" : "/reports",
+    state: waitingProposals ? "waiting" : measuredPosts ? "working" : "not_started",
     summary: measuredPosts ? `${measuredPosts} bài thật đã có số liệu.` : "Chưa có số liệu thật; báo cáo hiện ghi rõ phần dữ liệu mẫu.",
-    lines: [{ label: "Bài thật có số liệu", value: measuredPosts }],
+    lines: [
+      { label: "Bài thật có số liệu", value: measuredPosts },
+      { label: "Đề xuất cải tiến chờ OWNER", value: waitingProposals },
+    ],
     sample: posts.length - realPosts.length,
   };
 

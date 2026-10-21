@@ -9,6 +9,7 @@ import { notionConfigured, syncSecondBrain } from "@/lib/knowledge/sync";
 import { getSetting, setSetting } from "@/lib/admin";
 import { publishDueVideoPosts, syncVideoPostMetrics, verifyPublishingPosts } from "@/lib/publishing/video";
 import { autoOptimize, proposeFromVideoPosts, syncAdInsights } from "@/lib/ads/engine";
+import { refreshProposals } from "@/lib/learning";
 
 const g = globalThis as unknown as { __baorScheduler?: { timer: NodeJS.Timeout; lastHourly: number; lastDaily: number } };
 
@@ -69,6 +70,13 @@ async function tick() {
     if (!g.__baorScheduler || now - g.__baorScheduler.lastDaily >= 24 * 60 * 60 * 1000) {
       if (g.__baorScheduler) g.__baorScheduler.lastDaily = now;
       state.lastDailyAt = state.lastTickAt;
+      // CP06: phân tích kết quả mỗi ngày, cập nhật đề xuất cải tiến (chờ OWNER quyết)
+      try {
+        const lp = refreshProposals();
+        if (lp.created) parts.push(`${lp.created} đề xuất cải tiến mới`);
+      } catch (e) {
+        parts.push(`phân tích lỗi: ${e instanceof Error ? e.message : e}`);
+      }
       const r = pruneOldData();
       const total = r.activity + r.decisions + r.automationRuns + r.syncRuns + r.campaignLogs + r.aiCalls + r.orphanFiles + r.orphanRows;
       if (total) parts.push(`dọn ${total} mục cũ`);
