@@ -7,6 +7,7 @@ import type { VideoStatus } from "@/lib/data/videos";
 import { done, logActivity, nowIso } from "./common";
 import { currentActor, requirePermission } from "@/lib/permissions";
 import { addVideoFeedback } from "@/lib/video/feedback";
+import { parseAspect, parseFraming } from "@/lib/video/job-types";
 import { blockersForVideo, transitionBlock } from "@/lib/video/approval";
 
 // Video Studio: Agent Edit Video chỉ dựng và chuẩn bị phiên bản. Người kiểm tra, yêu cầu sửa và phê duyệt.
@@ -63,11 +64,39 @@ export async function transitionVideo(fd: FormData) {
 }
 
 // Dựng lại từ cùng nguồn thành bản mới (không ghi đè bản trước). Có thể bật cắt khoảng lặng cho riêng video này.
+export async function stopVideoJobAction(fd: FormData) {
+  const actor = await currentActor();
+  const back = str(fd, "back") || "/video-studio";
+  const { stopVideoJob } = await import("@/lib/video/jobs");
+  const r = stopVideoJob(str(fd, "id"), actor.name);
+  if (!r.ok) return fail(back, r.error);
+  done(back, `Đã dừng dựng bản ${r.version}`);
+}
+
+export async function startVideoAction(fd: FormData) {
+  const actor = await currentActor();
+  const back = str(fd, "back") || "/video-studio";
+  const { startVideoJob } = await import("@/lib/video/jobs");
+  const r = startVideoJob(str(fd, "id"), actor.name, { aspect: parseAspect(str(fd, "aspect")), framing: parseFraming(str(fd, "fx"), str(fd, "fy"), str(fd, "fz")), cutSilence: str(fd, "cut") === "1" });
+  if (!r.ok) return fail(back, r.error);
+  done(back, "Đã xếp hàng dựng");
+}
+
+export async function deleteVideoAction(fd: FormData) {
+  const actor = await currentActor();
+  const back = str(fd, "back") || "/video-studio";
+  const { deleteVideo } = await import("@/lib/video/jobs");
+  const r = deleteVideo(str(fd, "id"), actor.name);
+  if (!r.ok) return fail(back, r.error);
+  done(back.replace(/([?&])open=[^&#]*&?/, "$1").replace(/[?&]$/, ""), `Đã xoá video “${r.title}”`);
+}
+
 export async function rerenderVideoAction(fd: FormData) {
   const actor = await currentActor();
   const back = str(fd, "back") || "/video-studio";
   const { rerenderVideo } = await import("@/lib/video/jobs");
-  const r = rerenderVideo(str(fd, "id"), actor.name, fd.get("cut") === null ? undefined : str(fd, "cut") === "1");
+  const frame = fd.get("aspect") === null ? undefined : { aspect: parseAspect(str(fd, "aspect")), framing: parseFraming(str(fd, "fx"), str(fd, "fy"), str(fd, "fz")) };
+  const r = rerenderVideo(str(fd, "id"), actor.name, fd.get("cut") === null ? undefined : str(fd, "cut") === "1", frame);
   if (!r.ok) return fail(back, r.error);
   done(back, `Đang dựng bản ${r.version}`);
 }

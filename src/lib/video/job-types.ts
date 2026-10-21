@@ -1,6 +1,31 @@
 // Kiểu dữ liệu và kiểm tra thuần cho việc dựng video (dùng được cả ở client component và test).
 
-export type JobStatus = "queued" | "running" | "done" | "error";
+/** setup = đã nhận nguồn, chờ người dựng chọn tỷ lệ / khung rồi bấm "Bắt đầu dựng". */
+export type JobStatus = "setup" | "queued" | "running" | "done" | "error";
+
+/** Tỷ lệ khung xuất (Skill ESV gốc là 9:16; tỷ lệ khác thu dải chữ về đáy khung). */
+export const ASPECTS = ["9:16", "4:5", "1:1", "16:9"] as const;
+export type Aspect = (typeof ASPECTS)[number];
+
+/** Cân chỉnh khung cắt: tâm khung theo tỉ lệ nguồn (0–1), phóng ≥ 1. Trống = theo mặt người nói. */
+export interface Framing {
+  x?: number;
+  y?: number;
+  zoom?: number;
+}
+
+export function parseAspect(v: unknown): Aspect {
+  return (ASPECTS as readonly string[]).includes(String(v)) ? (String(v) as Aspect) : "9:16";
+}
+
+export function parseFraming(x: unknown, y: unknown, zoom: unknown): Framing | undefined {
+  const n = (v: unknown, lo: number, hi: number) => {
+    const f = Number(v);
+    return v === "" || v === null || v === undefined || !Number.isFinite(f) ? undefined : Math.min(hi, Math.max(lo, f));
+  };
+  const fr: Framing = { x: n(x, 0, 1), y: n(y, 0, 1), zoom: n(zoom, 1, 3) };
+  return fr.x === undefined && fr.y === undefined && (fr.zoom === undefined || fr.zoom === 1) ? undefined : fr;
+}
 
 export interface VideoJob {
   videoId: string;
@@ -8,6 +33,8 @@ export interface VideoJob {
   status: JobStatus;
   sourceUploadId: string;
   cutSilence: boolean;
+  aspect?: Aspect;
+  framing?: Framing;
   prompt?: string;
   createdAt: string;
   by?: string;

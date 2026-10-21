@@ -24,7 +24,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import pipeline as P  # noqa: E402  (dùng lại: probe, sh, ebur, transcribe, đếm khung, giải mã, sha256, Job)
 
-W, H, FPS = 1080, 1920, 30
+W, H, FPS = 1080, 1920, 30  # hệ toạ độ thiết kế 9:16 của Skill ESV (lớp chữ / sơ đồ vẽ ở hệ này)
+ASPECTS = {"9:16": (1080, 1920), "4:5": (1080, 1350), "1:1": (1080, 1080), "16:9": (1920, 1080)}
+CW, CH = W, H  # khung xuất thật (đặt lại trong main theo --aspect)
 # Vùng ESV mục 2 (px @1080x1920)
 RED = (0, 274, 1080, 1089)          # mặt
 YEL = (82, 1118, 998, 1613)         # mọi chữ / đồ hoạ
@@ -528,34 +530,35 @@ def fs06_clip(src, cropf, t0, d, out):
     phóng ngược ra ở 0,6 s cuối. Nội suy affine dưới điểm ảnh (không làm tròn)."""
     from PIL import ImageEnhance
     n = max(2, int(round(d * FPS)))
-    vf = ",".join(["fps=30"] + ([cropf] if cropf else []) + [f"scale={W}:{H}:flags=lanczos", "format=rgb24"])
+    vf = ",".join(["fps=30"] + ([cropf] if cropf else []) + [f"scale={CW}:{CH}:flags=lanczos", "format=rgb24"])
     rd = subprocess.Popen(["ffmpeg", "-v", "error", "-ss", f"{t0:.3f}", "-i", src, "-frames:v", str(n), "-vf", vf, "-f", "rawvideo", "-"], stdout=subprocess.PIPE)
-    wr = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
+    wr = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{CW}x{CH}", "-r", str(FPS), "-i", "-",
                            "-c:v", "libx264", "-preset", "medium", "-crf", "14", "-pix_fmt", "yuv420p", out], stdin=subprocess.PIPE)
-    yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
-    r = np.sqrt(((xx - W / 2) / (W * 0.62)) ** 2 + ((yy - H / 2) / (H * 0.62)) ** 2)
+    yy, xx = np.mgrid[0:CH, 0:CW].astype(np.float32)
+    r = np.sqrt(((xx - CW / 2) / (CW * 0.62)) ** 2 + ((yy - CH / 2) / (CH * 0.62)) ** 2)
     vig = np.clip(1.15 - 0.75 * r ** 2, 0.25, 1.0)[..., None]
     last = None
     for i in range(n):
-        buf = rd.stdout.read(W * H * 3)
-        if len(buf) == W * H * 3:
-            last = Image.frombytes("RGB", (W, H), buf)
+        buf = rd.stdout.read(CW * CH * 3)
+        if len(buf) == CW * CH * 3:
+            last = Image.frombytes("RGB", (CW, CH), buf)
         fr = last
         t = i / FPS
         p = min(ease_in_out_quint(t / 0.6), ease_in_out_quint((d - t) / 0.6))
         if p < 0.001:
             wr.stdin.write(fr.tobytes())
             continue
-        sm = fr.resize((270, 480), Image.BILINEAR).filter(ImageFilter.GaussianBlur(5))
+        sm = fr.resize((270, max(2, int(270 * CH / CW))), Image.BILINEAR).filter(ImageFilter.GaussianBlur(5))
         sm = ImageEnhance.Brightness(ImageEnhance.Color(sm).enhance(0.45)).enhance(0.55)
-        bg = (np.asarray(sm.resize((W, H), Image.BICUBIC), dtype=np.float32) * vig).clip(0, 255).astype(np.uint8)
+        bg = (np.asarray(sm.resize((CW, CH), Image.BICUBIC), dtype=np.float32) * vig).clip(0, 255).astype(np.uint8)
         frame = Image.fromarray(bg).convert("RGBA")
-        x, y, w = 615 * p, 120 * p, W - (W - 405) * p
-        k = w / W
-        lay = fr.convert("RGBA").transform((W, H), Image.AFFINE, (1 / k, 0, -x / k, 0, 1 / k, -y / k), resample=Image.BICUBIC, fillcolor=(0, 0, 0, 0))
+        px_, py_, pw_ = LAY["pip"]
+        x, y, w = px_ * p, py_ * p, CW - (CW - pw_) * p
+        k = w / CW
+        lay = fr.convert("RGBA").transform((CW, CH), Image.AFFINE, (1 / k, 0, -x / k, 0, 1 / k, -y / k), resample=Image.BICUBIC, fillcolor=(0, 0, 0, 0))
         frame.alpha_composite(lay)
         if p > 0.05:
-            ImageDraw.Draw(frame).rectangle([x - 1.5, y - 1.5, x + w + 1.5, y + w * H / W + 1.5], outline=rgb(GOLD) + (int(255 * min(1.0, (p - 0.05) / 0.2)),), width=3)
+            ImageDraw.Draw(frame).rectangle([x - 1.5, y - 1.5, x + w + 1.5, y + w * CH / CW + 1.5], outline=rgb(GOLD) + (int(255 * min(1.0, (p - 0.05) / 0.2)),), width=3)
         wr.stdin.write(frame.convert("RGB").tobytes())
     rd.stdout.close()
     rd.wait()
@@ -568,15 +571,15 @@ def leak_clip(out, d=3.6):
     """AN-12 chuyển chương bằng vệt sáng: light leak vàng ấm + 1 vệt chéo quét qua toàn khung (easeInOutQuint), 220 hạt bụi vàng; 3,6 s.
     Lớp có alpha (gần với blend screen), chồng dưới logo và chữ."""
     n = int(round(d * FPS))
-    sw, sh = 270, 480
+    sw, sh = 270, max(2, int(270 * CH / CW))
     Y, X = np.mgrid[0:sh, 0:sw].astype(np.float32)
     X /= sw
     Y /= sw
     rng = np.random.default_rng(12)
-    px, py = rng.uniform(0, W, 220), rng.uniform(0, H, 220)
+    px, py = rng.uniform(0, CW, 220), rng.uniform(0, CH, 220)
     vx, vy = rng.uniform(-14, 14, 220), rng.uniform(-30, -6, 220)
     ph, rr = rng.uniform(0, 6.28, 220), rng.uniform(1.2, 3.2, 220)
-    wr = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgba", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
+    wr = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgba", "-s", f"{CW}x{CH}", "-r", str(FPS), "-i", "-",
                            "-c:v", "png", "-pix_fmt", "rgba", out], stdin=subprocess.PIPE)
     ang = math.radians(35)
     for i in range(n):
@@ -592,7 +595,7 @@ def leak_clip(out, d=3.6):
         warm = np.clip(band / (blob + band + 1e-6), 0, 1)
         rgbm = np.stack([255 + 0 * warm, 205 + 40 * warm, 110 + 120 * warm], -1)
         small = np.concatenate([rgbm, (al * 255)[..., None]], -1).astype(np.uint8)
-        img = Image.fromarray(small).resize((W, H), Image.BICUBIC)
+        img = Image.fromarray(small).resize((CW, CH), Image.BICUBIC)
         dd = ImageDraw.Draw(img)
         env = math.sin(math.pi * u) ** 0.8
         for j in range(220):
@@ -621,6 +624,48 @@ def fit_emphasis(emph, windows):
         if e.t1 - e.t0 >= 0.6:
             keep.append(e)
     return keep
+
+
+def make_layout(aspect):
+    """Bố cục theo tỷ lệ. 9:16 giữ đúng số đo Skill ESV. Tỷ lệ khác: dải chữ 9:16 (rộng 1080) thu theo s và đặt sát đáy;
+    vùng mặt = phần trên dải chữ; logo, thẻ ảnh, khung người (PIP) tính theo khung xuất. [AI SUY LUẬN — skill chưa có số cho tỷ lệ khác]"""
+    cw, ch = ASPECTS[aspect]
+    if aspect == "9:16":
+        return {"aspect": aspect, "CW": cw, "CH": ch, "s": 1.0, "tx": 0, "ty": BAND_Y0, "logo_w": 440, "logo_x": 50, "logo_y": 120,
+                "red": (RED[1], RED[3]), "card_cy": 820.0, "card_w": 940, "card_h": 1180, "pip": (615, 120, 405)}
+    s = {"4:5": 0.9, "1:1": 0.8, "16:9": 0.75}[aspect]
+    bh = (BAND_Y1 - BAND_Y0) * s
+    ty = int(round(ch - bh - ch * 0.03))
+    tx = int(round((cw - W * s) / 2))
+    logo_w = int(round(440 * min(1.0, s + 0.1)))
+    lx, ly = int(round(cw * 0.04)), int(round(ch * 0.04))
+    text_top = ty + (YEL[1] - BAND_Y0) * s
+    top, bottom = ly + 110, text_top - 16
+    pip_w = cw * (0.32 if cw > ch else 0.375)
+    return {"aspect": aspect, "CW": cw, "CH": ch, "s": s, "tx": tx, "ty": ty, "logo_w": logo_w, "logo_x": lx, "logo_y": ly,
+            "red": (int(ch * 0.03), int(text_top)), "card_cy": (top + bottom) / 2, "card_w": cw * 0.8, "card_h": (bottom - top) * 0.95,
+            "pip": (cw - pip_w - lx, ly, pip_w)}
+
+
+LAY = make_layout("9:16")
+
+
+def frame_crop(info, fx, fy, aspect, fr):
+    """Khung cắt từ nguồn theo tỷ lệ xuất + cân chỉnh của người dựng (fr = {x, y, zoom}: tâm khung theo tỉ lệ nguồn 0–1, phóng ≥ 1).
+    Không có cân chỉnh: tâm ngang theo mặt, dọc giữa (nguồn dọc giữ nguyên)."""
+    sw, sh = info["width"], info["height"]
+    ar = ASPECTS[aspect][0] / ASPECTS[aspect][1]
+    cw, chh = (sh * ar, sh) if sw / sh > ar else (sw, sw / ar)
+    z = max(1.0, float(fr.get("zoom") or 1.0))
+    cw, chh = cw / z, chh / z
+    cx = float(fr["x"]) * sw if fr.get("x") is not None else fx
+    cy = float(fr["y"]) * sh if fr.get("y") is not None else sh / 2
+    cw, chh = int(cw) // 2 * 2, int(chh) // 2 * 2
+    x0 = int(min(max(cx - cw / 2, 0), sw - cw)) // 2 * 2
+    y0 = int(min(max(cy - chh / 2, 0), sh - chh)) // 2 * 2
+    if (cw, chh, x0, y0) == (sw, sh, 0, 0):
+        return None, sw, sh, 0, 0
+    return f"crop={cw}:{chh}:{x0}:{y0}", cw, chh, x0, y0
 
 
 def keep_segments(src, dur, thr=-42.0, min_sil=0.28, pad=0.09):
@@ -654,9 +699,6 @@ def keep_segments(src, dur, thr=-42.0, min_sil=0.28, pad=0.09):
 
 def make_cut(src, keep, out, work):
     """Bản đã cắt lặng (nguồn mới cho mọi bước sau): hình chọn đúng khung, tiếng nối theo mẫu với vuốt 3 ms mỗi mối."""
-    sel = "+".join(f"between(n,{int(round(a * FPS))},{int(round(b * FPS)) - 1})" for a, b in keep)
-    fcv = os.path.join(work, "cut_sel.txt")
-    open(fcv, "w").write(f"[0:v]fps={FPS},select='{sel}',setpts=N/{FPS}/TB[v]")
     sr = 48000
     raw = subprocess.run(["ffmpeg", "-v", "error", "-i", src, "-vn", "-ac", "2", "-ar", str(sr), "-f", "f32le", "-"], capture_output=True).stdout
     au = np.frombuffer(raw, np.float32).reshape(-1, 2)
@@ -670,10 +712,29 @@ def make_cut(src, keep, out, work):
         parts.append(seg)
     wav = os.path.join(work, "cut_audio.f32")
     np.concatenate(parts).astype(np.float32).tofile(wav)
-    n = sum(int(round(b * FPS)) - int(round(a * FPS)) for a, b in keep)
-    P.sh(["ffmpeg", "-v", "error", "-y", "-i", src, "-f", "f32le", "-ar", str(sr), "-ac", "2", "-i", wav, "-/filter_complex", fcv,
-          "-map", "[v]", "-map", "1:a", "-frames:v", str(n), "-c:v", "libx264", "-preset", "veryfast", "-crf", "12", "-pix_fmt", "yuv420p",
-          "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709", "-c:a", "pcm_s16le", out])
+    # Hình: dựng riêng từng đoạn (tua chính xác theo khung, đúng số khung) rồi nối — không dùng một biểu thức select dài
+    # (ffmpeg không dịch được biểu thức > ~100 đoạn: "Cannot allocate memory").
+    from concurrent.futures import ThreadPoolExecutor
+    segdir = os.path.join(work, "cut_segs")
+    os.makedirs(segdir, exist_ok=True)
+    jobs = []
+    for i, (a, b) in enumerate(keep):
+        f0, f1 = int(round(a * FPS)), int(round(b * FPS))
+        jobs.append((os.path.join(segdir, f"{i:04d}.mp4"), f0, f1 - f0))
+
+    def enc(jb):
+        path_, f0, nf = jb
+        P.sh(["ffmpeg", "-v", "error", "-y", "-ss", f"{f0 / FPS:.6f}", "-i", src, "-an", "-vf", f"fps={FPS},tpad=stop_mode=clone:stop_duration=0.2", "-frames:v", str(nf),
+              "-c:v", "libx264", "-preset", "ultrafast", "-crf", "12", "-pix_fmt", "yuv420p", "-g", "60",
+              "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709", path_])
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        list(ex.map(enc, jobs))
+    lst = os.path.join(segdir, "list.txt")
+    open(lst, "w").write("".join(f"file '{j[0]}'\n" for j in jobs))
+    n = sum(j[2] for j in jobs)
+    P.sh(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", lst, "-f", "f32le", "-ar", str(sr), "-ac", "2", "-i", wav,
+          "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "pcm_s16le", out])
+    shutil.rmtree(segdir, ignore_errors=True)
     return n
 
 
@@ -925,30 +986,30 @@ def image_clip(src, out, d):
     theo đường cos (biến đổi affine dưới điểm ảnh, không làm tròn → không giật). Ảnh nhỏ (vd 720 px) không bị phóng vỡ."""
     from PIL import ImageEnhance, ImageOps
     im = ImageOps.exif_transpose(Image.open(src)).convert("RGB")
-    s = max(W / im.width, H / im.height)
+    s = max(CW / im.width, CH / im.height)
     bg = im.resize((math.ceil(im.width * s), math.ceil(im.height * s)), Image.BILINEAR)
-    bg = bg.crop(((bg.width - W) // 2, (bg.height - H) // 2, (bg.width - W) // 2 + W, (bg.height - H) // 2 + H))
+    bg = bg.crop(((bg.width - CW) // 2, (bg.height - CH) // 2, (bg.width - CW) // 2 + CW, (bg.height - CH) // 2 + CH))
     bg = ImageEnhance.Brightness(bg.filter(ImageFilter.GaussianBlur(36))).enhance(0.5).convert("RGBA")
-    base = min(940 / im.width, 1180 / im.height)  # cỡ thẻ khi z = 1 (px khung / px ảnh)
+    base = min(LAY["card_w"] / im.width, LAY["card_h"] / im.height)  # cỡ thẻ khi z = 1 (px khung / px ảnh)
     zmax = 1.05
     k0 = min(1.0, base * zmax)  # giữ ảnh gốc ở cỡ cần dùng lớn nhất (không phóng trước)
     fg = im.resize((max(1, round(im.width * k0)), max(1, round(im.height * k0))), Image.LANCZOS).convert("RGBA")
     m = Image.new("L", fg.size, 0)
     ImageDraw.Draw(m).rounded_rectangle((0, 0, fg.width - 1, fg.height - 1), radius=max(6, round(28 * k0 / base)), fill=255)  # bo 28 px trên khung
     fg.putalpha(m)
-    cx, cy = W / 2, 820.0  # tâm thẻ: vùng mặt (ĐỎ), chừa dải chữ phía dưới
-    sh = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    cx, cy = CW / 2, LAY["card_cy"]  # tâm thẻ: vùng mặt (ĐỎ), chừa dải chữ phía dưới
+    sh = Image.new("RGBA", (CW, CH), (0, 0, 0, 0))
     sw, shh = im.width * base * 1.025, im.height * base * 1.025
     ImageDraw.Draw(sh).rounded_rectangle((cx - sw / 2, cy - shh / 2 + 18, cx + sw / 2, cy + shh / 2 + 18), radius=30, fill=(0, 0, 0, 150))
     bg.alpha_composite(sh.filter(ImageFilter.GaussianBlur(22)))
     n = max(2, int(round(d * FPS)))
-    proc = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
+    proc = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{CW}x{CH}", "-r", str(FPS), "-i", "-",
                              "-c:v", "libx264", "-preset", "medium", "-crf", "16", "-pix_fmt", "yuv420p", out], stdin=subprocess.PIPE)
     fcx, fcy = fg.width / 2, fg.height / 2
     for i in range(n):
         e = 0.5 - 0.5 * math.cos(math.pi * i / (n - 1))
         k = base * (1.0 + (zmax - 1.0) * e) / k0  # px khung trên 1 px của fg
-        layer = fg.transform((W, H), Image.AFFINE, (1 / k, 0, fcx - cx / k, 0, 1 / k, fcy - cy / k), resample=Image.BICUBIC)
+        layer = fg.transform((CW, CH), Image.AFFINE, (1 / k, 0, fcx - cx / k, 0, 1 / k, fcy - cy / k), resample=Image.BICUBIC)
         frame = bg.copy()
         frame.alpha_composite(layer)
         proc.stdin.write(frame.convert("RGB").tobytes())
@@ -1021,9 +1082,16 @@ def main():
     ap.add_argument("--music-license", default="")
     ap.add_argument("--no-music", action="store_true")
     ap.add_argument("--cut-silence", action="store_true", help="cắt khoảng lặng (Skill ESV 10.5, chỉ khi được giao)")
+    ap.add_argument("--aspect", default="9:16", choices=list(ASPECTS))
+    ap.add_argument("--frame-x", type=float, default=None, help="tâm khung cắt theo chiều ngang nguồn, 0–1")
+    ap.add_argument("--frame-y", type=float, default=None, help="tâm khung cắt theo chiều dọc nguồn, 0–1")
+    ap.add_argument("--frame-zoom", type=float, default=1.0, help="phóng khung cắt ≥ 1")
     ap.add_argument("--no-sfx", action="store_true", help="tắt SFX tổng hợp (vút khi vào minh hoạ, tách khi chữ nhấn)")
     ap.add_argument("--corrections", default="", help='sửa chữ nghe sai, mỗi dòng "sai => đúng" (cùng số tiếng)')
     a = ap.parse_args()
+    global CW, CH, LAY
+    LAY = make_layout(a.aspect)
+    CW, CH = LAY["CW"], LAY["CH"]
     job = P.Job(a.job_dir)
     os.makedirs(job.p("work"), exist_ok=True)
     src = os.path.abspath(a.input)
@@ -1076,22 +1144,14 @@ def main():
         info = {**P.probe(src), "rotation": 0}
         dur = N / FPS
 
-    # Khung: nguồn ngang → cắt toàn chiều cao quanh người nói 1216x2160 (ESV mục 1); nguồn dọc giữ nguyên
-    job.progress("frame", "Dò mặt, chọn khung 9:16", 36)
+    # Khung: cắt theo tỷ lệ xuất quanh người nói (ESV mục 1: nguồn ngang → toàn chiều cao 9:16); người dựng chỉnh được tâm / phóng
+    job.progress("frame", f"Dò mặt, chọn khung {a.aspect}", 36)
     fx, fy, face_ok = face_center(src, info)
-    if info["width"] > info["height"]:
-        ch = info["height"]
-        cw = int(round(ch * 9 / 16 / 2)) * 2
-        x0 = int(min(max(fx - cw / 2, 0), info["width"] - cw)) // 2 * 2
-        cropf = f"crop={cw}:{ch}:{x0}:0"
-        ax = (fx - x0) / cw
-        ay = fy / ch
-    else:
-        cropf = None
-        ax, ay = fx / info["width"], fy / info["height"]
-    # tâm zoom: mặt, giới hạn để mặt nằm trong ĐỎ
+    cropf, cw, chh, x0, y0 = frame_crop(info, fx, fy, a.aspect, {"x": a.frame_x, "y": a.frame_y, "zoom": a.frame_zoom})
+    ax, ay = (fx - x0) / cw, (fy - y0) / chh
+    # tâm zoom: mặt, giới hạn để mặt nằm trong vùng mặt
     ax = min(max(ax, 0.2), 0.8)
-    ay = min(max(ay, 0.20), 0.45)
+    ay = min(max(ay, 0.20), 0.45) if a.aspect == "9:16" else min(max(ay, 0.15), 0.6)
 
     # Lớp chữ / đồ hoạ
     job.progress("draw", "Vẽ phụ đề karaoke, chữ nhấn vàng, sơ đồ theo ESV", 45)
@@ -1219,17 +1279,13 @@ def main():
     if not zooms:
         zooms = place_zooms([(e.t0, 1.08 if e.style == "shine" else (1.07 if e.style == "blur" else 1.06)) for e in emph], prof, blocked, dur, cut_times)
     zx = zoom_expr(zooms)
-    if cropf:
-        cw, chh = int(cropf.split("=")[1].split(":")[0]), int(cropf.split(":")[1])
-    else:
-        cw, chh = info["width"], info["height"]
     Ax, Ay = ax * cw, ay * chh
     q = f"(1-1/{zx})"
     persp = (f"perspective=x0='{Ax:.3f}*{q}':y0='{Ay:.3f}*{q}':x1='{cw}-{cw - Ax:.3f}*{q}':y1='{Ay:.3f}*{q}':"
              f"x2='{Ax:.3f}*{q}':y2='{chh}-{chh - Ay:.3f}*{q}':x3='{cw}-{cw - Ax:.3f}*{q}':y3='{chh}-{chh - Ay:.3f}*{q}':interpolation=cubic:eval=frame")
-    vf = ["fps=30"] + ([cropf] if cropf else []) + ["format=yuv444p", persp, f"scale={W}:{H}:flags=lanczos", "unsharp=5:5:0.3", "setsar=1",
+    vf = ["fps=30"] + ([cropf] if cropf else []) + ["format=yuv444p", persp, f"scale={CW}:{CH}:flags=lanczos", "unsharp=5:5:0.3", "setsar=1",
            "setparams=range=tv:colorspace=bt709:color_primaries=bt709:color_trc=bt709"]
-    logo_w = 440
+    logo_w = LAY["logo_w"]
     # B-roll (ESV/SK-MED-03): cắt cảnh toàn khung theo kế hoạch, hiện/tắt mờ 0,2 s; phụ đề, chữ nhấn, logo vẫn nằm trên.
     manifest = {}
     mf = os.path.join(broll_dir, "manifest.json")
@@ -1250,7 +1306,7 @@ def main():
             image_clip(fpath, clip, d)
             fpath, start = clip, 0.0
         b_args += ["-ss", f"{start:.3f}", "-t", f"{d:.3f}", "-i", fpath]
-        b_fc += (f"[{idx}:v]fps=30,scale={W}:{H}:force_original_aspect_ratio=increase:flags=lanczos,crop={W}:{H},setsar=1,format=yuva420p,"
+        b_fc += (f"[{idx}:v]fps=30,scale={CW}:{CH}:force_original_aspect_ratio=increase:flags=lanczos,crop={CW}:{CH},setsar=1,format=yuva420p,"
                  f"fade=t=in:st=0:d=0.2:alpha=1,fade=t=out:st={max(0, d - 0.2):.3f}:d=0.2:alpha=1,setpts=PTS-STARTPTS+{float(b['t0']):.3f}/TB[b{k}];"
                  f"[{last}][b{k}]overlay=0:0:enable='between(t,{float(b['t0']):.3f},{float(b['t1']):.3f})':eof_action=pass[bg{k + 1}];")
         last = f"bg{k + 1}"
@@ -1275,8 +1331,9 @@ def main():
         last, n_in = f"lkb{k}", n_in + 1
     fc = (f"[0:v]{','.join(vf)}[bg0];{b_fc}[{last}]null[bg];"
           f"[1:v]scale={logo_w}:-1:flags=lanczos,format=rgba,fade=t=in:st=0.3:d=0.6:alpha=1[lg];"
-          f"[bg][lg]overlay=x='50-24*pow(1-min(max((t-0.3)/0.6\\,0)\\,1)\\,3)':y=120:eval=frame[l];"
-          f"[2:v]format=rgba[tx];[l][tx]overlay=0:{BAND_Y0}:format=auto,format=yuv420p[v]")
+          f"[bg][lg]overlay=x='{LAY['logo_x']}-24*pow(1-min(max((t-0.3)/0.6\\,0)\\,1)\\,3)':y={LAY['logo_y']}:eval=frame[l];"
+          + (f"[2:v]format=rgba[tx];" if LAY["s"] == 1.0 else f"[2:v]format=rgba,scale=iw*{LAY['s']}:ih*{LAY['s']}:flags=lanczos[tx];")
+          + f"[l][tx]overlay={LAY['tx']}:{LAY['ty']}:format=auto,format=yuv420p[v]")
     master = job.p("master.mp4")
     P.sh(["ffmpeg", "-v", "error", "-y", "-i", src, "-loop", "1", "-i", a.logo, "-framerate", str(FPS), "-start_number", "0", "-i", os.path.join(tdir, "%06d.png"),
           "-i", final, *b_args, "-filter_complex", fc, "-map", "[v]", "-map", "3:a", "-frames:v", str(N),
@@ -1299,8 +1356,8 @@ def main():
 
     job.progress("preview", "Bản xem nhanh 540p, ảnh mốc", 88)
     preview = job.p("preview.mp4")
-    P.sh(["ffmpeg", "-v", "error", "-y", "-i", master, "-vf", "scale=540:960:flags=lanczos", "-c:v", "libx264", "-profile:v", "main", "-level", "3.1", "-preset", "slow", "-crf", "26",
-          "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k", "-af", "alimiter=limit=0.85:level=false", "-movflags", "+faststart", preview])
+    P.sh(["ffmpeg", "-v", "error", "-y", "-i", master, "-vf", f"scale={CW // 2}:{CH // 2}:flags=lanczos", "-c:v", "libx264", "-profile:v", "main", "-level", "3.1", "-preset", "slow", "-crf", "26",
+          "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k", "-af", "aresample=192000,alimiter=limit=0.66:attack=1:release=60:level=false,aresample=48000", "-movflags", "+faststart", preview])
     snapd = job.p("snapshots")
     shutil.rmtree(snapd, ignore_errors=True)
     os.makedirs(snapd)
@@ -1335,7 +1392,7 @@ def main():
     def add(i, name, status, detail):
         qa.append({"id": i, "name": name, "status": status, "detail": detail})
     nfr, mw, mh, mr = P.count_frames(master)
-    add("A", "1080x1920, 30 fps, H.264, số khung đúng", "pass" if (mw, mh) == (W, H) and mr == "30/1" and nfr == N else "fail", f"{mw}x{mh}, {mr}, {nfr}/{N} khung")
+    add("A", f"{CW}x{CH} ({a.aspect}), 30 fps, H.264, số khung đúng", "pass" if (mw, mh) == (CW, CH) and mr == "30/1" and nfr == N else "fail", f"{mw}x{mh}, {mr}, {nfr}/{N} khung")
     errs = P.decode_errors(master) + P.decode_errors(preview)
     add("B", "Giải mã toàn bộ", "pass" if not errs else "fail", "0 lỗi" if not errs else "; ".join(errs[:3]))
     bd = P.sh(["ffmpeg", "-hide_banner", "-i", master, "-vf", "blackdetect=d=0.3:pix_th=0.08,freezedetect=n=0.001:d=1.5", "-an", "-f", "null", "-"]).stderr
@@ -1358,7 +1415,7 @@ def main():
     cas = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
     out_red, sampled, dets = 0, 0, []
     for k in range(int(dur * 2)):
-        r = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{k / 2:.2f}", "-i", master, "-frames:v", "1", "-vf", "scale=540:960", "-f", "image2pipe", "-vcodec", "png", "-"], capture_output=True)
+        r = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{k / 2:.2f}", "-i", master, "-frames:v", "1", "-vf", f"scale={CW // 2}:{CH // 2}", "-f", "image2pipe", "-vcodec", "png", "-"], capture_output=True)
         if not r.stdout:
             continue
         g = cv2.imdecode(np.frombuffer(r.stdout, np.uint8), cv2.IMREAD_GRAYSCALE)
@@ -1367,12 +1424,12 @@ def main():
             dets.append([tuple(int(v) for v in q) for q in fcs])
     # Nhiều "mặt" trong một mẫu (vd hai bàn tay khum bị dò nhầm): chọn mặt gần tâm mặt quen của người nói (trung vị các mẫu chỉ có 1 mặt)
     one = [d[0] for d in dets if len(d) == 1] or [max(d, key=lambda q: q[2] * q[3]) for d in dets]
-    mx = float(np.median([q[0] + q[2] / 2 for q in one])) if one else 270.0
-    my = float(np.median([q[1] + q[3] / 2 for q in one])) if one else 300.0
+    mx = float(np.median([q[0] + q[2] / 2 for q in one])) if one else CW / 4
+    my = float(np.median([q[1] + q[3] / 2 for q in one])) if one else CH / 6
     for d in dets:
         sampled += 1
         x, y, w_, h_ = min(d, key=lambda q: (q[0] + q[2] / 2 - mx) ** 2 + (q[1] + q[3] / 2 - my) ** 2)
-        if y * 2 < RED[1] - 4 or (y + h_) * 2 > RED[3] + 4:
+        if y * 2 < LAY["red"][0] - 4 or (y + h_) * 2 > LAY["red"][1] + 4:
             out_red += 1
     add("J", "Mặt trong vùng ĐỎ ở mọi khung zoom", ("pass" if out_red == 0 else "fail") if sampled else "unmeasured", f"{sampled} mẫu có mặt, {out_red} mẫu lệch ĐỎ; tâm zoom theo mặt {'(dò được)' if face_ok else '(không dò được, giả định)'}")
     add("K", "So với bản trước", "na", "chưa so khung tự động với bản trước (dựng lại từ RAW)")
@@ -1414,7 +1471,7 @@ def main():
     report = {
         "skill": {"skillId": "edu-hau-ky-video-916-phu-luc", "name": "Skill ESV", "version": "v0.3.1 r3 (T-062.r3, 21/10/2026)", "status": "DRAFT", "sourceUrl": "https://app.notion.com/p/4004ceb9517d81198fc4da9f9339234e", "engine": "esv_render.py (Pillow, không ASS)"},
         "input": {"file": os.path.basename(src), **info, "crop": cropf},
-        "output": {"master": "master.mp4", "preview": "preview.mp4", "frames": N, "seconds": round(dur, 3), "cutSilence": bool(keep), "cuts": len(cut_times), "sourceSeconds": round(src_dur, 3),
+        "output": {"master": "master.mp4", "preview": "preview.mp4", "aspect": a.aspect, "width": CW, "height": CH, "crop": cropf, "frames": N, "seconds": round(dur, 3), "cutSilence": bool(keep), "cuts": len(cut_times), "sourceSeconds": round(src_dur, 3),
                    "keep": [[a_, b_] for a_, b_ in keep] if keep else None},
         "transcript": {"words": len(words), "uncertain": uncertain, "corrections": fixes, "secondModel": None if a.words else a.model2},
         "captions": {"units": len(units)},

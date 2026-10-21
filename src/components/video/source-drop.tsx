@@ -8,6 +8,7 @@ type Item = { name: string; pct: number; status: "waiting" | "uploading" | "done
 
 const ACCEPT = ".mp4,.mov,.m4v,.webm,video/mp4,video/quicktime,video/webm";
 
+
 // Thêm nguồn: kéo thả hoặc chọn tệp quay thô. Tải lên dạng luồng (không giới hạn 10 MB), xong là hệ thống tự dựng.
 export function SourceDrop({ scripts = [], defaultContentId = "", defaultCut = true }: { scripts?: { id: string; title: string }[]; defaultContentId?: string; defaultCut?: boolean }) {
   const router = useRouter();
@@ -104,7 +105,7 @@ export function SourceDrop({ scripts = [], defaultContentId = "", defaultCut = t
                 </div>
               </div>
               <span className={cn("num whitespace-nowrap", it.status === "error" ? "text-brick" : "text-ink-2")}>
-                {it.status === "waiting" ? "Chờ" : it.status === "uploading" ? `${it.pct}%` : it.status === "done" ? (final ? "Đã nhận, chờ kiểm tra" : "Đã nhận, đang dựng") : it.error}
+                {it.status === "waiting" ? "Chờ" : it.status === "uploading" ? `${it.pct}%` : it.status === "done" ? (final ? "Đã nhận, chờ kiểm tra" : "Đã nhận — chọn khung hình bên dưới rồi bấm Bắt đầu dựng") : it.error}
               </span>
             </li>
           ))}

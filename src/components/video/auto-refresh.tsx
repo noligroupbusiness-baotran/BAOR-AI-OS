@@ -10,7 +10,7 @@ export function AutoRefresh({ active, everyMs = 4000 }: { active: boolean; every
   useEffect(() => {
     if (!active) return;
     const t = setInterval(() => {
-      if (document.fullscreenElement || document.hidden || Array.from(document.querySelectorAll("video")).some((v) => (v as HTMLVideoElement & { webkitDisplayingFullscreen?: boolean }).webkitDisplayingFullscreen)) return;
+      if (document.fullscreenElement || document.hidden || document.querySelector("[data-video-fullscreen]") || Array.from(document.querySelectorAll("video")).some((v) => (v as HTMLVideoElement & { webkitDisplayingFullscreen?: boolean }).webkitDisplayingFullscreen)) return;
       const playing = Array.from(document.querySelectorAll("video")).some((v) => !v.paused && !v.ended);
       if (playing) return;
       router.refresh();

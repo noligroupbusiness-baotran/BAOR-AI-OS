@@ -150,3 +150,34 @@ test("hộp thư vào: tệp đang chép (kích thước chưa ổn định) ch�
   const up = db.getDb().select().from(db.schema.uploads).all().find((u) => u.name === "clip moi.mp4")!;
   assert.equal(fs.statSync(path.join(tmp, "uploads", up.fileName)).size, 1024, "tệp gốc đủ dung lượng trong kho");
 });
+
+test("khung hình: tỷ lệ / khung cắt từ form được chặn giá trị lạ; chờ chọn khung → Bắt đầu dựng; dừng và xoá video (tệp vào lưu trữ)", async () => {
+  const types = await import("../src/lib/video/job-types");
+  assert.equal(types.parseAspect("16:9"), "16:9");
+  assert.equal(types.parseAspect("21:9"), "9:16", "tỷ lệ lạ về mặc định");
+  assert.deepEqual(types.parseFraming("0.4", "2", "9"), { x: 0.4, y: 1, zoom: 3 }, "kẹp trong khoảng");
+  assert.equal(types.parseFraming("", "", "1"), undefined, "không chỉnh gì = tự động theo mặt");
+
+  const d = db.getDb();
+  fs.mkdirSync(path.join(tmp, "uploads"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "uploads", "up_fr.mp4"), Buffer.alloc(64, 1));
+  d.insert(db.schema.uploads).values({ id: "up_fr", kind: "video", name: "fr.mp4", fileName: "up_fr.mp4", mime: "video/mp4", size: 64, meta: "{}", uploadedBy: "t", createdAt: new Date().toISOString() }).run();
+  const vid = jobs.createVideoFromSource({ title: "fr", sourceUploadId: "up_fr", cutSilence: true, by: "OWNER", start: false });
+  assert.equal(jobs.readJob(vid, 1)!.status, "setup", "tải lên xong chưa dựng, chờ chọn khung");
+  assert.equal(jobs.rerenderVideo(vid, "OWNER").ok, false, "đang chờ chọn khung thì không dựng lại (phải Bắt đầu dựng)");
+  const st = jobs.startVideoJob(vid, "OWNER", { aspect: "1:1", framing: { x: 0.3, zoom: 1.2 }, cutSilence: false });
+  assert.equal(st.ok, true);
+  const j = jobs.readJob(vid, 1)!;
+  assert.equal(j.status, "queued");
+  assert.equal(j.aspect, "1:1");
+  assert.deepEqual(j.framing, { x: 0.3, zoom: 1.2 });
+  assert.equal(jobs.startVideoJob(vid, "OWNER", { aspect: "9:16", cutSilence: true }).ok, false, "chỉ bắt đầu được một lần");
+
+  const del = jobs.deleteVideo(vid, "OWNER");
+  assert.equal(del.ok, true);
+  assert.equal(d.select().from(db.schema.videos).all().find((x) => x.id === vid), undefined);
+  assert.equal(fs.existsSync(path.join(tmp, "uploads", "up_fr.mp4")), false, "tệp nguồn rời kho tải lên");
+  const arch = fs.readdirSync(path.join(tmp, "removed")).find((x) => x.startsWith(vid))!;
+  assert.ok(fs.existsSync(path.join(tmp, "removed", arch, "up_fr.mp4")), "tệp nằm trong lưu trữ, khôi phục được");
+  assert.ok(fs.existsSync(path.join(tmp, "removed", arch, "records.json")));
+});

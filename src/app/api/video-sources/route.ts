@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { actorFor } from "@/lib/permissions";
 import { uploadsDir } from "@/lib/uploads";
 import { createVideoFromSource } from "@/lib/video/jobs";
+import { parseAspect } from "@/lib/video/job-types";
 import { addVideoFeedback } from "@/lib/video/feedback";
 import { campaignRepo } from "@/lib/campaigns/repository";
 import { eq } from "drizzle-orm";
@@ -63,6 +64,6 @@ export async function POST(req: Request) {
     addVideoFeedback({ videoId, version: 1, kind: "upload", note: `Video dựng sẵn: ${original}`, by: actor.name });
     return Response.json({ ok: true, videoId, size });
   }
-  const videoId = createVideoFromSource({ title, sourceUploadId: id, cutSilence: url.searchParams.get("cut") === "1", by: actor.name, contentId: content?.id ?? null });
+  const videoId = createVideoFromSource({ title, sourceUploadId: id, cutSilence: url.searchParams.get("cut") === "1", aspect: parseAspect(url.searchParams.get("aspect")), by: actor.name, contentId: content?.id ?? null, start: url.searchParams.get("start") === "1" });
   return Response.json({ ok: true, videoId, size });
 }

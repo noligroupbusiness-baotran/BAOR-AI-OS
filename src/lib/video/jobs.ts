@@ -13,7 +13,7 @@ import { getUpload, listUploads, uploadPath, uploadsDir } from "@/lib/uploads";
 import { logActivity } from "@/lib/activity";
 import { sendAlert } from "@/lib/alerts";
 import skillJson from "../../../scripts/video/skill-vlog.json";
-import { isJobFile, type JobProgress, type VideoJob, type VideoReport } from "./job-types";
+import { isJobFile, type Aspect, type Framing, type JobProgress, type VideoJob, type VideoReport } from "./job-types";
 import { addVideoFeedback } from "./feedback";
 import { campaignRepo } from "@/lib/campaigns/repository";
 import { parseShootingScript } from "@/lib/content/shooting-script";
@@ -185,39 +185,56 @@ function scriptPrompt(contentId: string | null): string {
 const newId = (prefix: string) => `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 
 /** Video mới từ một tệp nguồn đã nằm trong kho tải lên: "Đang dựng" bản 1, xếp hàng dựng. */
-export function createVideoFromSource(opts: { title: string; sourceUploadId: string; cutSilence: boolean; prompt?: string; by: string; contentId?: string | null }): string {
+export function createVideoFromSource(opts: { title: string; sourceUploadId: string; cutSilence: boolean; aspect?: Aspect; framing?: Framing; prompt?: string; by: string; contentId?: string | null; start?: boolean }): string {
+  const start = opts.start ?? true;
   const videoId = newId("v");
   const now = new Date().toISOString();
   const content = opts.contentId ? getDb().select().from(schema.contentItems).where(eq(schema.contentItems.id, opts.contentId)).get() : undefined;
   const contentId = content?.id ?? null;
   getDb()
     .insert(schema.videos)
-    .values({ id: videoId, title: (content?.title ?? opts.title).slice(0, 200), contentId, agent: "Agent Edit Video", status: "editing", platforms: JSON.stringify(["tiktok", "facebook"]), version: 1, note: `Đang dựng tự động theo ${engineLabel()}.`, uploadId: null, updatedAt: now })
+    .values({ id: videoId, title: (content?.title ?? opts.title).slice(0, 200), contentId, agent: "Agent Edit Video", status: "editing", platforms: JSON.stringify(["tiktok", "facebook"]), version: 1, note: start ? `Đang dựng tự động theo ${engineLabel()}.` : "Đã nhận nguồn. Chọn tỷ lệ, cân chỉnh khung rồi bấm Bắt đầu dựng.", uploadId: null, updatedAt: now })
     .run();
   // Video kế thừa chiến dịch và mục tiêu kênh của kịch bản.
   if (contentId) campaignRepo.inheritLinks("content", contentId, "video", videoId, "editing");
   const prompt = [opts.prompt ?? "", scriptPrompt(contentId)].filter(Boolean).join(" ").slice(0, 800);
-  writeJob({ videoId, version: 1, status: "queued", sourceUploadId: opts.sourceUploadId, cutSilence: opts.cutSilence, prompt, createdAt: now, by: opts.by });
-  addVideoFeedback({ videoId, version: 1, kind: "upload", note: `Nguồn: ${opts.title}${content ? ` · kịch bản “${content.title}”` : ""}${opts.cutSilence ? " · cắt khoảng lặng" : ""}`, by: opts.by });
-  logActivity("human", `${opts.by} thêm nguồn “${opts.title}”, Agent Edit Video xếp hàng dựng.`, "video");
-  void kickWorker();
+  writeJob({ videoId, version: 1, status: start ? "queued" : "setup", sourceUploadId: opts.sourceUploadId, cutSilence: opts.cutSilence, aspect: opts.aspect ?? "9:16", framing: opts.framing, prompt, createdAt: now, by: opts.by });
+  addVideoFeedback({ videoId, version: 1, kind: "upload", note: `Nguồn: ${opts.title}${content ? ` · kịch bản “${content.title}”` : ""}${opts.cutSilence ? " · cắt khoảng lặng" : ""} · khung ${opts.aspect ?? "9:16"}`, by: opts.by });
+  logActivity("human", `${opts.by} thêm nguồn “${opts.title}”${start ? ", Agent Edit Video xếp hàng dựng" : ", chờ chọn khung hình"}.`, "video");
+  if (start) void kickWorker();
   return videoId;
 }
 
+/** "Bắt đầu dựng" cho video đang chờ chọn khung: ghi tỷ lệ / khung / cắt lặng rồi xếp hàng. */
+export function startVideoJob(videoId: string, by: string, opts: { aspect: Aspect; framing?: Framing; cutSilence: boolean }): { ok: true } | { ok: false; error: string } {
+  const lj = latestJob(videoId);
+  if (!lj || lj.job.status !== "setup") return { ok: false, error: "Video này không ở bước chọn khung" };
+  const now = new Date().toISOString();
+  writeJob({ ...lj.job, status: "queued", aspect: opts.aspect, framing: opts.framing, cutSilence: opts.cutSilence, createdAt: now, by });
+  getDb().update(schema.videos).set({ note: `Đang dựng tự động theo ${engineLabel()}, khung ${opts.aspect}.`, updatedAt: now }).where(eq(schema.videos.id, videoId)).run();
+  addVideoFeedback({ videoId, version: lj.job.version, kind: "rerender", note: `Bắt đầu dựng: khung ${opts.aspect}${opts.framing ? " (đã cân chỉnh)" : ""}${opts.cutSilence ? ", cắt khoảng lặng" : ""}`, by });
+  logActivity("human", `${by} bắt đầu dựng video ${videoId} khung ${opts.aspect}.`, "video");
+  void kickWorker();
+  return { ok: true };
+}
+
 /** Dựng lại từ cùng nguồn thành bản mới (vN+1). Bản trước giữ nguyên. */
-export function rerenderVideo(videoId: string, by: string, cutSilence?: boolean): { ok: true; version: number } | { ok: false; error: string } {
+export function rerenderVideo(videoId: string, by: string, cutSilence?: boolean, frame?: { aspect: Aspect; framing?: Framing }): { ok: true; version: number } | { ok: false; error: string } {
   const prev = latestJob(videoId);
   const v = getDb().select().from(schema.videos).where(eq(schema.videos.id, videoId)).get();
   if (!prev || !v) return { ok: false, error: "Video này không có nguồn để dựng lại" };
   // Video đã gửi phê duyệt hoặc đã duyệt: không kéo ngược về "Đang dựng" (muốn sửa thì Yêu cầu chỉnh sửa trước).
   if (!["editing", "review", "needs_changes"].includes(v.status)) return { ok: false, error: "Chỉ dựng lại video đang dựng, chờ kiểm tra hoặc cần chỉnh sửa" };
   if (prev.job.status === "queued" || prev.job.status === "running") return { ok: false, error: "Video đang trong hàng dựng" };
+  if (prev.job.status === "setup") return { ok: false, error: "Video đang chờ chọn khung hình: chọn xong bấm Bắt đầu dựng" };
   const version = Math.max(prev.job.version, v.version) + 1;
   const now = new Date().toISOString();
-  writeJob({ videoId, version, status: "queued", sourceUploadId: prev.job.sourceUploadId, cutSilence: cutSilence ?? prev.job.cutSilence, prompt: prev.job.prompt ?? "", createdAt: now, by });
+  const aspect = frame?.aspect ?? prev.job.aspect ?? "9:16";
+  const framing = frame ? frame.framing : prev.job.framing;
+  writeJob({ videoId, version, status: "queued", sourceUploadId: prev.job.sourceUploadId, cutSilence: cutSilence ?? prev.job.cutSilence, aspect, framing, prompt: prev.job.prompt ?? "", createdAt: now, by });
   getDb().update(schema.videos).set({ status: "editing", version, updatedAt: now, note: `Đang dựng bản ${version}.` }).where(eq(schema.videos.id, videoId)).run();
   campaignRepo.syncEntityStatus("video", videoId, "editing");
-  addVideoFeedback({ videoId, version, kind: "rerender", note: `Dựng lại từ cùng nguồn${(cutSilence ?? prev.job.cutSilence) ? ", cắt khoảng lặng" : ""}`, by });
+  addVideoFeedback({ videoId, version, kind: "rerender", note: `Dựng lại từ cùng nguồn${(cutSilence ?? prev.job.cutSilence) ? ", cắt khoảng lặng" : ""}, khung ${aspect}${framing ? ` (tâm ${framing.x !== undefined ? Math.round(framing.x * 100) + "%" : "mặt"}, ${framing.y !== undefined ? Math.round(framing.y * 100) + "%" : "giữa"}, phóng ×${(framing.zoom ?? 1).toFixed(2)})` : ""}`, by });
   logActivity("human", `${by} yêu cầu dựng lại “${v.title}” thành bản ${version}.`, "video");
   void kickWorker();
   return { ok: true, version };
@@ -238,7 +255,8 @@ function isOurRenderer(pid: number | undefined): boolean {
     return false;
   }
   const r = spawnSync("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8", timeout: 5_000 });
-  return r.status === 0 && r.stdout.includes("pipeline.py");
+  // Cả hai bộ dựng: pipeline.py (bộ cũ) và esv_render.py (Skill ESV, mặc định). Trước đây chỉ nhận pipeline.py → không dừng được bộ ESV.
+  return r.status === 0 && (r.stdout.includes("pipeline.py") || r.stdout.includes("esv_render.py"));
 }
 
 /** Dừng cả nhóm tiến trình (python + ffmpeg / whisper con), không để tiến trình con chạy mồ côi. */
@@ -273,6 +291,64 @@ if (!(globalThis as unknown as { __baorVideoExitHook?: boolean }).__baorVideoExi
   process.once("exit", () => {
     for (const c of children) if (c.pid) killGroup(c.pid);
   });
+}
+
+const stopRequested = ((globalThis as unknown as { __baorVideoStop?: Set<string> }).__baorVideoStop ??= new Set());
+
+/** Dừng bản đang dựng / đang chờ của một video (dừng cả nhóm tiến trình ffmpeg / whisper con). Bản trước vẫn giữ nguyên. */
+export function stopVideoJob(videoId: string, by: string): { ok: true; version: number } | { ok: false; error: string } {
+  const v = jobVersions(videoId)[0];
+  const job = v ? readJob(videoId, v) : null;
+  if (!job || (job.status !== "queued" && job.status !== "running")) return { ok: false, error: "Video này không có bản đang dựng" };
+  const msg = `Đã dừng theo yêu cầu của ${by}`;
+  if (job.status === "running" && job.pid && isOurRenderer(job.pid)) {
+    stopRequested.add(`${videoId}/v${job.version}`);
+    killGroup(job.pid);
+  } else {
+    const now = new Date().toISOString();
+    writeJob({ ...job, status: "error", finishedAt: now, error: msg });
+    getDb().update(schema.videos).set({ note: msg, updatedAt: now }).where(eq(schema.videos.id, videoId)).run();
+  }
+  logActivity("human", `${by} dừng dựng bản ${job.version} của video ${videoId}.`, "video");
+  return { ok: true, version: job.version };
+}
+
+/** Xoá video chưa duyệt (đang dựng / chờ kiểm tra / cần chỉnh sửa): dừng bản đang dựng, gỡ khỏi Video Studio.
+ *  Tệp (nguồn, bản dựng, thư mục dựng) và dữ liệu được CHUYỂN vào DATA_DIR/removed/<videoId>-<thời điểm>/ để khôi phục được, không xoá vĩnh viễn. */
+export function deleteVideo(videoId: string, by: string): { ok: true; title: string } | { ok: false; error: string } {
+  const db = getDb();
+  const v = db.select().from(schema.videos).where(eq(schema.videos.id, videoId)).get();
+  if (!v) return { ok: false, error: "Không tìm thấy video" };
+  if (!["editing", "review", "needs_changes"].includes(v.status)) return { ok: false, error: "Chỉ xoá được video chưa gửi phê duyệt (đang dựng, chờ kiểm tra, cần chỉnh sửa)" };
+  if (db.select().from(schema.scheduledPosts).where(eq(schema.scheduledPosts.videoId, videoId)).all().length) return { ok: false, error: "Video đã có bài đăng / lịch đăng, không xoá" };
+  if (db.select().from(schema.adCampaigns).where(eq(schema.adCampaigns.videoId, videoId)).all().length) return { ok: false, error: "Video đã dùng cho quảng cáo, không xoá" };
+  const last = latestJob(videoId);
+  if (last && (last.job.status === "queued" || last.job.status === "running")) stopVideoJob(videoId, by);
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const arch = path.join(dataDir(), "removed", `${videoId}-${stamp}`);
+  fs.mkdirSync(arch, { recursive: true });
+  const upIds = new Set<string>();
+  for (const ver of jobVersions(videoId)) {
+    const j = readJob(videoId, ver);
+    if (j?.sourceUploadId) upIds.add(j.sourceUploadId);
+    if (j?.masterUploadId) upIds.add(j.masterUploadId);
+  }
+  if (v.uploadId) upIds.add(v.uploadId);
+  const feedback = db.select().from(schema.videoFeedback).where(eq(schema.videoFeedback.videoId, videoId)).all();
+  const uploads = [...upIds].map((id) => getUpload(id)).filter((u): u is NonNullable<typeof u> => !!u);
+  fs.writeFileSync(path.join(arch, "records.json"), JSON.stringify({ video: v, feedback, uploads, by, removedAt: new Date().toISOString() }, null, 1));
+  for (const u of uploads) {
+    const p = path.join(uploadsDir(), u.fileName);
+    if (fs.existsSync(p)) fs.renameSync(p, path.join(arch, u.fileName));
+    db.delete(schema.uploads).where(eq(schema.uploads.id, u.id)).run();
+  }
+  const jd = path.join(jobsRoot(), videoId);
+  if (fs.existsSync(jd)) fs.renameSync(jd, path.join(arch, "video-jobs"));
+  db.delete(schema.videoFeedback).where(eq(schema.videoFeedback.videoId, videoId)).run();
+  db.delete(schema.marketingLinks).where(eq(schema.marketingLinks.entityId, videoId)).run();
+  db.delete(schema.videos).where(eq(schema.videos.id, videoId)).run();
+  logActivity("human", `${by} xoá video “${v.title}” (lưu trữ ở ${path.relative(dataDir(), arch)}).`, "video");
+  return { ok: true, title: v.title };
 }
 
 /** Gọi khi thêm nguồn và mỗi phút từ bộ chạy nền. Không chờ: dựng chạy trong tiến trình con. */
@@ -323,11 +399,16 @@ function runJob(job: VideoJob): Promise<void> {
   // Kế hoạch dựng (chữ nhấn, sơ đồ, zoom): lấy từ bản trước nếu có (biên tập đã lập), không thì bộ dựng tự lập theo luật.
   const prevPlan = prevVersion ? path.join(jobDir(job.videoId, prevVersion), "plan.json") : "";
   const ownPlan = path.join(dir, "plan.json");
-  if (getSetting("video.engine") !== "legacy") {
+  // Bộ cũ chỉ có 9:16: tỷ lệ khác luôn dựng bằng Skill ESV.
+  if (getSetting("video.engine") !== "legacy" || (job.aspect ?? "9:16") !== "9:16") {
     args.length = 0;
     args.push(path.join(process.cwd(), "scripts", "video", "esv_render.py"), `--input=${srcPath}`, `--job-dir=${dir}`, `--keywords=${s.keywords}`, `--model=${s.model}`);
     if (s.corrections.trim()) args.push(`--corrections=${s.corrections}`);
     if (job.cutSilence) args.push("--cut-silence");
+    args.push(`--aspect=${job.aspect ?? "9:16"}`);
+    if (job.framing?.x !== undefined) args.push(`--frame-x=${job.framing.x}`);
+    if (job.framing?.y !== undefined) args.push(`--frame-y=${job.framing.y}`);
+    if (job.framing?.zoom !== undefined) args.push(`--frame-zoom=${job.framing.zoom}`);
     if (!s.sfx) args.push("--no-sfx");
     if (s.musicUploadId === "none") args.push("--no-music");
     else if (music && musicPath) args.push(`--music=${musicPath}`, `--music-license=${String(music.meta.license ?? "")}`);
@@ -374,7 +455,11 @@ function runJob(job: VideoJob): Promise<void> {
       settled = true;
       clearTimeout(timer);
       children.delete(child);
-      if (timedOut) {
+      const key = `${job.videoId}/v${job.version}`;
+      if (stopRequested.has(key)) {
+        stopRequested.delete(key);
+        failJob(job, "Đã dừng theo yêu cầu", runId, title);
+      } else if (timedOut) {
         failJob(job, `Dựng quá ${Math.round(JOB_TIMEOUT_MS / 60_000)} phút, đã dừng`, runId, title);
       } else if (code === 0) {
         try {
@@ -416,6 +501,11 @@ function finishJob(job: VideoJob, dir: string, runId: string, title: string, sta
 
 function failJob(job: VideoJob, msg: string, runId: string, title: string) {
   const now = new Date().toISOString();
+  // Video đã bị xoá (deleteVideo dừng bộ dựng rồi chuyển thư mục đi): không ghi lại job.json vào chỗ cũ.
+  if (!getDb().select().from(schema.videos).where(eq(schema.videos.id, job.videoId)).get()) {
+    finishRun(runId, false, `Đã xoá video “${title}”, dừng dựng`);
+    return;
+  }
   writeJob({ ...job, status: "error", finishedAt: now, error: msg.slice(0, 600), runId });
   getDb().update(schema.videos).set({ note: `Dựng lỗi: ${msg.slice(0, 300)}`, updatedAt: now }).where(eq(schema.videos.id, job.videoId)).run();
   finishRun(runId, false, msg);

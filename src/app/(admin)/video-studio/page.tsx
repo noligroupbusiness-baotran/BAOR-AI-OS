@@ -10,11 +10,13 @@ import { CampaignContextBar } from "@/components/campaigns/campaign-context";
 import { CampaignTags, LinkToCampaignForm } from "@/components/campaigns/entity-campaign";
 import { campaignRepo } from "@/lib/campaigns/repository";
 import { readCampaignContext, withCampaignContext } from "@/lib/campaigns/context";
-import { rerenderVideoAction, transitionVideo } from "@/lib/actions/videos";
+import { deleteVideoAction, rerenderVideoAction, stopVideoJobAction, transitionVideo } from "@/lib/actions/videos";
 import { LinkButton } from "@/components/ui/button";
 import { SourceDrop } from "@/components/video/source-drop";
 import { VideoScheduleForm } from "@/components/publishing/video-schedule";
 import { AutoRefresh } from "@/components/video/auto-refresh";
+import { VideoPlayer } from "@/components/video/video-player";
+import { FramingEditor } from "@/components/video/framing-editor";
 import { listContent } from "@/lib/queries";
 import { fileUrl } from "@/lib/uploads";
 import { listVideos } from "@/lib/videos/repository";
@@ -103,7 +105,7 @@ export default async function VideoStudioPage({ searchParams }: { searchParams: 
               const versions = jobVersions(v.id);
               const feedback = isOpen ? listVideoFeedback(v.id) : [];
               const approveBlockers = v.status === "pending_approval" ? blockersForVideo(v) : [];
-              const canRerender = jv && !running && (v.status === "review" || v.status === "needs_changes" || v.status === "editing" || jv.job.status === "error");
+              const canRerender = jv && !running && jv.job.status !== "setup" && (v.status === "review" || v.status === "needs_changes" || v.status === "editing" || jv.job.status === "error");
               return (
                 <li key={v.id} className={cn("grid gap-3 border-b border-border px-4 py-3 last:border-b-0 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start", isOpen && "bg-jade-soft/20")}>
                   <div className="min-w-0">
@@ -121,19 +123,25 @@ export default async function VideoStudioPage({ searchParams }: { searchParams: 
                     <div className="mt-1 text-[12px] text-ink-2">
                       Kịch bản: {v.contentId ? <Link href={`/content?tab=done&open=${v.contentId}`} className="text-jade hover:underline">{v.contentTitle ?? v.contentId}</Link> : <span className="text-ink-3">chưa gắn kịch bản</span>}
                     </div>
+                    {jv?.job.status === "setup" && (
+                      <div className="mt-2 grid gap-2">
+                        <FramingEditor mode="start" videoId={v.id} back={back} sourceUrl={fileUrl(jv.job.sourceUploadId)} aspect={jv.job.aspect ?? "9:16"} fx={jv.job.framing?.x} fy={jv.job.framing?.y} fz={jv.job.framing?.zoom} cut={jv.job.cutSilence} />
+                        <div><ConfirmAction action={deleteVideoAction} fields={{ id: v.id, back }} label="Xoá video" title={`Xoá video “${v.title}”?`} message="Gỡ video khỏi Video Studio. Tệp gốc được chuyển vào thư mục lưu trữ (data/removed), khôi phục được." confirmLabel="Xoá" variant="ghost" /></div>
+                      </div>
+                    )}
                     {running && (
                       <div className="mt-2 max-w-[420px]">
                         <div className="flex justify-between text-[12px] text-ink-2"><span>{jv.job.status === "queued" ? "Đang chờ tới lượt dựng" : (jv.progress?.label ?? "Đang dựng")}</span><span className="num">{jv.progress?.pct ?? 0}%</span></div>
                         <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-ground-2"><div className="h-full rounded-full bg-jade transition-[width]" style={{ width: `${jv.progress?.pct ?? 0}%` }} /></div>
+                        <div className="mt-1.5 flex flex-wrap gap-2">
+                          <ConfirmAction action={stopVideoJobAction} fields={{ id: v.id, back }} label="Dừng dựng" title="Dừng bản đang dựng?" message="Bản đang dựng bị huỷ; các bản trước vẫn giữ. Có thể dựng lại sau." confirmLabel="Dừng" variant="ghost" />
+                          <ConfirmAction action={deleteVideoAction} fields={{ id: v.id, back }} label="Xoá video" title={`Xoá video “${v.title}”?`} message="Dừng dựng và gỡ video khỏi Video Studio. Tệp gốc, các bản dựng và lịch sử được chuyển vào thư mục lưu trữ (data/removed), khôi phục được." confirmLabel="Xoá" variant="ghost" />
+                        </div>
                       </div>
                     )}
                     {jv?.job.status === "error" && <p className="mt-1 text-[12px] text-brick">{jv.job.error}</p>}
                     {v.note && !running && <p className="mt-1 text-[12px] text-ink">{v.note}</p>}
-                    {hasPreview ? (
-                      <video controls playsInline preload="metadata" src={jobFile(v.id, jv!.job.version, "preview.mp4")} className="mt-2 max-h-[520px] w-full max-w-[300px] rounded-md border border-border bg-black" />
-                    ) : (
-                      v.uploadId && <video controls playsInline preload="metadata" src={fileUrl(v.uploadId)} className="mt-2 max-h-[520px] w-full max-w-[300px] rounded-md border border-border bg-black" />
-                    )}
+                    {hasPreview ? <VideoPlayer src={jobFile(v.id, jv!.job.version, "preview.mp4")} hdSrc={v.uploadId ? fileUrl(v.uploadId) : undefined} /> : v.uploadId && <VideoPlayer src={fileUrl(v.uploadId)} />}
 
                     {isOpen && report && (
                       <div className="mt-3 grid gap-3">
@@ -212,7 +220,9 @@ export default async function VideoStudioPage({ searchParams }: { searchParams: 
                     )}
                     {canRerender && (
                       <>
+                        <ConfirmAction action={deleteVideoAction} fields={{ id: v.id, back }} label="Xoá video" title={`Xoá video “${v.title}”?`} message="Gỡ video khỏi Video Studio. Tệp gốc, các bản dựng và lịch sử được chuyển vào thư mục lưu trữ (data/removed), khôi phục được." confirmLabel="Xoá" variant="ghost" />
                         <ConfirmAction action={rerenderVideoAction} fields={{ id: v.id, back }} label="Dựng lại" title="Dựng lại từ video gốc?" message="Tạo bản mới, bản cũ vẫn giữ. Dùng lại lời đã nghe nếu có." confirmLabel="Dựng lại" variant="ghost" />
+                        <FramingEditor videoId={v.id} back={back} sourceUrl={fileUrl(jv!.job.sourceUploadId)} aspect={jv!.job.aspect ?? "9:16"} fx={jv!.job.framing?.x} fy={jv!.job.framing?.y} fz={jv!.job.framing?.zoom} />
                         {!jv!.job.cutSilence && <ConfirmAction action={rerenderVideoAction} fields={{ id: v.id, back, cut: "1" }} label="Dựng lại, cắt lặng" title="Dựng lại và cắt khoảng lặng?" message="Cắt các khoảng lặng ≥ 0,28 s (chừa 90 ms mỗi bên); chữ nhấn, sơ đồ, minh hoạ tự dời theo bản đã cắt." confirmLabel="Dựng lại" variant="ghost" />}
                       </>
                     )}
