@@ -219,7 +219,8 @@ export function parseShootingScript(draft: string): ParsedScript {
       cur = null;
       continue;
     }
-    if (/^CÒN THIẾU/i.test(line)) {
+    // Chỉ dòng tiêu đề đúng dạng (viết hoa), không phải câu nói bắt đầu bằng "Còn thiếu…".
+    if (/^CÒN THIẾU(?:\s*\([^)]*\))?\s*$/.test(line)) {
       mode = "missing";
       cur = null;
       continue;
@@ -305,10 +306,17 @@ const STAT_PATTERNS: RegExp[] = [
   /\d+[.,]\d+/u,
   /\d{3,}/u,
   /\d+\s*k(?![\p{L}])/iu,
+  /\d+\s*x(?![\p{L}])/iu,
+  /(?<![\p{L}])(?:một|hai|ba|bốn|năm|sáu|bảy|tám|chín|mười)\s+(?:trên|trong)\s+(?:mười|trăm|\d+)(?![\p{L}])/iu,
+  /(?<![\p{L}])một\s+nửa(?![\p{L}])/iu,
   /\d+\s*(?:nghìn|ngàn|triệu|tỷ)/iu,
 ];
 
+/** Đếm người / việc ("45 khách", "2000 người", "12 cuộc gọi") luôn là số liệu, kể cả số giống năm. */
+const COUNT = /\d+(?:[.,]\d+)?\s*(?:khách|người|học viên|cuộc gọi|cuộc|đơn|seller|nhân viên|doanh nghiệp|công ty|lượt|học sinh|shop|cửa hàng)(?![\p{L}])/iu;
+
 export function hasStatistic(text: string): boolean {
+  if (COUNT.test(nfc(text).replace(/\[[SK]\d+\]/g, ""))) return true;
   const t = nfc(text).replace(/\[[SK]\d+\]/g, "").replace(YEAR, "").replace(/(^|[\s·])\d+\)\s/g, "$1");
   if (STAT_PATTERNS.some((r) => r.test(t))) return true;
   // Hai con số khác nhau trong cùng một câu thường là so sánh số liệu ("99 khách thì 60 người").

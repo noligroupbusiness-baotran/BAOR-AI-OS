@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { eq } from "drizzle-orm";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "baor-video-"));
 process.env.DATA_DIR = tmp;
@@ -105,4 +106,47 @@ test("thư viện B-roll: clip thiếu giấy phép, thiếu từ khoá hoặc t
   ]));
   const lib = jobs.brollLibrary();
   assert.deepEqual(lib.map((b) => [b.exists, !!b.license, b.keywords.length > 0]), [[true, true, true], [false, true, true], [true, false, true]]);
+});
+
+test("cổng duyệt video: điểm chặn lấy từ bản dựng gắn với tệp hiện tại; bản dựng lại lỗi không làm mất yêu cầu ghi chú", async () => {
+  const approval = await import("../src/lib/video/approval");
+  const d = db.getDb();
+  const now = new Date().toISOString();
+  d.insert(db.schema.uploads).values({ id: "up_raw2", kind: "video", name: "raw2.mp4", fileName: "up_raw2.mp4", mime: "video/mp4", size: 1, meta: "{}", uploadedBy: "t", createdAt: now }).run();
+  const vid = jobs.createVideoFromSource({ title: "raw2", sourceUploadId: "up_raw2", cutSilence: false, by: "OWNER" });
+  // v1 dựng xong, có 2 điểm chặn
+  const dir1 = jobs.jobDir(vid, 1);
+  fs.writeFileSync(path.join(dir1, "report.json"), JSON.stringify({ blockers: ["Font chưa có giấy phép", "Logo lố vùng"], qa: [], failed: [] }));
+  fs.writeFileSync(path.join(dir1, "job.json"), JSON.stringify({ ...jobs.readJob(vid, 1), status: "done", masterUploadId: "up_master1" }));
+  d.update(db.schema.videos).set({ uploadId: "up_master1", status: "pending_approval" }).where(eq(db.schema.videos.id, vid)).run();
+  let v = d.select().from(db.schema.videos).all().find((x) => x.id === vid)!;
+  assert.deepEqual(approval.blockersForVideo(v), ["Font chưa có giấy phép", "Logo lố vùng"]);
+  assert.match(approval.transitionBlock(v, "approve", "") ?? "", /2 điểm chặn/);
+  assert.equal(approval.transitionBlock(v, "approve", "Đã mua giấy phép font, logo giữ 420"), null);
+  // v2 dựng lại lỗi, không có báo cáo
+  fs.mkdirSync(jobs.jobDir(vid, 2), { recursive: true });
+  fs.writeFileSync(path.join(jobs.jobDir(vid, 2), "job.json"), JSON.stringify({ ...jobs.readJob(vid, 1), version: 2, status: "error", masterUploadId: undefined }));
+  v = d.select().from(db.schema.videos).all().find((x) => x.id === vid)!;
+  assert.match(approval.transitionBlock(v, "approve", "x".repeat(20)) ?? "", /lỗi/, "bản mới nhất lỗi thì không chuyển bước");
+  assert.deepEqual(approval.blockersForVideo(v), ["Font chưa có giấy phép", "Logo lố vùng"], "vẫn lấy điểm chặn của bản đang gắn tệp");
+  // Video không có tệp / dựng ngoài hệ thống
+  assert.match(approval.transitionBlock({ id: "v_none", status: "review", uploadId: null }, "send_approval", "") ?? "", /chưa có tệp/);
+  assert.match(approval.blockersForVideo({ id: "v_ext", status: "pending_approval", uploadId: "up_x" })[0], /không qua bảng kiểm/);
+  // Dựng lại không kéo video đã gửi phê duyệt về "Đang dựng"
+  assert.equal(jobs.rerenderVideo(vid, "OWNER").ok, false);
+});
+
+test("hộp thư vào: tệp đang chép (kích thước chưa ổn định) chưa nhận; tệp ổn định được nhận, bản ghi có trước khi chuyển tệp", async () => {
+  const inbox = await import("../src/lib/video/auto-edit");
+  const dir = inbox.inboxDir();
+  const f = path.join(dir, "clip moi.mp4");
+  fs.writeFileSync(f, Buffer.alloc(1024, 1));
+  const old = new Date(Date.now() - 60_000);
+  fs.utimesSync(f, old, old);
+  assert.equal(inbox.ingestInbox(), 0, "lần quét đầu chỉ ghi nhận kích thước");
+  assert.ok(fs.existsSync(f));
+  assert.equal(inbox.ingestInbox(), 1, "kích thước không đổi: nhận");
+  assert.equal(fs.existsSync(f), false);
+  const up = db.getDb().select().from(db.schema.uploads).all().find((u) => u.name === "clip moi.mp4")!;
+  assert.equal(fs.statSync(path.join(tmp, "uploads", up.fileName)).size, 1024, "tệp gốc đủ dung lượng trong kho");
 });

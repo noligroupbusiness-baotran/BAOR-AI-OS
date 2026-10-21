@@ -146,10 +146,15 @@ export function getBrand() {
 }
 
 export function getAdGuardrails() {
+  // Có ủy quyền ngân sách của OWNER (CP05) thì dùng trần trong ủy quyền; không thì giá trị gợi ý cũ (chỉ để đề xuất, không bật được).
+  let auth: { dailyCapVnd?: number; monthlyCapVnd?: number; autoPauseCplAbove?: number } | null = null;
+  try {
+    auth = JSON.parse(getSetting("ads.authorization") || "null");
+  } catch {}
   return {
-    dailyCap: Number(getSetting("ads.dailyCap") ?? 500000),
-    monthlyCap: Number(getSetting("ads.monthlyCap") ?? 12000000),
-    autoPauseCplAbove: Number(getSetting("ads.autoPauseCplAbove") ?? 60000),
+    dailyCap: Number(auth?.dailyCapVnd ?? getSetting("ads.dailyCap") ?? 500000),
+    monthlyCap: Number(auth?.monthlyCapVnd ?? getSetting("ads.monthlyCap") ?? 12000000),
+    autoPauseCplAbove: Number(auth?.autoPauseCplAbove ?? getSetting("ads.autoPauseCplAbove") ?? 60000),
   };
 }
 

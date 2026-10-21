@@ -17,6 +17,8 @@ export interface VideoJob {
   note?: string;
   runId?: string;
   masterUploadId?: string;
+  /** PID tiến trình dựng (để dừng khi máy chủ khởi động lại). */
+  pid?: number;
 }
 
 export interface JobProgress {

@@ -19,6 +19,7 @@ import { listContent } from "@/lib/queries";
 import { fileUrl } from "@/lib/uploads";
 import { listVideos } from "@/lib/videos/repository";
 import { SKILL, jobVersions, latestJob } from "@/lib/video/jobs";
+import { blockersForVideo } from "@/lib/video/approval";
 import { qaLabel, qaTone } from "@/lib/video/job-types";
 import { feedbackLabel, listVideoFeedback, type FeedbackKind } from "@/lib/video/feedback";
 import { kindOf } from "@/lib/content/formats";
@@ -101,6 +102,7 @@ export default async function VideoStudioPage({ searchParams }: { searchParams: 
               const hasPreview = !!report && jv!.files.includes("preview.mp4");
               const versions = jobVersions(v.id);
               const feedback = isOpen ? listVideoFeedback(v.id) : [];
+              const approveBlockers = v.status === "pending_approval" ? blockersForVideo(v) : [];
               const canRerender = jv && !running && (v.status === "review" || v.status === "needs_changes" || v.status === "editing" || jv.job.status === "error");
               return (
                 <li key={v.id} className={cn("grid gap-3 border-b border-border px-4 py-3 last:border-b-0 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start", isOpen && "bg-jade-soft/20")}>
@@ -199,10 +201,10 @@ export default async function VideoStudioPage({ searchParams }: { searchParams: 
                         fields={{ id: v.id, kind: "approve", back }}
                         label="Phê duyệt"
                         title="Phê duyệt video này?"
-                        message={report && report.blockers.length ? `Bản dựng còn ${report.blockers.length} điểm chặn đăng: ${report.blockers.join("; ")}. Ghi rõ đã xử lý thế nào.` : "Video được đánh dấu đã duyệt để lên lịch đăng. Không tự động đăng."}
+                        message={approveBlockers.length ? `Còn ${approveBlockers.length} điểm chặn đăng: ${approveBlockers.join("; ")}. Ghi rõ đã xử lý thế nào.` : "Video được đánh dấu đã duyệt để lên lịch đăng. Không tự động đăng."}
                         confirmLabel="Phê duyệt"
                         variant="primary"
-                        withNote={report && report.blockers.length ? { label: "Cách xử lý điểm chặn đăng", required: true, placeholder: "VD: Đã mua giấy phép font; logo giữ cỡ 420; đã nghe lại các từ chưa chắc" } : { label: "Ghi chú (tùy chọn)" }}
+                        withNote={approveBlockers.length ? { label: "Cách xử lý điểm chặn đăng", required: true, placeholder: "VD: Đã mua giấy phép font; logo giữ cỡ 420; đã nghe lại các từ chưa chắc" } : { label: "Ghi chú (tùy chọn)" }}
                       />
                     )}
                     {(v.status === "review" || v.status === "pending_approval") && (

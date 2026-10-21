@@ -7,7 +7,7 @@ import type { VideoStatus } from "@/lib/data/videos";
 import { done, logActivity, nowIso } from "./common";
 import { currentActor, requirePermission } from "@/lib/permissions";
 import { addVideoFeedback } from "@/lib/video/feedback";
-import { latestJob } from "@/lib/video/jobs";
+import { blockersForVideo, transitionBlock } from "@/lib/video/approval";
 
 // Video Studio: Agent Edit Video chỉ dựng và chuẩn bị phiên bản. Người kiểm tra, yêu cầu sửa và phê duyệt.
 // Video đã phê duyệt vẫn KHÔNG tự đăng; việc đăng thuộc phân hệ Đăng bài & Quảng cáo.
@@ -35,12 +35,10 @@ export async function transitionVideo(fd: FormData) {
   const v = db.select().from(schema.videos).where(eq(schema.videos.id, id)).get();
   if (!v) return fail(back, "Không tìm thấy video");
   if (!t.from.includes(v.status as VideoStatus)) return fail(back, `Không thể ${t.label.toLowerCase()} khi video đang ở trạng thái hiện tại.`);
-  if (kind === "request_changes" && !note) return fail(back, "Cần ghi rõ điều cần chỉnh sửa");
-  // Bản dựng có điểm chặn đăng (giấy phép font/nhạc, logo, từ nghe chưa chắc…): OWNER phải ghi rõ đã xử lý thế nào.
-  const job = latestJob(id);
-  if (job && (job.job.status === "queued" || job.job.status === "running")) return fail(back, "Video đang dựng, chờ dựng xong");
-  const blockers = job?.report?.blockers ?? [];
-  if (kind === "approve" && blockers.length && note.length < 10) return fail(back, `Bản dựng còn ${blockers.length} điểm chặn đăng. Ghi rõ cách xử lý trong ghi chú phê duyệt.`);
+  // Điểm chặn đăng (giấy phép font/nhạc, logo, từ nghe chưa chắc, video chưa qua bảng kiểm…): OWNER phải ghi rõ đã xử lý thế nào.
+  const block = transitionBlock(v, kind, note);
+  if (block) return fail(back, block);
+  const blockers = kind === "approve" ? blockersForVideo(v) : [];
 
   db.update(schema.videos)
     .set({ status: t.to, updatedAt: nowIso(), ...(note ? { note } : {}), ...(kind === "request_changes" ? { version: v.version + 1 } : {}) })

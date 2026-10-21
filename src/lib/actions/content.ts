@@ -44,6 +44,8 @@ export async function submitForReview(fd: FormData) {
   const db = getDb();
   const current = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, id)).get();
   if (!current) return done("/content?tab=mine&tone=error", "Không tìm thấy nội dung");
+  // Nội dung đã duyệt / đã lên lịch không được sửa tại chỗ (phải quay về luồng viết và duyệt lại).
+  if (current.status !== "in_progress" && current.status !== "review") return done(`/content?tab=mine&open=${id}&tone=error`, "Chỉ gửi duyệt được nội dung đang viết hoặc chờ duyệt.");
   // Kịch bản quay sinh từ brief nghiên cứu phải qua luật kiểm trước khi tới OWNER (CP02).
   const block = submitBlock(current, draft || current.draft || "");
   if (block) {
@@ -166,12 +168,14 @@ export async function aiWriteDraft(fd: FormData) {
   const id = str(fd, "id");
   const brief = briefForContent(id);
   const db = getDb();
+  const current = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, id)).get();
+  if (!current) return done("/content?tab=mine&tone=error", "Không tìm thấy nội dung");
+  // Kiểm trạng thái TRƯỚC mọi lần ghi: nội dung đã duyệt không sửa tại chỗ.
+  if (current.status !== "in_progress" && current.status !== "review") return done(`/content?tab=mine&open=${id}&tone=error`, "Chỉ AI viết lại được nội dung đang viết hoặc chờ duyệt.");
   // Lưu chữ đang gõ trong khung trước khi AI viết lại, để không mất phần chưa bấm Lưu.
   const typed = str(fd, "draft");
   if (typed) db.update(schema.contentItems).set({ draft: typed }).where(eq(schema.contentItems.id, id)).run();
-  const before = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, id)).get();
-  if (!before) return done("/content?tab=mine&tone=error", "Không tìm thấy nội dung");
-  if (before.status !== "in_progress" && before.status !== "review") return done(`/content?tab=mine&open=${id}&tone=error`, "Chỉ AI viết lại được nội dung đang viết hoặc chờ duyệt.");
+  const before = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, id)).get()!;
   recordContentVersion(id, { hook: before.hook, draft: before.draft ?? "", reason: "save", by: actor.name });
   // Nội dung từ brief: AI chỉ được đổi câu chữ (không đổi dấu OWNER, nguồn, căn cứ, không thêm số).
   const result = await writeDraft(id, brief ? BRIEF_REWRITE_RULES : undefined, brief ? (d) => rewriteViolations(before.draft ?? "", d) : undefined);

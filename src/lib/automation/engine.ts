@@ -8,6 +8,7 @@ import { catalogRepo } from "@/lib/catalog/repository";
 import { getAdGuardrails } from "@/lib/queries";
 import { recordDecision } from "@/lib/router";
 import { logActivity } from "@/lib/activity";
+import { sendAlert } from "@/lib/alerts";
 import { goalProgress } from "@/lib/campaigns/results";
 import { activeRules, listRules, matchFaq, normalizeText, ranRecently, recordRun } from "./repository";
 import type { Condition, Rule } from "./types";
@@ -228,8 +229,15 @@ export function runScheduledRules(): { fired: number; errors: number } {
           if (cpl <= threshold || ranRecently(rule.id, "ad", ad.id, 24)) continue;
           const message = `“${ad.name}”: CPL ${cpl.toLocaleString("vi-VN")} ₫ vượt ${threshold.toLocaleString("vi-VN")} ₫.`;
           if (rule.action === "pause_ad") {
-            db.update(schema.adCampaigns).set({ status: "paused", aiNote: `Tự tạm dừng bởi quy tắc “${rule.name}”: ${message}` }).where(eq(schema.adCampaigns.id, ad.id)).run();
-            campaignRepo.syncEntityStatus("ad", ad.id, "paused");
+            if (ad.metaCampaignId) {
+              // Quảng cáo đang chạy thật trên Meta: phải dừng trên Meta, không chỉ đổi trạng thái trong hệ thống.
+              void import("@/lib/ads/engine").then(({ pauseAd }) => pauseAd(ad.id, "Hệ thống", `Tự tạm dừng bởi quy tắc “${rule.name}”: ${message}`)).then((r) => {
+                if (!r.ok) void sendAlert({ level: "error", title: `Không dừng được quảng cáo “${ad.name}”`, text: r.error, href: "/publishing#ads" });
+              });
+            } else {
+              db.update(schema.adCampaigns).set({ status: "paused", aiNote: `Tự tạm dừng bởi quy tắc “${rule.name}”: ${message}` }).where(eq(schema.adCampaigns.id, ad.id)).run();
+              campaignRepo.syncEntityStatus("ad", ad.id, "paused");
+            }
             logActivity("system", `${rule.name}: tạm dừng ${message}`, "automation");
           } else if (rule.action === "notify") logActivity("system", `${rule.name}: ${message}`, "automation");
           else continue;

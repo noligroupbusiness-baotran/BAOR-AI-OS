@@ -131,10 +131,10 @@ export async function saveAutoEdit(fd: FormData) {
 
 export async function runAutoEditNow() {
   await requirePermission("manager", "/settings#auto-edit");
-  const { ingestInbox } = await import("@/lib/video/auto-edit");
+  const { ingestInbox, pendingInbox } = await import("@/lib/video/auto-edit");
   const { kickWorker } = await import("@/lib/video/jobs");
   const n = ingestInbox();
   void kickWorker();
-  if (!n) return fail("/settings#auto-edit", "Hộp thư vào trống. Thả tệp .mov / .mp4 vào thư mục rồi bấm lại.");
+  if (!n) return fail("/settings#auto-edit", pendingInbox().length ? "Tệp còn đang được chép hoặc vừa đổi; bộ chạy nền sẽ nhận khi kích thước ổn định (khoảng 1 phút)." : "Hộp thư vào trống. Thả tệp .mov / .mp4 vào thư mục rồi bấm lại.");
   done("/video-studio?tab=editing", `Đã nhận ${n} tệp, đang dựng ngầm.`);
 }

@@ -61,7 +61,34 @@ export const adCampaigns = sqliteTable("ad_campaigns", {
   contentId: text("content_id"),
   startedAt: text("started_at"),
   aiNote: text("ai_note"),
+  // CP05: nháp chiến dịch Meta từ video đã đăng. Mọi thứ tạo trên Meta ở trạng thái PAUSED; bật chỉ qua cổng ủy quyền ngân sách.
+  videoId: text("video_id"),
+  postId: text("post_id"), // scheduled_posts.id của bài video đã đăng (creative)
+  audienceJson: text("audience_json"), // JSON { countries[], ageMin, ageMax, genders[] }
+  startAt: text("start_at"),
+  endAt: text("end_at"),
+  metaCampaignId: text("meta_campaign_id"),
+  metaAdsetId: text("meta_adset_id"),
+  metaCreativeId: text("meta_creative_id"),
+  metaAdId: text("meta_ad_id"),
+  insightsAt: text("insights_at"),
+  createdBy: text("created_by"),
 });
+
+// CP05: chi tiêu theo ngày đọc từ Meta Insights, để tính đúng chi tiêu trong tháng cho cổng ủy quyền ngân sách.
+export const adSpendDaily = sqliteTable(
+  "ad_spend_daily",
+  {
+    adId: text("ad_id").notNull(),
+    date: text("date").notNull(), // YYYY-MM-DD
+    spend: integer("spend").notNull().default(0),
+    impressions: integer("impressions").notNull().default(0),
+    clicks: integer("clicks").notNull().default(0),
+    leads: integer("leads").notNull().default(0),
+    thruplays: integer("thruplays").notNull().default(0),
+  },
+  (t) => [uniqueIndex("ad_spend_daily_ad_date_idx").on(t.adId, t.date)],
+);
 
 export const leads = sqliteTable("leads", {
   id: text("id").primaryKey(),

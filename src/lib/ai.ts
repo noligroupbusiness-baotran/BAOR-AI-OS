@@ -162,6 +162,9 @@ export async function writeDraft(contentId: string, briefRules?: string, validat
       .trim();
     const violations = validate ? validate(draft) : [];
     if (violations.length) return { ok: false, error: `Không nhận bản AI viết lại, giữ bản cũ: ${violations.join("; ")}` };
+    // Trong lúc AI viết, nội dung có thể đã được duyệt: chỉ ghi khi vẫn đang viết / chờ duyệt.
+    const now = db.select({ status: schema.contentItems.status }).from(schema.contentItems).where(eq(schema.contentItems.id, contentId)).get();
+    if (now?.status !== "in_progress" && now?.status !== "review") return { ok: false, error: "Nội dung đã đổi trạng thái trong lúc AI viết; không ghi đè." };
     db.update(schema.contentItems).set({ draft }).where(eq(schema.contentItems.id, contentId)).run();
     return { ok: true, draft };
   } catch (e) {

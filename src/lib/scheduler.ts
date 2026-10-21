@@ -8,6 +8,7 @@ import { runAutoEditOnce } from "@/lib/video/auto-edit";
 import { notionConfigured, syncSecondBrain } from "@/lib/knowledge/sync";
 import { getSetting, setSetting } from "@/lib/admin";
 import { publishDueVideoPosts, syncVideoPostMetrics, verifyPublishingPosts } from "@/lib/publishing/video";
+import { autoOptimize, proposeFromVideoPosts, syncAdInsights } from "@/lib/ads/engine";
 
 const g = globalThis as unknown as { __baorScheduler?: { timer: NodeJS.Timeout; lastHourly: number; lastDaily: number } };
 
@@ -47,6 +48,13 @@ async function tick() {
       parts.push(`đồng bộ ${m.updated} mục tiêu${m.errors.length ? `, lỗi ${m.errors.length}` : ""}`);
       const vm = await syncVideoPostMetrics();
       if (vm.updated || vm.errors) parts.push(`số liệu ${vm.updated} bài video${vm.errors ? `, lỗi ${vm.errors}` : ""}`);
+      // Quảng cáo: đọc chi phí theo ngày, tự dừng khi vượt ngưỡng (tăng chỉ khi OWNER cho phép), đề xuất từ video tốt
+      const ai = await syncAdInsights();
+      if (ai.updated || ai.errors.length) parts.push(`chi phí ${ai.updated} quảng cáo${ai.errors.length ? `, lỗi ${ai.errors.length}` : ""}`);
+      const opt = await autoOptimize();
+      if (opt.paused || opt.scaled) parts.push(`tối ưu: dừng ${opt.paused}, tăng ${opt.scaled}`);
+      const prop = proposeFromVideoPosts();
+      if (prop) parts.push(`đề xuất ${prop} quảng cáo`);
       const rules = runScheduledRules();
       if (rules.fired || rules.errors) parts.push(`automation ${rules.fired} lần${rules.errors ? `, ${rules.errors} lỗi` : ""}`);
       // Second Brain: đồng bộ Notion mỗi 6 giờ khi đã có token (mốc lưu trong CSDL để khởi động lại không chạy dồn)

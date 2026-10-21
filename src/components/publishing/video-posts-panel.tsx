@@ -3,6 +3,8 @@ import { Pill } from "@/components/ui/pill";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ConfirmAction } from "@/components/campaigns/confirm-action";
 import { cancelVideoPostAction, retryVideoPostAction, setDryRunAction } from "@/lib/actions/publishing";
+import { createAdDraftAction } from "@/lib/actions/ads";
+import { Button } from "@/components/ui/button";
 import { VIDEO_CHANNELS, channelStatus, isDryRun, listVideoPosts } from "@/lib/publishing/video";
 import { postStatusLabel } from "@/lib/labels";
 import { fileUrl } from "@/lib/uploads";
@@ -62,6 +64,19 @@ export function VideoPostsPanel() {
                   </div>
                   {p.permalink && <a href={p.permalink} target="_blank" rel="noreferrer" className="text-[12px] text-jade hover:underline">{p.permalink}</a>}
                   {p.error && <div className="text-[12px] text-ink-2">{p.error}</div>}
+                  {p.status === "published" && p.mode === "live" && p.verifiedAt && (
+                    <details className="mt-1 text-[12px]">
+                      <summary className="cursor-pointer text-jade">Tạo nháp quảng cáo từ bài này</summary>
+                      <form action={createAdDraftAction} className="mt-1.5 flex flex-wrap items-end gap-2">
+                        <input type="hidden" name="postId" value={p.id} />
+                        <label className="grid gap-0.5"><span className="text-ink-3">₫/ngày</span><input name="dailyBudget" defaultValue="100000" className="h-7 w-[100px] rounded-md border border-border-2 bg-surface px-2 text-ink" /></label>
+                        <label className="grid gap-0.5"><span className="text-ink-3">Số ngày</span><input name="days" defaultValue="7" className="h-7 w-[60px] rounded-md border border-border-2 bg-surface px-2 text-ink" /></label>
+                        <label className="grid gap-0.5"><span className="text-ink-3">Quốc gia</span><input name="countries" defaultValue="VN" className="h-7 w-[70px] rounded-md border border-border-2 bg-surface px-2 text-ink" /></label>
+                        <label className="grid gap-0.5"><span className="text-ink-3">Tuổi</span><span className="flex gap-1"><input name="ageMin" defaultValue="22" className="h-7 w-[46px] rounded-md border border-border-2 bg-surface px-2 text-ink" /><input name="ageMax" defaultValue="45" className="h-7 w-[46px] rounded-md border border-border-2 bg-surface px-2 text-ink" /></span></label>
+                        <Button type="submit" variant="soft">Tạo nháp (chưa tiêu tiền)</Button>
+                      </form>
+                    </details>
+                  )}
                 </div>
                 <div className="flex gap-1.5">
                   {p.status === "failed" && !p.externalId && <ConfirmAction action={retryVideoPostAction} fields={{ id: p.id }} label="Thử lại" title="Thử đăng lại?" message="Bài sẽ được đăng ở lượt chạy tới." confirmLabel="Thử lại" variant="soft" />}

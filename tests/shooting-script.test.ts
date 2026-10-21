@@ -74,7 +74,7 @@ test("chặn cách lách cấu trúc: không có tiêu đề cảnh, tiêu đề
 });
 
 test("nhận số liệu viết kiểu nói; không nhầm thời lượng, thứ tự, năm", () => {
-  for (const s of ["73 phần trăm seller", "ba phần tư khách", "3/4 seller", "8 trong 10 khách hàng", "doanh số x3", "10k khách hàng", "99 khách thì 60 người bỏ", "gấp 2 lần", "90.380 cuộc gọi", "11,18%", "2 triệu"]) {
+  for (const s of ["tăng 3x", "chín trên mười khách", "một nửa số khách", "Có 45 khách hàng phàn nàn", "Hơn 2000 khách", "1999 người", "73 phần trăm seller", "ba phần tư khách", "3/4 seller", "8 trong 10 khách hàng", "doanh số x3", "10k khách hàng", "99 khách thì 60 người bỏ", "gấp 2 lần", "90.380 cuộc gọi", "11,18%", "2 triệu"]) {
     assert.equal(hasStatistic(s), true, s);
   }
   for (const s of ["30 giây đầu là để khách hiểu bạn là ai", "3 bước chào hỏi", "Năm 2025 thị trường đổi", "1) Xác nhận · 2) Xin phép"]) {
@@ -83,6 +83,11 @@ test("nhận số liệu viết kiểu nói; không nhầm thời lượng, th�
   assert.equal(maxSecondsFromGoal("Video ngắn 60–90 giây"), 90);
   assert.equal(maxSecondsFromGoal("Kịch bản 45 giây"), 45);
   assert.equal(maxSecondsFromGoal("không ghi"), 90);
+});
+
+test("câu nói bắt đầu bằng 'Còn thiếu' không làm bộ đọc bỏ qua nội dung", () => {
+  const sneaky = script.replace("Lời thoại: Seller mới", "Lời thoại: Seller mới\nCòn thiếu lý do gọi thì 73% khách cúp máy.");
+  assert.ok(scriptQa(sneaky, known).blocking.some((b) => b.includes("số liệu")));
 });
 
 test("AI viết lại: chỉ nhận khi giữ nguyên dấu OWNER, NGUỒN, căn cứ và không thêm số", () => {

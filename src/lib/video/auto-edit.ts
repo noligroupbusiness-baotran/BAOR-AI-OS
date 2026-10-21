@@ -4,6 +4,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { uploadsDir } from "@/lib/uploads";
 import { createVideoFromSource, dataDir, kickWorker } from "@/lib/video/jobs";
@@ -15,6 +16,9 @@ export function inboxDir(): string {
   fs.mkdirSync(path.join(d, "da-xu-ly"), { recursive: true });
   return d;
 }
+
+// Kích thước lần quét trước: chỉ nhận tệp có kích thước không đổi qua hai lần quét (bản chép dở bị bỏ qua).
+const seen = ((globalThis as unknown as { __baorInboxSeen?: Map<string, number> }).__baorInboxSeen ??= new Map());
 
 /** Tệp đang chờ trong hộp thư vào. Bỏ qua tệp đang được ghi dở (sửa < 20 giây trước). */
 export function pendingInbox(): string[] {
@@ -28,10 +32,22 @@ export function pendingInbox(): string[] {
     .sort();
 }
 
-/** Nhận các tệp trong hộp thư vào: chuyển vào kho tải lên (giữ một bản ghi tên ở da-xu-ly), tạo video và xếp hàng dựng. */
+/** Tệp đã ổn định: kích thước bằng lần quét trước, hoặc không đổi từ 2 phút trở lên. */
+function stable(file: string): boolean {
+  const st = fs.statSync(file);
+  const prev = seen.get(file);
+  seen.set(file, st.size);
+  return prev === st.size || Date.now() - st.mtimeMs > 120_000;
+}
+
+/**
+ * Nhận các tệp trong hộp thư vào vào kho tải lên, tạo video và xếp hàng dựng. Không bao giờ làm mất video gốc:
+ * ghi bản ghi trước rồi mới chuyển tệp; chép qua ổ khác thì so kích thước rồi mới xoá ở hộp thư; lỗi thì giữ nguyên tệp gốc.
+ */
 export function ingestInbox(): number {
   let n = 0;
   for (const file of pendingInbox()) {
+    if (!stable(file)) continue;
     const ext = path.extname(file).toLowerCase();
     const id = `up_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
     const fileName = `${id}${ext}`;
@@ -39,17 +55,27 @@ export function ingestInbox(): number {
     const prompt = fs.existsSync(sidecar) ? fs.readFileSync(sidecar, "utf8").slice(0, 800) : "";
     const size = fs.statSync(file).size;
     const target = path.join(uploadsDir(), fileName);
-    try {
-      fs.renameSync(file, target);
-    } catch {
-      fs.copyFileSync(file, target);
-      fs.rmSync(file, { force: true });
-    }
     const title = path.basename(file).replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ").trim() || "Video quay thô";
-    getDb()
-      .insert(schema.uploads)
+    const db = getDb();
+    db.insert(schema.uploads)
       .values({ id, kind: "video", name: path.basename(file), fileName, mime: VIDEO_EXT[ext], size, meta: JSON.stringify({ title, role: "raw", from: "video-inbox" }), uploadedBy: "video-inbox", createdAt: new Date().toISOString() })
       .run();
+    try {
+      try {
+        fs.renameSync(file, target);
+      } catch {
+        fs.copyFileSync(file, target);
+        if (fs.statSync(target).size !== size) throw new Error("Bản chép không đủ dung lượng");
+        fs.rmSync(file);
+      }
+    } catch (e) {
+      // Giữ nguyên tệp gốc trong hộp thư, xoá bản chép dở và bản ghi.
+      if (fs.existsSync(file)) fs.rmSync(target, { force: true });
+      db.delete(schema.uploads).where(eq(schema.uploads.id, id)).run();
+      console.error(`[video-inbox] Không nhận được ${path.basename(file)}: ${e instanceof Error ? e.message : e}`);
+      continue;
+    }
+    seen.delete(file);
     if (fs.existsSync(sidecar)) fs.renameSync(sidecar, path.join(inboxDir(), "da-xu-ly", path.basename(sidecar)));
     fs.writeFileSync(path.join(inboxDir(), "da-xu-ly", `${path.basename(file)}.da-nhan.txt`), `Đã nhận vào kho tải lên ${id} lúc ${new Date().toISOString()}\n`);
     createVideoFromSource({ title, sourceUploadId: id, cutSilence: false, prompt, by: "Hộp thư vào" });

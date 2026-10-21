@@ -69,6 +69,10 @@ export function readJob(videoId: string, version: number): VideoJob | null {
   return readJson<VideoJob>(path.join(jobDir(videoId, version), "job.json"));
 }
 
+export function readReport(videoId: string, version: number): VideoReport | null {
+  return readJson<VideoReport>(path.join(jobDir(videoId, version), "report.json"));
+}
+
 export function jobVersions(videoId: string): number[] {
   if (!SAFE.test(videoId)) return [];
   const d = path.join(jobsRoot(), videoId);
@@ -193,11 +197,14 @@ export function rerenderVideo(videoId: string, by: string, cutSilence?: boolean)
   const prev = latestJob(videoId);
   const v = getDb().select().from(schema.videos).where(eq(schema.videos.id, videoId)).get();
   if (!prev || !v) return { ok: false, error: "Video này không có nguồn để dựng lại" };
+  // Video đã gửi phê duyệt hoặc đã duyệt: không kéo ngược về "Đang dựng" (muốn sửa thì Yêu cầu chỉnh sửa trước).
+  if (!["editing", "review", "needs_changes"].includes(v.status)) return { ok: false, error: "Chỉ dựng lại video đang dựng, chờ kiểm tra hoặc cần chỉnh sửa" };
   if (prev.job.status === "queued" || prev.job.status === "running") return { ok: false, error: "Video đang trong hàng dựng" };
   const version = Math.max(prev.job.version, v.version) + 1;
   const now = new Date().toISOString();
   writeJob({ videoId, version, status: "queued", sourceUploadId: prev.job.sourceUploadId, cutSilence: cutSilence ?? prev.job.cutSilence, prompt: prev.job.prompt ?? "", createdAt: now, by });
   getDb().update(schema.videos).set({ status: "editing", version, updatedAt: now, note: `Đang dựng bản ${version}.` }).where(eq(schema.videos.id, videoId)).run();
+  campaignRepo.syncEntityStatus("video", videoId, "editing");
   addVideoFeedback({ videoId, version, kind: "rerender", note: `Dựng lại từ cùng nguồn${(cutSilence ?? prev.job.cutSilence) ? ", cắt khoảng lặng" : ""}`, by });
   logActivity("human", `${by} yêu cầu dựng lại “${v.title}” thành bản ${version}.`, "video");
   void kickWorker();
@@ -210,12 +217,41 @@ function pythonBin(): string {
   return process.env.PYTHON_BIN || "python3";
 }
 
+function alive(pid: number | undefined): boolean {
+  if (!pid) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function recoverStale() {
   if (worker.recovered) return;
   worker.recovered = true;
   for (const j of allJobs()) {
-    if (j.status === "running") writeJob({ ...j, status: "queued", note: "Máy chủ khởi động lại giữa chừng, dựng lại từ đầu" });
+    if (j.status !== "running") continue;
+    // Tiến trình dựng của lần chạy trước còn sống: dừng hẳn trước khi xếp lại, để hai bộ dựng không cùng ghi một thư mục.
+    if (alive(j.pid)) {
+      try {
+        process.kill(j.pid!, "SIGKILL");
+      } catch {}
+    }
+    if (j.runId) finishRun(j.runId, false, "Máy chủ khởi động lại giữa lúc dựng");
+    writeJob({ ...j, status: "queued", pid: undefined, note: "Máy chủ khởi động lại giữa chừng, dựng lại từ đầu" });
   }
+}
+
+/** Thời gian dựng tối đa (mặc định 3 giờ): quá thì dừng để hàng đợi không kẹt. */
+const JOB_TIMEOUT_MS = Number(process.env.BAOR_VIDEO_TIMEOUT_MIN ?? 180) * 60_000;
+const children = ((globalThis as unknown as { __baorVideoChildren?: Set<import("node:child_process").ChildProcess> }).__baorVideoChildren ??= new Set());
+if (!(globalThis as unknown as { __baorVideoExitHook?: boolean }).__baorVideoExitHook) {
+  (globalThis as unknown as { __baorVideoExitHook?: boolean }).__baorVideoExitHook = true;
+  // Máy chủ tắt: dừng bộ dựng con, không để chạy mồ côi.
+  process.once("exit", () => {
+    for (const c of children) c.kill("SIGKILL");
+  });
 }
 
 /** Gọi khi thêm nguồn và mỗi phút từ bộ chạy nền. Không chờ: dựng chạy trong tiến trình con. */
@@ -251,37 +287,56 @@ function runJob(job: VideoJob): Promise<void> {
     return Promise.resolve();
   }
   const s = editSettings();
-  const args = [path.join(process.cwd(), "scripts", "video", "pipeline.py"), "--input", srcPath, "--job-dir", dir, "--keywords", s.keywords, "--model", s.model];
-  if (job.prompt) args.push("--prompt", job.prompt);
+  // Dạng --khoá=giá trị: từ khoá bắt đầu bằng "-" (vd "-50%") không bị hiểu nhầm là tham số.
+  const args = [path.join(process.cwd(), "scripts", "video", "pipeline.py"), `--input=${srcPath}`, `--job-dir=${dir}`, `--keywords=${s.keywords}`, `--model=${s.model}`];
+  if (job.prompt) args.push(`--prompt=${job.prompt}`);
   if (job.cutSilence) args.push("--cut-silence");
   if (s.sfx) args.push("--sfx");
   const bdir = brollDir();
-  if (fs.existsSync(path.join(bdir, "manifest.json"))) args.push("--broll-dir", bdir);
+  if (fs.existsSync(path.join(bdir, "manifest.json"))) args.push(`--broll-dir=${bdir}`);
   const music = s.musicUploadId ? listUploads("music").find((u) => u.id === s.musicUploadId) : undefined;
   const musicPath = music ? uploadPath(music) : null;
-  if (music && musicPath) args.push("--music", musicPath, "--music-license", String(music.meta.license ?? ""));
+  if (music && musicPath) args.push(`--music=${musicPath}`, `--music-license=${String(music.meta.license ?? "")}`);
   const prevVersion = jobVersions(job.videoId).find((v) => v < job.version);
   if (prevVersion) {
     const pdir = jobDir(job.videoId, prevVersion);
-    if (fs.existsSync(path.join(pdir, "words_main.json"))) args.push("--reuse-dir", pdir);
+    if (fs.existsSync(path.join(pdir, "words_main.json"))) args.push(`--reuse-dir=${pdir}`);
     const pjob = readJob(job.videoId, prevVersion);
     const pmaster = pjob?.masterUploadId ? getUpload(pjob.masterUploadId) : undefined;
     const pm = pmaster ? uploadPath(pmaster) : null;
-    if (pm) args.push("--previous", pm);
+    if (pm) args.push(`--previous=${pm}`);
   }
   return new Promise((resolve) => {
     const child = spawn(pythonBin(), args, { stdio: ["ignore", "pipe", "pipe"] });
+    children.add(child);
+    writeJob({ ...job, status: "running", startedAt: started, runId, pid: child.pid });
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGKILL");
+    }, JOB_TIMEOUT_MS);
     let err = "";
     child.stderr.on("data", (b: Buffer) => {
       err = (err + b.toString()).slice(-4000);
     });
     child.stdout.on("data", () => {});
+    let settled = false;
     child.on("error", (e) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      children.delete(child);
       failJob(job, `Không chạy được bộ dựng: ${e.message}`, runId, title);
       resolve();
     });
     child.on("close", (code) => {
-      if (code === 0) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      children.delete(child);
+      if (timedOut) {
+        failJob(job, `Dựng quá ${Math.round(JOB_TIMEOUT_MS / 60_000)} phút, đã dừng`, runId, title);
+      } else if (code === 0) {
         try {
           finishJob(job, dir, runId, title, started);
         } catch (e) {
