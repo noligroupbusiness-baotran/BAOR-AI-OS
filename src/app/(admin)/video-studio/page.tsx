@@ -15,10 +15,11 @@ import { LinkButton } from "@/components/ui/button";
 import { SourceDrop } from "@/components/video/source-drop";
 import { VideoScheduleForm } from "@/components/publishing/video-schedule";
 import { AutoRefresh } from "@/components/video/auto-refresh";
+import { VideoViewer } from "@/components/video/video-viewer";
 import { listContent } from "@/lib/queries";
 import { fileUrl } from "@/lib/uploads";
 import { listVideos } from "@/lib/videos/repository";
-import { SKILL, jobVersions, latestJob } from "@/lib/video/jobs";
+import { engineLabel, jobVersions, latestJob } from "@/lib/video/jobs";
 import { blockersForVideo } from "@/lib/video/approval";
 import { qaLabel, qaTone } from "@/lib/video/job-types";
 import { feedbackLabel, listVideoFeedback, type FeedbackKind } from "@/lib/video/feedback";
@@ -61,7 +62,7 @@ export default async function VideoStudioPage({ searchParams }: { searchParams: 
       <Breadcrumb items={[{ label: "Điều hành", href: "/dashboard" }, { label: "Video Studio" }]} />
       <PageHead
         title="Video Studio"
-        sub={`Quay xong, thêm video gốc: hệ thống tự dựng theo ${SKILL.name} ${SKILL.version}, chạy bảng kiểm rồi đưa vào Chờ kiểm tra. Video gốc luôn được giữ. Video chỉ được đăng sau khi OWNER phê duyệt.`}
+        sub={`Quay xong, thêm video gốc: hệ thống tự dựng theo ${engineLabel()}, chạy bảng kiểm rồi đưa vào Chờ kiểm tra. Video gốc luôn được giữ. Video chỉ được đăng sau khi OWNER phê duyệt.`}
         action={sp.upload === "1" ? undefined : <LinkButton href={withCampaignContext("/video-studio?upload=1", ctx)} variant="primary" size="md">Thêm video gốc</LinkButton>}
       />
 
@@ -130,9 +131,12 @@ export default async function VideoStudioPage({ searchParams }: { searchParams: 
                     {jv?.job.status === "error" && <p className="mt-1 text-[12px] text-brick">{jv.job.error}</p>}
                     {v.note && !running && <p className="mt-1 text-[12px] text-ink">{v.note}</p>}
                     {hasPreview ? (
-                      <video controls preload="metadata" src={jobFile(v.id, jv!.job.version, "preview.mp4")} className="mt-2 max-h-[360px] w-full max-w-[220px] rounded-md border border-border bg-black" />
+                      <video controls playsInline preload="metadata" src={jobFile(v.id, jv!.job.version, "preview.mp4")} className="mt-2 max-h-[360px] w-full max-w-[220px] rounded-md border border-border bg-black" />
                     ) : (
-                      v.uploadId && <video controls preload="metadata" src={fileUrl(v.uploadId)} className="mt-2 max-h-[360px] w-full max-w-[220px] rounded-md border border-border bg-black" />
+                      v.uploadId && <video controls playsInline preload="metadata" src={fileUrl(v.uploadId)} className="mt-2 max-h-[360px] w-full max-w-[220px] rounded-md border border-border bg-black" />
+                    )}
+                    {(hasPreview || v.uploadId) && (
+                      <VideoViewer title={v.title} src={hasPreview ? jobFile(v.id, jv!.job.version, "preview.mp4") : fileUrl(v.uploadId!)} hdSrc={hasPreview && v.uploadId ? fileUrl(v.uploadId) : undefined} />
                     )}
 
                     {isOpen && report && (

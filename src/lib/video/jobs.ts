@@ -32,6 +32,11 @@ export const SKILL = skillJson as unknown as {
 const g = globalThis as unknown as { __baorVideoWorker?: { running: string | null; recovered: boolean } };
 const worker = (g.__baorVideoWorker ??= { running: null, recovered: false });
 
+/** Tên skill đang dùng để dựng (hiện trên giao diện / ghi chú). */
+export function engineLabel(): string {
+  return getSetting("video.engine") === "legacy" ? `${SKILL.name} ${SKILL.version}` : "Skill ESV v0.3.1 (Notion 02 SKILL)";
+}
+
 export function dataDir(): string {
   return process.env.DATA_DIR ?? path.join(process.cwd(), "data");
 }
@@ -180,7 +185,7 @@ export function createVideoFromSource(opts: { title: string; sourceUploadId: str
   const contentId = content?.id ?? null;
   getDb()
     .insert(schema.videos)
-    .values({ id: videoId, title: (content?.title ?? opts.title).slice(0, 200), contentId, agent: "Agent Edit Video", status: "editing", platforms: JSON.stringify(["tiktok", "facebook"]), version: 1, note: `Đang dựng tự động theo ${SKILL.name} ${SKILL.version}.`, uploadId: null, updatedAt: now })
+    .values({ id: videoId, title: (content?.title ?? opts.title).slice(0, 200), contentId, agent: "Agent Edit Video", status: "editing", platforms: JSON.stringify(["tiktok", "facebook"]), version: 1, note: `Đang dựng tự động theo ${engineLabel()}.`, uploadId: null, updatedAt: now })
     .run();
   // Video kế thừa chiến dịch và mục tiêu kênh của kịch bản.
   if (contentId) campaignRepo.inheritLinks("content", contentId, "video", videoId, "editing");
@@ -307,13 +312,16 @@ function runJob(job: VideoJob): Promise<void> {
   const musicPath = music ? uploadPath(music) : null;
   if (music && musicPath) args.push(`--music=${musicPath}`, `--music-license=${String(music.meta.license ?? "")}`);
   const prevVersion = jobVersions(job.videoId).find((v) => v < job.version);
-  // Bộ dựng theo Skill ESV: dùng khi bản trước có kế hoạch dựng (chữ nhấn, sơ đồ, zoom do biên tập lập từ lời nói).
+  // Bộ dựng mặc định: Skill ESV (Notion 02 SKILL). Bộ cũ (pipeline.py) chỉ khi Cài đặt chọn "legacy".
+  // Kế hoạch dựng (chữ nhấn, sơ đồ, zoom): lấy từ bản trước nếu có (biên tập đã lập), không thì bộ dựng tự lập theo luật.
   const prevPlan = prevVersion ? path.join(jobDir(job.videoId, prevVersion), "plan.json") : "";
-  if (prevPlan && fs.existsSync(prevPlan)) {
-    const pdir = jobDir(job.videoId, prevVersion!);
+  const ownPlan = path.join(dir, "plan.json");
+  if (getSetting("video.engine") !== "legacy") {
     args.length = 0;
-    args.push(path.join(process.cwd(), "scripts", "video", "esv_render.py"), `--input=${srcPath}`, `--job-dir=${dir}`, `--plan=${prevPlan}`);
-    if (fs.existsSync(path.join(pdir, "words_main.json"))) args.push(`--words=${path.join(pdir, "words_main.json")}`);
+    args.push(path.join(process.cwd(), "scripts", "video", "esv_render.py"), `--input=${srcPath}`, `--job-dir=${dir}`, `--keywords=${s.keywords}`, `--model=${s.model}`);
+    if (fs.existsSync(ownPlan)) args.push(`--plan=${ownPlan}`);
+    else if (prevPlan && fs.existsSync(prevPlan)) args.push(`--plan=${prevPlan}`);
+    if (prevVersion && fs.existsSync(path.join(jobDir(job.videoId, prevVersion), "words_main.json"))) args.push(`--words=${path.join(jobDir(job.videoId, prevVersion), "words_main.json")}`);
   } else if (prevVersion) {
     const pdir = jobDir(job.videoId, prevVersion);
     if (fs.existsSync(path.join(pdir, "words_main.json"))) args.push(`--reuse-dir=${pdir}`);
@@ -388,7 +396,7 @@ function finishJob(job: VideoJob, dir: string, runId: string, title: string, sta
   getDb().update(schema.videos).set({ status: "review", version: job.version, uploadId: upId, note, updatedAt: now }).where(eq(schema.videos.id, job.videoId)).run();
   writeJob({ ...job, status: "done", startedAt: started, finishedAt: now, runId, masterUploadId: upId });
   finishRun(runId, true, `Dựng xong “${title}” bản ${job.version} → Chờ kiểm tra`, 1);
-  logActivity("ai", `Agent Edit Video dựng xong “${title}” bản ${job.version} theo ${SKILL.name} ${SKILL.version}, chờ kiểm tra.`, "video");
+  logActivity("ai", `Agent Edit Video dựng xong “${title}” bản ${job.version} theo ${engineLabel()}, chờ kiểm tra.`, "video");
 }
 
 function failJob(job: VideoJob, msg: string, runId: string, title: string) {

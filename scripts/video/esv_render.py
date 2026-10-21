@@ -395,10 +395,10 @@ def face_center(src, info, n=12):
     return float(np.median(xs)), float(np.median(ys)), True
 
 
-def zoom_expr(zooms, breath):
-    """z(t) = thở(×1,03) × nhấn(×1,07–1,12), cosine; biểu thức ffmpeg theo t."""
+def zoom_expr(zooms, breath, v="t"):
+    """z(t) = thở(×1,03) × nhấn(×1,07–1,12), cosine; biểu thức ffmpeg theo biến thời gian v."""
     def seg(t0, t1, z0, z1):
-        return f"between(t,{t0:.3f},{t1:.3f})*({z0 - 1:.4f}+{z1 - z0:.4f}*(1-cos(PI*(t-{t0:.3f})/{t1 - t0:.3f}))/2)"
+        return f"gte({v},{t0:.3f})*lt({v},{t1:.3f})*({z0 - 1:.4f}+{z1 - z0:.4f}*(1-cos(PI*({v}-{t0:.3f})/{t1 - t0:.3f}))/2)"
     parts_b = []
     for a, b in breath:
         L = b - a
@@ -407,11 +407,11 @@ def zoom_expr(zooms, breath):
         up = min(7.0, 0.45 * L)
         s0, s1 = a + 0.4, a + 0.4 + up
         e0 = b - 0.3 - 4.0
-        parts_b += [seg(s0, s1, 1.0, 1.03), f"between(t,{s1:.3f},{e0:.3f})*0.03", seg(e0, e0 + 4.0, 1.03, 1.0)]
+        parts_b += [seg(s0, s1, 1.0, 1.03), f"gte({v},{s1:.3f})*lt({v},{e0:.3f})*0.03", seg(e0, e0 + 4.0, 1.03, 1.0)]
     parts_e = []
     for z in zooms:
         ti, lv, to = z["t"], z["level"], z["out"]
-        parts_e += [seg(ti, ti + 0.8, 1.0, lv), f"between(t,{ti + 0.8:.3f},{to:.3f})*{lv - 1:.4f}", seg(to, to + 0.9, lv, 1.0)]
+        parts_e += [seg(ti, ti + 0.8, 1.0, lv), f"gte({v},{ti + 0.8:.3f})*lt({v},{to:.3f})*{lv - 1:.4f}", seg(to, to + 0.9, lv, 1.0)]
     zb = "(1+" + ("+".join(parts_b) if parts_b else "0") + ")"
     ze = "(1+" + ("+".join(parts_e) if parts_e else "0") + ")"
     return f"min(1.15,{zb}*{ze})"
@@ -445,13 +445,81 @@ def zoom_value(zooms, breath, t):
     return min(1.15, zb * ze)
 
 
+# ---------------------------------------------------------------- kế hoạch tự động (khi chưa có biên tập)
+
+STOP = set("""các bạn là có và của thì mà này đó cái chúng ta một những được không cũng với cho khi trong phải em anh chị mình nó nha ạ rồi nữa đây gì sao vì như thế nào hay đã đang sẽ lại ra vào lên xuống ở bên cạnh đâu luôn rằng nghĩ bây giờ nhiều người ai đều chỉ còn nên vậy thôi đi làm biết thấy nói hỏi bảo chuyện cứ hình dung mỗi lần về từ để do bị cả hết rất quá lắm này kia ấy""".split())
+
+
+def _clean(t):
+    return re.sub(r"[^\w%]", "", t.lower())
+
+
+def auto_plan(words, dur, keywords):
+    """Kế hoạch theo luật (ESV mục 4, 6): chữ nhấn ít (≈1/30 s, cách ≥ 4 s), từ đã nghe rõ; zoom theo chữ nhấn; zoom thở.
+    Sơ đồ / animation cần hiểu nội dung (quy trình, cơ chế) nên KHÔNG tự tạo ở đây: để biên tập (người hoặc AI) lập."""
+    ws = [w for w in words if not w.get("uncertain")]
+    toks = [(_clean(w["text"]), w) for w in ws]
+    cands = {}
+    kws = [k.strip().lower() for k in keywords if k.strip()]
+    for i in range(len(toks) - 1):
+        a, b = toks[i][0], toks[i + 1][0]
+        if not a or not b:
+            continue
+        phrase = f"{a} {b}"
+        orig = f"{toks[i][1]['text']} {toks[i + 1][1]['text']}".strip(",.?!")
+        score = 0.0
+        if any(k == phrase or k == a for k in kws):
+            score += 3
+        if a.isdigit() and b not in STOP:
+            score += 2
+        if a not in STOP and b not in STOP and not a.isdigit():
+            score += 0.5
+        if score <= 0:
+            continue
+        c = cands.setdefault(phrase, {"n": 0, "t": toks[i][1]["start"], "text": orig, "score": 0.0})
+        c["n"] += 1
+        c["score"] = max(c["score"], score)
+    for c in cands.values():
+        if c["n"] >= 2:
+            c["score"] += c["n"]
+    ranked = sorted([c for c in cands.values() if c["score"] >= 1.5 and c["t"] > 0.8], key=lambda c: -c["score"])
+    budget = max(1, round(dur / 30))
+    chosen = []
+    for c in ranked:
+        if len(chosen) >= budget:
+            break
+        if all(abs(c["t"] - x["t"]) >= 4.0 for x in chosen):
+            chosen.append(c)
+    chosen.sort(key=lambda c: c["t"])
+    top = sorted(chosen, key=lambda c: -c["score"])[:3]
+    emph = []
+    for k, c in enumerate(chosen):
+        text = c["text"].upper() if c in top else c["text"][:1].upper() + c["text"][1:]
+        style = "blur" if k == 0 else ("shine" if c is top[0] else "fade")
+        emph.append({"t": round(c["t"], 2), "text": text, "style": style})
+    zooms = []
+    for e in emph:
+        z = {"t": round(max(0.2, e["t"] - 0.1), 2), "level": 1.12 if e["style"] == "shine" else 1.10, "out": round(min(dur - 1.0, e["t"] + 2.6), 2)}
+        if z["out"] - z["t"] > 1.8 and all(z["t"] - (x["out"] + 0.9) >= 1.7 for x in zooms):
+            zooms.append(z)
+    breath, a0 = [], 0.0
+    while a0 < dur - 1:
+        b0 = min(dur, a0 + 18.0)
+        if dur - b0 < 10:
+            b0 = dur
+        breath.append([round(a0, 2), round(b0, 2)])
+        a0 = b0
+    return {"by": "Luật tự động (chưa có biên tập AI)", "note": "Chữ nhấn theo từ khoá / cụm lặp / con số; không có sơ đồ.", "emphasis": emph, "diagrams": [], "zooms": zooms, "breath": breath}
+
+
 # ---------------------------------------------------------------- chính
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", required=True)
     ap.add_argument("--job-dir", required=True)
-    ap.add_argument("--plan", required=True)
+    ap.add_argument("--plan", default="")
+    ap.add_argument("--keywords", default="")
     ap.add_argument("--words", default="")
     ap.add_argument("--logo", default=os.path.join(P.ROOT, "public", "brand", "baor-light.png"))
     ap.add_argument("--model", default="medium")
@@ -460,8 +528,7 @@ def main():
     job = P.Job(a.job_dir)
     os.makedirs(job.p("work"), exist_ok=True)
     src = os.path.abspath(a.input)
-    plan = json.load(open(a.plan, encoding="utf-8"))
-    shutil.copy(a.plan, job.p("plan.json"))
+    plan = json.load(open(a.plan, encoding="utf-8")) if a.plan and os.path.exists(a.plan) else None
 
     job.progress("probe", "Kiểm tra nguồn", 3)
     info = P.probe(src)
@@ -486,6 +553,9 @@ def main():
         if "uncertain" not in w:
             w["uncertain"] = w.get("p", 1) < 0.15
     json.dump(words, open(job.p("words_main.json"), "w"), ensure_ascii=False)
+    if plan is None:
+        plan = auto_plan(words, dur, re.split(r"[,\n]", a.keywords))
+    json.dump(plan, open(job.p("plan.json"), "w"), ensure_ascii=False, indent=1)
 
     # Khung: nguồn ngang → cắt toàn chiều cao quanh người nói 1216x2160 (ESV mục 1); nguồn dọc giữ nguyên
     job.progress("frame", "Dò mặt, chọn khung 9:16", 36)
@@ -566,18 +636,48 @@ def main():
 
     # Bản chính: khung + zoom chỉ nền → logo → lớp chữ
     job.progress("encode", "Xuất bản chính 1080x1920", 78)
-    zx = zoom_expr(plan.get("zooms", []), plan.get("breath", [[0, dur]]))
-    vf = ["fps=30"] + ([cropf] if cropf else [])
-    vf += [f"scale=w='trunc({W}*{zx}/2)*2':h='trunc({H}*{zx}/2)*2':eval=frame:flags=lanczos", f"crop={W}:{H}:x='(in_w-{W})*{ax:.4f}':y='(in_h-{H})*{ay:.4f}'", "unsharp=5:5:0.35", "setsar=1",
+    # Zoom MƯỢT (ESV mục 6): biến đổi phối cảnh dưới điểm ảnh, làm trên khung gốc (vd 1216x2160) rồi mới thu về 1080x1920.
+    # Không làm tròn kích thước theo từng khung (làm tròn gây giật 1–2 px). q = 1 − 1/z(t); tâm zoom A = mặt.
+    zx = zoom_expr(plan.get("zooms", []), plan.get("breath", [[0, dur]]), v="(in/30)")
+    if cropf:
+        cw, chh = int(cropf.split("=")[1].split(":")[0]), int(cropf.split(":")[1])
+    else:
+        cw, chh = info["width"], info["height"]
+    Ax, Ay = ax * cw, ay * chh
+    q = f"(1-1/({zx}))"
+    persp = (f"perspective=x0='{Ax:.3f}*{q}':y0='{Ay:.3f}*{q}':x1='{cw}-{cw - Ax:.3f}*{q}':y1='{Ay:.3f}*{q}':"
+             f"x2='{Ax:.3f}*{q}':y2='{chh}-{chh - Ay:.3f}*{q}':x3='{cw}-{cw - Ax:.3f}*{q}':y3='{chh}-{chh - Ay:.3f}*{q}':interpolation=cubic:eval=frame")
+    vf = ["fps=30"] + ([cropf] if cropf else []) + ["format=yuv444p", persp, f"scale={W}:{H}:flags=lanczos", "unsharp=5:5:0.3", "setsar=1",
            "setparams=range=tv:colorspace=bt709:color_primaries=bt709:color_trc=bt709"]
     logo_w = 440
-    fc = (f"[0:v]{','.join(vf)}[bg];"
+    # B-roll (ESV/SK-MED-03): cắt cảnh toàn khung theo kế hoạch, hiện/tắt mờ 0,2 s; phụ đề, chữ nhấn, logo vẫn nằm trên.
+    broll_dir = plan.get("brollDir") or os.path.join(os.environ.get("DATA_DIR", os.path.join(P.ROOT, "data")), "video-assets", "broll")
+    manifest = {}
+    mf = os.path.join(broll_dir, "manifest.json")
+    if os.path.exists(mf):
+        manifest = {m["file"]: m for m in json.load(open(mf, encoding="utf-8"))}
+    brolls, b_args, b_fc, last = [], [], "", "bg0"
+    for k, b in enumerate(plan.get("broll", [])):
+        fpath = os.path.join(broll_dir, b["file"])
+        meta = manifest.get(b["file"], {})
+        if not os.path.isfile(fpath) or not str(meta.get("license", "")).strip():
+            sys.stderr.write(f"Bỏ B-roll {b['file']}: thiếu tệp hoặc chưa ghi giấy phép trong manifest\n")
+            continue
+        d = float(b["t1"]) - float(b["t0"])
+        idx = 4 + len(brolls)
+        b_args += ["-ss", f"{float(b.get('from', 0)):.3f}", "-t", f"{d:.3f}", "-i", fpath]
+        b_fc += (f"[{idx}:v]fps=30,scale={W}:{H}:force_original_aspect_ratio=increase:flags=lanczos,crop={W}:{H},setsar=1,format=yuva420p,"
+                 f"fade=t=in:st=0:d=0.2:alpha=1,fade=t=out:st={max(0, d - 0.2):.3f}:d=0.2:alpha=1,setpts=PTS-STARTPTS+{float(b['t0']):.3f}/TB[b{k}];"
+                 f"[{last}][b{k}]overlay=0:0:enable='between(t,{float(b['t0']):.3f},{float(b['t1']):.3f})':eof_action=pass[bg{k + 1}];")
+        last = f"bg{k + 1}"
+        brolls.append({**b, "license": meta.get("license", ""), "source": meta.get("source", "")})
+    fc = (f"[0:v]{','.join(vf)}[bg0];{b_fc}[{last}]null[bg];"
           f"[1:v]scale={logo_w}:-1:flags=lanczos,format=rgba,fade=t=in:st=0.3:d=0.6:alpha=1[lg];"
           f"[bg][lg]overlay=x='50-24*pow(1-min(max((t-0.3)/0.6\\,0)\\,1)\\,3)':y=120:eval=frame[l];"
           f"[2:v]format=rgba[tx];[l][tx]overlay=0:{BAND_Y0}:format=auto,format=yuv420p[v]")
     master = job.p("master.mp4")
     P.sh(["ffmpeg", "-v", "error", "-y", "-i", src, "-loop", "1", "-i", a.logo, "-framerate", str(FPS), "-start_number", "0", "-i", os.path.join(tdir, "%06d.png"),
-          "-i", final, "-filter_complex", fc, "-map", "[v]", "-map", "3:a", "-frames:v", str(N),
+          "-i", final, *b_args, "-filter_complex", fc, "-map", "[v]", "-map", "3:a", "-frames:v", str(N),
           "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-profile:v", "high", "-pix_fmt", "yuv420p", "-r", str(FPS),
           "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv",
           "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", master])
@@ -667,9 +767,12 @@ def main():
     add("M", "Tiếng giống từng byte khi chỉ sửa hình", "na", "dựng từ RAW")
     add("N", "Màu logo theo nền", "info", "logo sáng (nền tối); cần OWNER xem")
     add("O", "Không lộ tên người / bí mật", "unmeasured", "cần người xem phụ đề")
-    add("P", "Nhạc / B-roll / font có giấy phép", "blocker", "font Times New Roman chưa có giấy phép thương mại; không nhạc (Drive chưa có nhạc có giấy phép); không B-roll (chưa truy cập được thư mục)")
+    b_note = "; ".join(f"B-roll {b['t0']:.1f}–{b['t1']:.1f}s {b['file']} ({b['license']})" for b in brolls) or "không B-roll"
+    add("P", "Nhạc / B-roll / font có giấy phép", "blocker", f"font Times New Roman chưa có giấy phép thương mại; không nhạc (Drive chưa có nhạc có giấy phép); {b_note}")
     uncertain = [{"t": round(w["start"], 2), "text": w["text"], "p": round(w.get("p", 0), 2)} for w in words if w.get("uncertain")]
     blockers = ["Font Times New Roman chưa có giấy phép thương mại", "Logo vượt vùng logo — chờ OWNER chốt cỡ (#98a)"]
+    if brolls:
+        blockers.append("B-roll tư liệu OWNER: chờ OWNER xác nhận quyền dùng thương mại và sự đồng ý của người xuất hiện")
     if uncertain:
         blockers.insert(0, f"{len(uncertain)} từ nghe chưa chắc đã bỏ khỏi phụ đề/chữ nhấn — cần OWNER nghe lại (#90, #92)")
     failed = [q["id"] for q in qa if q["status"] == "fail"]
@@ -683,6 +786,7 @@ def main():
         "transcript": {"words": len(words), "uncertain": uncertain, "secondModel": None if a.words else a.model2},
         "captions": {"units": len(units)},
         "emphasis": [{"t": round(e.t0, 2), "text": e.text, "kind": e.style} for e in emph],
+        "broll": {"events": brolls, "skipped": []},
         "diagrams": [{"type": "compare" if isinstance(d, Compare) else "arrow", "t0": d.t0, "t1": d.t1} for d in dias],
         "zoom": {"events": plan.get("zooms", []), "anchor": [round(ax, 3), round(ay, 3)], "faceDetected": face_ok},
         "audio": {"lufs": mI, "truePeak": mTP, "previewTruePeak": pTP, "music": {"used": False, "reason": "Drive chưa có nhạc có giấy phép"}},

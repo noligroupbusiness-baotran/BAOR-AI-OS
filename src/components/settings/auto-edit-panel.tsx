@@ -4,7 +4,7 @@ import { Field, inputClass, textareaClass } from "@/components/ui/field";
 import { SubmitButton } from "@/components/campaigns/submit-button";
 import { runAutoEditNow, saveAutoEdit } from "@/lib/actions/media";
 import { inboxDir, pendingInbox, toolCheck } from "@/lib/video/auto-edit";
-import { SKILL, brollDir, brollLibrary, editSettings } from "@/lib/video/jobs";
+import { SKILL, engineLabel, brollDir, brollLibrary, editSettings } from "@/lib/video/jobs";
 import { listUploads } from "@/lib/uploads";
 import { BrollDrop } from "@/components/video/broll-drop";
 
@@ -23,7 +23,7 @@ export function AutoEditPanel() {
     <Panel id="auto-edit">
       <PanelHeader
         title="Dựng video tự động"
-        sub={`Thêm nguồn ở Video Studio (hoặc thả vào hộp thư vào): hệ thống nghe lời, dựng phụ đề, chữ nhấn, zoom theo mặt, B-roll, logo, nhạc, chuẩn âm, rồi chạy bảng kiểm A–Q. Theo ${SKILL.name} ${SKILL.version}. Dựng chạy ngầm, không chặn máy chủ.`}
+        sub={`Thêm nguồn ở Video Studio (hoặc thả vào hộp thư vào): hệ thống nghe lời, dựng phụ đề, chữ nhấn, zoom theo mặt, B-roll, logo, nhạc, chuẩn âm, rồi chạy bảng kiểm A–Q. Theo ${engineLabel()}. Dựng chạy ngầm, không chặn máy chủ.`}
         action={<Pill tone={ready ? "jade" : "amber"}>{ready ? "Công cụ sẵn sàng" : "Thiếu công cụ"}</Pill>}
       />
       <div className="grid gap-0 md:grid-cols-[1fr_340px]">
