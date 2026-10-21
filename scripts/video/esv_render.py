@@ -678,9 +678,9 @@ def make_layout(aspect):
     if aspect == "9:16":
         return {"aspect": aspect, "CW": cw, "CH": ch, "s": 1.0, "tx": 0, "ty": BAND_Y0, "logo_w": 440, "logo_x": 50, "logo_y": 120,
                 "red": (RED[1], RED[3]), "card_cy": 820.0, "card_w": 940, "card_h": 1180, "pip": (615, 120, 405)}
-    s = {"4:5": 0.9, "1:1": 0.8, "16:9": 0.75}[aspect]
+    s = {"4:5": 0.9, "1:1": 0.8, "16:9": 0.8}[aspect]
     bh = (BAND_Y1 - BAND_Y0) * s
-    ty = int(round(ch - bh - ch * 0.03))
+    ty = int(round(ch - bh - ch * (0.012 if aspect == "16:9" else 0.03)))
     tx = int(round((cw - W * s) / 2))
     logo_w = int(round(440 * min(1.0, s + 0.1)))
     lx, ly = int(round(cw * 0.04)), int(round(ch * 0.04))
@@ -975,6 +975,34 @@ def zoom_at(zooms, f):
         u = min(1.0, max(0.0, u))
         return u ** 3 * (u * (u * 6 - 15) + 10)
     return 1 + sum((z["level"] - 1) * (S((f - z["t"] * FPS) / z["nin"]) - S((f - z["out"] * FPS) / z["nout"])) for z in zooms)
+
+
+def fill_zooms(zooms, units, prof, blocked, dur, cut_times=(), every=10.0):
+    """Lấp khoảng trống dài không zoom (bản v9 có 14 lần / 177 s): thêm zoom ×1,06 ở đầu câu phụ đề khi đã quá `every` giây
+    không có zoom; vẫn giữ mọi luật của place_zooms (giãn cách, không chạm sơ đồ / FS / minh hoạ, tránh mối cắt)."""
+    nin, nout, hold, gap = ZOOM_PROFILES[prof]
+    out = sorted(zooms, key=lambda z: z["t"])
+    for u in units:
+        t = max(0.3, u["start"] - 0.1)
+        o = t + nin / FPS + max(hold, 1.2)
+        end = o + nout / FPS
+        if end > dur - 0.5:
+            continue
+        if any(not (end + 1.0 <= a or t - 1.0 >= b) for a, b in blocked):
+            continue
+        if any(abs(x - c) < 0.5 for c in cut_times for x in (t, end)):
+            continue
+        prev = [z for z in out if z["t"] <= t]
+        nxt = [z for z in out if z["t"] > t]
+        if prev and t - (prev[-1]["out"] + prev[-1]["nout"] / FPS) < max(gap, every):
+            continue
+        if not prev and t < every * 0.5:
+            continue
+        if nxt and nxt[0]["t"] - end < gap:
+            continue
+        out.append({"t": round(t, 3), "out": round(o, 3), "level": 1.06, "nin": nin, "nout": nout})
+        out.sort(key=lambda z: z["t"])
+    return out
 
 
 def pace_profile(units, words, n_cuts, dur, content=""):
@@ -1317,6 +1345,20 @@ def main():
     sub_cache = {}
     bad_zone, overlap = 0, 0
     BH = BAND_Y1 - BAND_Y0
+    REV_KW = ("doanh thu", "thu nhập", "lợi nhuận", "kiếm được", "triệu", "tỷ", "lương")
+    rev_spans = []
+    for u in units:
+        if any(k in " ".join(w["text"].lower() for w in u["words"]) for k in REV_KW):
+            if rev_spans and u["start"] - rev_spans[-1][1] < 1.5:
+                rev_spans[-1][1] = u["end"]
+            else:
+                rev_spans.append([u["start"], u["end"]])
+    disc_img = label_img("Kết quả cá nhân, không cam kết", 48) if rev_spans else None
+    frame_boxes = {}
+    yy_ = np.arange(BH, dtype=np.float32)
+    xx_ = np.arange(W, dtype=np.float32)
+    # vào / ra 150 px theo chiều dọc và 180 px hai bên: không cạnh (ở tỷ lệ khác 9:16 dải chữ không phủ hết bề ngang)
+    DARK_RAMP = 0.55 * (np.clip(yy_ / 150.0, 0, 1) * np.clip((BH - yy_) / 150.0, 0, 1))[:, None] * (np.clip(xx_ / 180.0, 0, 1) * np.clip((W - xx_) / 180.0, 0, 1))[None, :]
     for f in range(N):
         t = f / FPS
         layer = Image.new("RGBA", (W, BH), (0, 0, 0, 0))
@@ -1325,6 +1367,14 @@ def main():
             d.frame(t, layer, boxes)
         for e in emph:
             e.frame(t, layer, boxes)
+        # Q-T016-5 (Skill 9b): câu nêu doanh thu / thu nhập / kết quả → dòng chữ nhỏ phủ suốt câu, vào/ra 150 ms; tạm đặt đỉnh VÀNG (vị trí chưa có dữ liệu OWNER)
+        for a_, b_ in rev_spans:
+            if a_ <= t < b_:
+                al = min(1.0, (t - a_) / 0.15, (b_ - t) / 0.15)
+                im = with_alpha(disc_img, 0.92 * al)
+                x_, y_ = int(540 - im.width / 2), 1124
+                layer.alpha_composite(im, (x_, y_ - BAND_Y0))
+                boxes.append(("disc", (x_, y_, x_ + im.width, y_ + im.height)))
         u = next((x for x in units if x["start"] <= t < x["end"]), None)
         if u:
             hl = -1
@@ -1346,10 +1396,20 @@ def main():
         abb = layer.getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox()
         if abb and (abb[0] < YEL[0] - 19 or abb[2] > YEL[2] + 19 or abb[1] + BAND_Y0 < YEL[1] - 19 or abb[3] + BAND_Y0 > YEL[3] + 19):
             bad_zone += 1
+        if f % 15 == 0:  # lưu hộp chữ / đồ hoạ mỗi 0,5 s cho kiểm J ở tỷ lệ khác 9:16
+            frame_boxes[f] = [b for _, b in boxes]
         subs = [b for k, b in boxes if k == "sub"]
         others = [b for k, b in boxes if k != "sub"]
         if any(s[1] < o[3] - 6 and o[1] < s[3] and s[0] < o[2] and o[0] < s[2] for s in subs for o in others):
             overlap += 1
+        # KH-TOI (Skill 5.5 b, bộ A): khi sơ đồ chạy, làm tối mềm dải chữ (α ≤ 0,55 như skill, không cạnh) để nhãn trắng không chìm vào áo / tay / micro.
+        # Vẽ SAU khi đo G / H / I (lớp tối không phải chữ).
+        dk = max([min(1.0, (t - d_.t0) / 0.3, (d_.t1 - t) / 0.3) for d_ in dias if d_.t0 <= t < d_.t1] or [0.0])
+        if dk > 0.01:
+            dark = Image.fromarray(np.zeros((BH, W, 4), np.uint8))
+            dark.putalpha(Image.fromarray((DARK_RAMP * dk * 255).astype(np.uint8)))
+            dark.alpha_composite(layer)
+            layer = dark
         layer.save(os.path.join(tdir, f"{f:06d}.png"), compress_level=1)
         if f % 150 == 0:
             job.progress("draw", f"Vẽ lớp chữ {f}/{N} khung", 45 + int(25 * f / N))
@@ -1411,7 +1471,7 @@ def main():
     final = job.p("work", "final.wav")
     P.sh(["ffmpeg", "-v", "error", "-y", "-i", mix, "-af",
           f"loudnorm=I=-16:TP=-2.5:LRA=11:measured_I={js['input_i']}:measured_TP={js['input_tp']}:measured_LRA={js['input_lra']}:measured_thresh={js['input_thresh']}:offset={js['target_offset']}:linear=true,"
-          "aresample=192000,alimiter=limit=0.70:attack=1:release=80:level=false,aresample=48000", "-c:a", "pcm_s24le", final])
+          f"aresample=192000,alimiter=limit=0.70:attack=1:release=80:level=false,aresample=48000,afade=t=out:st={max(0.0, dur - 0.7):.3f}:d=0.7", "-c:a", "pcm_s24le", final])
 
     # Bản chính: khung + zoom chỉ nền → logo → lớp chữ
     job.progress("encode", "Xuất bản chính 1080x1920", 78)
@@ -1425,6 +1485,7 @@ def main():
     zooms = [z for z in plan.get("zooms", []) if "nin" in z]
     if not zooms:
         zooms = place_zooms([(e.t0, 1.08 if e.style == "shine" else (1.07 if e.style == "blur" else 1.06)) for e in emph], prof, blocked, dur, cut_times)
+        zooms = fill_zooms(zooms, units, prof, blocked, dur, cut_times)
     zx = zoom_expr(zooms)
     Ax, Ay = ax * cw, ay * chh
     q = f"(1-1/{zx})"
@@ -1480,7 +1541,7 @@ def main():
           f"[1:v]scale={logo_w}:-1:flags=lanczos,format=rgba,fade=t=in:st=0.3:d=0.6:alpha=1[lg];"
           f"[bg][lg]overlay=x='{LAY['logo_x']}-24*pow(1-min(max((t-0.3)/0.6\\,0)\\,1)\\,3)':y={LAY['logo_y']}:eval=frame[l];"
           + (f"[2:v]format=rgba[tx];" if LAY["s"] == 1.0 else f"[2:v]format=rgba,scale=iw*{LAY['s']}:ih*{LAY['s']}:flags=lanczos[tx];")
-          + f"[l][tx]overlay={LAY['tx']}:{LAY['ty']}:format=auto,format=yuv420p[v]")
+          + f"[l][tx]overlay={LAY['tx']}:{LAY['ty']}:format=auto,fade=t=out:st={max(0.0, dur - 0.9):.3f}:d=0.9,format=yuv420p[v]")
     master = job.p("master.mp4")
     P.sh(["ffmpeg", "-v", "error", "-y", "-i", src, "-loop", "1", "-i", a.logo, "-framerate", str(FPS), "-start_number", "0", "-i", os.path.join(tdir, "%06d.png"),
           "-i", final, *b_args, "-filter_complex", fc, "-map", "[v]", "-map", "3:a", "-frames:v", str(N),
@@ -1554,7 +1615,11 @@ def main():
     errs = P.decode_errors(master) + P.decode_errors(preview)
     add("B", "Giải mã toàn bộ", "pass" if not errs else "fail", "0 lỗi" if not errs else "; ".join(errs[:3]))
     bd = P.sh(["ffmpeg", "-hide_banner", "-i", master, "-vf", "blackdetect=d=0.3:pix_th=0.08,freezedetect=n=0.001:d=1.5", "-an", "-f", "null", "-"]).stderr
-    add("C", "Khung đen / đứng hình", "pass" if "black_start" not in bd and "freeze_start" not in bd else "fail", "không có" if "black_start" not in bd and "freeze_start" not in bd else "có, xem log")
+    # Bỏ qua đoạn kết mờ sang đen có chủ đích (1,2 s cuối)
+    blk = [float(x) for x in re.findall(r"black_start:([\d.]+)", bd) if float(x) < dur - 1.2]
+    frz = [float(x) for x in re.findall(r"freeze_start: ([\d.]+)", bd) if float(x) < dur - 1.2]
+    add("C", "Khung đen / đứng hình", "pass" if not blk and not frz else "fail",
+        "không có (trừ kết mờ sang đen có chủ đích)" if not blk and not frz else f"đen tại {blk[:5]}, đứng hình tại {frz[:5]}")
     mI, mTP = P.ebur(master)
     pI, pTP = P.ebur(preview)
     add("D", "−16 LUFS ±1, đỉnh ≤ −2,0 (chính) / ≤ −1,0 (xem nhanh)", "pass" if mI is not None and abs(mI + 16) <= 1 and mTP <= -2.0 and pTP <= -1.0 else "fail", f"chính {mI} LUFS TP {mTP}; xem nhanh TP {pTP}")
@@ -1579,17 +1644,31 @@ def main():
         g = cv2.imdecode(np.frombuffer(r.stdout, np.uint8), cv2.IMREAD_GRAYSCALE)
         fcs = cas.detectMultiScale(g, 1.1, 6, minSize=(60, 60))
         if len(fcs):
-            dets.append([tuple(int(v) for v in q) for q in fcs])
+            dets.append((k / 2, [tuple(int(v) for v in q) for q in fcs]))
     # Nhiều "mặt" trong một mẫu (vd hai bàn tay khum bị dò nhầm): chọn mặt gần tâm mặt quen của người nói (trung vị các mẫu chỉ có 1 mặt)
-    one = [d[0] for d in dets if len(d) == 1] or [max(d, key=lambda q: q[2] * q[3]) for d in dets]
+    one = [d[0] for _, d in dets if len(d) == 1] or [max(d, key=lambda q: q[2] * q[3]) for _, d in dets]
     mx = float(np.median([q[0] + q[2] / 2 for q in one])) if one else CW / 4
     my = float(np.median([q[1] + q[3] / 2 for q in one])) if one else CH / 6
-    for d in dets:
+    for d_t, d in dets:
         sampled += 1
         x, y, w_, h_ = min(d, key=lambda q: (q[0] + q[2] / 2 - mx) ** 2 + (q[1] + q[3] / 2 - my) ** 2)
-        if y * 2 < LAY["red"][0] - 4 or (y + h_) * 2 > LAY["red"][1] + 4:
-            out_red += 1
-    add("J", "Mặt trong vùng ĐỎ ở mọi khung zoom", ("pass" if out_red == 0 else "fail") if sampled else "unmeasured", f"{sampled} mẫu có mặt, {out_red} mẫu lệch ĐỎ; tâm zoom theo mặt {'(dò được)' if face_ok else '(không dò được, giả định)'}")
+        if a.aspect == "9:16":
+            if y * 2 < LAY["red"][0] - 4 or (y + h_) * 2 > LAY["red"][1] + 4:
+                out_red += 1
+        else:
+            # Tỷ lệ khác: đúng luật gốc "không chữ, không đồ hoạ đè mặt" — mặt giao với hộp chữ / đồ hoạ thật của khung đó
+            fb = frame_boxes.get(int(round(d_t * FPS / 15)) * 15, [])
+            hit = False
+            for (x, y, w_, h_) in d:  # mọi mặt người nói (nhiều người cùng khung)
+                fx0, fy0, fx1, fy1 = x * 2, y * 2, (x + w_) * 2, (y + h_) * 2
+                for bx0, by0, bx1, by1 in fb:
+                    X0, X1 = LAY["tx"] + bx0 * LAY["s"], LAY["tx"] + bx1 * LAY["s"]
+                    Y0, Y1 = LAY["ty"] + (by0 - BAND_Y0) * LAY["s"], LAY["ty"] + (by1 - BAND_Y0) * LAY["s"]
+                    if X0 < fx1 - 6 and fx0 + 6 < X1 and Y0 < fy1 - 6 and fy0 + 6 < Y1:
+                        hit = True
+            out_red += hit
+    j_name = "Mặt trong vùng ĐỎ ở mọi khung zoom" if a.aspect == "9:16" else "Không chữ / đồ hoạ đè mặt (đo giao hộp mặt với chữ thật)"
+    add("J", j_name, ("pass" if out_red == 0 else "fail") if sampled else "unmeasured", f"{sampled} mẫu có mặt, {out_red} mẫu {'lệch ĐỎ' if a.aspect == '9:16' else 'có chữ đè mặt'}; tâm zoom theo mặt {'(dò được)' if face_ok else '(không dò được, giả định)'}")
     add("K", "So với bản trước", "na", "chưa so khung tự động với bản trước (dựng lại từ RAW)")
     add("L", "Độ đọc chữ trắng trên nền sáng", "info", "kiểm bằng mắt khi duyệt")
     add("M", "Tiếng giống từng byte khi chỉ sửa hình", "na", "dựng từ RAW")
@@ -1602,10 +1681,8 @@ def main():
     p_ok = font_ok and not pending_media
     add("P", "Nhạc / B-roll / font có giấy phép", "pass" if p_ok else "blocker",
         f"font Times New Roman: {'OWNER xác nhận' if font_ok else 'chưa có giấy phép thương mại'}; {m_note}; {b_note}; SFX tổng hợp" + (f" — {odq}" if p_ok else ""))
-    rev_kw = ("doanh thu", "thu nhập", "lợi nhuận", "kiếm được", "triệu", "tỷ", "lương")
-    rev = [round(u["start"], 1) for u in units if any(k in " ".join(w["text"].lower() for w in u["words"]) for k in rev_kw)]
-    add("Q", "Câu doanh thu / thu nhập / kết quả có dòng 'Kết quả cá nhân, không cam kết'", "pass" if not rev else "fail",
-        "không phát sinh" if not rev else f"{len(rev)} câu cần dòng phủ (vị trí trên 9:16 chưa có dữ liệu OWNER): {rev[:8]}")
+    add("Q", "Câu doanh thu / thu nhập / kết quả có dòng 'Kết quả cá nhân, không cam kết'", "pass",
+        "không phát sinh" if not rev_spans else f"{len(rev_spans)} đoạn có dòng phủ suốt câu: {[[round(a_, 1), round(b_, 1)] for a_, b_ in rev_spans][:6]} (vị trí tạm: đỉnh vùng chữ, chờ OWNER chốt)")
     onscreen = [e.text for e in emph] + [x for d in plan.get("diagrams", []) for x in
                 [d.get("wrong", {}).get("text", ""), d.get("top", {}).get("text", ""), d.get("bottom", {}).get("text", ""), d.get("mid", {}).get("text", "") if d.get("mid") else ""]
                 + [r["text"] for r in d.get("right", [])] + [st["text"] for st in d.get("steps", [])] + [d.get("text", "") if d.get("type") in ("chapter", "quote") else ""]]
