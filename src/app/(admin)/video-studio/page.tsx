@@ -15,7 +15,6 @@ import { LinkButton } from "@/components/ui/button";
 import { SourceDrop } from "@/components/video/source-drop";
 import { VideoScheduleForm } from "@/components/publishing/video-schedule";
 import { AutoRefresh } from "@/components/video/auto-refresh";
-import { VideoViewer } from "@/components/video/video-viewer";
 import { listContent } from "@/lib/queries";
 import { fileUrl } from "@/lib/uploads";
 import { listVideos } from "@/lib/videos/repository";
@@ -131,12 +130,9 @@ export default async function VideoStudioPage({ searchParams }: { searchParams: 
                     {jv?.job.status === "error" && <p className="mt-1 text-[12px] text-brick">{jv.job.error}</p>}
                     {v.note && !running && <p className="mt-1 text-[12px] text-ink">{v.note}</p>}
                     {hasPreview ? (
-                      <video controls playsInline preload="metadata" src={jobFile(v.id, jv!.job.version, "preview.mp4")} className="mt-2 max-h-[360px] w-full max-w-[220px] rounded-md border border-border bg-black" />
+                      <video controls playsInline preload="metadata" src={jobFile(v.id, jv!.job.version, "preview.mp4")} className="mt-2 max-h-[520px] w-full max-w-[300px] rounded-md border border-border bg-black" />
                     ) : (
-                      v.uploadId && <video controls playsInline preload="metadata" src={fileUrl(v.uploadId)} className="mt-2 max-h-[360px] w-full max-w-[220px] rounded-md border border-border bg-black" />
-                    )}
-                    {(hasPreview || v.uploadId) && (
-                      <VideoViewer title={v.title} src={hasPreview ? jobFile(v.id, jv!.job.version, "preview.mp4") : fileUrl(v.uploadId!)} hdSrc={hasPreview && v.uploadId ? fileUrl(v.uploadId) : undefined} />
+                      v.uploadId && <video controls playsInline preload="metadata" src={fileUrl(v.uploadId)} className="mt-2 max-h-[520px] w-full max-w-[300px] rounded-md border border-border bg-black" />
                     )}
 
                     {isOpen && report && (
