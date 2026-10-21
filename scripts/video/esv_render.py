@@ -251,7 +251,10 @@ class Emphasis:
         x = int(540 - img.width / 2)
         y = int(EMP_BOTTOM - img.height * 0.80 + dy)  # đáy nét chữ ≈ y1402
         layer.alpha_composite(img, (x, y - BAND_Y0))
-        boxes.append(("emp", (x, y, x + img.width, y + img.height)))
+        # Kiểm H đo NÉT chữ (alpha > 40) như phụ đề, không đo khung ảnh có viền trong suốt / quầng sáng
+        bb = img.getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox()
+        if bb:
+            boxes.append(("emp", (x + bb[0], y + bb[1], x + bb[2], y + bb[3])))
 
 
 # ---------------------------------------------------------------- sơ đồ (ESV mục 5)
@@ -454,13 +457,77 @@ def _clean(t):
     return re.sub(r"[^\w%]", "", t.lower())
 
 
+def _kw_hit(kw, spoken):
+    """Từ khoá một tiếng: từ khoá viết HOA (vd "AI") phải nghe ra đúng chữ hoa; từ khoá trùng hư từ tiếng Việt thì bỏ."""
+    w = spoken.strip(",.?!")
+    if kw.isupper() and len(kw) <= 4:
+        return w == kw
+    return kw.lower() not in STOP
+
+
+IMG_EXT = (".jpg", ".jpeg", ".png", ".webp")
+
+
+def broll_library(broll_dir):
+    """Thư viện minh hoạ (clip + ảnh) từ manifest.json; chỉ mục có giấy phép, có tệp, có từ khoá."""
+    mf = os.path.join(broll_dir, "manifest.json")
+    if not os.path.exists(mf):
+        return []
+    lib = []
+    for it in json.load(open(mf, encoding="utf-8")):
+        f = os.path.join(broll_dir, it.get("file", ""))
+        kws = [P.norm(k) for k in it.get("keywords", []) if P.norm(k)]
+        if not str(it.get("license", "")).strip() or not os.path.isfile(f) or not kws:
+            continue
+        is_img = f.lower().endswith(IMG_EXT)
+        lib.append({**it, "path": f, "kw": kws, "dur": 99.0 if is_img else P.probe(f)["duration"]})
+    return lib
+
+
+def image_clip(src, out, d):
+    """Ảnh tĩnh → clip 9:16: nền là chính ảnh phủ kín + làm mờ + tối; ảnh dạng thẻ bo góc ở giữa, đẩy vào chậm 1,00→1,05
+    theo đường cos (biến đổi affine dưới điểm ảnh, không làm tròn → không giật). Ảnh nhỏ (vd 720 px) không bị phóng vỡ."""
+    from PIL import ImageEnhance, ImageOps
+    im = ImageOps.exif_transpose(Image.open(src)).convert("RGB")
+    s = max(W / im.width, H / im.height)
+    bg = im.resize((math.ceil(im.width * s), math.ceil(im.height * s)), Image.BILINEAR)
+    bg = bg.crop(((bg.width - W) // 2, (bg.height - H) // 2, (bg.width - W) // 2 + W, (bg.height - H) // 2 + H))
+    bg = ImageEnhance.Brightness(bg.filter(ImageFilter.GaussianBlur(36))).enhance(0.5).convert("RGBA")
+    base = min(940 / im.width, 1180 / im.height)  # cỡ thẻ khi z = 1 (px khung / px ảnh)
+    zmax = 1.05
+    k0 = min(1.0, base * zmax)  # giữ ảnh gốc ở cỡ cần dùng lớn nhất (không phóng trước)
+    fg = im.resize((max(1, round(im.width * k0)), max(1, round(im.height * k0))), Image.LANCZOS).convert("RGBA")
+    m = Image.new("L", fg.size, 0)
+    ImageDraw.Draw(m).rounded_rectangle((0, 0, fg.width - 1, fg.height - 1), radius=max(6, round(28 * k0 / base)), fill=255)  # bo 28 px trên khung
+    fg.putalpha(m)
+    cx, cy = W / 2, 820.0  # tâm thẻ: vùng mặt (ĐỎ), chừa dải chữ phía dưới
+    sh = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    sw, shh = im.width * base * 1.025, im.height * base * 1.025
+    ImageDraw.Draw(sh).rounded_rectangle((cx - sw / 2, cy - shh / 2 + 18, cx + sw / 2, cy + shh / 2 + 18), radius=30, fill=(0, 0, 0, 150))
+    bg.alpha_composite(sh.filter(ImageFilter.GaussianBlur(22)))
+    n = max(2, int(round(d * FPS)))
+    proc = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
+                             "-c:v", "libx264", "-preset", "medium", "-crf", "16", "-pix_fmt", "yuv420p", out], stdin=subprocess.PIPE)
+    fcx, fcy = fg.width / 2, fg.height / 2
+    for i in range(n):
+        e = 0.5 - 0.5 * math.cos(math.pi * i / (n - 1))
+        k = base * (1.0 + (zmax - 1.0) * e) / k0  # px khung trên 1 px của fg
+        layer = fg.transform((W, H), Image.AFFINE, (1 / k, 0, fcx - cx / k, 0, 1 / k, fcy - cy / k), resample=Image.BICUBIC)
+        frame = bg.copy()
+        frame.alpha_composite(layer)
+        proc.stdin.write(frame.convert("RGB").tobytes())
+    proc.stdin.close()
+    if proc.wait() != 0:
+        raise RuntimeError(f"không dựng được clip ảnh {os.path.basename(src)}")
+
+
 def auto_plan(words, dur, keywords):
     """Kế hoạch theo luật (ESV mục 4, 6): chữ nhấn ít (≈1/30 s, cách ≥ 4 s), từ đã nghe rõ; zoom theo chữ nhấn; zoom thở.
     Sơ đồ / animation cần hiểu nội dung (quy trình, cơ chế) nên KHÔNG tự tạo ở đây: để biên tập (người hoặc AI) lập."""
     ws = [w for w in words if not w.get("uncertain")]
     toks = [(_clean(w["text"]), w) for w in ws]
     cands = {}
-    kws = [k.strip().lower() for k in keywords if k.strip()]
+    kws = [k.strip() for k in keywords if k.strip()]
     for i in range(len(toks) - 1):
         a, b = toks[i][0], toks[i + 1][0]
         if not a or not b:
@@ -468,8 +535,10 @@ def auto_plan(words, dur, keywords):
         phrase = f"{a} {b}"
         orig = f"{toks[i][1]['text']} {toks[i + 1][1]['text']}".strip(",.?!")
         score = 0.0
-        if any(k == phrase or k == a for k in kws):
+        if any(k.lower() == phrase or (k.lower() == a and _kw_hit(k, toks[i][1]["text"])) for k in kws):
             score += 3
+            if b in STOP:  # chỉ nhấn đúng từ khoá, không kéo theo hư từ phía sau
+                orig = toks[i][1]["text"].strip(",.?!")
         if a.isdigit() and b not in STOP:
             score += 2
         if a not in STOP and b not in STOP and not a.isdigit():
@@ -553,8 +622,15 @@ def main():
         if "uncertain" not in w:
             w["uncertain"] = w.get("p", 1) < 0.15
     json.dump(words, open(job.p("words_main.json"), "w"), ensure_ascii=False)
+    if plan is not None and str(plan.get("by", "")).startswith("Luật tự động"):
+        plan = None  # kế hoạch máy lập ở bản trước: lập lại theo luật mới nhất
+    broll_dir = (plan or {}).get("brollDir") or os.path.join(os.environ.get("DATA_DIR", os.path.join(P.ROOT, "data")), "video-assets", "broll")
     if plan is None:
         plan = auto_plan(words, dur, re.split(r"[,\n]", a.keywords))
+        ev = P.plan_broll(words, dur, broll_library(broll_dir))
+        plan["broll"] = [{"t0": e["t0"], "t1": e["t1"], "file": e["file"], "keyword": e["keyword"]} for e in ev]
+        if ev:
+            plan["note"] += f" Minh hoạ theo từ khoá lời nói: {len(ev)} lần."
     json.dump(plan, open(job.p("plan.json"), "w"), ensure_ascii=False, indent=1)
 
     # Khung: nguồn ngang → cắt toàn chiều cao quanh người nói 1216x2160 (ESV mục 1); nguồn dọc giữ nguyên
@@ -651,7 +727,6 @@ def main():
            "setparams=range=tv:colorspace=bt709:color_primaries=bt709:color_trc=bt709"]
     logo_w = 440
     # B-roll (ESV/SK-MED-03): cắt cảnh toàn khung theo kế hoạch, hiện/tắt mờ 0,2 s; phụ đề, chữ nhấn, logo vẫn nằm trên.
-    broll_dir = plan.get("brollDir") or os.path.join(os.environ.get("DATA_DIR", os.path.join(P.ROOT, "data")), "video-assets", "broll")
     manifest = {}
     mf = os.path.join(broll_dir, "manifest.json")
     if os.path.exists(mf):
@@ -665,7 +740,12 @@ def main():
             continue
         d = float(b["t1"]) - float(b["t0"])
         idx = 4 + len(brolls)
-        b_args += ["-ss", f"{float(b.get('from', 0)):.3f}", "-t", f"{d:.3f}", "-i", fpath]
+        start = float(b.get("from", 0))
+        if fpath.lower().endswith(IMG_EXT):
+            clip = job.p("work", f"anh_{k:02d}.mp4")
+            image_clip(fpath, clip, d)
+            fpath, start = clip, 0.0
+        b_args += ["-ss", f"{start:.3f}", "-t", f"{d:.3f}", "-i", fpath]
         b_fc += (f"[{idx}:v]fps=30,scale={W}:{H}:force_original_aspect_ratio=increase:flags=lanczos,crop={W}:{H},setsar=1,format=yuva420p,"
                  f"fade=t=in:st=0:d=0.2:alpha=1,fade=t=out:st={max(0, d - 0.2):.3f}:d=0.2:alpha=1,setpts=PTS-STARTPTS+{float(b['t0']):.3f}/TB[b{k}];"
                  f"[{last}][b{k}]overlay=0:0:enable='between(t,{float(b['t0']):.3f},{float(b['t1']):.3f})':eof_action=pass[bg{k + 1}];")
@@ -749,7 +829,7 @@ def main():
     # J: dò mặt trên bản chính mỗi 0,5 s
     import cv2
     cas = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
-    out_red, sampled = 0, 0
+    out_red, sampled, dets = 0, 0, []
     for k in range(int(dur * 2)):
         r = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{k / 2:.2f}", "-i", master, "-frames:v", "1", "-vf", "scale=540:960", "-f", "image2pipe", "-vcodec", "png", "-"], capture_output=True)
         if not r.stdout:
@@ -757,10 +837,16 @@ def main():
         g = cv2.imdecode(np.frombuffer(r.stdout, np.uint8), cv2.IMREAD_GRAYSCALE)
         fcs = cas.detectMultiScale(g, 1.1, 6, minSize=(60, 60))
         if len(fcs):
-            sampled += 1
-            x, y, w_, h_ = max(fcs, key=lambda q: q[2] * q[3])
-            if y * 2 < RED[1] - 4 or (y + h_) * 2 > RED[3] + 4:
-                out_red += 1
+            dets.append([tuple(int(v) for v in q) for q in fcs])
+    # Nhiều "mặt" trong một mẫu (vd hai bàn tay khum bị dò nhầm): chọn mặt gần tâm mặt quen của người nói (trung vị các mẫu chỉ có 1 mặt)
+    one = [d[0] for d in dets if len(d) == 1] or [max(d, key=lambda q: q[2] * q[3]) for d in dets]
+    mx = float(np.median([q[0] + q[2] / 2 for q in one])) if one else 270.0
+    my = float(np.median([q[1] + q[3] / 2 for q in one])) if one else 300.0
+    for d in dets:
+        sampled += 1
+        x, y, w_, h_ = min(d, key=lambda q: (q[0] + q[2] / 2 - mx) ** 2 + (q[1] + q[3] / 2 - my) ** 2)
+        if y * 2 < RED[1] - 4 or (y + h_) * 2 > RED[3] + 4:
+            out_red += 1
     add("J", "Mặt trong vùng ĐỎ ở mọi khung zoom", ("pass" if out_red == 0 else "fail") if sampled else "unmeasured", f"{sampled} mẫu có mặt, {out_red} mẫu lệch ĐỎ; tâm zoom theo mặt {'(dò được)' if face_ok else '(không dò được, giả định)'}")
     add("K", "So với bản trước", "na", "bản đầu theo ESV")
     add("L", "Độ đọc chữ trắng trên nền sáng", "info", "kiểm bằng mắt khi duyệt")

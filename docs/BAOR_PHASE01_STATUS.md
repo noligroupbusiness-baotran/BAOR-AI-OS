@@ -28,7 +28,7 @@ Cập nhật bởi MASTER sau mỗi checkpoint. Nguồn vận hành: `docs/BAOR_
 |---|---|---|
 | Đồng bộ Second Brain tự động | Token Notion chỉ đọc | Đang dùng ảnh chụp kho |
 | Nghiên cứu web tự động, AI viết lại kịch bản | Claude API key (chi phí theo lượt) | Nghiên cứu nhập bằng tệp; kịch bản dựng theo luật |
-| Nguồn dựng từ Google Drive | Quyền Drive cho máy chủ, xác nhận giấy phép từng tệp | Thư viện B-roll cục bộ đang trống |
+| Nguồn dựng từ Google Drive | OWNER xác nhận quyền dùng thương mại + sự đồng ý của người xuất hiện (ảnh sự kiện có thể do bên chụp thuê giữ bản quyền) | Thư viện cục bộ đã có 72 ảnh + 10 clip từ thư viện tư liệu trên Drive; dựng ở máy được, mọi bản có minh hoạ bị chặn đăng (P) tới khi OWNER xác nhận |
 | Đăng thật Facebook | Page ID, Page token, App ID, User token (quyền CREATE_CONTENT); OWNER tắt chế độ thử | Bài chỉ chạy chế độ thử |
 | Instagram / TikTok / YouTube | Nơi phát tệp công khai / ứng dụng TikTok được duyệt / OAuth YouTube | Ghi rõ lý do trên giao diện |
 | Quảng cáo Meta thật | Tài khoản quảng cáo + ủy quyền ngân sách | Không có chi tiêu thật |
@@ -42,6 +42,10 @@ Cập nhật bởi MASTER sau mỗi checkpoint. Nguồn vận hành: `docs/BAOR_
 - 21/10/2026, video B1 (yêu cầu chỉnh sửa): "chưa có chữ nhấn... chưa có animation.. như trong skill mình đưa".
   Bộ dựng hiện chỉ chọn vài chữ nhấn (5 cho 3 phút) và animation (mục 3.3 của skill) vẫn chưa tự động. Việc tiếp theo của CP03:
   tăng mật độ chữ nhấn theo skill, làm animation chữ / sơ đồ theo mục 3.3, rồi dựng lại B1 để OWNER so.
+
+- 21/10/2026 (tiếp): "nút ⛶ không mở lớn" → do khung trình duyệt trong app Claude chặn toàn màn hình (lệnh không được trả lời); Chrome/Safari dùng được. Bỏ nút "Xem lớn" theo ý OWNER.
+  "edit vẫn bằng skill cũ" → Skill ESV là bộ dựng mặc định; kế hoạch máy lập ở bản trước được lập lại theo luật mới nhất.
+  Minh hoạ: ảnh tĩnh dựng thành thẻ bo góc trên nền mờ, đẩy vào chậm 1,00→1,05 (affine dưới điểm ảnh); chèn theo từ khoá lời nói.
 
 ## Phải làm trước khi bật đăng thật / quảng cáo thật (review vòng 4, P2)
 
