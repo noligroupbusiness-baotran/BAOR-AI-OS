@@ -10,6 +10,10 @@ import { requirePermission, currentActor } from "@/lib/permissions";
 import { getSetting } from "@/lib/admin";
 import { deleteUpload, saveUpload } from "@/lib/uploads";
 import { imageBriefTemplate, kindOf, scriptTemplate } from "@/lib/content/formats";
+import { briefForContent, rebuildScriptFromBrief } from "@/lib/research";
+import { getContentVersion, recordContentVersion } from "@/lib/content/versions";
+import { rewriteViolations } from "@/lib/content/shooting-script";
+import { approveBlock, submitBlock } from "@/lib/content/review-gate";
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 
@@ -34,14 +38,26 @@ export async function dismissIdea(fd: FormData) {
 }
 
 export async function submitForReview(fd: FormData) {
-  await currentActor();
+  const actor = await currentActor();
   const id = str(fd, "id");
   const draft = str(fd, "draft");
   const db = getDb();
+  const current = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, id)).get();
+  if (!current) return done("/content?tab=mine&tone=error", "Không tìm thấy nội dung");
+  // Kịch bản quay sinh từ brief nghiên cứu phải qua luật kiểm trước khi tới OWNER (CP02).
+  const block = submitBlock(current, draft || current.draft || "");
+  if (block) {
+    if (draft) {
+      db.update(schema.contentItems).set({ draft }).where(eq(schema.contentItems.id, id)).run();
+      recordContentVersion(id, { hook: current.hook, draft, reason: "save", by: actor.name });
+    }
+    return done(`/content?tab=mine&open=${id}&tone=error`, `Đã lưu nháp nhưng chưa gửi duyệt: ${block}`);
+  }
   db.update(schema.contentItems)
     .set({ status: "review", ...(draft ? { draft } : {}) })
     .where(eq(schema.contentItems.id, id))
     .run();
+  recordContentVersion(id, { hook: current.hook, draft: draft || current.draft || "", reason: "submit", by: actor.name });
   campaignRepo.syncEntityStatus("content", id, "review");
   for (const l of campaignRepo.linksForEntities("content", [id]).get(id) ?? []) {
     const item = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, id)).get();
@@ -51,9 +67,16 @@ export async function submitForReview(fd: FormData) {
 }
 
 export async function saveDraft(fd: FormData) {
-  await currentActor();
+  const actor = await currentActor();
   const id = str(fd, "id");
-  getDb().update(schema.contentItems).set({ draft: str(fd, "draft"), hook: str(fd, "hook") || undefined }).where(eq(schema.contentItems.id, id)).run();
+  const db = getDb();
+  const item = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, id)).get();
+  if (!item) return done("/content?tab=mine&tone=error", "Không tìm thấy nội dung");
+  // Nội dung đã duyệt không sửa tại chỗ: muốn sửa thì phải qua duyệt lại.
+  if (item.status !== "in_progress" && item.status !== "review") return done(`/content?tab=mine&open=${id}&tone=error`, "Chỉ sửa được nội dung đang viết hoặc chờ duyệt.");
+  const hook = str(fd, "hook") || item.hook;
+  db.update(schema.contentItems).set({ draft: str(fd, "draft"), hook }).where(eq(schema.contentItems.id, id)).run();
+  recordContentVersion(id, { hook, draft: str(fd, "draft"), reason: "save", by: actor.name });
   done(`/content?tab=mine&open=${id}`, "Đã lưu bản nháp");
 }
 
@@ -62,10 +85,14 @@ export async function approveContent(fd: FormData) {
   const id = str(fd, "id");
   const db = getDb();
   const item = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, id)).get();
+  if (!item) return done("/content?tab=mine&tone=error", "Không tìm thấy nội dung");
+  const block = approveBlock(item);
+  if (block) return done(`/content?tab=mine&open=${id}&tone=error`, `Chưa duyệt được: ${block}`);
   db.update(schema.contentItems).set({ status: "approved" }).where(eq(schema.contentItems.id, id)).run();
   campaignRepo.syncEntityStatus("content", id, "approved");
   for (const l of campaignRepo.linksForEntities("content", [id]).get(id) ?? []) campaignRepo.decideEntityApprovals(l.campaignId, "content", id, "approved", "human");
-  if (item) logActivity("human", `Bạn đã duyệt nội dung “${item.title}”.`, "creator");
+  logActivity("human", `Bạn đã duyệt nội dung “${item.title}”.`, "creator");
+  if (kindOf(item.format) === "script") return done(`/content?tab=done&open=${id}`, "Đã duyệt kịch bản. Mở bản đọc khi quay, quay xong thì tải video lên Video Studio.");
   done("/content?tab=done", "Đã duyệt. Hệ thống sẽ xếp lịch đăng.");
 }
 
@@ -135,12 +162,35 @@ export async function aiGenerateIdeas() {
 }
 
 export async function aiWriteDraft(fd: FormData) {
-  await currentActor();
+  const actor = await currentActor();
   const id = str(fd, "id");
-  const result = await writeDraft(id);
-  if (!result.ok) return done(`/content?tab=mine&open=${id}`, result.error);
+  const brief = briefForContent(id);
+  const db = getDb();
+  // Lưu chữ đang gõ trong khung trước khi AI viết lại, để không mất phần chưa bấm Lưu.
+  const typed = str(fd, "draft");
+  if (typed) db.update(schema.contentItems).set({ draft: typed }).where(eq(schema.contentItems.id, id)).run();
+  const before = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, id)).get();
+  if (!before) return done("/content?tab=mine&tone=error", "Không tìm thấy nội dung");
+  if (before.status !== "in_progress" && before.status !== "review") return done(`/content?tab=mine&open=${id}&tone=error`, "Chỉ AI viết lại được nội dung đang viết hoặc chờ duyệt.");
+  recordContentVersion(id, { hook: before.hook, draft: before.draft ?? "", reason: "save", by: actor.name });
+  // Nội dung từ brief: AI chỉ được đổi câu chữ (không đổi dấu OWNER, nguồn, căn cứ, không thêm số).
+  const result = await writeDraft(id, brief ? BRIEF_REWRITE_RULES : undefined, brief ? (d) => rewriteViolations(before.draft ?? "", d) : undefined);
+  if (!result.ok) return done(`/content?tab=mine&open=${id}&tone=error`, result.error);
+  recordContentVersion(id, { hook: before.hook, draft: result.draft, reason: "ai", by: `AI (${actor.name} yêu cầu)` });
   done(`/content?tab=mine&open=${id}`, "AI đã viết bản nháp, bạn sửa rồi gửi duyệt");
 }
+
+const BRIEF_REWRITE_RULES = [
+  "Viết lại lời thoại của kịch bản quay cho tự nhiên, dễ nói, tiếng Việt, giọng người đào tạo thực tế.",
+  "Luật bắt buộc:",
+  "- Chỉ dùng các ý đã có trong kịch bản. Không thêm số liệu, nghiên cứu, ví dụ hay lời khuyên mới.",
+  "- Giữ nguyên tiêu đề cảnh, các dòng 'Căn cứ:' và toàn bộ mục NGUỒN. Con số chỉ ở cảnh có Căn cứ.",
+  "- Giữ nguyên tiêu đề cảnh dạng '1. HOOK (0–3s)' và mọi dòng 'Gợi ý OWNER: [OWNER KỂ: …]'. Không viết câu chuyện, trải nghiệm hay quan điểm cá nhân thay OWNER.",
+  "- Không đổi con số sang chữ và không thêm con số.",
+  "- Quan sát của nhà cung cấp phải nói là quan sát, không nói như sự thật khoa học.",
+  "- Không chép nguyên văn câu dài từ nguồn.",
+  "Trả về toàn bộ kịch bản, không giải thích.",
+].join("\n");
 
 // ---------- Kịch bản video / Caption / Hình ảnh ----------
 
@@ -195,4 +245,35 @@ export async function removeContentImage(fd: FormData) {
   if (item.assetUploadId) deleteUpload(item.assetUploadId);
   db.update(schema.contentItems).set({ assetUploadId: null }).where(eq(schema.contentItems.id, id)).run();
   done(`/content?tab=mine&open=${id}`, "Đã gỡ ảnh");
+}
+
+/** Khôi phục một phiên bản cũ vào bản nháp (tạo phiên bản mới, giữ nguyên lịch sử). */
+export async function restoreContentVersion(fd: FormData) {
+  const actor = await currentActor();
+  const id = str(fd, "id");
+  const back = `/content?tab=mine&open=${id}`;
+  const v = getContentVersion(id, Number(str(fd, "version")));
+  const db = getDb();
+  const item = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, id)).get();
+  if (!v || !item) return done(`${back}&tone=error`, "Không tìm thấy phiên bản");
+  if (item.status !== "in_progress" && item.status !== "review") return done(`${back}&tone=error`, "Chỉ khôi phục được khi nội dung đang viết hoặc chờ duyệt.");
+  db.update(schema.contentItems).set({ draft: v.draft, hook: v.hook, status: "in_progress" }).where(eq(schema.contentItems.id, id)).run();
+  campaignRepo.syncEntityStatus("content", id, "in_progress");
+  const n = recordContentVersion(id, { hook: v.hook, draft: v.draft, reason: "restore", by: actor.name });
+  done(back, `Đã khôi phục phiên bản ${v.version} thành phiên bản ${n}. Gửi duyệt lại khi xong.`);
+}
+
+/** Dựng lại kịch bản quay từ brief nghiên cứu (giữ bản cũ trong lịch sử). */
+export async function rebuildFromBrief(fd: FormData) {
+  const actor = await currentActor();
+  const id = str(fd, "id");
+  const back = `/content?tab=mine&open=${id}`;
+  let n: number;
+  try {
+    n = rebuildScriptFromBrief(id, actor.name);
+  } catch (e) {
+    return done(`${back}&tone=error`, e instanceof Error ? e.message : "Không dựng lại được");
+  }
+  campaignRepo.syncEntityStatus("content", id, "in_progress");
+  done(back, `Đã dựng lại kịch bản từ brief thành phiên bản ${n}`);
 }

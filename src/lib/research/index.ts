@@ -9,6 +9,8 @@ import { getDb, schema } from "@/db";
 import { MODEL, aiConfigured, gate } from "@/lib/ai";
 import { estimateCostVnd } from "@/lib/router";
 import { getKnowledgePages, searchKnowledge } from "@/lib/knowledge";
+import { recordContentVersion } from "@/lib/content/versions";
+import { buildShootingScript, maxSecondsFromGoal, scriptQa, type ScriptQa } from "@/lib/content/shooting-script";
 import { CLASSIFICATIONS, PURPOSE_KINDS, SOURCE_TYPES, verifyBrief, verifyFinding, type BriefPoint, type BriefQa, type Classification, type KnowledgePage, type PurposeKind } from "@/lib/knowledge/types";
 
 const newId = (p: string) => `${p}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
@@ -351,33 +353,101 @@ export async function runResearchWithAi(taskId: string, by: string): Promise<{ o
 
 // ---------------------------------------------------------------- brief → nội dung
 
+/** Nguồn và trang Second Brain mà brief dẫn tới, dùng để dựng và kiểm kịch bản quay. */
+function briefMaterial(b: { taskId: string | null; points: BriefPoint[] }) {
+  const sources = b.taskId ? getDb().select().from(schema.researchSources).where(eq(schema.researchSources.taskId, b.taskId)).all() : [];
+  const pages = getKnowledgePages([...new Set(b.points.flatMap((p) => p.knowledgeIds))]);
+  return { sources, pages };
+}
+
+/** CP02: brief đạt kiểm → nội dung định dạng kịch bản, bản nháp là kịch bản quay theo cảnh có căn cứ. */
 export function createContentFromBrief(briefId: string, by: string): string {
   const b = getBrief(briefId);
   if (!b) throw new Error("Không tìm thấy brief");
   if (b.contentId) return b.contentId;
+  if (!b.qa.ok) throw new Error(`Brief chưa đạt kiểm: ${b.qa.issues.join("; ") || "chưa kiểm"}`);
+  const { sources, pages } = briefMaterial(b);
+  const draft = buildShootingScript(b, sources, pages);
   const id = newId("ct");
-  const draft = [
-    `BRIEF: ${b.topic}`,
-    `Mục tiêu: ${b.goal}`,
-    `Khán giả: ${b.audience}`,
-    `Thông điệp chính: ${b.keyMessage || "(chưa có)"}`,
-    `Góc khai thác: ${b.angle || "(chưa có)"}`,
-    "",
-    "Luận điểm (có nguồn trong brief):",
-    ...b.points.map((p, i) => `${i + 1}. [${p.classification}] ${p.text}`),
-    ...(b.gaps.length ? ["", "Còn thiếu:", ...b.gaps.map((g) => `- ${g}`)] : []),
-  ].join("\n");
   const db = getDb();
-  db.insert(schema.contentItems)
-    .values({ id, title: b.topic.slice(0, 200), format: "script", status: "in_progress", insightId: null, pillar: "Giáo dục", hook: b.keyMessage.slice(0, 300), outline: JSON.stringify(b.points.map((p) => p.text.slice(0, 200))), draft, assignee: "human", createdAt: nowIso(), score: null, source: "manual" })
-    .run();
-  db.update(schema.contentBriefs).set({ contentId: id, status: "used", updatedAt: nowIso() }).where(eq(schema.contentBriefs.id, briefId)).run();
-  if (b.taskId) db.update(schema.researchTasks).set({ contentId: id }).where(eq(schema.researchTasks.id, b.taskId)).run();
-  void by;
+  db.transaction((tx) => {
+    tx.insert(schema.contentItems)
+      .values({ id, title: b.topic.slice(0, 200), format: "script", status: "in_progress", insightId: null, pillar: "Giáo dục", hook: b.keyMessage.slice(0, 300), outline: JSON.stringify(b.points.map((p) => p.text.slice(0, 200))), draft, assignee: "human", createdAt: nowIso(), score: null, source: "manual" })
+      .run();
+    tx.update(schema.contentBriefs).set({ contentId: id, status: "used", updatedAt: nowIso() }).where(eq(schema.contentBriefs.id, briefId)).run();
+    if (b.taskId) tx.update(schema.researchTasks).set({ contentId: id }).where(eq(schema.researchTasks.id, b.taskId)).run();
+  });
+  recordContentVersion(id, { hook: b.keyMessage.slice(0, 300), draft, reason: "brief", by });
   return id;
+}
+
+/** Kiểm kịch bản quay của nội dung sinh từ brief. Nội dung không có brief: null (giữ luồng cũ). */
+export function briefScriptQa(contentId: string, draft: string): ScriptQa | null {
+  const b = briefForContent(contentId);
+  if (!b) return null;
+  const { sources, pages } = briefMaterial(b);
+  return scriptQa(draft, { sourceExcerpts: sources.map((s) => s.excerpt), maxSeconds: maxSecondsFromGoal(b.goal), knownSources: sources.map((s) => s.url), knownPages: pages.map((p) => p.title) });
 }
 
 export function briefForContent(contentId: string) {
   const b = getDb().select().from(schema.contentBriefs).where(eq(schema.contentBriefs.contentId, contentId)).get();
   return b ? parseBrief(b) : null;
+}
+
+// ---------------------------------------------------------------- đề xuất chủ đề (CP02)
+
+export interface TopicSuggestion {
+  topic: string;
+  why: string;
+  from: "second_brain" | "finding";
+  status?: string;
+  refId: string;
+}
+
+/**
+ * Chủ đề nên làm tiếp, theo luật (không AI): trang kiến thức/skill trong Second Brain chưa được nghiên cứu cho nội dung nào
+ * (ưu tiên ACTIVE/VERIFIED), và chủ đề nội dung mà phát hiện đạt kiểm đã gợi ý nhưng chưa thành brief.
+ */
+export function suggestTopics(limit = 8): TopicSuggestion[] {
+  const db = getDb();
+  const findings = db.select({ id: schema.researchFindings.id, knowledgeIds: schema.researchFindings.knowledgeIds, topics: schema.researchFindings.contentTopics, ok: schema.researchFindings.verifyOk }).from(schema.researchFindings).all();
+  const usedPages = new Set(findings.flatMap((f) => arr(f.knowledgeIds)));
+  const taken = new Set(
+    [...db.select({ t: schema.contentBriefs.topic }).from(schema.contentBriefs).all().map((r) => r.t), ...db.select({ t: schema.contentItems.title }).from(schema.contentItems).all().map((r) => r.t)].map((t) => t.toLowerCase()),
+  );
+  const out: TopicSuggestion[] = [];
+  for (const f of findings.filter((x) => x.ok)) {
+    for (const t of arr(f.topics)) {
+      if (!taken.has(t.toLowerCase()) && !out.some((o) => o.topic.toLowerCase() === t.toLowerCase())) out.push({ topic: t, why: "Phát hiện đạt kiểm gợi ý chủ đề này, chưa có brief", from: "finding", refId: f.id });
+    }
+  }
+  const skipKinds = new Set(["Quy tắc kho", "Giữ chỗ", "Nguồn"]);
+  const pages = db
+    .select({ id: schema.knowledgeIndex.id, title: schema.knowledgeIndex.title, section: schema.knowledgeIndex.section, kind: schema.knowledgeIndex.kind, status: schema.knowledgeIndex.status })
+    .from(schema.knowledgeIndex)
+    .all()
+    .filter((p) => (p.section.startsWith("01") || p.section.startsWith("02")) && p.status !== "ARCHIVED" && !skipKinds.has(p.kind) && !usedPages.has(p.id))
+    .sort((a, b) => (a.status === "DRAFT" ? 1 : 0) - (b.status === "DRAFT" ? 1 : 0) || a.title.localeCompare(b.title, "vi"));
+  for (const p of pages) {
+    const topic = p.title.replace(/^\[[^\]]*\]\s*/, "").trim() || p.title;
+    if (taken.has(topic.toLowerCase())) continue;
+    out.push({ topic, why: `Second Brain (${p.kind || p.section}) chưa có nội dung nào dùng`, from: "second_brain", status: p.status, refId: p.id });
+  }
+  const findingsFirst = out.filter((o) => o.from === "finding").slice(0, Math.ceil(limit / 2));
+  return [...findingsFirst, ...out.filter((o) => o.from === "second_brain")].slice(0, limit);
+}
+
+/** Dựng lại kịch bản quay từ brief (khi brief hoặc nguồn đã cập nhật). Bản cũ vẫn nằm trong lịch sử phiên bản. */
+export function rebuildScriptFromBrief(contentId: string, by: string): number {
+  const b = briefForContent(contentId);
+  if (!b) throw new Error("Nội dung này không sinh từ brief");
+  if (!b.qa.ok) throw new Error("Brief chưa đạt kiểm");
+  const db = getDb();
+  const item = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, contentId)).get();
+  if (!item || (item.status !== "in_progress" && item.status !== "review")) throw new Error("Chỉ dựng lại được khi nội dung đang viết hoặc chờ duyệt");
+  const { sources, pages } = briefMaterial(b);
+  const draft = buildShootingScript(b, sources, pages);
+  recordContentVersion(contentId, { hook: item.hook, draft: item.draft ?? "", reason: "save", by });
+  db.update(schema.contentItems).set({ draft, status: "in_progress" }).where(eq(schema.contentItems.id, contentId)).run();
+  return recordContentVersion(contentId, { hook: item.hook, draft, reason: "brief", by });
 }

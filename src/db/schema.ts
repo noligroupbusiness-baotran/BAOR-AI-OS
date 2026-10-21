@@ -631,3 +631,34 @@ export const contentBriefs = sqliteTable("content_briefs", {
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
+
+// CP02: mỗi lần nội dung đổi chữ (lưu nháp, gửi duyệt, AI viết lại, khôi phục) giữ một phiên bản. Không ghi đè, không xoá.
+export const contentVersions = sqliteTable(
+  "content_versions",
+  {
+    id: text("id").primaryKey(),
+    contentId: text("content_id").notNull(),
+    version: integer("version").notNull(),
+    hook: text("hook").notNull().default(""),
+    draft: text("draft").notNull().default(""),
+    reason: text("reason").notNull().default(""), // save | submit | ai | restore | brief
+    by: text("by").notNull().default(""),
+    at: text("at").notNull(),
+  },
+  (t) => [uniqueIndex("content_versions_content_version_idx").on(t.contentId, t.version)],
+);
+
+// CP03: lịch sử phản hồi của một video theo từng bản dựng (gửi kiểm tra, yêu cầu sửa, dựng lại, phê duyệt).
+export const videoFeedback = sqliteTable(
+  "video_feedback",
+  {
+    id: text("id").primaryKey(),
+    videoId: text("video_id").notNull(),
+    version: integer("version").notNull(),
+    kind: text("kind").notNull(), // send_review | send_approval | request_changes | approve | rerender | upload
+    note: text("note").notNull().default(""),
+    by: text("by").notNull().default(""),
+    at: text("at").notNull(),
+  },
+  (t) => [index("video_feedback_video_idx").on(t.videoId)],
+);

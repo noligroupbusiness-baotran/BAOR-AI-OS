@@ -17,9 +17,14 @@ import {
   insertTemplate,
   attachContentImage,
   removeContentImage,
+  rebuildFromBrief,
+  restoreContentVersion,
 } from "@/lib/actions/content";
+import { briefForContent } from "@/lib/research";
+import { listContentVersions, versionReasonLabel, type VersionReason } from "@/lib/content/versions";
 import { IMAGE_SPECS, kindLabel, kindOf, type ContentKind } from "@/lib/content/formats";
 import { CaptionHelper, ScriptHelper } from "@/components/content/format-helpers";
+import { ScriptQaPanel } from "@/components/content/script-qa";
 import { fileUrl, getUpload } from "@/lib/uploads";
 import { countContent, listContent, listInsights } from "@/lib/queries";
 import { contentFormatLabel, contentStatusLabel } from "@/lib/labels";
@@ -193,7 +198,8 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
                       <form action={approveContent}><input type="hidden" name="id" value={c.id} /><Button variant="primary" type="submit">Duyệt</Button></form>
                     )}
                     {c.status === "in_progress" && !isOpen && <LinkButton href={href(`/content?tab=mine&open=${c.id}`)} variant="soft">Soạn</LinkButton>}
-                    {c.status === "approved" && kindOf(c.format) === "script" && <LinkButton href={href(`/video-studio?upload=1&content=${c.id}`)} variant="soft">Tạo video</LinkButton>}
+                    {c.status === "approved" && kindOf(c.format) === "script" && <LinkButton href={href(`/content/${c.id}/quay`)} variant="ghost">Bản đọc khi quay</LinkButton>}
+                    {c.status === "approved" && kindOf(c.format) === "script" && <LinkButton href={href(`/video-studio?upload=1&content=${c.id}`)} variant="soft">Tải video đã quay</LinkButton>}
                     {c.status === "approved" && !isOpen && kindOf(c.format) !== "script" && <LinkButton href={href(`/content?tab=done&open=${c.id}`)} variant="primary">Lên lịch</LinkButton>}
                   </div>
                 </div>
@@ -225,6 +231,7 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
                       </label>
                       {kindOf(c.format) === "caption" && <CaptionHelper formId={`draft-${c.id}`} />}
                       {kindOf(c.format) === "script" && <ScriptHelper formId={`draft-${c.id}`} />}
+                      {kindOf(c.format) === "script" && <ScriptQaPanel contentId={c.id} draft={c.draft ?? ""} />}
                       {kindOf(c.format) === "image" && (
                         <div className="rounded-md border border-border bg-ground px-3 py-2 text-[12px] text-ink-2">
                           <div className="font-semibold text-ink">Kích thước cần xuất</div>
@@ -239,9 +246,36 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
                         <Button type="submit">Lưu nháp</Button>
                         <Button type="submit" variant="primary" formAction={submitForReview}>Gửi duyệt</Button>
                         <Button type="submit" variant="soft" formAction={aiWriteDraft}>AI viết nháp</Button>
-                        {(kindOf(c.format) === "script" || kindOf(c.format) === "image") && <Button type="submit" variant="ghost" formAction={insertTemplate}>Chèn khung mẫu</Button>}
+                        {(kindOf(c.format) === "script" || kindOf(c.format) === "image") && !briefForContent(c.id) && <Button type="submit" variant="ghost" formAction={insertTemplate}>Chèn khung mẫu</Button>}
+                        {kindOf(c.format) === "script" && briefForContent(c.id) && <Button type="submit" variant="ghost" formAction={rebuildFromBrief}>Dựng lại từ brief</Button>}
                       </div>
                     </form>
+                    {(() => {
+                      const versions = listContentVersions(c.id);
+                      if (versions.length === 0) return null;
+                      return (
+                        <details className="mt-3 border-t border-border pt-2 text-[12px]">
+                          <summary className="cursor-pointer text-ink-2">Lịch sử phiên bản · <span className="num">{versions.length}</span> bản</summary>
+                          <ul className="m-0 mt-1.5 grid list-none gap-1 p-0">
+                            {versions.slice(0, 10).map((v, k) => (
+                              <li key={v.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-ground px-2.5 py-1.5">
+                                <span className="min-w-0 text-ink-2">
+                                  <span className="num font-semibold text-ink">Bản {v.version}</span> · {versionReasonLabel[v.reason as VersionReason] ?? v.reason} · {v.by} · <span className="num">{formatDateTime(v.at)}</span>
+                                  {k === 0 && <span className="ml-1 text-jade">(hiện hành)</span>}
+                                </span>
+                                {k > 0 && (
+                                  <form action={restoreContentVersion}>
+                                    <input type="hidden" name="id" value={c.id} />
+                                    <input type="hidden" name="version" value={v.version} />
+                                    <button type="submit" className="cursor-pointer text-[12px] text-jade hover:underline">Khôi phục</button>
+                                  </form>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
+                      );
+                    })()}
                     {(() => {
                       const asset = c.assetUploadId ? getUpload(c.assetUploadId) : undefined;
                       return (

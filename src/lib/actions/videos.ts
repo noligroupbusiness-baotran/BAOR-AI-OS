@@ -2,11 +2,12 @@
 
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
-import { getCurrentUser } from "@/lib/auth";
 import { campaignRepo } from "@/lib/campaigns/repository";
 import type { VideoStatus } from "@/lib/data/videos";
 import { done, logActivity, nowIso } from "./common";
-import { requirePermission } from "@/lib/permissions";
+import { currentActor, requirePermission } from "@/lib/permissions";
+import { addVideoFeedback } from "@/lib/video/feedback";
+import { latestJob } from "@/lib/video/jobs";
 
 // Video Studio: Agent Edit Video chỉ dựng và chuẩn bị phiên bản. Người kiểm tra, yêu cầu sửa và phê duyệt.
 // Video đã phê duyệt vẫn KHÔNG tự đăng; việc đăng thuộc phân hệ Đăng bài & Quảng cáo.
@@ -21,8 +22,8 @@ const transitions: Record<string, { from: VideoStatus[]; to: VideoStatus; label:
 };
 
 export async function transitionVideo(fd: FormData) {
-  const user = await getCurrentUser();
-  const by = user?.email ?? "admin";
+  const actor = await currentActor();
+  const by = actor.name;
   const id = str(fd, "id");
   const kind = str(fd, "kind");
   const note = str(fd, "note");
@@ -35,12 +36,18 @@ export async function transitionVideo(fd: FormData) {
   if (!v) return fail(back, "Không tìm thấy video");
   if (!t.from.includes(v.status as VideoStatus)) return fail(back, `Không thể ${t.label.toLowerCase()} khi video đang ở trạng thái hiện tại.`);
   if (kind === "request_changes" && !note) return fail(back, "Cần ghi rõ điều cần chỉnh sửa");
+  // Bản dựng có điểm chặn đăng (giấy phép font/nhạc, logo, từ nghe chưa chắc…): OWNER phải ghi rõ đã xử lý thế nào.
+  const job = latestJob(id);
+  if (job && (job.job.status === "queued" || job.job.status === "running")) return fail(back, "Video đang dựng, chờ dựng xong");
+  const blockers = job?.report?.blockers ?? [];
+  if (kind === "approve" && blockers.length && note.length < 10) return fail(back, `Bản dựng còn ${blockers.length} điểm chặn đăng. Ghi rõ cách xử lý trong ghi chú phê duyệt.`);
 
   db.update(schema.videos)
     .set({ status: t.to, updatedAt: nowIso(), ...(note ? { note } : {}), ...(kind === "request_changes" ? { version: v.version + 1 } : {}) })
     .where(eq(schema.videos.id, id))
     .run();
   campaignRepo.syncEntityStatus("video", id, t.to);
+  addVideoFeedback({ videoId: id, version: v.version, kind: kind as "send_review" | "send_approval" | "request_changes" | "approve", note: kind === "approve" && blockers.length ? `${note}\nĐiểm chặn lúc duyệt: ${blockers.join("; ")}` : note, by });
 
   // Đồng bộ với phần Chờ phê duyệt của chiến dịch (nếu video đã gắn chiến dịch).
   const links = campaignRepo.linksForEntities("video", [id]).get(id) ?? [];
@@ -55,4 +62,14 @@ export async function transitionVideo(fd: FormData) {
   }
   logActivity("human", `${t.label} video “${v.title}”.`, "video");
   done(back, t.toast);
+}
+
+// Dựng lại từ cùng nguồn thành bản mới (không ghi đè bản trước). Có thể bật cắt khoảng lặng cho riêng video này.
+export async function rerenderVideoAction(fd: FormData) {
+  const actor = await currentActor();
+  const back = str(fd, "back") || "/video-studio";
+  const { rerenderVideo } = await import("@/lib/video/jobs");
+  const r = rerenderVideo(str(fd, "id"), actor.name, fd.get("cut") === null ? undefined : str(fd, "cut") === "1");
+  if (!r.ok) return fail(back, r.error);
+  done(back, `Đang dựng bản ${r.version}`);
 }

@@ -31,9 +31,9 @@ async function tick() {
   try {
     const p = await publishDuePosts();
     if (p.published || p.failed) parts.push(`đăng ${p.published}, lỗi ${p.failed}`);
-    // Dựng video tự động từ hộp thư vào (tối đa 1 tệp mỗi phút; chạy đồng bộ nên ghi rõ vào kết quả)
+    // Dựng video: nhận tệp mới trong hộp thư vào vào hàng đợi; việc dựng chạy ngầm trong tiến trình con (không chặn máy chủ)
     const v = runAutoEditOnce();
-    if (v.processed) parts.push(`dựng video ${v.ok ? "xong" : "lỗi"}`);
+    if (v.processed) parts.push(`nhận ${v.processed} video vào hàng dựng`);
     if (!g.__baorScheduler || now - g.__baorScheduler.lastHourly >= 60 * 60 * 1000) {
       if (g.__baorScheduler) g.__baorScheduler.lastHourly = now;
       state.lastHourlyAt = state.lastTickAt;

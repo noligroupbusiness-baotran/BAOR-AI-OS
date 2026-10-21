@@ -88,7 +88,7 @@ test("luật phân loại: sự thật cần nguồn mạnh, quan điểm OWNER 
   assert.equal(v("HYPOTHESIS", "73% khách cúp máy", [], []).ok, false, "câu có số liệu không nguồn");
 });
 
-test("lưu kết quả nghiên cứu: bỏ URL bịa (không có trong kết quả tìm), chuẩn hóa id Second Brain, kiểm brief", () => {
+test("lưu kết quả nghiên cứu: bỏ URL bịa (không có trong kết quả tìm), chuẩn hóa id Second Brain, kiểm brief", async () => {
   const taskId = research.createResearchTask({ question: "Mở đầu cuộc gọi tư vấn thế nào?", purposeKind: "content", purpose: "Kịch bản B1", by: "test" });
   const r = research.saveResearchResult(
     taskId,
@@ -134,8 +134,29 @@ test("lưu kết quả nghiên cứu: bỏ URL bịa (không có trong kết qu�
   const c = db.getDb().select().from(db.schema.contentItems).all().find((x) => x.id === contentId)!;
   assert.equal(c.format, "script");
   assert.equal(c.status, "in_progress");
-  assert.ok(c.draft?.includes("[PROCEDURE] Giới thiệu mình là ai"));
+  assert.ok(c.draft?.startsWith("KỊCH BẢN QUAY: B1 Chào hỏi phá băng"), "CP02: bản nháp là kịch bản quay");
+  assert.ok(c.draft?.includes("Giới thiệu mình là ai"));
+  assert.ok(c.draft?.includes("[S1] Nghiên cứu A"), "nguồn ngoài được đánh thẻ");
   assert.equal(research.createContentFromBrief(t.brief!.id, "test"), contentId, "bấm lại không tạo trùng");
+  // Kịch bản sinh ra đạt kiểm; dấu OWNER lọt vào lời thoại thì chặn.
+  const qa1 = research.briefScriptQa(contentId, c.draft!)!;
+  assert.equal(qa1.ok, true, qa1.blocking.join("; "));
+  const badDraft = c.draft!.replace("Lời thoại: ", "Lời thoại: [OWNER KỂ: chuyện bịa] ");
+  assert.equal(research.briefScriptQa(contentId, badDraft)!.ok, false);
+  // Cổng gửi duyệt / duyệt (cùng hàm server action dùng)
+  const gate = await import("../src/lib/content/review-gate");
+  assert.match(gate.submitBlock(c, badDraft) ?? "", /OWNER/);
+  assert.equal(gate.submitBlock(c, c.draft!), null);
+  assert.match(gate.approveBlock(c) ?? "", /đang chờ duyệt/, "chưa gửi duyệt thì không duyệt được");
+  assert.equal(gate.approveBlock({ ...c, status: "review" }), null);
+  assert.match(gate.approveBlock({ ...c, status: "review", draft: badDraft }) ?? "", /OWNER/);
+  // Phiên bản: bản đầu từ brief, lưu trùng không tạo bản mới, sửa thì có bản mới
+  const versions = await import("../src/lib/content/versions");
+  assert.equal(versions.listContentVersions(contentId).length, 1);
+  assert.equal(versions.listContentVersions(contentId)[0].reason, "brief");
+  assert.equal(versions.recordContentVersion(contentId, { hook: c.hook, draft: c.draft!, reason: "save", by: "test" }), 1);
+  assert.equal(versions.recordContentVersion(contentId, { hook: c.hook, draft: `${c.draft}\nsửa`, reason: "save", by: "test" }), 2);
+  assert.equal(research.briefScriptQa("ct_khong_co_brief", "x"), null, "nội dung ngoài brief giữ luồng cũ");
 });
 
 test("brief gom bằng luật (không AI): chỉ lấy phát hiện đạt kiểm, phần chưa đạt vào 'còn thiếu'", () => {
@@ -153,6 +174,7 @@ test("brief gom bằng luật (không AI): chỉ lấy phát hiện đạt kiể
   assert.equal(b.points.length, 1);
   assert.equal(b.gaps.length, 1);
   assert.equal(b.qa.ok, false, "chưa có thông điệp chính và chưa dùng Second Brain");
+  assert.throws(() => research.createContentFromBrief(briefId, "test"), /chưa đạt kiểm/, "máy chủ chặn brief chưa đạt kiểm");
 });
 
 test("Notion: đọc thuộc tính kho, chữ của khối, và đồng bộ tăng dần bỏ qua trang không đổi", async () => {

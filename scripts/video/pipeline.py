@@ -613,7 +613,82 @@ def a5_check(voice_wav, music_wav):
     return {"speechMarginDb": round(sp_margin, 1), "pauseMarginDb": round(pa_margin, 1), "pass": deficit <= 0, "deficit": round(deficit, 1)}
 
 
-def build_audio(job, src, info, seg_select, dur, music, license_):
+# ---------------------------------------------------------------- B-roll và SFX
+
+def load_broll(lib_dir):
+    """Thư viện B-roll cục bộ: lib_dir/manifest.json = [{file, keywords[], license, source}].
+    Clip thiếu giấy phép hoặc thiếu tệp KHÔNG được dùng (ghi lý do vào báo cáo)."""
+    if not lib_dir:
+        return [], []
+    mf = os.path.join(lib_dir, "manifest.json")
+    if not os.path.exists(mf):
+        return [], [f"không có {mf}"]
+    usable, skipped = [], []
+    for it in json.load(open(mf, encoding="utf-8")):
+        f = os.path.join(lib_dir, it.get("file", ""))
+        name = it.get("file", "?")
+        if not (it.get("license") or "").strip():
+            skipped.append(f"{name}: chưa ghi giấy phép")
+        elif not os.path.isfile(f) or os.path.commonpath([os.path.abspath(f), os.path.abspath(lib_dir)]) != os.path.abspath(lib_dir):
+            skipped.append(f"{name}: không có tệp trong thư viện")
+        else:
+            kws = [norm(k) for k in it.get("keywords", []) if norm(k)]
+            if not kws:
+                skipped.append(f"{name}: chưa có từ khoá")
+                continue
+            usable.append({**it, "path": f, "kw": kws, "dur": probe(f)["duration"]})
+    return usable, skipped
+
+
+def plan_broll(words, dur, lib):
+    """Chèn cảnh minh hoạ khi lời nói nhắc đúng từ khoá của clip. Không chèn ở 3 giây đầu (hook) và 2 giây cuối,
+    mỗi lần 2,5 giây, cách nhau tối thiểu 6 giây, mỗi clip dùng một lần."""
+    bc = SKILL.get("broll", {"hookGuardSec": 3.0, "endGuardSec": 2.0, "maxSec": 2.5, "minSec": 1.2, "gapSec": 6.0})
+    events, used, last_end = [], set(), -1e9
+    toks = [(norm(w["text"]), w["start"]) for w in words if not w.get("uncertain")]
+    for i, (tk, t) in enumerate(toks):
+        if t < bc["hookGuardSec"] or t - last_end < bc["gapSec"]:
+            continue
+        pair = tk + (toks[i + 1][0] if i + 1 < len(toks) else "")
+        for it in lib:
+            if it["file"] in used:
+                continue
+            hit = next((k for k in it["kw"] if k == tk or k == pair), None)
+            if hit:
+                d = min(bc["maxSec"], it["dur"], dur - bc["endGuardSec"] - t)
+                if d < bc["minSec"]:
+                    continue
+                events.append({"t0": round(t, 3), "t1": round(t + d, 3), "file": it["file"], "path": it["path"], "keyword": next(k0 for k0 in it.get("keywords", []) if norm(k0) == hit),
+                               "license": it["license"], "source": it.get("source", "")})
+                used.add(it["file"])
+                last_end = t + d
+                break
+    return events
+
+
+def synth_pop(path, times, dur, sr=48000):
+    """Âm 'pop' ngắn tổng hợp bằng công thức (không dùng tệp ngoài, không vướng giấy phép), đặt tại mốc chữ nhấn."""
+    n = int(round(dur * sr))
+    out = np.zeros(n, dtype=np.float32)
+    L = int(0.09 * sr)
+    tt = np.arange(L) / sr
+    f = 900 * np.exp(-tt * 18) + 380
+    burst = (np.sin(2 * np.pi * np.cumsum(f) / sr) * np.exp(-tt * 42)).astype(np.float32) * 0.5
+    for t in times:
+        i = int(round(t * sr))
+        if 0 <= i < n:
+            m = min(L, n - i)
+            out[i:i + m] += burst[:m]
+    pcm = (np.clip(out, -1, 1) * 32767).astype(np.int16)
+    st = np.repeat(pcm[:, None], 2, axis=1)
+    with wave.open(path, "wb") as w:
+        w.setnchannels(2)
+        w.setsampwidth(2)
+        w.setframerate(sr)
+        w.writeframes(st.tobytes())
+
+
+def build_audio(job, src, info, seg_select, dur, music, license_, sfx_times=None):
     """Giọng giữ nguyên; nhạc (nếu có giấy phép) −25 LUFS, hạ khi nói, vào 1 s / ra 2 s; tổng −16 LUFS, TP ≤ −2 dBTP."""
     ac = SKILL["audio"]
     sel = f",aselect='{seg_select}',asetpts=N/SR/TB" if seg_select else ""
@@ -650,6 +725,17 @@ def build_audio(job, src, info, seg_select, dur, music, license_):
                     break
                 gain -= a5["deficit"] + 1.0
             music_info = {"used": True, "license": license_, "gainDb": round(gain, 1), "sourceLufs": mI, "a5": a5, "ownerApproved": False}
+    sfx_info = None
+    if sfx_times:
+        pop = job.p("work", "sfx.wav")
+        synth_pop(pop, sfx_times, dur)
+        vI, _ = ebur(mix)
+        withsfx = job.p("work", "mix_sfx.wav")
+        # SFX nằm dưới giọng khoảng 14 dB (đo tương đối), không át lời
+        sh(["ffmpeg", "-v", "error", "-y", "-i", mix, "-i", pop, "-filter_complex",
+            "[1:a]volume=-14dB[p];[0:a][p]amix=inputs=2:normalize=0:duration=first[o]", "-map", "[o]", "-c:a", "pcm_s16le", withsfx])
+        mix = withsfx
+        sfx_info = {"used": True, "count": len(sfx_times), "source": "tổng hợp tại chỗ bằng công thức (không dùng tệp ngoài)"}
     # Chuẩn độ to: tăng/giảm tuyến tính rồi chặn đỉnh (giọng không nén thêm).
     final = job.p("work", "final.wav")
     I, _ = ebur(mix)
@@ -667,7 +753,7 @@ def build_audio(job, src, info, seg_select, dur, music, license_):
             limit -= (fTP - (ac["truePeakMaster"] - 0.3)) + 0.2
         if fI is not None and not ok_i:
             gain += ac["targetLufs"] - fI
-    return final, music_info, {"limitDbfs": round(limit, 2)}
+    return final, music_info, {"limitDbfs": round(limit, 2), "sfx": sfx_info}
 
 
 # ---------------------------------------------------------------- QA
@@ -715,6 +801,8 @@ def main():
     ap.add_argument("--model2", default=SKILL["listening"]["secondModel"])
     ap.add_argument("--logo-dir", default=os.path.join(ROOT, "public", "brand"))
     ap.add_argument("--previous", default="", help="master.mp4 của bản trước để so khung (mục K)")
+    ap.add_argument("--broll-dir", default="", help="thư viện B-roll có manifest.json (chỉ clip có giấy phép)")
+    ap.add_argument("--sfx", action="store_true", help="âm pop tổng hợp ở chữ nhấn (#78c: mặc định tắt)")
     a = ap.parse_args()
 
     job = Job(a.job_dir)
@@ -779,6 +867,10 @@ def main():
         emp_imgs.append(r)
     emph = [e for e, r in zip(emph, emp_imgs) if r]
     emp_imgs = [r for r in emp_imgs if r]
+
+    # B-roll theo từ khoá lời nói
+    broll_lib, broll_skipped = load_broll(a.broll_dir)
+    broll = plan_broll(words, dur, broll_lib) if words and broll_lib else []
 
     # 5. Mặt, nền logo, cảnh
     job.progress("analyse", "Dò mặt, cảnh và độ sáng nền logo", 58)
@@ -921,7 +1013,8 @@ def main():
 
     # 7. Âm thanh
     job.progress("audio", "Âm thanh: giữ giọng, nhạc theo giấy phép, chuẩn độ to", 72)
-    final_wav, music_info, audio_meta = build_audio(job, src, info, seg_select, dur, a.music, a.music_license)
+    final_wav, music_info, audio_meta = build_audio(job, src, info, seg_select, dur, a.music, a.music_license,
+                                                    sfx_times=[e["t0"] for e in emph] if a.sfx else None)
 
     # 8. Xuất bản chính
     job.progress("encode", "Xuất bản chính 1080x1920", 78)
@@ -936,13 +1029,23 @@ def main():
     vf.append(f"scale=w='trunc({W}*{zx}/2)*2':h='trunc({H}*{zx}/2)*2':eval=frame:flags=lanczos:out_color_matrix=bt709")
     vf.append(f"crop={W}:{H}:x='(in_w-{W})*{anchor[0]:.4f}':y='(in_h-{H})*{anchor[1]:.4f}'")
     vf.append("setsar=1")
-    fc = (f"[0:v]{','.join(vf)}[bg];[1:v]format=rgba[t];[2:v]format=rgba[l];"
-          f"[bg][t]overlay=0:{TEXT_Y0}:format=auto[v1];[v1][l]overlay=0:0:format=auto,format=yuv420p[v]")
+    fc = f"[0:v]{','.join(vf)}[bg0];"
+    bin_args, last = [], "bg0"
+    for k, b in enumerate(broll):
+        idx = 4 + k
+        d = b["t1"] - b["t0"]
+        bin_args += ["-t", f"{d:.3f}", "-i", b["path"]]
+        fc += (f"[{idx}:v]fps={FPS},scale={W}:{H}:force_original_aspect_ratio=increase:flags=lanczos,crop={W}:{H},setsar=1,format=yuv420p,"
+               f"setpts=PTS-STARTPTS+{b['t0']:.3f}/TB[b{k}];"
+               f"[{last}][b{k}]overlay=0:0:enable='between(t,{b['t0']:.3f},{b['t1']:.3f})':eof_action=pass[bg{k + 1}];")
+        last = f"bg{k + 1}"
+    fc += (f"[1:v]format=rgba[t];[2:v]format=rgba[l];"
+           f"[{last}][t]overlay=0:{TEXT_Y0}:format=auto[v1];[v1][l]overlay=0:0:format=auto,format=yuv420p[v]")
     master = job.p("master.mp4")
     sh(["ffmpeg", "-v", "error", "-y", "-i", src,
         "-framerate", str(FPS), "-start_number", "0", "-i", os.path.join(tdir, "%06d.png"),
         "-framerate", str(FPS), "-start_number", "0", "-i", os.path.join(ldir, "%06d.png"),
-        "-i", final_wav, "-filter_complex", fc, "-map", "[v]", "-map", "3:a", "-frames:v", str(N),
+        "-i", final_wav, *bin_args, "-filter_complex", fc, "-map", "[v]", "-map", "3:a", "-frames:v", str(N),
         "-c:v", "libx264", "-preset", "medium", "-crf", str(SKILL["output"]["masterCrf"]), "-profile:v", "high", "-pix_fmt", "yuv420p",
         "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv", "-r", str(FPS),
         "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", master])
@@ -1057,6 +1160,14 @@ def main():
     add("F", "Bố cục: chữ đúng vùng", "blocker" if logo_over["left"] or logo_over["right"] or logo_over["top"] or logo_over["bottom"] else ("pass" if f_ok else "fail"),
         f"phụ đề lố vùng {sub_out_F} khung, chữ nhấn lố vùng {emp_out_F} khung; logo lố vùng trái {logo_over['left']} / phải {logo_over['right']} / trên {logo_over['top']} / dưới {logo_over['bottom']} px (cỡ {lz['width']} chờ OWNER #98a)")
     add("G", "Đồ họa không ra ngoài vùng chữ", "pass", "chưa dùng đồ họa/sơ đồ ở bản này")
+    bc = SKILL.get("broll", {"hookGuardSec": 3.0, "endGuardSec": 2.0})
+    if broll:
+        bad_b = [b for b in broll if b["t0"] < bc["hookGuardSec"] or b["t1"] > dur - bc["endGuardSec"] + 0.01 or not b["license"].strip()]
+        add("Q", "B-roll: đúng chỗ, có giấy phép, không đè hook", "pass" if not bad_b else "fail",
+            "; ".join(f"{b['t0']:.1f}–{b['t1']:.1f}s “{b['keyword']}” → {b['file']} ({b['license']})" for b in broll))
+    else:
+        add("Q", "B-roll: đúng chỗ, có giấy phép, không đè hook", "na",
+            ("thư viện: " + "; ".join(broll_skipped[:4])) if broll_skipped else ("không có thư viện B-roll" if not a.broll_dir else "lời nói không khớp từ khoá clip nào"))
     add("H", "Phụ đề không chồng chữ nhấn", "pass" if overlap_H == 0 else "fail", f"{overlap_H} khung chồng")
     add("I", "Không có điểm ảnh chữ ngoài vùng chữ", "pass" if bad_I == 0 else "fail", f"{bad_I} khung có điểm ảnh ngoài vùng (đo trên kênh alpha > 40)")
     if face and face.get("detected"):
@@ -1089,6 +1200,10 @@ def main():
         p_notes.append(music_info["reason"])
     else:
         p_notes.append("không dùng nhạc")
+    if broll:
+        p_notes.append(f"B-roll: {len(broll)} clip, giấy phép ghi trong thư viện ({', '.join(sorted(set(b['license'] for b in broll)))}) — OWNER xác nhận")
+    if audio_meta.get("sfx"):
+        p_notes.append(f"SFX: {audio_meta['sfx']['count']} âm pop tổng hợp tại chỗ (#78c OWNER đã bật)")
     add("P", "Nhạc / B-roll / ảnh / font: nguồn, giấy phép, bằng chứng; A5", "blocker", "; ".join(p_notes))
 
     blockers = []
@@ -1116,6 +1231,7 @@ def main():
         "zoom": {"events": [{"t": t, "delta": d} for t, d in ev], "anchor": [round(anchor[0], 3), round(anchor[1], 3)], "faceDetected": bool(face and face.get("detected"))},
         "logo": {"scenes": scenes, "overflowPx": logo_over, "width": lz["width"]},
         "audio": {"lufs": mI, "truePeak": mTP, "previewTruePeak": pTP, "music": music_info, **audio_meta},
+        "broll": {"events": [{k: b[k] for k in ("t0", "t1", "file", "keyword", "license", "source")} for b in broll], "skipped": broll_skipped},
         "qa": qa, "failed": failed, "blockers": blockers,
         "openQuestions": SKILL["openQuestions"], "notYetAutomated": SKILL["notYetAutomated"],
         "timings": job.timings, "elapsedSec": round(time.time() - job.t0, 1),

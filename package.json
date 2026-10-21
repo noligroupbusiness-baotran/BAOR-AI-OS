@@ -10,7 +10,8 @@
     "test": "node --import tsx --test tests/*.test.ts",
     "gate": "npm run lint && npm run security && npm run test && npm run build",
     "rotate-secret": "tsx scripts/rotate-secret.mts",
-    "security": "tsx scripts/security-check.mts"
+    "security": "tsx scripts/security-check.mts",
+    "video:selftest": "bash scripts/video/selftest.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.124.0",

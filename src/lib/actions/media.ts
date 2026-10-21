@@ -4,9 +4,8 @@ import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { getSetting, setSetting } from "@/lib/admin";
 import { deleteUpload, getUpload, saveUpload } from "@/lib/uploads";
-import { requirePermission, currentActor } from "@/lib/permissions";
+import { requirePermission } from "@/lib/permissions";
 import { sendAlert, type AlertLevel } from "@/lib/alerts";
-import { campaignRepo } from "@/lib/campaigns/repository";
 import { logActivity } from "@/lib/activity";
 import { done } from "./common";
 
@@ -82,29 +81,6 @@ export async function deleteMusic(fd: FormData) {
   done("/settings#music", "Đã xóa bản nhạc");
 }
 
-// ---------- Video Studio: tải video lên ----------
-
-export async function uploadVideo(fd: FormData) {
-  const actor = await currentActor();
-  const file = fd.get("file");
-  const title = str(fd, "title");
-  const back = "/video-studio?tab=review";
-  if (!title) return fail("/video-studio?upload=1", "Cần đặt tên video");
-  if (!(file instanceof File) || file.size === 0) return fail("/video-studio?upload=1", "Chưa chọn tệp video");
-  const r = await saveUpload("video", file, actor.email, { title });
-  if (!r.ok) return fail("/video-studio?upload=1", r.error);
-  const id = `v_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
-  const contentId = str(fd, "contentId") || null;
-  const platforms = fd.getAll("platforms").map(String).filter(Boolean);
-  getDb().insert(schema.videos).values({ id, title, contentId, agent: actor.name, status: "review", platforms: JSON.stringify(platforms), version: 1, note: str(fd, "note"), uploadId: r.upload.id, updatedAt: new Date().toISOString() }).run();
-  // Kế thừa chiến dịch từ kịch bản (nếu có) hoặc gắn theo lựa chọn.
-  if (contentId) campaignRepo.inheritLinks("content", contentId, "video", id, "review");
-  const campaignId = str(fd, "campaignId");
-  if (campaignId && campaignRepo.get(campaignId)) campaignRepo.addLink({ campaignId, channelGoalId: str(fd, "channelGoalId") || null, entityType: "video", entityId: id, status: "review", ownerId: actor.personId, viaType: contentId ? "content" : null, viaId: contentId });
-  logActivity("human", `${actor.name} tải video “${title}” lên (${Math.round(r.upload.size / 1024 / 1024)} MB), chờ kiểm tra.`, "video");
-  done(back, "Đã tải video lên, đang ở Chờ kiểm tra");
-}
-
 // ---------- Cảnh báo ra ngoài ----------
 
 export async function saveAlerts(fd: FormData) {
@@ -136,27 +112,29 @@ export async function deleteUploadAction(fd: FormData) {
   done("/settings", "Đã xóa tệp");
 }
 
-// ---------- Dựng video tự động (Agent Edit Video theo luật) ----------
+// ---------- Dựng video tự động (Agent Edit Video theo Skill Edit video Vlog trên Second Brain) ----------
+// Luật dựng cố định theo skill (scripts/video/skill-vlog.json); ở đây chỉ chỉnh từ khóa nhấn, nhạc nền, bộ nhận lời.
 
 export async function saveAutoEdit(fd: FormData) {
   await requirePermission("manager", "/settings#auto-edit");
-  setSetting("video.autoEdit", fd.get("enabled") ? "1" : "0");
   setSetting("video.keywords", str(fd, "keywords").split(/[\n,]/).map((k) => k.trim()).filter(Boolean).join(","));
-  const accent = str(fd, "accent");
-  setSetting("video.accent", /^#[0-9a-fA-F]{6}$/.test(accent) ? accent : "");
-  const y = Number(str(fd, "captionY"));
-  setSetting("video.captionY", Number.isFinite(y) && y >= 0.3 && y <= 0.9 ? String(y) : "0.6");
   setSetting("video.whisperModel", ["small", "medium", "large"].includes(str(fd, "model")) ? str(fd, "model") : "medium");
-  setSetting("video.musicUploadId", str(fd, "musicUploadId"));
+  const musicId = str(fd, "musicUploadId");
+  const music = musicId ? getUpload(musicId) : undefined;
+  if (music && !String(music.meta.license ?? "").trim()) return fail("/settings#auto-edit", "Bài nhạc này chưa ghi giấy phép. Theo skill, nhạc thiếu giấy phép không được dùng.");
+  setSetting("video.musicUploadId", music ? musicId : "");
+  // #78c: SFX là quyết định của OWNER, mặc định tắt.
+  setSetting("video.sfx", fd.get("sfx") ? "1" : "0");
   logActivity("human", "Cập nhật cấu hình dựng video tự động.", "settings");
   done("/settings#auto-edit", "Đã lưu cấu hình dựng video tự động");
 }
 
 export async function runAutoEditNow() {
   await requirePermission("manager", "/settings#auto-edit");
-  const { pendingInbox, processInboxFile } = await import("@/lib/video/auto-edit");
-  const files = pendingInbox();
-  if (!files.length) return fail("/settings#auto-edit", "Hộp thư vào trống. Thả tệp .mov / .mp4 vào thư mục rồi bấm lại.");
-  const r = processInboxFile(files[0]);
-  done(`/settings${r.ok ? "" : "?tone=error"}#auto-edit`, r.ok ? `Dựng xong trong ${r.seconds} giây, video đang ở Video Studio › Chờ kiểm tra.` : `Lỗi: ${r.error.slice(0, 200)}`);
+  const { ingestInbox } = await import("@/lib/video/auto-edit");
+  const { kickWorker } = await import("@/lib/video/jobs");
+  const n = ingestInbox();
+  void kickWorker();
+  if (!n) return fail("/settings#auto-edit", "Hộp thư vào trống. Thả tệp .mov / .mp4 vào thư mục rồi bấm lại.");
+  done("/video-studio?tab=editing", `Đã nhận ${n} tệp, đang dựng ngầm.`);
 }

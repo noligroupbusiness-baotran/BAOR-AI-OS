@@ -20,6 +20,11 @@ export function listContent(statuses?: string[]) {
     .sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
 }
 
+export function getContent(id: string) {
+  const r = getDb().select().from(schema.contentItems).where(eq(schema.contentItems.id, id)).get();
+  return r ? { ...r, outline: parse<string[]>(r.outline, []) } : null;
+}
+
 export function countContent(statuses: string[]) {
   const [{ n }] = getDb()
     .select({ n: sql<number>`count(*)` })

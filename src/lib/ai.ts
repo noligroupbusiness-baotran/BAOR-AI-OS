@@ -130,7 +130,8 @@ export async function generateIdeas(n = 5): Promise<Result<{ count: number }>> {
   }
 }
 
-export async function writeDraft(contentId: string): Promise<Result<{ draft: string }>> {
+/** `briefRules`: khi nội dung sinh từ brief nghiên cứu, AI chỉ được viết lại kịch bản quay hiện có theo các luật này. */
+export async function writeDraft(contentId: string, briefRules?: string, validate?: (draft: string) => string[]): Promise<Result<{ draft: string }>> {
   const db = getDb();
   const item = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, contentId)).get();
   if (!item) return { ok: false, error: "Không tìm thấy nội dung." };
@@ -143,7 +144,9 @@ export async function writeDraft(contentId: string): Promise<Result<{ draft: str
       messages: [
         {
           role: "user",
-          content: `${brandContext()}\n\nViết nháp cho:\nTiêu đề: ${item.title}\nĐịnh dạng: ${item.format}\nHook: ${item.hook}\nDàn ý: ${item.outline}`,
+          content: briefRules
+            ? `${briefRules}\n\nKịch bản quay hiện có (giữ nguyên cấu trúc cảnh, các dòng Căn cứ và mục NGUỒN):\n${item.draft ?? ""}`
+            : `${brandContext()}\n\nViết nháp cho:\nTiêu đề: ${item.title}\nĐịnh dạng: ${item.format}\nHook: ${item.hook}\nDàn ý: ${item.outline}`,
         },
       ],
     }),
@@ -157,6 +160,8 @@ export async function writeDraft(contentId: string): Promise<Result<{ draft: str
       .map((b) => b.text)
       .join("\n")
       .trim();
+    const violations = validate ? validate(draft) : [];
+    if (violations.length) return { ok: false, error: `Không nhận bản AI viết lại, giữ bản cũ: ${violations.join("; ")}` };
     db.update(schema.contentItems).set({ draft }).where(eq(schema.contentItems.id, contentId)).run();
     return { ok: true, draft };
   } catch (e) {

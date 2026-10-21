@@ -32,5 +32,7 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|ico|webp)).*)"],
+  // api/video-sources và api/video-assets nhận tệp lớn dạng luồng: loại khỏi proxy để Next không đệm thân yêu cầu
+  // (giới hạn đệm 10 MB sẽ cắt cụt tệp). Route tự kiểm đăng nhập và nguồn yêu cầu.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/video-sources|api/video-assets|.*\\.(?:svg|png|jpg|jpeg|ico|webp)).*)"],
 };

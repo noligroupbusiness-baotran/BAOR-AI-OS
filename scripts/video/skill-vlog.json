@@ -130,6 +130,9 @@
     "snapshotEverySec": 5
   },
 
+  "broll": { "hookGuardSec": 3.0, "endGuardSec": 2.0, "maxSec": 2.5, "minSec": 1.2, "gapSec": 6.0,
+    "_src": "AI: số do bot đặt cho mục 3.8 (B-roll theo từ khoá lời nói), chờ OWNER duyệt; chỉ dùng clip có giấy phép trong manifest" },
+
   "drive": {
     "folder": "GROK BOT - BAORTRAN",
     "access": "read-only",
@@ -152,6 +155,6 @@
 
   "notYetAutomated": [
     "Sơ đồ/animation giải thích quy trình (mục 3.3): cần OWNER chọn đoạn, chưa tự nhận biết",
-    "B-roll và hiệu ứng từ Drive (mục 3.8): chờ nối Drive chỉ đọc"
+    "B-roll (mục 3.8): đã tự chèn từ thư viện cục bộ có giấy phép; nạp thẳng từ Drive vào máy chủ chờ quyền Drive chỉ đọc"
   ]
 }
