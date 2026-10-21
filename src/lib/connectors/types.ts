@@ -38,6 +38,30 @@ export interface PublishResult {
   message: string;
 }
 
+/** CP04: đăng một video đã duyệt. Tệp đọc dạng luồng từ đĩa, không nạp cả tệp vào bộ nhớ. */
+export interface VideoPublishRequest {
+  postId: string;
+  title: string;
+  description: string;
+  filePath: string;
+  fileName: string;
+  fileSize: number;
+}
+
+/** Xác minh bài đã thật sự lên nền tảng: chỉ ok khi đọc lại được bài và có đường dẫn công khai. */
+export interface VerifyPostResult {
+  ok: boolean;
+  permalink?: string;
+  publishedAt?: string;
+  message: string;
+}
+
+export interface PostMetrics {
+  views?: number;
+  reach?: number;
+  engagement?: number;
+}
+
 export interface InboundMessage {
   externalUserId: string;
   name?: string;
@@ -58,6 +82,9 @@ export interface Connector {
   /** Số liệu tổng của tài khoản trong khoảng ngày (để cập nhật mục tiêu kênh). */
   metrics?(ctx: ConnectorContext, since: string, until: string): Promise<MetricSnapshot[]>;
   publish?(ctx: ConnectorContext, req: PublishRequest): Promise<PublishResult>;
+  publishVideo?(ctx: ConnectorContext, req: VideoPublishRequest): Promise<PublishResult>;
+  verifyPost?(ctx: ConnectorContext, externalId: string): Promise<VerifyPostResult>;
+  postMetrics?(ctx: ConnectorContext, externalId: string): Promise<PostMetrics>;
   /** Biến payload webhook thô thành tin nhắn / lead thống nhất. */
   parseWebhook?(body: unknown): InboundMessage[];
 }

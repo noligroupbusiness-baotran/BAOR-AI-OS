@@ -26,10 +26,25 @@ export const scheduledPosts = sqliteTable("scheduled_posts", {
   title: text("title").notNull(),
   platform: text("platform").notNull(),
   scheduledFor: text("scheduled_for").notNull(),
-  status: text("status").notNull(), // scheduled | publishing | published | failed
+  status: text("status").notNull(), // scheduled | publishing | verifying | published | failed | dry_run
   reach: integer("reach"),
   engagement: integer("engagement"),
   error: text("error"),
+  // CP04: đăng video đã duyệt. PUBLISHED chỉ khi nền tảng trả mã bài VÀ đọc lại được bài (verifiedAt, permalink).
+  videoId: text("video_id"),
+  caption: text("caption"),
+  thumbnailUploadId: text("thumbnail_upload_id"),
+  externalId: text("external_id"),
+  permalink: text("permalink"),
+  attempts: integer("attempts").notNull().default(0),
+  publishedAt: text("published_at"),
+  verifiedAt: text("verified_at"),
+  views: integer("views"),
+  metricsAt: text("metrics_at"),
+  /** "live" đăng thật; "dry_run" chế độ thử: dựng đủ yêu cầu nhưng không gọi nền tảng. */
+  mode: text("mode").notNull().default("live"),
+  /** Chống đăng trùng: một video chỉ một bài trên mỗi kênh (vd "facebook:v_abc"). */
+  dedupeKey: text("dedupe_key").unique(),
 });
 
 export const adCampaigns = sqliteTable("ad_campaigns", {

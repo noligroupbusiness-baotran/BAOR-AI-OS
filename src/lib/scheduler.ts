@@ -7,6 +7,7 @@ import { pruneOldData } from "@/lib/retention";
 import { runAutoEditOnce } from "@/lib/video/auto-edit";
 import { notionConfigured, syncSecondBrain } from "@/lib/knowledge/sync";
 import { getSetting, setSetting } from "@/lib/admin";
+import { publishDueVideoPosts, syncVideoPostMetrics, verifyPublishingPosts } from "@/lib/publishing/video";
 
 const g = globalThis as unknown as { __baorScheduler?: { timer: NodeJS.Timeout; lastHourly: number; lastDaily: number } };
 
@@ -31,6 +32,11 @@ async function tick() {
   try {
     const p = await publishDuePosts();
     if (p.published || p.failed) parts.push(`đăng ${p.published}, lỗi ${p.failed}`);
+    // Video đã duyệt: đăng, rồi xác minh bằng cách đọc lại bài trên nền tảng
+    const pv = await publishDueVideoPosts();
+    if (pv.published || pv.tested || pv.failed) parts.push(`video: đăng ${pv.published}, thử ${pv.tested}, lỗi ${pv.failed}`);
+    const vf = await verifyPublishingPosts();
+    if (vf.verified) parts.push(`xác minh ${vf.verified} bài`);
     // Dựng video: nhận tệp mới trong hộp thư vào vào hàng đợi; việc dựng chạy ngầm trong tiến trình con (không chặn máy chủ)
     const v = runAutoEditOnce();
     if (v.processed) parts.push(`nhận ${v.processed} video vào hàng dựng`);
@@ -39,6 +45,8 @@ async function tick() {
       state.lastHourlyAt = state.lastTickAt;
       const m = await syncChannelMetrics();
       parts.push(`đồng bộ ${m.updated} mục tiêu${m.errors.length ? `, lỗi ${m.errors.length}` : ""}`);
+      const vm = await syncVideoPostMetrics();
+      if (vm.updated || vm.errors) parts.push(`số liệu ${vm.updated} bài video${vm.errors ? `, lỗi ${vm.errors}` : ""}`);
       const rules = runScheduledRules();
       if (rules.fired || rules.errors) parts.push(`automation ${rules.fired} lần${rules.errors ? `, ${rules.errors} lỗi` : ""}`);
       // Second Brain: đồng bộ Notion mỗi 6 giờ khi đã có token (mốc lưu trong CSDL để khởi động lại không chạy dồn)

@@ -26,6 +26,9 @@ export const postStatusLabel: Record<PostStatus, { label: string; tone: Tone }> 
   publishing: { label: "Đang đăng", tone: "amber" },
   published: { label: "Đã đăng", tone: "jade" },
   failed: { label: "Lỗi", tone: "brick" },
+  verifying: { label: "Đang xác minh", tone: "amber" },
+  dry_run: { label: "Đã thử (không đăng thật)", tone: "violet" },
+  cancelled: { label: "Đã huỷ", tone: "neutral" },
 };
 
 export const adStatusLabel: Record<AdStatus, { label: string; tone: Tone }> = {

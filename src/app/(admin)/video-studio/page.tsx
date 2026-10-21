@@ -13,6 +13,7 @@ import { readCampaignContext, withCampaignContext } from "@/lib/campaigns/contex
 import { rerenderVideoAction, transitionVideo } from "@/lib/actions/videos";
 import { LinkButton } from "@/components/ui/button";
 import { SourceDrop } from "@/components/video/source-drop";
+import { VideoScheduleForm } from "@/components/publishing/video-schedule";
 import { AutoRefresh } from "@/components/video/auto-refresh";
 import { listContent } from "@/lib/queries";
 import { fileUrl } from "@/lib/uploads";
@@ -166,6 +167,7 @@ export default async function VideoStudioPage({ searchParams }: { searchParams: 
                         </div>
                       </div>
                     )}
+                    {v.status === "approved" && <VideoScheduleForm videoId={v.id} back={withCampaignContext(`/video-studio?tab=${tab}&open=${v.id}`, ctx)} />}
                     {isOpen && feedback.length > 0 && (
                       <div className="mt-3">
                         <div className="lbl">Lịch sử phản hồi</div>
@@ -212,7 +214,7 @@ export default async function VideoStudioPage({ searchParams }: { searchParams: 
                         {!jv!.job.cutSilence && <ConfirmAction action={rerenderVideoAction} fields={{ id: v.id, back, cut: "1" }} label="Dựng lại, cắt lặng" title="Dựng lại và cắt khoảng lặng?" message="#103: cắt lặng chỉ khi được giao cho đúng video này." confirmLabel="Dựng lại" variant="ghost" />}
                       </>
                     )}
-                    {v.status === "approved" && <Link href="/publishing" className="inline-flex h-[26px] items-center rounded-full border border-border-2 px-2.5 text-[12px] font-medium text-ink hover:border-ink-3">Lên lịch ở Đăng bài</Link>}
+                    {v.status === "approved" && <Link href="/publishing#video-posts" className="inline-flex h-[26px] items-center rounded-full border border-border-2 px-2.5 text-[12px] font-medium text-ink hover:border-ink-3">Xem bài đã lên lịch</Link>}
                   </div>
                 </li>
               );

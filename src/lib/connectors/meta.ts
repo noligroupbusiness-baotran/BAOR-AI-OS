@@ -1,9 +1,13 @@
 // Connector Meta: Facebook Page (đăng bài, insights, Messenger) và Meta Ads (Marketing API).
 // Phần dựng request và đọc response tách thành hàm thuần để kiểm thử không cần mạng.
 import { createHmac, timingSafeEqual } from "node:crypto";
-import type { CheckResult, Connector, ConnectorContext, InboundMessage, MetricSnapshot, PublishRequest, PublishResult } from "./types";
+import fs from "node:fs";
+import { Readable } from "node:stream";
+import type { CheckResult, Connector, ConnectorContext, InboundMessage, MetricSnapshot, PostMetrics, PublishRequest, PublishResult, VerifyPostResult, VideoPublishRequest } from "./types";
 
 export const GRAPH = "https://graph.facebook.com/v21.0";
+/** Đăng video theo hướng dẫn Video API hiện hành (Resumable Upload API → /{page-id}/videos), bản v26.0. */
+export const GRAPH_VIDEO = "https://graph.facebook.com/v26.0";
 
 type GraphError = { error?: { message?: string; code?: number; type?: string } };
 
@@ -85,6 +89,81 @@ export function verifyMetaSignature(appSecret: string, rawBody: string, header: 
   return timingSafeEqual(Buffer.from(expected, "hex"), Buffer.from(got, "hex"));
 }
 
+// ---------- Facebook Page: đăng video (CP04) ----------
+// Bước 1: POST /{app-id}/uploads?file_name&file_length&file_type=video/mp4 (User token) → { id: "upload:<phiên>" }
+// Bước 2: POST /upload:<phiên>, header "Authorization: OAuth <User token>", "file_offset: 0", thân = tệp → { h: "<handle>" }
+// Bước 3: POST /{page-id}/videos, form access_token (Page token), title, description, fbuploader_video_file_chunk=<handle> → { id }
+// Nguồn: developers.facebook.com/documentation/video-api/guides/publishing (đọc 21/10/2026). Chưa chạy với tài khoản Meta thật.
+
+async function readJson<T>(res: Response): Promise<T & GraphError> {
+  const text = await res.text();
+  try {
+    return JSON.parse(text) as T & GraphError;
+  } catch {
+    return { error: { message: `Phản hồi không phải JSON (HTTP ${res.status})` } } as T & GraphError;
+  }
+}
+
+export async function publishPageVideo(ctx: ConnectorContext, req: VideoPublishRequest): Promise<PublishResult> {
+  const { pageId, pageToken, appId, userToken } = ctx.config;
+  if (!pageId || !pageToken || !appId || !userToken) return { ok: false, message: "Thiếu Page ID, Page token, App ID hoặc User token để đăng video." };
+  try {
+    const start = new URL(`${GRAPH_VIDEO}/${appId}/uploads`);
+    start.searchParams.set("file_name", req.fileName);
+    start.searchParams.set("file_length", String(req.fileSize));
+    start.searchParams.set("file_type", "video/mp4");
+    start.searchParams.set("access_token", userToken);
+    const r1 = await ctx.fetch(start.toString(), { method: "POST" });
+    const j1 = await readJson<{ id?: string }>(r1);
+    if (!r1.ok || j1.error || !j1.id?.startsWith("upload:")) throw j1;
+
+    const body = Readable.toWeb(fs.createReadStream(req.filePath)) as unknown as ReadableStream<Uint8Array>;
+    const r2 = await ctx.fetch(`${GRAPH_VIDEO}/${j1.id}`, {
+      method: "POST",
+      headers: { Authorization: `OAuth ${userToken}`, file_offset: "0", "Content-Length": String(req.fileSize) },
+      body,
+      duplex: "half",
+    } as RequestInit);
+    const j2 = await readJson<{ h?: string }>(r2);
+    if (!r2.ok || j2.error || !j2.h) throw j2;
+
+    const form = new URLSearchParams({ access_token: pageToken, title: req.title, description: req.description, fbuploader_video_file_chunk: j2.h });
+    const r3 = await ctx.fetch(`${GRAPH_VIDEO}/${pageId}/videos`, { method: "POST", body: form });
+    const j3 = await readJson<{ id?: string }>(r3);
+    if (!r3.ok || j3.error || !j3.id) throw j3;
+    return { ok: true, externalId: j3.id, message: `Meta nhận video (mã ${j3.id}), đang xác minh.` };
+  } catch (e) {
+    return { ok: false, message: describe(e, "Đăng video thất bại.") };
+  }
+}
+
+/** Đọc lại video từ Meta: chỉ coi là đã đăng khi có permalink_url. */
+export async function verifyPageVideo(ctx: ConnectorContext, externalId: string): Promise<VerifyPostResult> {
+  const { pageToken } = ctx.config;
+  try {
+    const v = await graph<{ id: string; permalink_url?: string; created_time?: string }>(ctx, externalId, { fields: "id,permalink_url,created_time", access_token: pageToken });
+    if (!v.permalink_url) return { ok: false, message: "Meta chưa trả đường dẫn bài (video có thể đang xử lý)." };
+    const permalink = v.permalink_url.startsWith("http") ? v.permalink_url : `https://www.facebook.com${v.permalink_url}`;
+    return { ok: true, permalink, publishedAt: v.created_time, message: "Đã đọc lại bài trên Facebook." };
+  } catch (e) {
+    return { ok: false, message: describe(e, "Không đọc lại được video.") };
+  }
+}
+
+export interface VideoInsightsResponse {
+  data?: { name: string; values?: { value: number }[] }[];
+}
+
+export function readVideoInsights(res: VideoInsightsResponse): PostMetrics {
+  const get = (n: string) => res.data?.find((d) => d.name === n)?.values?.[0]?.value;
+  return { views: get("total_video_views"), reach: get("total_video_impressions_unique") };
+}
+
+export async function pageVideoMetrics(ctx: ConnectorContext, externalId: string): Promise<PostMetrics> {
+  const res = await graph<VideoInsightsResponse>(ctx, `${externalId}/video_insights`, { metric: "total_video_views,total_video_impressions_unique", access_token: ctx.config.pageToken });
+  return readVideoInsights(res);
+}
+
 // ---------- Facebook Page ----------
 
 export const facebookPageConnector: Connector = {
@@ -94,6 +173,8 @@ export const facebookPageConnector: Connector = {
     { key: "pageId", label: "Page ID" },
     { key: "pageToken", label: "Page Access Token", secret: true, hint: "Meta for Developers › Graph API Explorer, quyền pages_manage_posts, pages_read_engagement, pages_messaging" },
     { key: "appSecret", label: "App Secret", secret: true, hint: "Dùng để xác minh chữ ký webhook" },
+    { key: "appId", label: "App ID", hint: "Đăng video: Resumable Upload API cần App ID" },
+    { key: "userToken", label: "User Access Token", secret: true, hint: "Đăng video: tải tệp lên Meta bằng token người dùng có quyền CREATE_CONTENT trên trang" },
     { key: "tokenExpiresAt", label: "Token hết hạn ngày (YYYY-MM-DD)", hint: "Token trang dài hạn thường 60 ngày; hệ thống nhắc trước 7 ngày" },
   ],
   async check(ctx): Promise<CheckResult> {
@@ -125,6 +206,9 @@ export const facebookPageConnector: Connector = {
       return { ok: false, message: describe(e, "Đăng bài thất bại.") };
     }
   },
+  publishVideo: publishPageVideo,
+  verifyPost: verifyPageVideo,
+  postMetrics: pageVideoMetrics,
   parseWebhook: parseMessengerWebhook,
 };
 

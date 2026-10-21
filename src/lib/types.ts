@@ -115,7 +115,7 @@ export interface ContentItem {
   score?: number; // điểm AI dự đoán hiệu quả
 }
 
-export type PostStatus = "scheduled" | "publishing" | "published" | "failed";
+export type PostStatus = "scheduled" | "publishing" | "verifying" | "published" | "failed" | "dry_run" | "cancelled";
 
 export interface ScheduledPost {
   id: string;

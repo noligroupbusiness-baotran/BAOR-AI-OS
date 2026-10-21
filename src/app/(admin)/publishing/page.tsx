@@ -15,6 +15,7 @@ import { campaignRepo } from "@/lib/campaigns/repository";
 import { Pager, paginate } from "@/components/ui/pager";
 import { MonthCalendar, monthOf } from "@/components/publishing/month-calendar";
 import { Segment } from "@/components/ui/segment";
+import { VideoPostsPanel } from "@/components/publishing/video-posts-panel";
 
 export const metadata = { title: "Đăng bài & quảng cáo – BAOR AI OS" };
 
@@ -62,6 +63,8 @@ export default async function PublishingPage({ searchParams }: { searchParams: P
         <Tile label="Ads đang chạy" value={String(ads.filter((a) => a.status === "active").length)} hint={`Đã chi ${formatNumber(spentMonth)} ₫`} />
         <Tile label="Lỗi đăng" value={String(failed.length)} hint={failed[0]?.error?.split(".")[0] ?? "Không có"} tone={failed.length ? "brick" : undefined} />
       </Tiles>
+
+      <VideoPostsPanel />
 
       <div className="mt-3.5"><Segment basePath="/publishing" active={view} items={[{ key: "list", label: "Danh sách" }, { key: "calendar", label: "Lịch tháng" }]} paramName="view" /></div>
 

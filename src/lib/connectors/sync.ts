@@ -87,7 +87,9 @@ export async function publishDuePosts(): Promise<{ published: number; failed: nu
     .select()
     .from(schema.scheduledPosts)
     .where(and(eq(schema.scheduledPosts.status, "scheduled"), lte(schema.scheduledPosts.scheduledFor, nowIso())))
-    .all();
+    .all()
+    // Bài video do src/lib/publishing/video.ts đăng (tải tệp, xác minh, chống trùng).
+    .filter((p) => !p.videoId);
   for (const post of due) {
     const content = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, post.contentId)).get();
     // Luật: chỉ đăng nội dung đã duyệt / đã lên lịch, và phải có kết nối.
