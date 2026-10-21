@@ -36,7 +36,7 @@ export interface CampaignRow {
   cpl: number | null;
   conversion: number | null;
   roas: number | null;
-  source: "system" | "sample" | "none";
+  source: "system" | "sample" | "mixed" | "none";
 }
 
 export function campaignRows(f: ReportFilter = {}): CampaignRow[] {

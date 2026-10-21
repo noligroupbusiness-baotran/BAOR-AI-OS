@@ -10,9 +10,13 @@ import { sendAlert } from "@/lib/alerts";
 import { catalogRepo } from "@/lib/catalog/repository";
 
 // Bộ não AI của hệ thống. Khóa API lấy từ Cài đặt > Kết nối > Claude API, hoặc biến môi trường ANTHROPIC_API_KEY.
-const MODEL = "claude-opus-5";
+export const MODEL = "claude-opus-5-5";
 
 type Result<T> = ({ ok: true } & T) | { ok: false; error: string };
+
+export function aiConfigured(): boolean {
+  return Boolean(readIntegrationConfig("claude").apiKey || process.env.ANTHROPIC_API_KEY);
+}
 
 function getClient(): Anthropic | null {
   const apiKey = readIntegrationConfig("claude").apiKey || process.env.ANTHROPIC_API_KEY;
@@ -24,7 +28,7 @@ const NO_KEY = "Chưa có khóa Claude API. Vào Cài đặt > Kết nối > Cla
 
 // Cổng AI: mọi lần gọi mô hình đi qua đây để (1) kiểm tra trần ngân sách, (2) ghi sổ chi phí,
 // (3) ghi quyết định vào bộ định tuyến với nhãn "AI đề xuất, cần người duyệt".
-async function gate<T extends { usage?: { input_tokens: number; output_tokens: number } }>(purpose: string, subject: string, call: (client: Anthropic) => Promise<T>): Promise<Result<{ res: T }>> {
+export async function gate<T extends { usage?: { input_tokens: number; output_tokens: number } }>(purpose: string, subject: string, call: (client: Anthropic) => Promise<T>): Promise<Result<{ res: T }>> {
   const client = getClient();
   if (!client) return { ok: false, error: NO_KEY };
   const budget = aiBudgetAllows();

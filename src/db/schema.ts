@@ -525,3 +525,109 @@ export const securityEvents = sqliteTable(
   },
   (t) => [index("security_events_email_at_idx").on(t.email, t.at), index("security_events_at_idx").on(t.at)],
 );
+
+// ---------------------------------------------------------------------------
+// Động cơ thương hiệu — CP01. Second Brain: Notion là NGUỒN CHUẨN; bảng dưới chỉ là chỉ mục truy xuất (đọc lại từ Notion,
+// không sửa trong hệ thống). Kèm hồ sơ nghiên cứu nguồn ngoài và Content Brief kết hợp hai nguồn.
+// ---------------------------------------------------------------------------
+
+export const knowledgeIndex = sqliteTable(
+  "knowledge_index",
+  {
+    id: text("id").primaryKey(), // id trang Notion (32 ký tự hex)
+    title: text("title").notNull(),
+    url: text("url").notNull(),
+    section: text("section").notNull().default(""), // 00 | 01 KIẾN THỨC | 02 SKILL | 03 QUYẾT ĐỊNH OWNER …
+    area: text("area").notNull().default(""), // N1 Đào tạo | N2 Bán hàng… | N3 Edit video | …
+    kind: text("kind").notNull().default(""), // Principle | SOP | Framework | Skill | Decision …
+    status: text("status").notNull().default("DRAFT"), // ACTIVE | VERIFIED | DRAFT | ARCHIVED
+    labels: text("labels").notNull().default("[]"), // JSON: ["[OWNER]", "[NGHIÊN CỨU]", "[AI SUY LUẬN]"]
+    sourceGrade: text("source_grade").notNull().default(""),
+    notionEditedAt: text("notion_edited_at"),
+    body: text("body").notNull().default(""),
+    bodyHash: text("body_hash").notNull().default(""),
+    origin: text("origin").notNull().default("notion_sync"), // notion_sync | snapshot
+    syncedAt: text("synced_at").notNull(),
+  },
+  (t) => [index("knowledge_index_status_idx").on(t.status)],
+);
+
+export const researchTasks = sqliteTable(
+  "research_tasks",
+  {
+    id: text("id").primaryKey(),
+    question: text("question").notNull(),
+    purposeKind: text("purpose_kind").notNull(), // content | audience | verify | trend | gap | result
+    purpose: text("purpose").notNull().default(""),
+    contentId: text("content_id"),
+    campaignId: text("campaign_id"),
+    status: text("status").notNull().default("draft"), // draft | running | done | error
+    runner: text("runner").notNull().default("ai"), // ai | import
+    model: text("model"),
+    searchCount: integer("search_count").notNull().default(0),
+    costVnd: integer("cost_vnd").notNull().default(0),
+    summary: text("summary").notNull().default(""),
+    error: text("error"),
+    createdBy: text("created_by").notNull().default(""),
+    createdAt: text("created_at").notNull(),
+    finishedAt: text("finished_at"),
+  },
+  (t) => [index("research_tasks_created_idx").on(t.createdAt)],
+);
+
+export const researchSources = sqliteTable(
+  "research_sources",
+  {
+    id: text("id").primaryKey(),
+    taskId: text("task_id").notNull(),
+    url: text("url").notNull(),
+    title: text("title").notNull(),
+    author: text("author").notNull().default(""), // tác giả hoặc tổ chức; trống = chưa xác định
+    publisher: text("publisher").notNull().default(""),
+    publishedAt: text("published_at"), // không đoán: null khi trang không ghi
+    sourceType: text("source_type").notNull().default("other"), // official | research | news | blog | social | other
+    grade: text("grade").notNull().default("C"), // A | B | C | D
+    excerpt: text("excerpt").notNull().default(""), // trích ngắn ≤ 300 ký tự
+    limits: text("limits").notNull().default(""),
+    accessedAt: text("accessed_at").notNull(),
+  },
+  (t) => [index("research_sources_task_idx").on(t.taskId)],
+);
+
+export const researchFindings = sqliteTable(
+  "research_findings",
+  {
+    id: text("id").primaryKey(),
+    taskId: text("task_id").notNull(),
+    statement: text("statement").notNull(),
+    classification: text("classification").notNull(), // FACT | OWNER_VIEW | HYPOTHESIS | OBSERVATION | BUSINESS_DECISION | PROCEDURE
+    sourceIds: text("source_ids").notNull().default("[]"), // JSON id research_sources
+    knowledgeIds: text("knowledge_ids").notNull().default("[]"), // JSON id trang Notion
+    counterView: text("counter_view").notNull().default(""),
+    limits: text("limits").notNull().default(""),
+    application: text("application").notNull().default(""),
+    contentTopics: text("content_topics").notNull().default("[]"),
+    confidence: text("confidence").notNull().default("medium"), // high | medium | low
+    verifyOk: integer("verify_ok", { mode: "boolean" }).notNull().default(false),
+    verifyNotes: text("verify_notes").notNull().default("[]"),
+  },
+  (t) => [index("research_findings_task_idx").on(t.taskId)],
+);
+
+export const contentBriefs = sqliteTable("content_briefs", {
+  id: text("id").primaryKey(),
+  taskId: text("task_id"),
+  contentId: text("content_id"),
+  topic: text("topic").notNull(),
+  goal: text("goal").notNull().default(""),
+  audience: text("audience").notNull().default(""),
+  keyMessage: text("key_message").notNull().default(""),
+  angle: text("angle").notNull().default(""),
+  points: text("points").notNull().default("[]"), // JSON BriefPoint[]
+  gaps: text("gaps").notNull().default("[]"),
+  qa: text("qa").notNull().default("{}"), // JSON { ok, issues[] }
+  status: text("status").notNull().default("draft"), // draft | ready | used
+  createdBy: text("created_by").notNull().default(""),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});

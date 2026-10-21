@@ -41,6 +41,11 @@ export async function toggleAd(fd: FormData) {
   const ad = db.select().from(schema.adCampaigns).where(eq(schema.adCampaigns.id, id)).get();
   if (!ad) return done("/publishing", "Không tìm thấy chiến dịch");
   const next = ad.status === "active" ? "paused" : "active";
+  if (next === "active") {
+    // Bật lại cũng là quyết định tiêu tiền: phải nằm trong hạn mức ngày và tháng như khi duyệt.
+    const gate = budgetRule(ad.id, ad.name, ad.dailyBudget);
+    if (!gate.ok) return done("/publishing?tone=error", gate.reason);
+  }
   db.update(schema.adCampaigns).set({ status: next }).where(eq(schema.adCampaigns.id, id)).run();
   done("/publishing", next === "active" ? "Đã bật lại chiến dịch" : "Đã tạm dừng chiến dịch");
 }
@@ -72,7 +77,8 @@ function budgetRule(adId: string, name: string, dailyBudget: number) {
     if (dailyBudget > g.dailyCap) return { ok: false, reason: `Ngân sách ${dailyBudget.toLocaleString("vi-VN")} ₫/ngày vượt hạn mức ${g.dailyCap.toLocaleString("vi-VN")} ₫/ngày.` };
     const spentMonth = getDb().select().from(schema.adCampaigns).all().reduce((n, a) => n + a.spent, 0);
     const projected = spentMonth + dailyBudget * 30;
-    if (projected > g.monthlyCap) return { ok: false, reason: `Đã chi ${spentMonth.toLocaleString("vi-VN")} ₫ tháng này; thêm ${dailyBudget.toLocaleString("vi-VN")} ₫/ngày sẽ vượt hạn mức tháng ${g.monthlyCap.toLocaleString("vi-VN")} ₫.` };
+    // Bảng ad_campaigns chỉ lưu tổng đã chi (không tách theo tháng) nên dùng tổng ghi nhận: chặt hơn, không lỏng hơn.
+    if (projected > g.monthlyCap) return { ok: false, reason: `Tổng đã chi ghi nhận ${spentMonth.toLocaleString("vi-VN")} ₫; thêm ${dailyBudget.toLocaleString("vi-VN")} ₫/ngày sẽ vượt hạn mức tháng ${g.monthlyCap.toLocaleString("vi-VN")} ₫.` };
     return { ok: true, reason: "Trong hạn mức ngày và tháng." };
   });
 }

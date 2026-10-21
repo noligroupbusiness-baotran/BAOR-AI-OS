@@ -403,7 +403,8 @@ class SqliteCampaignRepository implements CampaignRepository {
     const metric = (c.targetMetric || "").toLowerCase();
     const byOrders = /đơn|mua|bán/.test(metric);
     const achieved = byOrders ? (realOrders > 0 ? realOrders : sample?.achievedValue ?? 0) : leads > 0 ? leads : sample?.achievedValue ?? 0;
-    return { campaignId, achievedValue: achieved, leads: leadsOut, orders, revenue, spent: spentOut, updatedAt: nowIso(), source: anyReal ? "system" : "sample" };
+    const usedSample = !!sample && (realOrders === 0 || leads === 0 || spent === 0);
+    return { campaignId, achievedValue: achieved, leads: leadsOut, orders, revenue, spent: spentOut, updatedAt: nowIso(), source: !anyReal ? "sample" : usedSample ? "mixed" : "system" };
   }
 
   logs(campaignId: string, limit = 20): CampaignLog[] {

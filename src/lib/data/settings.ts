@@ -59,7 +59,7 @@ export const integrations: Integration[] = [
     name: "Claude API (Anthropic)",
     description: "Bộ não AI cho research, insight, viết nội dung và trả lời khách.",
     connected: true,
-    account: "Model: claude-opus-5",
+    account: "Model: claude-opus-5-5",
   },
 ];
 

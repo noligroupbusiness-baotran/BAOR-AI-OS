@@ -1,0 +1,157 @@
+{
+  "skillId": "edu-hau-ky-video",
+  "name": "Skill Edit video Vlog",
+  "version": "v0.3.1",
+  "status": "ACTIVE",
+  "sourceUrl": "https://app.notion.com/p/4004ceb9517d812e85d0e240647c5bc4",
+  "sourceSums": "f445aec82c4ee6e75bd396f10244efcb908cf4340c83d6998a842aeff2532a40",
+  "syncedAt": "2026-10-21",
+  "purpose": "Dựng hậu kỳ video vlog nói trước máy của OWNER (9:16). Chỉ dựng, không đăng.",
+  "labels": {
+    "OWNER": "lời OWNER",
+    "SO": "skill gốc OWNER soạn",
+    "CEO": "quyết định CEO",
+    "NOI_BO": "quy định nội bộ đội bot",
+    "QA": "góp ý QA",
+    "AI": "AI SUY LUẬN — bot tự chọn, OWNER chưa chốt"
+  },
+
+  "canvas": { "w": 1080, "h": 1920, "fps": 30, "src": "OWNER 20/10 17:07" },
+
+  "zones": {
+    "_src": "Bố cục bốn vùng OWNER xác nhận 18/10 (ảnh Học.jpg); số đo = AI",
+    "logo": { "x0": 0.06, "x1": 0.40, "y0": 0.03, "y1": 0.13 },
+    "face": { "x0": 0.0, "x1": 1.0, "y0": 0.145, "y1": 0.59 },
+    "emphasis": { "x0": 0.10, "x1": 0.90, "y0": 0.605, "y1": 0.715 },
+    "subtitle": { "x0": 0.10, "x1": 0.90, "y0": 0.725, "y1": 0.81, "_note": "AI: nới đáy từ 79,5% lên 81% để chứa 2 dòng cỡ 66 OWNER chốt" }
+  },
+
+  "subtitle": {
+    "font": "Times New Roman Italic",
+    "fontFile": "Times New Roman Italic.ttf",
+    "size": 66,
+    "fill": "#FFFFFF",
+    "whiteStroke": 1,
+    "outline": { "color": "#000000", "width": 3 },
+    "shadow": { "dx": 4, "dy": 3, "blur": 5, "opacity": 0.6 },
+    "currentWord": "#FFC929",
+    "currentWordGlow": false,
+    "maxLines": 2,
+    "lineGap": 4,
+    "breakOnPauseSec": 0.7,
+    "continuous": true,
+    "_src": "OWNER 21/10 01:22, 08:46, 09:47; nét trắng/mã màu = AI; phát sáng chờ OWNER (#100)"
+  },
+
+  "emphasis": {
+    "font": "Times New Roman Bold Italic",
+    "fontFile": "Times New Roman Bold Italic.ttf",
+    "size": 150,
+    "minSize": 96,
+    "gradient": ["#FFF6CF", "#FFD95E", "#C8901E", "#FFE38F", "#A8720F"],
+    "outline": { "color": "#2B1A05", "width": 3 },
+    "glow": { "color": "#FFC44D", "radius": 14, "opacity": 0.55 },
+    "gapAboveSubtitle": 18,
+    "perScreen": 1,
+    "minSpacingSec": 6.0,
+    "perSecondsBudget": 10,
+    "maxWords": 4,
+    "holdMinSec": 1.2,
+    "holdMaxSec": 3.0,
+    "enterFrames": 6,
+    "enterRisePx": 12,
+    "exitFrames": 4,
+    "upperCaseOnlyKeywords": true,
+    "_src": "OWNER 20/10 23:45–23:54, 21/10 01:24, 08:46, 12:52 (kiểu v4); cỡ/khoảng cách/nhịp = AI"
+  },
+
+  "logo": {
+    "width": 420,
+    "x": 62,
+    "y": 110,
+    "lightOnDarkBg": "baor-light.png",
+    "darkOnLightBg": "baor-dark.png",
+    "brightThreshold": 0.55,
+    "crossfadeSec": 0.2,
+    "_src": "OWNER 21/10 10:59, 11:06, 11:22; cỡ 420 demo chờ OWNER (#98a); đo nền theo cảnh = AI"
+  },
+
+  "zoom": {
+    "enabled": true,
+    "max": 1.10,
+    "range": [1.07, 1.12],
+    "transitionSec": 1.2,
+    "minGapSec": 5.0,
+    "firstAfterSec": 3.0,
+    "punchIn": false,
+    "_src": "OWNER 21/10 12:22; mức/nhịp/tâm theo mặt = AI; punch-in chờ OWNER (#102)"
+  },
+
+  "silence": {
+    "cutByDefault": false,
+    "thresholdDb": -42,
+    "minSec": 0.28,
+    "padSec": 0.09,
+    "_src": "SO + OWNER 19/10 23:47 giữ khoảng nghỉ; ngưỡng = AI; mặc định chờ OWNER (#103)"
+  },
+
+  "listening": {
+    "mainModel": "medium",
+    "secondModel": "small",
+    "uncertainBelow": 0.15,
+    "confirmBelow": 0.75,
+    "_rule": "AI: chưa chắc khi xác suất < 0,15, hoặc < 0,75 mà mô hình thứ hai không nghe ra cùng từ trong ±0,6 s",
+    "_src": "OWNER 20/10 00:09, 21/10 00:44: từ không chắc không đưa vào phụ đề/chữ nhấn; ngưỡng = AI"
+  },
+
+  "audio": {
+    "targetLufs": -16,
+    "lufsTolerance": 1,
+    "truePeakMaster": -2.0,
+    "truePeakPreview": -1.0,
+    "music": {
+      "levelLufs": -25,
+      "fadeInSec": 1,
+      "fadeOutSec": 2,
+      "ducking": true,
+      "speechMarginDb": 15,
+      "pauseMarginDb": 6,
+      "requireLicense": true,
+      "ownerApprovalToPublish": true
+    },
+    "sfx": false,
+    "_src": "CEO 13:29 (LUFS/TP), CEO T-056 (giấy phép), mức nhạc/A5 = AI đo T-056; SFX chờ OWNER (#78c)"
+  },
+
+  "output": {
+    "masterCrf": 18,
+    "previewHeight": 960,
+    "previewCrf": 28,
+    "snapshotEverySec": 5
+  },
+
+  "drive": {
+    "folder": "GROK BOT - BAORTRAN",
+    "access": "read-only",
+    "kinds": ["broll", "images", "audio", "animation"],
+    "_src": "NỘI BỘ: chỉ ĐỌC; không ghi, tạo, di chuyển, xoá, chia sẻ"
+  },
+
+  "openQuestions": [
+    { "id": "#90", "q": "Mấy từ nghe chưa chắc", "meanwhile": "không đưa vào chữ nhấn/nhãn/phụ đề" },
+    { "id": "#92", "q": "Nghe lại chỗ cắt, cụm chưa chắc, có giữ tên người trong phụ đề", "meanwhile": "chặn đăng" },
+    { "id": "#98a", "q": "Logo cỡ 420 hay 400", "meanwhile": "420 (demo); vẫn lỗi bố cục, chặn đăng" },
+    { "id": "#98b/#98c", "q": "Tagline nhỏ; màu logo tối", "meanwhile": "giữ tagline; xám than" },
+    { "id": "#100", "q": "Phát sáng phụ đề, số trong chấm bước, phạm vi đổi kiểu", "meanwhile": "không phát sáng" },
+    { "id": "#102", "q": "Punch-in cắt cứng: dùng hay bỏ", "meanwhile": "không punch, chỉ zoom mượt" },
+    { "id": "#103", "q": "Cắt lặng có là mặc định không", "meanwhile": "giữ khoảng nghỉ; chỉ cắt khi được giao" },
+    { "id": "#78c", "q": "Có dùng hiệu ứng âm thanh không", "meanwhile": "không dùng SFX" },
+    { "id": "Nhạc", "q": "OWNER nghe và duyệt nhạc nền", "meanwhile": "chỉ duyệt nội bộ" },
+    { "id": "Font", "q": "Giấy phép thương mại font Times New Roman", "meanwhile": "chặn đăng" }
+  ],
+
+  "notYetAutomated": [
+    "Sơ đồ/animation giải thích quy trình (mục 3.3): cần OWNER chọn đoạn, chưa tự nhận biết",
+    "B-roll và hiệu ứng từ Drive (mục 3.8): chờ nối Drive chỉ đọc"
+  ]
+}

@@ -107,7 +107,7 @@ export default async function PublishingPage({ searchParams }: { searchParams: P
         <Pager page={rowPage.page} pages={rowPage.pages} total={rowPage.total} hrefFor={(p) => `/publishing?page=${p}`} label="bài" />
       </Panel>}
 
-      <Panel>
+      <Panel id="ads">
         <PanelHeader
           title="Quảng cáo"
           sub={`Hạn mức ${formatNumber(g.dailyCap)} ₫/ngày · ${formatNumber(g.monthlyCap)} ₫/tháng. Tự dừng khi chi phí/lead vượt ${formatNumber(g.autoPauseCplAbove)} ₫.`}

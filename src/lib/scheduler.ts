@@ -5,6 +5,8 @@ import { runScheduledRules } from "@/lib/automation/engine";
 import { sendAlert } from "@/lib/alerts";
 import { pruneOldData } from "@/lib/retention";
 import { runAutoEditOnce } from "@/lib/video/auto-edit";
+import { notionConfigured, syncSecondBrain } from "@/lib/knowledge/sync";
+import { getSetting, setSetting } from "@/lib/admin";
 
 const g = globalThis as unknown as { __baorScheduler?: { timer: NodeJS.Timeout; lastHourly: number; lastDaily: number } };
 
@@ -39,6 +41,13 @@ async function tick() {
       parts.push(`đồng bộ ${m.updated} mục tiêu${m.errors.length ? `, lỗi ${m.errors.length}` : ""}`);
       const rules = runScheduledRules();
       if (rules.fired || rules.errors) parts.push(`automation ${rules.fired} lần${rules.errors ? `, ${rules.errors} lỗi` : ""}`);
+      // Second Brain: đồng bộ Notion mỗi 6 giờ khi đã có token (mốc lưu trong CSDL để khởi động lại không chạy dồn)
+      const lastKb = Date.parse(getSetting("knowledge.lastAutoSync") ?? "") || 0;
+      if (notionConfigured() && now - lastKb >= 6 * 60 * 60 * 1000) {
+        setSetting("knowledge.lastAutoSync", new Date(now).toISOString());
+        const kb = await syncSecondBrain();
+        parts.push(`Second Brain: ${kb.ok ? "đồng bộ xong" : "lỗi đồng bộ"}`);
+      }
     }
     // Mỗi ngày: dọn nhật ký cũ và tệp mồ côi theo chính sách lưu trữ.
     if (!g.__baorScheduler || now - g.__baorScheduler.lastDaily >= 24 * 60 * 60 * 1000) {

@@ -42,7 +42,7 @@ export const approvalStatusLabel: Record<ApprovalStatus, { label: string; tone: 
 
 // Nhóm hiển thị ở tab "Hoạt động thực hiện" và phân hệ tương ứng để mở.
 export const entityTypeLabel: Record<LinkedEntityType, { label: string; plural: string; module: string }> = {
-  insight: { label: "Insight", plural: "Insight đang nghiên cứu", module: "Nghiên cứu & Insight" },
+  insight: { label: "Insight", plural: "Insight đang nghiên cứu", module: "Insight khách hàng" },
   content: { label: "Nội dung", plural: "Nội dung đang viết", module: "Nội dung" },
   asset: { label: "Hình ảnh", plural: "Hình ảnh", module: "Nội dung" },
   video: { label: "Video", plural: "Video đang dựng", module: "Video Studio" },

@@ -117,7 +117,7 @@ export interface CampaignResult {
   revenue: number;
   spent: number;
   updatedAt: string;
-  source: "sample" | "system";
+  source: "sample" | "system" | "mixed"; // mixed = có số thật nhưng vài trường vẫn lấy từ bản mẫu
 }
 
 export interface CampaignLog {

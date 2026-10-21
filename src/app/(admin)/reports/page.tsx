@@ -36,6 +36,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const rows = campaignRows(f);
   const totals = { leads: rows.reduce((n, r) => n + r.leads, 0), orders: rows.reduce((n, r) => n + r.orders, 0), revenue: rows.reduce((n, r) => n + r.revenue, 0), spent: rows.reduce((n, r) => n + r.spent, 0) };
   const sampleCount = rows.filter((r) => r.source === "sample").length;
+  const mixedCount = rows.filter((r) => r.source === "mixed").length;
 
   return (
     <>
@@ -62,6 +63,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
         <Tile label="Chi phí" value={formatCurrency(totals.spent)} hint={totals.spent > 0 && totals.revenue > 0 ? `ROAS ${(totals.revenue / totals.spent).toFixed(2)}x` : "ROAS: chưa đủ dữ liệu"} />
       </div>
       {sampleCount > 0 && <p className="mt-2 text-[12px] text-ink-3">{sampleCount} chiến dịch đang dùng số liệu mẫu vì chưa có lead, đơn hoặc chi phí thật. Số sẽ tự thay khi có dữ liệu.</p>}
+      {mixedCount > 0 && <p className="mt-1 text-[12px] text-amber">{mixedCount} chiến dịch có số thật nhưng vài cột (đơn, doanh thu hoặc chi phí) vẫn lấy từ số mẫu. Không dùng các cột đó để ra quyết định.</p>}
 
       <div className="mt-3.5 flex flex-wrap items-center justify-between gap-2">
         <div className="overflow-x-auto"><Segment basePath={`/reports${f.month || f.campaignId ? `?${new URLSearchParams({ ...(f.month ? { month: f.month } : {}), ...(f.campaignId ? { campaign: f.campaignId } : {}) }).toString()}` : ""}`} active={tab} items={tabs} /></div>

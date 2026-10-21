@@ -70,7 +70,8 @@ export async function approveContent(fd: FormData) {
 }
 
 export async function scheduleContent(fd: FormData) {
-  await currentActor();
+  // Chỉ nội dung đã được duyệt mới được lên lịch đăng; người lên lịch cần quyền quản lý trở lên.
+  await requirePermission("manager", "/content?tab=done");
   const id = str(fd, "id");
   const when = str(fd, "when"); // datetime-local (giờ VN)
   const platforms = fd.getAll("platform").map(String);
@@ -79,6 +80,7 @@ export async function scheduleContent(fd: FormData) {
   const db = getDb();
   const item = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, id)).get();
   if (!item) return done("/content?tab=done", "Không tìm thấy nội dung");
+  if (item.status !== "approved" && item.status !== "scheduled") return done("/content?tab=done&tone=error", "Chỉ lên lịch được nội dung đã duyệt.");
   db.update(schema.contentItems).set({ status: "scheduled", scheduledFor: iso }).where(eq(schema.contentItems.id, id)).run();
   const posts = platforms.map((p) => ({ id: newId("sp"), contentId: id, title: item.title, platform: p, scheduledFor: iso, status: "scheduled" }));
   db.insert(schema.scheduledPosts).values(posts).run();

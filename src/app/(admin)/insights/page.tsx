@@ -17,7 +17,7 @@ import { campaignRepo } from "@/lib/campaigns/repository";
 import { readCampaignContext, withCampaignContext } from "@/lib/campaigns/context";
 import { CompetitorsPanel } from "@/components/insights/competitors-panel";
 
-export const metadata = { title: "Nghiên cứu & Insight – BAOR AI OS" };
+export const metadata = { title: "Insight khách hàng – BAOR AI OS" };
 
 export default async function ResearchPage({ searchParams }: { searchParams: Promise<{ campaign?: string; goal?: string; link?: string; add?: string; competitor?: string }> }) {
   const sp = await searchParams;
@@ -35,9 +35,9 @@ export default async function ResearchPage({ searchParams }: { searchParams: Pro
 
   return (
     <>
-      <Breadcrumb items={[{ label: "Điều hành", href: "/dashboard" }, { label: "Nghiên cứu & Insight" }]} />
+      <Breadcrumb items={[{ label: "Điều hành", href: "/dashboard" }, { label: "Insight khách hàng" }]} />
       <PageHead
-        title="Nghiên cứu & Insight"
+        title="Insight khách hàng"
         sub="AI đọc bình luận, inbox và số liệu kênh, gom thành insight để đề xuất nội dung. Kết nối Facebook để AI tự cập nhật."
         action={
           <div className="flex flex-wrap gap-2">

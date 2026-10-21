@@ -317,7 +317,7 @@ export function ResultsTab({ campaign, goals, result }: { campaign: Campaign; go
   return (
     <>
       <Panel>
-        <PanelHeader title="Mục tiêu chung so với kết quả" sub={result ? `Cập nhật ${formatDateTime(result.updatedAt)} · ${result.source === "sample" ? "số liệu mẫu" : "tổng hợp từ hệ thống"}.` : "Tổng hợp từ mục tiêu kênh."} />
+        <PanelHeader title="Mục tiêu chung so với kết quả" sub={result ? `Cập nhật ${formatDateTime(result.updatedAt)} · ${result.source === "sample" ? "số liệu mẫu" : result.source === "mixed" ? "số thật trộn số mẫu ở vài cột" : "tổng hợp từ hệ thống"}.` : "Tổng hợp từ mục tiêu kênh."} />
         <div className="px-4 py-3">
           <div className="flex flex-wrap items-baseline justify-between gap-2 text-[13px]">
             <span className="font-semibold text-ink">{campaign.objective}</span>
