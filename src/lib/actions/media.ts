@@ -125,6 +125,7 @@ export async function saveAutoEdit(fd: FormData) {
   setSetting("video.musicUploadId", musicId === "none" ? "none" : music ? musicId : "");
   // #78c: OWNER duyệt dùng SFX (21/10/2026).
   setSetting("video.sfx", fd.get("sfx") ? "1" : "0");
+  setSetting("video.cutSilence", fd.get("cutSilence") ? "1" : "0");
   setSetting("video.corrections", str(fd, "corrections").split("\n").map((l) => l.trim()).filter((l) => l.includes("=>")).join("\n"));
   logActivity("human", "Cập nhật cấu hình dựng video tự động.", "settings");
   done("/settings#auto-edit", "Đã lưu cấu hình dựng video tự động");

@@ -34,7 +34,7 @@ const worker = (g.__baorVideoWorker ??= { running: null, recovered: false });
 
 /** Tên skill đang dùng để dựng (hiện trên giao diện / ghi chú). */
 export function engineLabel(): string {
-  return getSetting("video.engine") === "legacy" ? `${SKILL.name} ${SKILL.version}` : "Skill ESV v0.3.1 (Notion 02 SKILL)";
+  return getSetting("video.engine") === "legacy" ? `${SKILL.name} ${SKILL.version}` : "Skill ESV v0.3.1 bản r3 (Notion 02 SKILL, 21/10/2026)";
 }
 
 export function dataDir(): string {
@@ -136,6 +136,8 @@ export interface EditSettings {
   sfx: boolean;
   /** Sửa chữ máy nghe sai: mỗi dòng "sai => đúng" (cùng số tiếng). */
   corrections: string;
+  /** #103: OWNER 21/10/2026 "cắt những khoảng lặng" → mặc định cắt lặng cho video mới (tắt được trong Cài đặt). */
+  cutSilence: boolean;
 }
 
 export function editSettings(): EditSettings {
@@ -145,6 +147,7 @@ export function editSettings(): EditSettings {
     musicUploadId: getSetting("video.musicUploadId") ?? "",
     sfx: getSetting("video.sfx") !== "0",
     corrections: getSetting("video.corrections") ?? "",
+    cutSilence: getSetting("video.cutSilence") !== "0",
   };
 }
 
@@ -324,6 +327,7 @@ function runJob(job: VideoJob): Promise<void> {
     args.length = 0;
     args.push(path.join(process.cwd(), "scripts", "video", "esv_render.py"), `--input=${srcPath}`, `--job-dir=${dir}`, `--keywords=${s.keywords}`, `--model=${s.model}`);
     if (s.corrections.trim()) args.push(`--corrections=${s.corrections}`);
+    if (job.cutSilence) args.push("--cut-silence");
     if (!s.sfx) args.push("--no-sfx");
     if (s.musicUploadId === "none") args.push("--no-music");
     else if (music && musicPath) args.push(`--music=${musicPath}`, `--music-license=${String(music.meta.license ?? "")}`);

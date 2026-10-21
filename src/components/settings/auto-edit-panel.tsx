@@ -47,6 +47,10 @@ export function AutoEditPanel() {
             <textarea name="corrections" rows={3} defaultValue={s.corrections} className={textareaClass} placeholder={"thái độc => thải độc\ncân ngặn => cân nặng"} />
           </Field>
           <label className="flex items-start gap-2 text-[13px] text-ink">
+            <input type="checkbox" name="cutSilence" defaultChecked={s.cutSilence} className="mt-0.5 h-3.5 w-3.5 accent-[var(--jade)]" />
+            <span>Cắt khoảng lặng cho video mới <span className="text-ink-3">(lặng ≥ 0,28 s dưới −42 dB, chừa 90 ms mỗi bên; OWNER yêu cầu 21/10)</span></span>
+          </label>
+          <label className="flex items-start gap-2 text-[13px] text-ink">
             <input type="checkbox" name="sfx" defaultChecked={s.sfx} className="mt-0.5 h-3.5 w-3.5 accent-[var(--jade)]" />
             <span>Hiệu ứng âm thanh <span className="text-ink-3">(“tách” ở chữ nhấn, “vút” khi vào ảnh / clip minh hoạ; tổng hợp tại chỗ, không cần giấy phép; OWNER duyệt dùng)</span></span>
           </label>

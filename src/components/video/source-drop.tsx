@@ -9,11 +9,11 @@ type Item = { name: string; pct: number; status: "waiting" | "uploading" | "done
 const ACCEPT = ".mp4,.mov,.m4v,.webm,video/mp4,video/quicktime,video/webm";
 
 // Thêm nguồn: kéo thả hoặc chọn tệp quay thô. Tải lên dạng luồng (không giới hạn 10 MB), xong là hệ thống tự dựng.
-export function SourceDrop({ scripts = [], defaultContentId = "" }: { scripts?: { id: string; title: string }[]; defaultContentId?: string }) {
+export function SourceDrop({ scripts = [], defaultContentId = "", defaultCut = true }: { scripts?: { id: string; title: string }[]; defaultContentId?: string; defaultCut?: boolean }) {
   const router = useRouter();
   const input = useRef<HTMLInputElement>(null);
   const [items, setItems] = useState<Item[]>([]);
-  const [cut, setCut] = useState(false);
+  const [cut, setCut] = useState(defaultCut);
   const [contentId, setContentId] = useState(defaultContentId);
   const [final, setFinal] = useState(false);
   const [over, setOver] = useState(false);
@@ -91,7 +91,7 @@ export function SourceDrop({ scripts = [], defaultContentId = "" }: { scripts?: 
       </label>
       <label className="flex items-center gap-2 text-[12.5px] text-ink-2">
         <input type="checkbox" checked={cut} onChange={(e) => setCut(e.target.checked)} className="h-3.5 w-3.5 accent-[var(--jade)]" />
-        Cắt khoảng lặng cho các tệp này (mặc định giữ khoảng nghỉ; chỉ bật khi được giao)
+        Cắt khoảng lặng cho các tệp này
       </label>
       {items.length > 0 && (
         <ul className="m-0 grid list-none gap-1.5 p-0">

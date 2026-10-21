@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { uploadsDir } from "@/lib/uploads";
-import { createVideoFromSource, dataDir, kickWorker } from "@/lib/video/jobs";
+import { createVideoFromSource, dataDir, editSettings, kickWorker } from "@/lib/video/jobs";
 
 const VIDEO_EXT: Record<string, string> = { ".mov": "video/quicktime", ".mp4": "video/mp4", ".m4v": "video/mp4", ".webm": "video/webm" };
 
@@ -78,7 +78,7 @@ export function ingestInbox(): number {
     seen.delete(file);
     if (fs.existsSync(sidecar)) fs.renameSync(sidecar, path.join(inboxDir(), "da-xu-ly", path.basename(sidecar)));
     fs.writeFileSync(path.join(inboxDir(), "da-xu-ly", `${path.basename(file)}.da-nhan.txt`), `Đã nhận vào kho tải lên ${id} lúc ${new Date().toISOString()}\n`);
-    createVideoFromSource({ title, sourceUploadId: id, cutSilence: false, prompt, by: "Hộp thư vào" });
+    createVideoFromSource({ title, sourceUploadId: id, cutSilence: editSettings().cutSilence, prompt, by: "Hộp thư vào" });
     n++;
   }
   return n;

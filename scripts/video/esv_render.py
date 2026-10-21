@@ -623,6 +623,91 @@ def fit_emphasis(emph, windows):
     return keep
 
 
+def keep_segments(src, dur, thr=-42.0, min_sil=0.28, pad=0.09):
+    """Skill ESV 10.5 (cắt lặng khi được giao): silencedetect −42 dB ≥ 0,28 s, chừa 90 ms mỗi bên, làm tròn lưới 1/30 s."""
+    err = P.sh(["ffmpeg", "-hide_banner", "-i", src, "-vn", "-af", f"silencedetect=noise={thr}dB:d={min_sil}", "-f", "null", "-"]).stderr
+    sil, st = [], None
+    for line in err.splitlines():
+        m1 = re.search(r"silence_start: ([\d.]+)", line)
+        m2 = re.search(r"silence_end: ([\d.]+)", line)
+        if m1:
+            st = float(m1.group(1))
+        elif m2 and st is not None:
+            sil.append((st, float(m2.group(1))))
+            st = None
+    if st is not None:
+        sil.append((st, dur))
+    keep, a0 = [], 0.0
+    for s0, s1 in sil:
+        c0, c1 = s0 + pad, s1 - pad
+        if c1 - c0 < 1 / FPS:
+            continue
+        if c0 > a0:
+            keep.append((a0, c0))
+        a0 = c1
+    if a0 < dur:
+        keep.append((a0, dur))
+    g = lambda x: round(x * FPS) / FPS
+    keep = [(g(a), g(b)) for a, b in keep if g(b) - g(a) >= 2 / FPS]
+    return keep
+
+
+def make_cut(src, keep, out, work):
+    """Bản đã cắt lặng (nguồn mới cho mọi bước sau): hình chọn đúng khung, tiếng nối theo mẫu với vuốt 3 ms mỗi mối."""
+    sel = "+".join(f"between(n,{int(round(a * FPS))},{int(round(b * FPS)) - 1})" for a, b in keep)
+    fcv = os.path.join(work, "cut_sel.txt")
+    open(fcv, "w").write(f"[0:v]fps={FPS},select='{sel}',setpts=N/{FPS}/TB[v]")
+    sr = 48000
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", src, "-vn", "-ac", "2", "-ar", str(sr), "-f", "f32le", "-"], capture_output=True).stdout
+    au = np.frombuffer(raw, np.float32).reshape(-1, 2)
+    ramp = np.linspace(0, 1, int(0.003 * sr), dtype=np.float32)[:, None]
+    parts = []
+    for a, b in keep:
+        seg = au[int(round(a * sr)):int(round(b * sr))].copy()
+        if len(seg) > 2 * len(ramp):
+            seg[:len(ramp)] *= ramp
+            seg[-len(ramp):] *= ramp[::-1]
+        parts.append(seg)
+    wav = os.path.join(work, "cut_audio.f32")
+    np.concatenate(parts).astype(np.float32).tofile(wav)
+    n = sum(int(round(b * FPS)) - int(round(a * FPS)) for a, b in keep)
+    P.sh(["ffmpeg", "-v", "error", "-y", "-i", src, "-f", "f32le", "-ar", str(sr), "-ac", "2", "-i", wav, "-/filter_complex", fcv,
+          "-map", "[v]", "-map", "1:a", "-frames:v", str(n), "-c:v", "libx264", "-preset", "veryfast", "-crf", "12", "-pix_fmt", "yuv420p",
+          "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709", "-c:a", "pcm_s16le", out])
+    return n
+
+
+def time_map(keep):
+    offs, o = [], 0.0
+    for a, b in keep:
+        offs.append(o)
+        o += b - a
+
+    def m(t):
+        for (a, b), off in zip(keep, offs):
+            if t < a:
+                return round(off, 3)
+            if t < b:
+                return round(off + t - a, 3)
+        return round(o, 3)
+    return m, [round(x, 3) for x in offs[1:]]
+
+
+def map_plan(plan, m):
+    """Đổi mọi mốc giây của kế hoạch (theo RAW) sang thời gian bản đã cắt."""
+    keys = ("t", "t0", "t1", "end", "strike", "out")
+
+    def walk(x):
+        if isinstance(x, dict):
+            return {k: (m(v) if k in keys and isinstance(v, (int, float)) else walk(v)) for k, v in x.items()}
+        if isinstance(x, list):
+            return [walk(v) for v in x]
+        return x
+    q = walk({k: v for k, v in plan.items() if k != "zooms"})
+    q["zooms"] = []  # zoom đặt lại theo bản đã cắt (tránh ±0,5 s quanh mối cắt)
+    return q
+
+
 def fit_label(text, fs=66, maxw=800):
     f = font("Times New Roman Italic.ttf", fs)
     w = f.getlength(text)
@@ -789,28 +874,21 @@ def default_music(data_dir):
     return (os.path.join(d, items[0]["file"]), items[0]["license"]) if items else (None, "")
 
 
-def synth_sfx(path, pops, whooshes, dur, sr=48000):
-    """SFX tổng hợp bằng công thức (không tệp ngoài, không vướng bản quyền): "tách" ngắn ở chữ nhấn,
-    "vút" (nhiễu lọc quét tần) khi vào ảnh / clip minh hoạ."""
+def synth_sfx(path, pops, swells, dur, sr=48000):
+    """SFX tổng hợp bằng công thức (không tệp ngoài, không vướng bản quyền): "tách" ngắn ở chữ nhấn; ở chuyển cảnh lớn
+    (FS, vệt sáng) là tiếng ngân nhẹ có cao độ (hợp âm A–E–A, vào 0,25 s, tắt dần 0,9 s). Không dùng nhiễu (nghe thành "rì / vút")."""
     n = int(round(dur * sr))
     out = np.zeros(n, dtype=np.float32)
     L = int(0.07 * sr)
     tt = np.arange(L) / sr
     f = 1400 * np.exp(-tt * 30) + 520
     pop = (np.sin(2 * np.pi * np.cumsum(f) / sr) * np.exp(-tt * 55)).astype(np.float32) * 0.42
-    Lw = int(0.5 * sr)
-    x = np.arange(Lw) / Lw
-    nz = np.random.default_rng(7).standard_normal(Lw).astype(np.float32)
-    fc = 350 + 4200 * np.sin(np.pi * np.minimum(x * 1.25, 1.0)) ** 1.6
-    al = np.exp(-2 * np.pi * fc / sr).astype(np.float32)
-    y, st, hp = np.zeros(Lw, np.float32), 0.0, 0.0
-    for i in range(Lw):
-        st = al[i] * st + (1 - al[i]) * nz[i]
-        hp = 0.995 * hp + 0.005 * st  # bỏ ù trầm
-        y[i] = st - hp
-    wh = y * (np.sin(np.pi * x) ** 2)
-    wh = (wh / (np.max(np.abs(wh)) + 1e-9) * 0.5).astype(np.float32)
-    for snd, times, lead in ((pop, pops, 0.0), (wh, whooshes, 0.22)):
+    Ls = int(1.2 * sr)
+    ts = np.arange(Ls) / sr
+    env = np.minimum(1.0, ts / 0.25) ** 2 * np.exp(-np.maximum(0.0, ts - 0.25) / 0.45)
+    sw = sum(amp * np.sin(2 * np.pi * fr * ts + ph) for fr, amp, ph in ((880.0, 1.0, 0.0), (1318.5, 0.6, 1.1), (1760.0, 0.35, 2.3), (2637.0, 0.12, 0.7)))
+    sw = (sw * env / 2.07 * 0.30).astype(np.float32)
+    for snd, times, lead in ((pop, pops, 0.0), (sw, swells, 0.15)):
         for t in times:
             i = int(round((t - lead) * sr))
             if i < 0 or i >= n:
@@ -942,6 +1020,7 @@ def main():
     ap.add_argument("--music", default="", help="bài nhạc nền; trống = bài mặc định trong DATA_DIR/video-assets/music/manifest.json")
     ap.add_argument("--music-license", default="")
     ap.add_argument("--no-music", action="store_true")
+    ap.add_argument("--cut-silence", action="store_true", help="cắt khoảng lặng (Skill ESV 10.5, chỉ khi được giao)")
     ap.add_argument("--no-sfx", action="store_true", help="tắt SFX tổng hợp (vút khi vào minh hoạ, tách khi chữ nhấn)")
     ap.add_argument("--corrections", default="", help='sửa chữ nghe sai, mỗi dòng "sai => đúng" (cùng số tiếng)')
     a = ap.parse_args()
@@ -984,6 +1063,18 @@ def main():
         if ev:
             plan["note"] += f" Minh hoạ theo từ khoá lời nói: {len(ev)} lần."
     json.dump(plan, open(job.p("plan.json"), "w"), ensure_ascii=False, indent=1)
+    cut_times, keep, src_dur = [], None, dur
+    if a.cut_silence:
+        job.progress("cut", "Cắt khoảng lặng", 32)
+        keep = keep_segments(src, dur)
+        cut_src = job.p("work", "cut.mov")
+        N = make_cut(src, keep, cut_src, job.p("work"))
+        mp, cut_times = time_map(keep)
+        words = [{**w, "start": mp(w["start"]), "end": max(mp(w["start"]) + 0.05, mp(w["end"]))} for w in words]
+        plan = map_plan(plan, mp)
+        src = cut_src
+        info = {**P.probe(src), "rotation": 0}
+        dur = N / FPS
 
     # Khung: nguồn ngang → cắt toàn chiều cao quanh người nói 1216x2160 (ESV mục 1); nguồn dọc giữ nguyên
     job.progress("frame", "Dò mặt, chọn khung 9:16", 36)
@@ -1097,7 +1188,8 @@ def main():
     sfx_info = {"used": False, "reason": "tắt"}
     if not a.no_sfx:
         pops = [float(e["t"]) for e in plan.get("emphasis", [])]
-        whs = [float(b["t0"]) for b in plan.get("broll", [])] + [float(d["t0"]) + 0.05 for d in plan.get("diagrams", []) if d["type"] in ("fs06", "leak")]
+        # Vào ảnh / clip minh hoạ: KHÔNG thêm tiếng (OWNER 21/10: "tự nhiên nghe vút vút"); chỉ chuyển cảnh lớn có tiếng ngân nhẹ
+        whs = [float(d["t0"]) + 0.05 for d in plan.get("diagrams", []) if d["type"] in ("fs06", "leak")]
         if pops or whs:
             sfxw = job.p("work", "sfx.wav")
             synth_sfx(sfxw, pops, whs, dur)
@@ -1106,7 +1198,7 @@ def main():
             P.sh(["ffmpeg", "-v", "error", "-y", "-i", mix, "-i", sfxw, "-filter_complex",
                   "[1:a]volume=-14dB[p];[0:a][p]amix=inputs=2:normalize=0:duration=first[o]", "-map", "[o]", "-c:a", "pcm_s16le", withsfx])
             mix = withsfx
-            sfx_info = {"used": True, "pops": len(pops), "whooshes": len(whs), "source": "tổng hợp tại chỗ bằng công thức (không dùng tệp ngoài)"}
+            sfx_info = {"used": True, "pops": len(pops), "swells": len(whs), "source": "tổng hợp tại chỗ bằng công thức (không dùng tệp ngoài, không dùng nhiễu)"}
     m = P.sh(["ffmpeg", "-hide_banner", "-i", mix, "-af", "loudnorm=I=-16:TP=-2.5:LRA=11:print_format=json", "-f", "null", "-"], check=False).stderr
     js = json.loads(m[m.rfind("{"):m.rfind("}") + 1])
     final = job.p("work", "final.wav")
@@ -1122,10 +1214,10 @@ def main():
     if plan.get("pace") in ZOOM_PROFILES:
         prof, pace = plan["pace"], {"why": "biên tập chọn"}
     else:
-        prof, pace = pace_profile(units, words, len(plan.get("broll", [])) + 2 * len(fs_events) + len(leaks), dur, plan.get("content", ""))
+        prof, pace = pace_profile(units, words, len(cut_times) + len(plan.get("broll", [])) + 2 * len(fs_events) + len(leaks), dur, plan.get("content", ""))
     zooms = [z for z in plan.get("zooms", []) if "nin" in z]
     if not zooms:
-        zooms = place_zooms([(e.t0, 1.08 if e.style == "shine" else (1.07 if e.style == "blur" else 1.06)) for e in emph], prof, blocked, dur)
+        zooms = place_zooms([(e.t0, 1.08 if e.style == "shine" else (1.07 if e.style == "blur" else 1.06)) for e in emph], prof, blocked, dur, cut_times)
     zx = zoom_expr(zooms)
     if cropf:
         cw, chh = int(cropf.split("=")[1].split(":")[0]), int(cropf.split(":")[1])
@@ -1320,9 +1412,10 @@ def main():
         for name in ("master.mp4", "preview.mp4"):
             fsum.write(f"{P.sha256(job.p(name))}  {name}\n")
     report = {
-        "skill": {"skillId": "edu-hau-ky-video-916-phu-luc", "name": "Skill ESV", "version": "v0.3.1", "status": "DRAFT", "sourceUrl": "https://app.notion.com/p/4004ceb9517d81198fc4da9f9339234e", "engine": "esv_render.py (Pillow, không ASS)"},
+        "skill": {"skillId": "edu-hau-ky-video-916-phu-luc", "name": "Skill ESV", "version": "v0.3.1 r3 (T-062.r3, 21/10/2026)", "status": "DRAFT", "sourceUrl": "https://app.notion.com/p/4004ceb9517d81198fc4da9f9339234e", "engine": "esv_render.py (Pillow, không ASS)"},
         "input": {"file": os.path.basename(src), **info, "crop": cropf},
-        "output": {"master": "master.mp4", "preview": "preview.mp4", "frames": N, "seconds": round(dur, 3), "cutSilence": False, "cuts": 0},
+        "output": {"master": "master.mp4", "preview": "preview.mp4", "frames": N, "seconds": round(dur, 3), "cutSilence": bool(keep), "cuts": len(cut_times), "sourceSeconds": round(src_dur, 3),
+                   "keep": [[a_, b_] for a_, b_ in keep] if keep else None},
         "transcript": {"words": len(words), "uncertain": uncertain, "corrections": fixes, "secondModel": None if a.words else a.model2},
         "captions": {"units": len(units)},
         "emphasis": [{"t": round(e.t0, 2), "text": e.text, "kind": e.style} for e in emph],

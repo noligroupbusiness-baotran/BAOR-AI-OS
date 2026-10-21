@@ -18,7 +18,7 @@ import { AutoRefresh } from "@/components/video/auto-refresh";
 import { listContent } from "@/lib/queries";
 import { fileUrl } from "@/lib/uploads";
 import { listVideos } from "@/lib/videos/repository";
-import { engineLabel, jobVersions, latestJob } from "@/lib/video/jobs";
+import { editSettings, engineLabel, jobVersions, latestJob } from "@/lib/video/jobs";
 import { blockersForVideo } from "@/lib/video/approval";
 import { qaLabel, qaTone } from "@/lib/video/job-types";
 import { feedbackLabel, listVideoFeedback, type FeedbackKind } from "@/lib/video/feedback";
@@ -68,7 +68,7 @@ export default async function VideoStudioPage({ searchParams }: { searchParams: 
       {sp.upload === "1" && (
         <Panel>
           <PanelHeader title="Thêm video gốc" sub="Tải dạng luồng, tối đa 8 GB mỗi tệp. Xong là tự xếp hàng dựng; theo dõi tiến độ ở mục Đang dựng." action={<LinkButton href={withCampaignContext("/video-studio", ctx)} variant="ghost">Đóng</LinkButton>} />
-          <SourceDrop scripts={scripts.map((c) => ({ id: c.id, title: c.title }))} defaultContentId={sp.content ?? ""} />
+          <SourceDrop scripts={scripts.map((c) => ({ id: c.id, title: c.title }))} defaultContentId={sp.content ?? ""} defaultCut={editSettings().cutSilence} />
         </Panel>
       )}
       <CampaignContextBar ctx={ctx} pathname="/video-studio" params={{ tab }} note={linkedIds ? "chỉ hiện video của chiến dịch" : undefined} />
@@ -213,7 +213,7 @@ export default async function VideoStudioPage({ searchParams }: { searchParams: 
                     {canRerender && (
                       <>
                         <ConfirmAction action={rerenderVideoAction} fields={{ id: v.id, back }} label="Dựng lại" title="Dựng lại từ video gốc?" message="Tạo bản mới, bản cũ vẫn giữ. Dùng lại lời đã nghe nếu có." confirmLabel="Dựng lại" variant="ghost" />
-                        {!jv!.job.cutSilence && <ConfirmAction action={rerenderVideoAction} fields={{ id: v.id, back, cut: "1" }} label="Dựng lại, cắt lặng" title="Dựng lại và cắt khoảng lặng?" message="#103: cắt lặng chỉ khi được giao cho đúng video này." confirmLabel="Dựng lại" variant="ghost" />}
+                        {!jv!.job.cutSilence && <ConfirmAction action={rerenderVideoAction} fields={{ id: v.id, back, cut: "1" }} label="Dựng lại, cắt lặng" title="Dựng lại và cắt khoảng lặng?" message="Cắt các khoảng lặng ≥ 0,28 s (chừa 90 ms mỗi bên); chữ nhấn, sơ đồ, minh hoạ tự dời theo bản đã cắt." confirmLabel="Dựng lại" variant="ghost" />}
                       </>
                     )}
                     {v.status === "approved" && <Link href="/publishing#video-posts" className="inline-flex h-[26px] items-center rounded-full border border-border-2 px-2.5 text-[12px] font-medium text-ink hover:border-ink-3">Xem bài đã lên lịch</Link>}
