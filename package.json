@@ -6,7 +6,18 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "gate": "tsx scripts/verify.mts",
+    "rotate-secret": "tsx scripts/rotate-secret.mts",
+    "security": "tsx scripts/security-check.mts",
+    "video:selftest": "bash scripts/video/selftest.sh",
+    "verify": "tsx scripts/verify.mts",
+    "verify:e2e": "tsx scripts/verify.mts --e2e-only",
+    "verify:full": "tsx scripts/verify.mts --e2e",
+    "guardrails": "tsx scripts/guardrails.mts",
+    "prepare": "git config core.hooksPath .githooks 2>/dev/null || true"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.124.0",
@@ -14,20 +25,24 @@
     "drizzle-orm": "^0.45.2",
     "jose": "^6.2.12",
     "lucide-react": "^1.44.0",
-    "next": "16.3.4",
+    "next": "16.4.2",
+    "qrcode": "^1.5.4",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@tailwindcss/postcss": "^4",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^20",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "drizzle-kit": "^0.31.10",
     "eslint": "^9",
-    "eslint-config-next": "16.3.4",
+    "eslint-config-next": "16.4.2",
     "tailwindcss": "^4",
+    "tsx": "^4.23.13",
     "typescript": "^5"
   }
 }

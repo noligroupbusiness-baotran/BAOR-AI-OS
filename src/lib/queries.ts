@@ -20,6 +20,11 @@ export function listContent(statuses?: string[]) {
     .sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
 }
 
+export function getContent(id: string) {
+  const r = getDb().select().from(schema.contentItems).where(eq(schema.contentItems.id, id)).get();
+  return r ? { ...r, outline: parse<string[]>(r.outline, []) } : null;
+}
+
 export function countContent(statuses: string[]) {
   const [{ n }] = getDb()
     .select({ n: sql<number>`count(*)` })
@@ -30,7 +35,12 @@ export function countContent(statuses: string[]) {
 }
 
 export function listInsights() {
-  return getDb().select().from(schema.insights).orderBy(desc(schema.insights.confidence)).all();
+  return getDb()
+    .select()
+    .from(schema.insights)
+    .orderBy(desc(schema.insights.confidence))
+    .all()
+    .map((i) => ({ ...i, evidence: parse<string[]>(i.evidence, []) }));
 }
 
 export function listPersonas() {
@@ -136,10 +146,15 @@ export function getBrand() {
 }
 
 export function getAdGuardrails() {
+  // Có ủy quyền ngân sách của OWNER (CP05) thì dùng trần trong ủy quyền; không thì giá trị gợi ý cũ (chỉ để đề xuất, không bật được).
+  let auth: { dailyCapVnd?: number; monthlyCapVnd?: number; autoPauseCplAbove?: number } | null = null;
+  try {
+    auth = JSON.parse(getSetting("ads.authorization") || "null");
+  } catch {}
   return {
-    dailyCap: Number(getSetting("ads.dailyCap") ?? 500000),
-    monthlyCap: Number(getSetting("ads.monthlyCap") ?? 12000000),
-    autoPauseCplAbove: Number(getSetting("ads.autoPauseCplAbove") ?? 60000),
+    dailyCap: Number(auth?.dailyCapVnd ?? getSetting("ads.dailyCap") ?? 500000),
+    monthlyCap: Number(auth?.monthlyCapVnd ?? getSetting("ads.monthlyCap") ?? 12000000),
+    autoPauseCplAbove: Number(auth?.autoPauseCplAbove ?? getSetting("ads.autoPauseCplAbove") ?? 60000),
   };
 }
 

@@ -42,3 +42,19 @@ next-env.d.ts
 
 # co so du lieu SQLite cuc bo
 /data
+/data-*
+
+# cau hinh cong cu dev cuc bo (giu launch.json de moi session mo giao dien duoc ngay)
+/.claude/*
+!/.claude/launch.json
+# chuẩn vận hành dùng chung cho mọi phiên: hook bảo vệ + agent phản biện (docs/BAOR_OPERATING_MODEL.md)
+!/.claude/settings.json
+!/.claude/agents/
+
+# mau bien moi truong (khong co gia tri that) duoc phep commit
+!.env.example
+
+# bằng chứng verify / báo cáo E2E ở máy (gắn commit, không commit)
+/artifacts
+/test-results
+/playwright-report

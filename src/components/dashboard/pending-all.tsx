@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { Drawer } from "@/components/ui/dialog";
 import { PendingRow } from "@/components/dashboard/pending-row";
-import type { PendingItem } from "@/lib/dashboard-data";
+import type { PendingItem } from "@/lib/dashboard-types";
 
 // Nút "Xem tất cả" ở cuối danh sách, mở bảng trượt liệt kê toàn bộ việc chờ.
 export function PendingAllButton({ items }: { items: PendingItem[] }) {

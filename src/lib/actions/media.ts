@@ -1,0 +1,154 @@
+"use server";
+
+import { eq } from "drizzle-orm";
+import { getDb, schema } from "@/db";
+import { getSetting, setSetting } from "@/lib/admin";
+import { deleteUpload, getUpload, saveUpload } from "@/lib/uploads";
+import { requirePermission } from "@/lib/permissions";
+import { sendAlert, type AlertLevel } from "@/lib/alerts";
+import { logActivity } from "@/lib/activity";
+import { done } from "./common";
+
+const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
+const fail = (path: string, msg: string): never => done(`${path}${path.includes("?") ? "&" : "?"}tone=error`, msg);
+
+// ---------- Thương hiệu: logo, màu, font ----------
+
+export async function saveBrandIdentity(fd: FormData) {
+  await requirePermission("manager", "/settings#brand");
+  const color = (k: string) => {
+    const v = str(fd, k);
+    return /^#[0-9a-fA-F]{6}$/.test(v) ? v : "";
+  };
+  setSetting("brand.primaryColor", color("primaryColor"));
+  setSetting("brand.secondaryColor", color("secondaryColor"));
+  setSetting("brand.font", str(fd, "font"));
+  setSetting("brand.tagline", str(fd, "tagline"));
+  logActivity("human", "Cập nhật nhận diện thương hiệu (màu, font, khẩu hiệu).", "settings");
+  done("/settings#brand", "Đã lưu nhận diện thương hiệu");
+}
+
+// ---------- Logo giao diện quản trị (góc trái sidebar) ----------
+// Tách riêng khỏi Thương hiệu: logo này chỉ hiện trên giao diện hệ thống, không in lên ảnh/video.
+
+const APP_LOGO_KEYS = { light: "ui.logoLightUploadId", dark: "ui.logoDarkUploadId" } as const;
+
+export async function saveAppLogo(fd: FormData) {
+  const actor = await requirePermission("manager", "/settings#app-logo");
+  let saved = 0;
+  for (const variant of ["light", "dark"] as const) {
+    const file = fd.get(variant === "light" ? "logoLight" : "logoDark");
+    if (!(file instanceof File) || file.size === 0) continue;
+    const r = await saveUpload("logo", file, actor.email, { use: "app", variant });
+    if (!r.ok) return fail("/settings#app-logo", `Logo nền ${variant === "light" ? "sáng" : "tối"}: ${r.error}`);
+    const old = getSetting(APP_LOGO_KEYS[variant]);
+    if (old) deleteUpload(old);
+    setSetting(APP_LOGO_KEYS[variant], r.upload.id);
+    saved++;
+  }
+  if (!saved) return fail("/settings#app-logo", "Chưa chọn tệp logo nào.");
+  logActivity("human", `${actor.name} cập nhật logo giao diện quản trị.`, "settings");
+  done("/settings#app-logo", "Đã lưu logo. Góc trái sẽ hiện logo mới.");
+}
+
+export async function removeAppLogo(fd: FormData) {
+  await requirePermission("manager", "/settings#app-logo");
+  const key = APP_LOGO_KEYS[str(fd, "variant") === "dark" ? "dark" : "light"];
+  const old = getSetting(key);
+  if (old) deleteUpload(old);
+  setSetting(key, "");
+  done("/settings#app-logo", "Đã gỡ logo");
+}
+
+// ---------- Kho nhạc ----------
+
+export async function uploadMusic(fd: FormData) {
+  const actor = await requirePermission("manager", "/settings#music");
+  const file = fd.get("file");
+  if (!(file instanceof File)) return fail("/settings#music", "Chưa chọn tệp nhạc");
+  const r = await saveUpload("music", file, actor.email, { mood: str(fd, "mood") || "chung", title: str(fd, "title") || file.name, license: str(fd, "license") });
+  if (!r.ok) return fail("/settings#music", r.error);
+  logActivity("human", `Thêm nhạc nền “${r.upload.meta.title}” (${r.upload.meta.mood}).`, "settings");
+  done("/settings#music", "Đã thêm nhạc vào kho. Agent Edit Video chỉ dùng nhạc trong kho này.");
+}
+
+export async function deleteMusic(fd: FormData) {
+  await requirePermission("manager", "/settings#music");
+  const id = str(fd, "id");
+  const u = getUpload(id);
+  if (!u || u.kind !== "music") return fail("/settings#music", "Không tìm thấy bản nhạc");
+  deleteUpload(id);
+  done("/settings#music", "Đã xóa bản nhạc");
+}
+
+// ---------- Cảnh báo ra ngoài ----------
+
+export async function saveAlerts(fd: FormData) {
+  await requirePermission("admin", "/settings#alerts");
+  const url = str(fd, "webhookUrl");
+  if (url && !/^https?:\/\//.test(url)) return fail("/settings#alerts", "Địa chỉ webhook phải bắt đầu bằng http:// hoặc https://");
+  setSetting("alerts.webhookUrl", url);
+  const level = str(fd, "minLevel") as AlertLevel;
+  setSetting("alerts.minLevel", ["info", "warn", "error"].includes(level) ? level : "error");
+  done("/settings#alerts", url ? "Đã lưu địa chỉ nhận cảnh báo" : "Đã tắt gửi cảnh báo ra ngoài");
+}
+
+export async function testAlert() {
+  await requirePermission("admin", "/settings#alerts");
+  const r = await sendAlert({ level: "error", title: "Thử cảnh báo từ BAOR AI OS", text: "Nếu bạn nhận được tin này, kênh cảnh báo đã hoạt động.", href: "/settings#alerts" });
+  done(`/settings${r.sent ? "" : "?tone=error"}#alerts`, r.message);
+}
+
+// Xóa tệp bất kỳ (ảnh/video) khi không còn dùng.
+export async function deleteUploadAction(fd: FormData) {
+  await requirePermission("manager", "/settings");
+  const id = str(fd, "id");
+  const u = getUpload(id);
+  if (!u) return fail("/settings", "Không tìm thấy tệp");
+  if (u.kind === "video") {
+    getDb().update(schema.videos).set({ uploadId: null }).where(eq(schema.videos.uploadId, id)).run();
+  }
+  deleteUpload(id);
+  done("/settings", "Đã xóa tệp");
+}
+
+// ---------- Dựng video tự động (Agent Edit Video theo Skill Edit video Vlog trên Second Brain) ----------
+// Luật dựng cố định theo skill (scripts/video/skill-vlog.json); ở đây chỉ chỉnh từ khóa nhấn, nhạc nền, bộ nhận lời.
+
+export async function saveAutoEdit(fd: FormData) {
+  await requirePermission("manager", "/settings#auto-edit");
+  setSetting("video.keywords", str(fd, "keywords").split(/[\n,]/).map((k) => k.trim()).filter(Boolean).join(","));
+  setSetting("video.whisperModel", ["small", "medium", "large"].includes(str(fd, "model")) ? str(fd, "model") : "medium");
+  const musicId = str(fd, "musicUploadId");
+  const music = musicId && musicId !== "none" ? getUpload(musicId) : undefined;
+  if (music && !String(music.meta.license ?? "").trim()) return fail("/settings#auto-edit", "Bài nhạc này chưa ghi giấy phép. Theo skill, nhạc thiếu giấy phép không được dùng.");
+  setSetting("video.musicUploadId", musicId === "none" ? "none" : music ? musicId : "");
+  // #78c: OWNER duyệt dùng SFX (21/10/2026).
+  setSetting("video.sfx", fd.get("sfx") ? "1" : "0");
+  setSetting("video.cutSilence", fd.get("cutSilence") ? "1" : "0");
+  setSetting("video.corrections", str(fd, "corrections").split("\n").map((l) => l.trim()).filter((l) => l.includes("=>")).join("\n"));
+  logActivity("human", "Cập nhật cấu hình dựng video tự động.", "settings");
+  done("/settings#auto-edit", "Đã lưu cấu hình dựng video tự động");
+}
+
+/** OWNER nghe thử rồi duyệt / bỏ duyệt bài nhạc nạp từ kho tư liệu. Chỉ quyền quản trị (OWNER): "ĐỦ-HỒ-SƠ" của kho ≠ OWNER duyệt. */
+export async function setLibraryMusicApproval(fd: FormData) {
+  const actor = await requirePermission("admin", "/settings#music-library");
+  const { approveMusic, unapproveMusic } = await import("@/lib/video/music-library");
+  const file = str(fd, "file");
+  const approve = str(fd, "approve") === "1";
+  const r = approve ? approveMusic(file, actor.email) : unapproveMusic(file);
+  if (!r.ok) return fail("/settings#music-library", r.error);
+  logActivity("human", `${actor.name} ${approve ? "duyệt dùng" : "bỏ duyệt"} nhạc nền “${file}”.`, "settings");
+  done("/settings#music-library", approve ? `Đã duyệt “${file}”: bộ dựng được tự chọn bài này theo nội dung video.` : `Đã bỏ duyệt “${file}”.`);
+}
+
+export async function runAutoEditNow() {
+  await requirePermission("manager", "/settings#auto-edit");
+  const { ingestInbox, pendingInbox } = await import("@/lib/video/auto-edit");
+  const { kickWorker } = await import("@/lib/video/jobs");
+  const n = ingestInbox();
+  void kickWorker();
+  if (!n) return fail("/settings#auto-edit", pendingInbox().length ? "Tệp còn đang được chép hoặc vừa đổi; bộ chạy nền sẽ nhận khi kích thước ổn định (khoảng 1 phút)." : "Hộp thư vào trống. Thả tệp .mov / .mp4 vào thư mục rồi bấm lại.");
+  done("/video-studio?tab=editing", `Đã nhận ${n} tệp, đang dựng ngầm.`);
+}

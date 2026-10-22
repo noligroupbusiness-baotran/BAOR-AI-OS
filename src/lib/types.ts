@@ -97,7 +97,7 @@ export type ContentStatus =
   | "scheduled"
   | "published";
 
-export type ContentFormat = "post" | "reel" | "carousel" | "story" | "article";
+export type ContentFormat = "post" | "reel" | "carousel" | "story" | "article" | "script" | "caption" | "image";
 
 export interface ContentItem {
   id: string;
@@ -115,7 +115,7 @@ export interface ContentItem {
   score?: number; // điểm AI dự đoán hiệu quả
 }
 
-export type PostStatus = "scheduled" | "publishing" | "published" | "failed";
+export type PostStatus = "scheduled" | "publishing" | "verifying" | "published" | "failed" | "dry_run" | "cancelled";
 
 export interface ScheduledPost {
   id: string;

@@ -11,7 +11,7 @@ export function hashPassword(password: string): string {
   return `scrypt$${salt}$${hash}`;
 }
 
-function verifyHash(password: string, stored: string): boolean {
+export function verifyHash(password: string, stored: string): boolean {
   const [, salt, hash] = stored.split("$");
   if (!salt || !hash) return false;
   const a = scryptSync(password, salt, 64);
@@ -34,6 +34,16 @@ export function setSetting(key: string, value: string) {
 
 export function getAdminEmail(): string {
   return getSetting("admin.email") || process.env.ADMIN_EMAIL || "";
+}
+
+// Đăng nhập: tài khoản quản trị hoặc nhân sự đang hoạt động đã được cấp mật khẩu.
+export function verifyLogin(email: string, password: string): boolean {
+  if (verifyAdmin(email, password)) return true;
+  const e = email.trim().toLowerCase();
+  if (!e || !password) return false;
+  const person = getDb().select().from(schema.people).where(eq(schema.people.email, e)).get();
+  if (!person || !person.active || !person.passwordHash) return false;
+  return verifyHash(password, person.passwordHash);
 }
 
 export function verifyAdmin(email: string, password: string): boolean {

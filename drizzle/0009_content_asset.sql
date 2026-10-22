@@ -1,0 +1,1 @@
+ALTER TABLE `content_items` ADD `asset_upload_id` text;

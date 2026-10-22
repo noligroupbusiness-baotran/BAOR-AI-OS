@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Worktree của các phiên Claude song song (bản sao repo, có .next riêng): không phải mã nguồn của nhánh này.
+    ".claude/**",
   ]),
 ]);
 
