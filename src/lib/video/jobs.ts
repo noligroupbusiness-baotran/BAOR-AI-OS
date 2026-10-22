@@ -173,11 +173,48 @@ export function brollLibrary(): BrollItem[] {
 }
 
 /** Lời thoại của kịch bản đã duyệt: gợi ý cho bộ nhận lời (đúng từ chuyên ngành, tên riêng). */
-function scriptPrompt(contentId: string | null): string {
+/** Lời nói của kịch bản gắn với video (bỏ thẻ nguồn [S#]/[K#]) — nguồn cho bộ dựng: gợi ý nghe, sửa chữ, ngữ cảnh biên tập AI. */
+export function scriptSpeech(contentId: string | null, max = 20_000): string {
   if (!contentId) return "";
   const c = getDb().select({ draft: schema.contentItems.draft }).from(schema.contentItems).where(eq(schema.contentItems.id, contentId)).get();
   const speech = parseShootingScript(c?.draft ?? "").scenes.map((s) => s.speech.replace(/\[[SK]\d+\]/g, "").trim()).filter(Boolean).join(" ");
-  return speech.replace(/\s+/g, " ").slice(0, 800);
+  return speech.replace(/\s+/g, " ").slice(0, max);
+}
+
+function scriptPrompt(contentId: string | null): string {
+  return scriptSpeech(contentId, 800);
+}
+
+/** Ghi lời nói kịch bản vào thư mục bản dựng (script.txt) → tham số `--script` cho esv_render. Không có kịch bản → []. */
+export function scriptArgs(dir: string, contentId: string | null): string[] {
+  const speech = scriptSpeech(contentId);
+  if (!speech) return [];
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, "script.txt"), speech);
+  return [`--script=${path.join(dir, "script.txt")}`];
+}
+
+/**
+ * Gắn / đổi / bỏ kịch bản cho video có sẵn (Nội dung → Video). Chỉ kịch bản đã duyệt. Bản dựng SAU đó đọc kịch bản mới
+ * (script.txt ghi lúc chạy); bản cũ giữ nguyên. Trả lại tên kịch bản để báo.
+ */
+export function linkVideoScript(videoId: string, contentId: string | null, by: string): { ok: true; title: string | null } | { ok: false; error: string } {
+  const db = getDb();
+  const v = db.select().from(schema.videos).where(eq(schema.videos.id, videoId)).get();
+  if (!v) return { ok: false, error: "Không tìm thấy video" };
+  let title: string | null = null;
+  if (contentId) {
+    const c = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, contentId)).get();
+    if (!c) return { ok: false, error: "Không tìm thấy kịch bản" };
+    if (!["approved", "scheduled", "published"].includes(c.status)) return { ok: false, error: "Chỉ gắn kịch bản đã duyệt" };
+    if (!scriptSpeech(c.id)) return { ok: false, error: "Kịch bản chưa có lời nói theo cảnh" };
+    title = c.title;
+  }
+  db.update(schema.videos).set({ contentId: contentId || null, updatedAt: new Date().toISOString() }).where(eq(schema.videos.id, videoId)).run();
+  if (contentId) campaignRepo.inheritLinks("content", contentId, "video", videoId, v.status);
+  addVideoFeedback({ videoId, version: v.version, kind: "link_script", note: contentId ? `Gắn kịch bản “${title}”: bản dựng sau dùng kịch bản để nghe, sửa chữ và biên tập AI` : "Bỏ gắn kịch bản", by });
+  logActivity("human", `${by} ${contentId ? `gắn kịch bản “${title}” cho` : "bỏ kịch bản khỏi"} video “${v.title}”.`, "video");
+  return { ok: true, title };
 }
 
 // ---------------------------------------------------------------- tạo việc
@@ -448,6 +485,8 @@ function runJob(job: VideoJob): Promise<void> {
     if (s.musicUploadId === "none") args.push("--no-music");
     else if (music && musicPath) args.push(`--music=${musicPath}`, `--music-license=${String(music.meta.license ?? "")}`);
     // Kế hoạch biên tập ở cấp video (DATA_DIR/video-jobs/<videoId>/plan.json, do biên tập lập) được ưu tiên và giữ qua mọi lần dựng lại.
+    // Nội dung → Video: kịch bản HIỆN TẠI của video (gắn lúc tải lên hoặc sau đó) đi vào bộ dựng
+    args.push(...scriptArgs(dir, video?.contentId ?? null));
     const editorPlan = path.join(jobsRoot(), job.videoId, "plan.json");
     if (fs.existsSync(ownPlan)) args.push(`--plan=${ownPlan}`);
     else if (fs.existsSync(editorPlan)) args.push(`--plan=${editorPlan}`);

@@ -1263,6 +1263,7 @@ def main():
     ap.add_argument("--frame-zoom", type=float, default=1.0, help="phóng khung cắt ≥ 1")
     ap.add_argument("--no-sfx", action="store_true", help="tắt SFX tổng hợp (vút khi vào minh hoạ, tách khi chữ nhấn)")
     ap.add_argument("--corrections", default="", help='sửa chữ nghe sai, mỗi dòng "sai => đúng" (cùng số tiếng)')
+    ap.add_argument("--script", default="", help="tệp lời nói của kịch bản đã gắn (Nội dung → Video): gợi ý nghe, sửa chữ, ngữ cảnh biên tập AI")
     ap.add_argument("--ai-plan", action="store_true", help="bỏ kế hoạch có sẵn, để biên tập AI tại máy lập lại (scripts/video/ai_plan.py)")
     a = ap.parse_args()
     global CW, CH, LAY
@@ -1272,6 +1273,7 @@ def main():
     os.makedirs(job.p("work"), exist_ok=True)
     src = os.path.abspath(a.input)
     plan = json.load(open(a.plan, encoding="utf-8")) if a.plan and os.path.exists(a.plan) else None
+    script_text = open(a.script, encoding="utf-8").read().strip() if a.script and os.path.exists(a.script) else ""
 
     job.progress("probe", "Kiểm tra nguồn", 3)
     info = P.probe(src)
@@ -1287,11 +1289,16 @@ def main():
         wav16 = job.p("work", "a16.wav")
         P.sh(["ffmpeg", "-v", "error", "-y", "-i", src, "-vn", "-ac", "1", "-ar", "16000", wav16])
         job.progress("listen1", f"Nghe lời (mô hình {a.model})", 8)
-        words = P.transcribe(wav16, a.model, "")
+        words = P.transcribe(wav16, a.model, script_text[:400])  # kịch bản làm gợi ý tên riêng / thuật ngữ cho Whisper
         job.progress("listen2", f"Nghe lại đối chiếu ({a.model2})", 30)
         second = P.transcribe(wav16, a.model2, "")
         P.mark_uncertain(words, second)
     fixes = apply_corrections(words, a.corrections)
+    # Nội dung → Video: sửa chữ máy nghe theo kịch bản đã duyệt (chỉ thay tại chỗ, giữ mốc; lời nói ngoài kịch bản giữ nguyên)
+    script_fixes = []
+    if script_text:
+        import script_align
+        script_fixes = script_align.correct(words, script_text)
     for w in words:
         w.setdefault("end", w["start"] + 0.2)
         if "uncertain" not in w:
@@ -1309,7 +1316,7 @@ def main():
         try:
             import ai_plan
             job.progress("aiplan", "Biên tập AI: đọc lời nói, chọn chữ nhấn / sơ đồ / minh hoạ (mô hình tại máy)", 31)
-            plan = ai_plan.plan(words, dur, broll_library(broll_dir), a.keywords, log=lambda m: print(m, file=sys.stderr))
+            plan = ai_plan.plan(words, dur, broll_library(broll_dir), script_text[:1200] or a.keywords, log=lambda m: print(m, file=sys.stderr))
             if plan is None:
                 ai_note = " Biên tập AI: không có mô hình tại máy (llama-server) → lập theo luật."
         except Exception as e:  # mô hình lỗi giữa chừng không được làm hỏng cả bản dựng
@@ -1728,7 +1735,8 @@ def main():
         "input": {"file": os.path.basename(src), **info, "crop": cropf},
         "output": {"master": "master.mp4", "preview": "preview.mp4", "aspect": a.aspect, "width": CW, "height": CH, "crop": cropf, "frames": N, "seconds": round(dur, 3), "cutSilence": bool(keep), "cuts": len(cut_times), "sourceSeconds": round(src_dur, 3),
                    "keep": [[a_, b_] for a_, b_ in keep] if keep else None},
-        "transcript": {"words": len(words), "uncertain": uncertain, "corrections": fixes, "secondModel": None if a.words else a.model2},
+        "transcript": {"words": len(words), "uncertain": uncertain, "corrections": fixes, "secondModel": None if a.words else a.model2,
+                       "script": bool(script_text), "scriptFixes": script_fixes[:200]},
         "captions": {"units": len(units)},
         "emphasis": [{"t": round(e.t0, 2), "text": e.text, "kind": e.style} for e in emph],
         "broll": {"events": brolls, "skipped": []},

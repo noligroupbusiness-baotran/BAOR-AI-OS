@@ -177,3 +177,13 @@ export async function resolveVideoCommentAction(fd: FormData) {
   if (!r.ok) return fail(back, r.error);
   done(back, reopen ? "Đã mở lại góp ý" : "Đã xác nhận góp ý xong");
 }
+
+// ---------------------------------------------------------------- Nội dung → Video: gắn kịch bản cho video có sẵn
+export async function linkVideoScriptAction(fd: FormData) {
+  const actor = await currentActor();
+  const back = str(fd, "back") || "/video-studio";
+  const { linkVideoScript } = await import("@/lib/video/jobs");
+  const r = linkVideoScript(str(fd, "id"), str(fd, "contentId") || null, actor.name);
+  if (!r.ok) return fail(back, r.error);
+  done(back, r.title ? `Đã gắn kịch bản “${r.title}”. Bấm Dựng lại để dùng kịch bản.` : "Đã bỏ gắn kịch bản");
+}

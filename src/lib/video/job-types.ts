@@ -91,7 +91,7 @@ export interface QaItem {
 export interface VideoReport {
   skill: { skillId: string; name: string; version: string; sourceUrl: string };
   output: { seconds: number; frames: number; cutSilence: boolean; cuts: number; keep?: [number, number][] | null; aspect?: string };
-  transcript: { words: number; uncertain: { t: number; text: string; p: number }[] };
+  transcript: { words: number; uncertain: { t: number; text: string; p: number }[]; script?: boolean; scriptFixes?: { t: number; from: string; to: string; why: string }[] };
   captions: { units: number };
   emphasis: { t: number; text: string; kind: string }[];
   audio: { lufs: number | null; truePeak: number; previewTruePeak: number; music: { used: boolean; license?: string; reason?: string } | null };

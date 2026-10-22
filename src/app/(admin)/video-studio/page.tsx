@@ -10,8 +10,9 @@ import { CampaignContextBar } from "@/components/campaigns/campaign-context";
 import { CampaignTags, LinkToCampaignForm } from "@/components/campaigns/entity-campaign";
 import { campaignRepo } from "@/lib/campaigns/repository";
 import { readCampaignContext, withCampaignContext } from "@/lib/campaigns/context";
-import { deleteVideoAction, rerenderVideoAction, stopVideoJobAction, transitionVideo } from "@/lib/actions/videos";
+import { deleteVideoAction, linkVideoScriptAction, rerenderVideoAction, stopVideoJobAction, transitionVideo } from "@/lib/actions/videos";
 import { LinkButton } from "@/components/ui/button";
+import { SubmitButton } from "@/components/campaigns/submit-button";
 import { SourceDrop } from "@/components/video/source-drop";
 import { VideoScheduleForm } from "@/components/publishing/video-schedule";
 import { AutoRefresh } from "@/components/video/auto-refresh";
@@ -144,7 +145,20 @@ export default async function VideoStudioPage({ searchParams }: { searchParams: 
                     </div>
                     <div className="mt-1 text-[12px] text-ink-2">
                       Kịch bản: {v.contentId ? <Link href={`/content?tab=done&open=${v.contentId}`} className="text-jade hover:underline">{v.contentTitle ?? v.contentId}</Link> : <span className="text-ink-3">chưa gắn kịch bản</span>}
+                      {report?.transcript?.script && <span className="text-ink-3"> · bản {jv!.job.version} sửa theo kịch bản {report.transcript.scriptFixes?.length ?? 0} từ</span>}
                     </div>
+                    {isOpen && (
+                      <form action={linkVideoScriptAction} className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[12px]" aria-label="Gắn kịch bản">
+                        <input type="hidden" name="id" value={v.id} />
+                        <input type="hidden" name="back" value={withCampaignContext(`/video-studio?tab=${tab}&open=${v.id}`, ctx)} />
+                        <select name="contentId" defaultValue={v.contentId ?? ""} aria-label="Kịch bản đã duyệt" className="h-7 max-w-[260px] rounded border border-border-2 bg-surface px-1 text-ink">
+                          <option value="">Không gắn kịch bản</option>
+                          {scripts.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+                        </select>
+                        <SubmitButton variant="outline" pendingText="Đang lưu…">Lưu kịch bản</SubmitButton>
+                        <span className="text-ink-3">Bản dựng sau dùng kịch bản để nghe đúng tên riêng, sửa chữ nghe sai và cho biên tập AI ngữ cảnh.</span>
+                      </form>
+                    )}
                     {jv?.job.status === "setup" && (
                       <div className="mt-2 grid gap-2">
                         <FramingEditor mode="start" videoId={v.id} back={back} sourceUrl={fileUrl(jv.job.sourceUploadId)} aspect={jv.job.aspect ?? "9:16"} fx={jv.job.framing?.x} fy={jv.job.framing?.y} fz={jv.job.framing?.zoom} cut={jv.job.cutSilence} />

@@ -35,7 +35,7 @@ test("Video Studio: video đã dựng hiện trình phát và bảng biên tập
   const errors = trackErrors(page);
   await login(page);
   await page.goto("/video-studio?open=v_e2e_review");
-  await expect(page.getByText("E2E · Video chờ góp ý")).toBeVisible();
+  await expect(page.getByRole("link", { name: "E2E · Video chờ góp ý" })).toBeVisible();
   const video = page.locator("video").first();
   await expect(video).toBeVisible();
   await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.readyState)).toBeGreaterThan(0);

@@ -60,4 +60,7 @@ for (const v of [1, 2]) {
   fs.writeFileSync(path.join(dir, "plan.json"), JSON.stringify(plan));
 }
 fs.writeFileSync(path.join(dataDir, "video-jobs", VID, "plan.json"), JSON.stringify(plan));
+// Kịch bản đã duyệt để gắn vào video (Nội dung → Video)
+db.insert(schema.contentItems).values({ id: "c_e2e_script", title: "E2E · Kịch bản chào hỏi phá băng", format: "script", status: "approved",
+  draft: "1. Mở đầu (0–5 giây)\nLời thoại: Hôm nay mình chào hỏi phá băng\n", createdAt: now, updatedAt: now } as typeof schema.contentItems.$inferInsert).run();
 console.log(`E2E seed: ${VID} (v1, v2) trong ${dataDir}`);
