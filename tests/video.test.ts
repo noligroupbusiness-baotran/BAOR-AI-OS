@@ -181,3 +181,30 @@ test("khung hình: tỷ lệ / khung cắt từ form được chặn giá trị 
   assert.ok(fs.existsSync(path.join(tmp, "removed", arch, "up_fr.mp4")), "tệp nằm trong lưu trữ, khôi phục được");
   assert.ok(fs.existsSync(path.join(tmp, "removed", arch, "records.json")));
 });
+
+test("bảng biên tập: lưu kế hoạch chỉ nhận khoá đã biết, giữ mục tắt; đổi giờ bản cắt lặng ↔ giờ gốc", async () => {
+  const types = await import("../src/lib/video/job-types");
+  const keep: [number, number][] = [[0, 10], [12, 20]];
+  assert.equal(types.toCutTime(keep, 15), 13);
+  assert.equal(types.toCutTime(keep, 11), 10, "giờ nằm trong đoạn lặng bị cắt → mối cắt");
+  assert.equal(types.toSourceTime(keep, 13), 15);
+  assert.equal(types.toCutTime(null, 7), 7);
+
+  const r = jobs.writeEditorPlan("v_plan", {
+    emphasis: [{ t: 1.5, text: "  PHÁ   BĂNG ", style: "blur", off: true, evil: "x" }, { t: -3, text: "âm", style: "lạ" }],
+    diagrams: [{ type: "quote", t0: 2, t1: 5, text: "a".repeat(500) }, { type: "script", t0: 1 }],
+    broll: [{ t0: 3, t1: 5, file: "../../etc/passwd" }, { t0: 6, t1: 8, file: "anh/x.jpg" }],
+    pace: "VUA",
+  }, "OWNER");
+  assert.equal(r.ok, true);
+  const saved = JSON.parse(fs.readFileSync(path.join(jobs.jobsRoot(), "v_plan", "plan.json"), "utf8"));
+  assert.deepEqual(saved.emphasis[0], { t: 1.5, text: "PHÁ BĂNG", style: "blur", off: true }, "chuẩn hoá chữ, giữ cờ tắt, bỏ khoá lạ");
+  assert.equal(saved.emphasis[1].t, undefined, "giờ âm bị bỏ");
+  assert.equal(saved.emphasis[1].style, undefined, "kiểu lạ bị bỏ");
+  assert.equal(saved.diagrams[0].text.length, 120, "chữ bị giới hạn độ dài");
+  assert.equal(saved.diagrams[1].type, undefined, "loại sơ đồ lạ bị bỏ");
+  assert.equal(saved.broll[0].file, undefined, "đường dẫn ra ngoài thư viện bị bỏ");
+  assert.equal(saved.broll[1].file, "anh/x.jpg");
+  assert.equal(saved.pace, "VUA");
+  assert.equal(jobs.readEditorPlan("v_plan").source, "video");
+});

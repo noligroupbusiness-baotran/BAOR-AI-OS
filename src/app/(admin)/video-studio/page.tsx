@@ -17,10 +17,11 @@ import { VideoScheduleForm } from "@/components/publishing/video-schedule";
 import { AutoRefresh } from "@/components/video/auto-refresh";
 import { VideoPlayer } from "@/components/video/video-player";
 import { FramingEditor } from "@/components/video/framing-editor";
+import { PlanEditor } from "@/components/video/plan-editor";
 import { listContent } from "@/lib/queries";
 import { fileUrl } from "@/lib/uploads";
 import { listVideos } from "@/lib/videos/repository";
-import { editSettings, engineLabel, jobVersions, latestJob } from "@/lib/video/jobs";
+import { brollLibrary, editSettings, engineLabel, jobVersions, latestJob, readEditorPlan } from "@/lib/video/jobs";
 import { blockersForVideo } from "@/lib/video/approval";
 import { qaLabel, qaTone } from "@/lib/video/job-types";
 import { feedbackLabel, listVideoFeedback, type FeedbackKind } from "@/lib/video/feedback";
@@ -53,6 +54,12 @@ export default async function VideoStudioPage({ searchParams }: { searchParams: 
   const list = tab === "all" ? all : all.filter((v) => v.status === tab);
   const links = campaignRepo.linksForEntities("video", all.map((v) => v.id));
   const back = withCampaignContext(`/video-studio?tab=${tab}`, ctx);
+  // Ảnh / clip dùng được (có giấy phép, có tệp) cho bảng biên tập
+  const planImages = sp.open
+    ? brollLibrary()
+        .filter((b) => b.exists && b.license.trim())
+        .map((b) => ({ file: b.file, label: `${b.file.replace(/^anh\//, "").replace(/\.[a-z0-9]+$/i, "")}${b.keywords.length ? ` (${b.keywords.slice(0, 2).join(", ")})` : ""}` }))
+    : [];
   const count = (s: VideoStatus) => all.filter((v) => v.status === s).length;
   const jobs = new Map(list.map((v) => [v.id, latestJob(v.id)]));
   const busy = [...jobs.values()].some((j) => j && (j.job.status === "queued" || j.job.status === "running"));
@@ -143,6 +150,11 @@ export default async function VideoStudioPage({ searchParams }: { searchParams: 
                     {v.note && !running && <p className="mt-1 text-[12px] text-ink">{v.note}</p>}
                     {hasPreview ? <VideoPlayer src={jobFile(v.id, jv!.job.version, "preview.mp4")} hdSrc={v.uploadId ? fileUrl(v.uploadId) : undefined} /> : v.uploadId && <VideoPlayer src={fileUrl(v.uploadId)} />}
 
+                    {isOpen && jv && !running && jv.job.status !== "setup" && (
+                      <div className="mt-3">
+                        <PlanEditor videoId={v.id} back={back} plan={readEditorPlan(v.id).plan} keep={report?.output.keep ?? null} images={planImages} canRerender={!!canRerender} />
+                      </div>
+                    )}
                     {isOpen && report && (
                       <div className="mt-3 grid gap-3">
                         {report.blockers.length > 0 && (

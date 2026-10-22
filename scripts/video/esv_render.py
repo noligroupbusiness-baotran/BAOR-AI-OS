@@ -1306,6 +1306,9 @@ def main():
         if ev:
             plan["note"] += f" Minh hoạ theo từ khoá lời nói: {len(ev)} lần."
     json.dump(plan, open(job.p("plan.json"), "w"), ensure_ascii=False, indent=1)
+    # Bảng biên tập: mục người dựng tắt (off = true) giữ trong kế hoạch nhưng không dựng
+    for key in ("emphasis", "diagrams", "broll"):
+        plan[key] = [x for x in plan.get(key, []) if not x.get("off")]
     cut_times, keep, src_dur = [], None, dur
     if a.cut_silence:
         job.progress("cut", "Cắt khoảng lặng", 32)

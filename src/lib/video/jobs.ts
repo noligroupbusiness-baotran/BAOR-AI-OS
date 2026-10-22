@@ -512,3 +512,72 @@ function failJob(job: VideoJob, msg: string, runId: string, title: string) {
   logActivity("system", `Dựng “${title}” bản ${job.version} lỗi: ${msg.slice(0, 160)}`, "video");
   void sendAlert({ level: "error", title: "Dựng video lỗi", text: `${title}: ${msg.slice(0, 300)}`, href: "/video-studio" });
 }
+
+// ---------------------------------------------------------------- bảng biên tập (kế hoạch cấp video)
+
+/** Kế hoạch biên tập đang dùng: kế hoạch cấp video (người / AI biên tập) nếu có, không thì kế hoạch máy lập ở bản mới nhất. Mốc theo video gốc. */
+export function readEditorPlan(videoId: string): { plan: Record<string, unknown>; source: "video" | "job" | "none" } {
+  const own = readJson<Record<string, unknown>>(path.join(jobsRoot(), videoId, "plan.json"));
+  if (own) return { plan: own, source: "video" };
+  for (const v of jobVersions(videoId)) {
+    const p = readJson<Record<string, unknown>>(path.join(jobDir(videoId, v), "plan.json"));
+    if (p) return { plan: p, source: "job" };
+  }
+  return { plan: {}, source: "none" };
+}
+
+const PLAN_TEXT_MAX = 120;
+
+/** Lưu kế hoạch từ bảng biên tập: chỉ nhận các khoá đã biết, kiểm kiểu, giới hạn độ dài chữ; mục tắt giữ lại với off = true. */
+export function writeEditorPlan(videoId: string, raw: unknown, by: string): { ok: true } | { ok: false; error: string } {
+  if (!raw || typeof raw !== "object") return { ok: false, error: "Kế hoạch không hợp lệ" };
+  const r = raw as Record<string, unknown>;
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v >= 0 && v < 36_000 ? Math.round(v * 100) / 100 : undefined);
+  const txt = (v: unknown) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, PLAN_TEXT_MAX) : undefined);
+  const clean = (x: unknown, depth = 0): unknown => {
+    if (depth > 4) return undefined;
+    if (Array.isArray(x)) return x.slice(0, 200).map((y) => clean(y, depth + 1)).filter((y) => y !== undefined);
+    if (x && typeof x === "object") {
+      const o: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(x as Record<string, unknown>)) {
+        if (["t", "t0", "t1", "end", "strike", "out", "level", "nin", "nout", "from"].includes(k)) {
+          const n = num(v);
+          if (n !== undefined) o[k] = n;
+        } else if (["text", "keyword", "num"].includes(k)) {
+          const s = txt(v);
+          if (s !== undefined) o[k] = s;
+        } else if (k === "style") {
+          if (["blur", "fade", "shine"].includes(String(v))) o[k] = v;
+        } else if (k === "type") {
+          if (["compare", "arrow", "steps", "mechanism", "process", "chapter", "quote", "fs06", "fs05", "fs01", "leak"].includes(String(v))) o[k] = v;
+        } else if (k === "icon") {
+          if (["person", "bubble", "heart", "phone", "tick", "x", "pin"].includes(String(v))) o[k] = v;
+        } else if (k === "file") {
+          const s = txt(v);
+          if (s && !s.includes("..") && !s.startsWith("/")) o[k] = s;
+        } else if (k === "off") {
+          if (v === true) o[k] = true;
+        } else if (["wrong", "top", "mid", "bottom", "right", "steps"].includes(k)) {
+          const c = clean(v, depth + 1);
+          if (c !== undefined) o[k] = c;
+        }
+      }
+      return o;
+    }
+    return undefined;
+  };
+  const plan: Record<string, unknown> = {
+    by: `Biên tập: ${by} (bảng biên tập, ${new Date().toISOString().slice(0, 16).replace("T", " ")})`,
+    note: txt(r.note) ?? "",
+    content: txt(r.content) ?? "",
+    emphasis: clean(r.emphasis) ?? [],
+    diagrams: clean(r.diagrams) ?? [],
+    broll: clean(r.broll) ?? [],
+  };
+  if (typeof r.pace === "string" && ["CHAM", "VUA", "NHANH"].includes(r.pace)) plan.pace = r.pace;
+  const d = path.join(jobsRoot(), videoId);
+  fs.mkdirSync(d, { recursive: true });
+  fs.writeFileSync(path.join(d, "plan.json"), JSON.stringify(plan, null, 1));
+  logActivity("human", `${by} sửa kế hoạch biên tập video ${videoId} trong bảng biên tập.`, "video");
+  return { ok: true };
+}

@@ -50,3 +50,17 @@ export async function POST(req: Request) {
   logActivity("human", `${actor.name} thêm B-roll “${original}” (từ khoá: ${keywords.join(", ")}; giấy phép: ${license}).`, "video");
   return Response.json({ ok: true, file, size: w.size });
 }
+
+const IMG_TYPES: Record<string, string> = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp" };
+
+/** Ảnh trong thư viện minh hoạ (xem thu nhỏ ở bảng biên tập). Chỉ ảnh, chỉ trong thư mục thư viện, cần đăng nhập. */
+export async function GET(req: Request) {
+  const user = await getCurrentUser();
+  if (!user) return new Response("Chưa đăng nhập", { status: 401 });
+  const rel = new URL(req.url).searchParams.get("file") ?? "";
+  const dir = path.resolve(brollDir());
+  const full = path.resolve(dir, rel);
+  const type = IMG_TYPES[path.extname(full).toLowerCase()];
+  if (!type || !full.startsWith(dir + path.sep) || !fs.existsSync(full)) return new Response("Không tìm thấy", { status: 404 });
+  return new Response(fs.readFileSync(full), { headers: { "Content-Type": type, "Cache-Control": "private, max-age=3600" } });
+}

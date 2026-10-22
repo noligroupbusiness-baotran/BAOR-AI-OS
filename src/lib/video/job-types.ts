@@ -14,6 +14,28 @@ export interface Framing {
   zoom?: number;
 }
 
+/** Thời gian bản đã cắt lặng ↔ thời gian video gốc (kế hoạch biên tập lưu theo video gốc). keep = các đoạn giữ lại (giây gốc). */
+export function toCutTime(keep: [number, number][] | null | undefined, t: number): number {
+  if (!keep?.length) return t;
+  let off = 0;
+  for (const [a, b] of keep) {
+    if (t < a) return off;
+    if (t < b) return off + t - a;
+    off += b - a;
+  }
+  return off;
+}
+
+export function toSourceTime(keep: [number, number][] | null | undefined, t: number): number {
+  if (!keep?.length) return t;
+  let off = 0;
+  for (const [a, b] of keep) {
+    if (t < off + (b - a)) return a + Math.max(0, t - off);
+    off += b - a;
+  }
+  return keep[keep.length - 1][1];
+}
+
 export function parseAspect(v: unknown): Aspect {
   return (ASPECTS as readonly string[]).includes(String(v)) ? (String(v) as Aspect) : "9:16";
 }
@@ -66,7 +88,7 @@ export interface QaItem {
 
 export interface VideoReport {
   skill: { skillId: string; name: string; version: string; sourceUrl: string };
-  output: { seconds: number; frames: number; cutSilence: boolean; cuts: number };
+  output: { seconds: number; frames: number; cutSilence: boolean; cuts: number; keep?: [number, number][] | null; aspect?: string };
   transcript: { words: number; uncertain: { t: number; text: string; p: number }[] };
   captions: { units: number };
   emphasis: { t: number; text: string; kind: string }[];

@@ -82,6 +82,27 @@ export async function startVideoAction(fd: FormData) {
   done(back, "Đã xếp hàng dựng");
 }
 
+export async function saveVideoPlanAction(fd: FormData) {
+  const actor = await currentActor();
+  const back = str(fd, "back") || "/video-studio";
+  const id = str(fd, "id");
+  let raw: unknown;
+  try {
+    raw = JSON.parse(str(fd, "plan"));
+  } catch {
+    return fail(back, "Kế hoạch không đọc được");
+  }
+  const { writeEditorPlan, rerenderVideo } = await import("@/lib/video/jobs");
+  const w = writeEditorPlan(id, raw, actor.name);
+  if (!w.ok) return fail(back, w.error);
+  if (str(fd, "rerender") === "1") {
+    const r = rerenderVideo(id, actor.name);
+    if (!r.ok) return fail(back, `Đã lưu kế hoạch; chưa dựng lại được: ${r.error}`);
+    return done(back, `Đã lưu kế hoạch, đang dựng bản ${r.version}`);
+  }
+  done(back, "Đã lưu kế hoạch biên tập");
+}
+
 export async function deleteVideoAction(fd: FormData) {
   const actor = await currentActor();
   const back = str(fd, "back") || "/video-studio";
