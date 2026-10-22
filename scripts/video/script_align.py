@@ -57,31 +57,41 @@ def correct(words, script_text, low_p=0.6, min_run=3):
     b = [norm(x) for x in sw]
     fixes = []
     sm = difflib.SequenceMatcher(None, a, b, autojunk=False)
-    for op, i1, i2, j1, j2 in sm.get_opcodes():
+    ops = sm.get_opcodes()
+
+    def strong(k):
+        """Khối k là đoạn khớp ĐỦ DÀI (≥ min_run từ) — chỉ những đoạn này mới là bằng chứng lời nói đang theo kịch bản."""
+        return 0 <= k < len(ops) and ops[k][0] == "equal" and (ops[k][2] - ops[k][1]) >= min_run
+
+    for n, (op, i1, i2, j1, j2) in enumerate(ops):
         if op == "equal":
-            # Khối khớp NGẮN (< min_run từ) thường là trùng ngẫu nhiên khi OWNER diễn đạt khác kịch bản ("cô giáo" ↔ "có"):
-            # chỉ sửa từ đang nghe chưa chắc / xác suất thấp ở đó; từ nghe chắc giữ nguyên.
-            strong = (i2 - i1) >= min_run
+            # Khối khớp NGẮN (< min_run từ) là trùng ngẫu nhiên khi OWNER diễn đạt khác kịch bản ("Cô giáo" ↔ "có"):
+            # KHÔNG đổi gì, kể cả cờ "nghe chưa chắc" (để người nghe lại).
+            if not strong(n):
+                continue
             for k in range(i2 - i1):
                 w, target = words[i1 + k], sw[j1 + k]
-                weak = w.get("uncertain") or w.get("p", 1.0) < low_p
-                if not strong and not weak:
-                    continue
-                if _risky(w["text"], target) and tnorm(w["text"]) != tnorm(target):
-                    continue
-                if tnorm(w["text"]) != tnorm(target):  # cùng chữ, khác dấu → dấu theo kịch bản
+                if tnorm(w["text"]) != tnorm(target):  # cùng chữ (bỏ dấu giống hệt), khác dấu → dấu theo kịch bản (cả "khong" → "không")
                     old = w["text"]
                     w["text"] = _apply(w, target)
                     w["uncertain"] = False
                     w["scriptFix"] = True
                     fixes.append({"t": round(w["start"], 2), "from": old, "to": w["text"], "why": "dấu theo kịch bản"})
-                elif w.get("uncertain"):  # nghe chưa chắc nhưng khớp kịch bản → xác nhận
+                elif w.get("uncertain"):  # nghe chưa chắc nhưng nằm trong đoạn khớp dài → xác nhận
                     w["uncertain"] = False
                     w["scriptFix"] = True
                     fixes.append({"t": round(w["start"], 2), "from": w["text"], "to": w["text"], "why": "khớp kịch bản, bỏ nghi ngờ"})
         elif op == "replace" and (i2 - i1) <= 3:
-            # Khối khác nhau ngắn phía lời nói (≤ 3 từ). Kịch bản có thể dài hơn (người nói dừng trước khi hết kịch bản / bỏ câu):
-            # so từng từ với từ kịch bản CÙNG VỊ TRÍ trong khối; không thêm / bớt từ.
+            # Chỉ sửa khối khác nhau KẸP GIỮA hai đoạn khớp dài (hoặc ở cuối lời nói: người nói dừng trước khi hết kịch bản),
+            # độ dài hai phía gần bằng nhau → đây là chỗ máy nghe sai, không phải câu OWNER nói khác.
+            at_end = i2 == len(words)
+            # mép tin cậy: đoạn khớp dài, hoặc đoạn khớp chạm đầu / cuối lời nói ("… chị Trà [Dang] nha" — hết câu)
+            left_ok = strong(n - 1) or (n - 1 >= 0 and ops[n - 1][0] == "equal" and ops[n - 1][1] == 0)
+            right_ok = at_end or strong(n + 1) or (n + 1 < len(ops) and ops[n + 1][0] == "equal" and ops[n + 1][2] == len(words))
+            if not left_ok or not right_ok:
+                continue
+            if not at_end and abs((i2 - i1) - (j2 - j1)) > 1:
+                continue
             for k in range(min(i2 - i1, j2 - j1)):
                 w, target = words[i1 + k], sw[j1 + k]
                 close = difflib.SequenceMatcher(None, a[i1 + k], b[j1 + k]).ratio() >= 0.6
@@ -133,6 +143,19 @@ def self_test():
         w = W(heard)
         correct(w, script)
         bad += [x["text"] for x in w] != heard.split()
+    # 6b) "Cô" nghe chưa chắc / xác suất thấp trong câu diễn đạt lại: vẫn GIỮ, và cờ nghi ngờ GIỮ (để người nghe lại)
+    heard = "phá băng Cô giáo cũ của mình bảo là cứ cười trước đã Hỏi tuổi"
+    script = "phá băng Bạn có biết cách làm quen nhanh không Hỏi tuổi"
+    w = W(heard, unc={2})
+    correct(w, script)
+    bad += w[2]["text"] != "Cô" or not w[2]["uncertain"]
+    w = W(heard, p={2: 0.5})
+    correct(w, script)
+    bad += w[2]["text"] != "Cô"
+    # 6c) đoạn khớp dài: khôi phục dấu cả với từ phủ định ("khong" → "không")
+    w = W("mình khong nên vội vàng quá")
+    correct(w, "mình không nên vội vàng quá")
+    bad += w[1]["text"] != "không"
     # 7) con số / phủ định / tên riêng không tự thay dù nghe chưa chắc
     w = W("giá cỡ 200 nghìn", unc={2})
     correct(w, "giá cỡ 300 nghìn")
