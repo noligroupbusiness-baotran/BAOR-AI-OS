@@ -5,7 +5,7 @@ import { getDb, schema } from "@/db";
 import { getCurrentUser } from "@/lib/auth";
 import { actorFor } from "@/lib/permissions";
 import { uploadsDir } from "@/lib/uploads";
-import { createVideoFromSource } from "@/lib/video/jobs";
+import { APPROVED_SCRIPT, createVideoFromSource } from "@/lib/video/jobs";
 import { parseAspect } from "@/lib/video/job-types";
 import { addVideoFeedback } from "@/lib/video/feedback";
 import { campaignRepo } from "@/lib/campaigns/repository";
@@ -52,7 +52,9 @@ export async function POST(req: Request) {
     .values({ id, kind: "video", name: original || fileName, fileName, mime, size, meta: JSON.stringify({ title, role: "raw" }), uploadedBy: actor.email, createdAt: new Date().toISOString() })
     .run();
   const contentId = (url.searchParams.get("content") ?? "").slice(0, 80) || null;
-  const content = contentId ? getDb().select().from(schema.contentItems).where(eq(schema.contentItems.id, contentId)).get() : undefined;
+  const found = contentId ? getDb().select().from(schema.contentItems).where(eq(schema.contentItems.id, contentId)).get() : undefined;
+  // Chỉ kịch bản đã duyệt mới gắn được vào video (cùng cổng với "Gắn kịch bản" trong Video Studio)
+  const content = found && APPROVED_SCRIPT.includes(found.status) ? found : undefined;
   // Video đã dựng sẵn (dựng ngoài hệ thống): vào thẳng Chờ kiểm tra, không dựng lại. Tệp gốc giữ nguyên trong kho tải lên.
   if (url.searchParams.get("mode") === "final") {
     const videoId = `v_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;

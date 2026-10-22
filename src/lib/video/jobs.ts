@@ -174,9 +174,14 @@ export function brollLibrary(): BrollItem[] {
 
 /** Lời thoại của kịch bản đã duyệt: gợi ý cho bộ nhận lời (đúng từ chuyên ngành, tên riêng). */
 /** Lời nói của kịch bản gắn với video (bỏ thẻ nguồn [S#]/[K#]) — nguồn cho bộ dựng: gợi ý nghe, sửa chữ, ngữ cảnh biên tập AI. */
+/** Kịch bản được phép điều khiển bộ dựng: chỉ bản đã duyệt (đã lên lịch / đã đăng vẫn là bản đã duyệt). */
+export const APPROVED_SCRIPT = ["approved", "scheduled", "published"];
+
 export function scriptSpeech(contentId: string | null, max = 20_000): string {
   if (!contentId) return "";
-  const c = getDb().select({ draft: schema.contentItems.draft }).from(schema.contentItems).where(eq(schema.contentItems.id, contentId)).get();
+  const c = getDb().select({ draft: schema.contentItems.draft, status: schema.contentItems.status }).from(schema.contentItems).where(eq(schema.contentItems.id, contentId)).get();
+  // Kịch bản nháp / bị bỏ duyệt sau khi gắn: KHÔNG được sửa chữ hay dẫn biên tập AI (kiểm cả lúc dựng, không chỉ lúc gắn)
+  if (!c || !APPROVED_SCRIPT.includes(c.status)) return "";
   const speech = parseShootingScript(c?.draft ?? "").scenes.map((s) => s.speech.replace(/\[[SK]\d+\]/g, "").trim()).filter(Boolean).join(" ");
   return speech.replace(/\s+/g, " ").slice(0, max);
 }
@@ -202,11 +207,13 @@ export function linkVideoScript(videoId: string, contentId: string | null, by: s
   const db = getDb();
   const v = db.select().from(schema.videos).where(eq(schema.videos.id, videoId)).get();
   if (!v) return { ok: false, error: "Không tìm thấy video" };
+  // Đã gửi phê duyệt / đã duyệt: đổi kịch bản sẽ đổi caption và bài đăng theo sau → phải Yêu cầu chỉnh sửa trước
+  if (v.status === "pending_approval" || v.status === "approved") return { ok: false, error: "Video đã gửi phê duyệt / đã duyệt: Yêu cầu chỉnh sửa trước khi đổi kịch bản" };
   let title: string | null = null;
   if (contentId) {
     const c = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, contentId)).get();
     if (!c) return { ok: false, error: "Không tìm thấy kịch bản" };
-    if (!["approved", "scheduled", "published"].includes(c.status)) return { ok: false, error: "Chỉ gắn kịch bản đã duyệt" };
+    if (!APPROVED_SCRIPT.includes(c.status)) return { ok: false, error: "Chỉ gắn kịch bản đã duyệt" };
     if (!scriptSpeech(c.id)) return { ok: false, error: "Kịch bản chưa có lời nói theo cảnh" };
     title = c.title;
   }
@@ -226,7 +233,9 @@ export function createVideoFromSource(opts: { title: string; sourceUploadId: str
   const start = opts.start ?? true;
   const videoId = newId("v");
   const now = new Date().toISOString();
-  const content = opts.contentId ? getDb().select().from(schema.contentItems).where(eq(schema.contentItems.id, opts.contentId)).get() : undefined;
+  const found = opts.contentId ? getDb().select().from(schema.contentItems).where(eq(schema.contentItems.id, opts.contentId)).get() : undefined;
+  // Chỉ gắn kịch bản đã duyệt (đường tải lên cũng phải qua cùng cổng với "Gắn kịch bản")
+  const content = found && APPROVED_SCRIPT.includes(found.status) ? found : undefined;
   const contentId = content?.id ?? null;
   getDb()
     .insert(schema.videos)
@@ -441,7 +450,7 @@ export async function kickWorker(): Promise<void> {
   void kickWorker();
 }
 
-function runJob(job: VideoJob): Promise<void> {
+export function runJob(job: VideoJob): Promise<void> {
   const dir = jobDir(job.videoId, job.version);
   const video = getDb().select().from(schema.videos).where(eq(schema.videos.id, job.videoId)).get();
   const title = video?.title ?? job.videoId;

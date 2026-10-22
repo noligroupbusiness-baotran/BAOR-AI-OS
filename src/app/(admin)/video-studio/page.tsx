@@ -145,7 +145,7 @@ export default async function VideoStudioPage({ searchParams }: { searchParams: 
                     </div>
                     <div className="mt-1 text-[12px] text-ink-2">
                       Kịch bản: {v.contentId ? <Link href={`/content?tab=done&open=${v.contentId}`} className="text-jade hover:underline">{v.contentTitle ?? v.contentId}</Link> : <span className="text-ink-3">chưa gắn kịch bản</span>}
-                      {report?.transcript?.script && <span className="text-ink-3"> · bản {jv!.job.version} sửa theo kịch bản {report.transcript.scriptFixes?.length ?? 0} từ</span>}
+                      {report?.transcript?.script && <span className="text-ink-3"> · bản {jv!.job.version} sửa theo kịch bản {report.transcript.scriptFixes?.filter((f) => f.from !== f.to).length ?? 0} từ</span>}
                     </div>
                     {isOpen && (
                       <form action={linkVideoScriptAction} className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[12px]" aria-label="Gắn kịch bản">

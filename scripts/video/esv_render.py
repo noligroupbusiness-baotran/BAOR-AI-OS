@@ -1294,16 +1294,18 @@ def main():
         second = P.transcribe(wav16, a.model2, "")
         P.mark_uncertain(words, second)
     fixes = apply_corrections(words, a.corrections)
+    for w in words:
+        w.setdefault("end", w["start"] + 0.2)
+        if "uncertain" not in w:
+            w["uncertain"] = w.get("p", 1) < 0.15
+    # Lưu lời nghe THÔ (trước khi sửa theo kịch bản): bản sau dùng lại (--words) rồi sửa theo kịch bản HIỆN TẠI — bỏ gắn / đổi
+    # kịch bản thì không còn dính sửa cũ, cờ "nghe chưa chắc" trở lại.
+    json.dump([{k: v for k, v in w.items() if k != "scriptFix"} for w in words], open(job.p("words_main.json"), "w"), ensure_ascii=False)
     # Nội dung → Video: sửa chữ máy nghe theo kịch bản đã duyệt (chỉ thay tại chỗ, giữ mốc; lời nói ngoài kịch bản giữ nguyên)
     script_fixes = []
     if script_text:
         import script_align
         script_fixes = script_align.correct(words, script_text)
-    for w in words:
-        w.setdefault("end", w["start"] + 0.2)
-        if "uncertain" not in w:
-            w["uncertain"] = w.get("p", 1) < 0.15
-    json.dump(words, open(job.p("words_main.json"), "w"), ensure_ascii=False)
     if plan is not None and str(plan.get("by", "")).startswith("Luật tự động"):
         plan = None  # kế hoạch máy lập ở bản trước: lập lại (AI nếu có mô hình, không thì luật mới nhất)
     if a.ai_plan:
@@ -1316,7 +1318,7 @@ def main():
         try:
             import ai_plan
             job.progress("aiplan", "Biên tập AI: đọc lời nói, chọn chữ nhấn / sơ đồ / minh hoạ (mô hình tại máy)", 31)
-            plan = ai_plan.plan(words, dur, broll_library(broll_dir), script_text[:1200] or a.keywords, log=lambda m: print(m, file=sys.stderr))
+            plan = ai_plan.plan(words, dur, broll_library(broll_dir), (script_text[:1200] + (f" Từ khoá: {a.keywords}" if a.keywords else "")).strip(), log=lambda m: print(m, file=sys.stderr))
             if plan is None:
                 ai_note = " Biên tập AI: không có mô hình tại máy (llama-server) → lập theo luật."
         except Exception as e:  # mô hình lỗi giữa chừng không được làm hỏng cả bản dựng

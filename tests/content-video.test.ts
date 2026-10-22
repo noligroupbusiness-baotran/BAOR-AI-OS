@@ -69,3 +69,43 @@ w=json.load(open(${JSON.stringify(wPath)})); fx=S.correct(w, open(${JSON.stringi
   assert.deepEqual(out.starts, words.map((w) => w.start), "chỉ thay tại chỗ, mốc giữ nguyên");
   assert.equal(out.fixes.length, 2);
 });
+
+test("phản biện S4: kịch bản chưa duyệt không vào bộ dựng ở MỌI đường (tải lên, lúc dựng); không đổi kịch bản video đã gửi duyệt", () => {
+  const d = db.getDb();
+  // Đường tải lên kèm kịch bản nháp → không gắn
+  const v1 = jobs.createVideoFromSource({ title: "Nguồn", sourceUploadId: "up_x", cutSilence: false, by: "t", contentId: "c_draft" });
+  assert.equal(d.select().from(db.schema.videos).where(eq(db.schema.videos.id, v1)).get()!.contentId, null);
+  assert.equal(jobs.latestJob(v1)!.job.prompt ?? "", "", "lời kịch bản nháp không vào việc dựng");
+  // Gắn lúc đã duyệt, sau đó kịch bản bị bỏ duyệt → lúc dựng không còn dùng
+  content("c_later", "approved");
+  const v2 = jobs.createVideoFromSource({ title: "Nguồn 3", sourceUploadId: "up_z", cutSilence: false, by: "t", contentId: "c_later" });
+  d.update(db.schema.contentItems).set({ status: "draft" }).where(eq(db.schema.contentItems.id, "c_later")).run();
+  assert.deepEqual(jobs.scriptArgs(path.join(tmp, "job-y"), "c_later"), []);
+  // Video đã gửi phê duyệt → không đổi kịch bản
+  d.update(db.schema.videos).set({ status: "pending_approval" }).where(eq(db.schema.videos.id, v2)).run();
+  assert.match((jobs.linkVideoScript(v2, "c_ok", "OWNER") as { error: string }).error, /Yêu cầu chỉnh sửa/);
+});
+
+test("phản biện S4: bộ dựng THẬT nhận --script khi chạy việc dựng (runJob với python giả ghi lại tham số)", async () => {
+  const d = db.getDb();
+  fs.mkdirSync(path.join(tmp, "uploads"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "uploads", "src.mp4"), "x");
+  d.insert(db.schema.uploads).values({ id: "up_src", kind: "video", name: "src.mp4", fileName: "src.mp4", mime: "video/mp4", size: 1, meta: "{}", uploadedBy: "t", createdAt: new Date().toISOString() }).run();
+  const vid = jobs.createVideoFromSource({ title: "Nguồn thật", sourceUploadId: "up_src", cutSilence: false, by: "t", contentId: "c_ok", start: true });
+  const argsFile = path.join(tmp, "python-args.txt");
+  const fake = path.join(tmp, "fake-python.sh");
+  fs.writeFileSync(fake, `#!/bin/sh\nfor a in "$@"; do echo "$a"; done > ${JSON.stringify(argsFile)}\necho "LỖI: python giả" >&2\nexit 1\n`);
+  fs.chmodSync(fake, 0o755);
+  const prev = process.env.PYTHON_BIN;
+  process.env.PYTHON_BIN = fake;
+  try {
+    await jobs.runJob(jobs.latestJob(vid)!.job);
+  } finally {
+    process.env.PYTHON_BIN = prev;
+  }
+  const args = fs.readFileSync(argsFile, "utf8").split("\n");
+  assert.ok(args.some((a) => a.endsWith("esv_render.py")), "bộ dựng ESV");
+  const scriptArg = args.find((a) => a.startsWith("--script="));
+  assert.ok(scriptArg, "runJob truyền --script cho bộ dựng");
+  assert.equal(fs.readFileSync(scriptArg!.slice("--script=".length), "utf8"), jobs.scriptSpeech("c_ok"));
+});
