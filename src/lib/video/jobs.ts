@@ -231,7 +231,7 @@ export function rerenderBlock(videoId: string): string | null {
   return null;
 }
 
-export function rerenderVideo(videoId: string, by: string, cutSilence?: boolean, frame?: { aspect: Aspect; framing?: Framing }, feedbackNote?: string): { ok: true; version: number } | { ok: false; error: string } {
+export function rerenderVideo(videoId: string, by: string, cutSilence?: boolean, frame?: { aspect: Aspect; framing?: Framing }, feedbackNote?: string, aiPlan = false): { ok: true; version: number } | { ok: false; error: string } {
   const block = rerenderBlock(videoId);
   if (block) return { ok: false, error: block };
   const prev = latestJob(videoId)!;
@@ -240,7 +240,7 @@ export function rerenderVideo(videoId: string, by: string, cutSilence?: boolean,
   const now = new Date().toISOString();
   const aspect = frame?.aspect ?? prev.job.aspect ?? "9:16";
   const framing = frame ? frame.framing : prev.job.framing;
-  writeJob({ videoId, version, status: "queued", sourceUploadId: prev.job.sourceUploadId, cutSilence: cutSilence ?? prev.job.cutSilence, aspect, framing, prompt: prev.job.prompt ?? "", createdAt: now, by });
+  writeJob({ videoId, version, status: "queued", sourceUploadId: prev.job.sourceUploadId, cutSilence: cutSilence ?? prev.job.cutSilence, aspect, framing, prompt: prev.job.prompt ?? "", createdAt: now, by, ...(aiPlan ? { aiPlan: true } : {}) });
   getDb().update(schema.videos).set({ status: "editing", version, updatedAt: now, note: `Đang dựng bản ${version}.` }).where(eq(schema.videos.id, videoId)).run();
   campaignRepo.syncEntityStatus("video", videoId, "editing");
   // Một lần dựng = một dòng lịch sử (lý do cụ thể do nơi gọi đưa, vd "Dựng lại theo 2 góp ý: …")
@@ -444,6 +444,7 @@ function runJob(job: VideoJob): Promise<void> {
     if (job.framing?.y !== undefined) args.push(`--frame-y=${job.framing.y}`);
     if (job.framing?.zoom !== undefined) args.push(`--frame-zoom=${job.framing.zoom}`);
     if (!s.sfx) args.push("--no-sfx");
+    if (job.aiPlan) args.push("--ai-plan");
     if (s.musicUploadId === "none") args.push("--no-music");
     else if (music && musicPath) args.push(`--music=${musicPath}`, `--music-license=${String(music.meta.license ?? "")}`);
     // Kế hoạch biên tập ở cấp video (DATA_DIR/video-jobs/<videoId>/plan.json, do biên tập lập) được ưu tiên và giữ qua mọi lần dựng lại.
@@ -529,9 +530,23 @@ function finishJob(job: VideoJob, dir: string, runId: string, title: string, sta
   const note = `Bản ${job.version}: ${report.output.seconds.toFixed(0)} giây, ${report.captions.units} khung phụ đề, ${report.emphasis.length} chữ nhấn. Bảng kiểm: ${failed.length ? `chưa đạt ${failed.join(", ")}` : "các mục đo được đều đạt"}; ${report.blockers.length} điểm chặn đăng.`;
   getDb().update(schema.videos).set({ status: "review", version: job.version, uploadId: upId, note, updatedAt: now }).where(eq(schema.videos.id, job.videoId)).run();
   writeJob({ ...job, status: "done", startedAt: started, finishedAt: now, runId, masterUploadId: upId });
+  adoptAiPlan(job, dir);
   finishRun(runId, true, `Dựng xong “${title}” bản ${job.version} → Chờ kiểm tra`, 1);
   logActivity("ai", `Agent Edit Video dựng xong “${title}” bản ${job.version} theo ${engineLabel()}, chờ kiểm tra.`, "video");
   void verifyCommentsLater(job.videoId);
+}
+
+/**
+ * Bản dựng do biên tập AI lập kế hoạch: kế hoạch đó thành kế hoạch biên tập của video (Bảng biên tập / góp ý sửa tiếp trên nó).
+ * Kế hoạch cấp video cũ được lưu trữ cạnh đó (plan.prev-<thời điểm>.json), không xoá.
+ */
+export function adoptAiPlan(job: VideoJob, dir: string) {
+  const jp = readJson<Record<string, unknown>>(path.join(dir, "plan.json"));
+  if (!jp || !String(jp.by ?? "").startsWith("Biên tập AI")) return;
+  const own = path.join(jobsRoot(), job.videoId, "plan.json");
+  if (fs.existsSync(own) && !job.aiPlan) return; // đã có kế hoạch người biên tập và không yêu cầu AI lập lại
+  if (fs.existsSync(own)) fs.renameSync(own, path.join(jobsRoot(), job.videoId, `plan.prev-${new Date().toISOString().replace(/[:.]/g, "-")}.json`));
+  fs.copyFileSync(path.join(dir, "plan.json"), own);
 }
 
 /** Bản mới xong / lỗi: kiểm các góp ý đang chờ bản này (Video Review). Nạp động để tránh vòng import jobs ↔ review. */

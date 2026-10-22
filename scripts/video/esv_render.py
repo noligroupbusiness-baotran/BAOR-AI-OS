@@ -1263,6 +1263,7 @@ def main():
     ap.add_argument("--frame-zoom", type=float, default=1.0, help="phóng khung cắt ≥ 1")
     ap.add_argument("--no-sfx", action="store_true", help="tắt SFX tổng hợp (vút khi vào minh hoạ, tách khi chữ nhấn)")
     ap.add_argument("--corrections", default="", help='sửa chữ nghe sai, mỗi dòng "sai => đúng" (cùng số tiếng)')
+    ap.add_argument("--ai-plan", action="store_true", help="bỏ kế hoạch có sẵn, để biên tập AI tại máy lập lại (scripts/video/ai_plan.py)")
     a = ap.parse_args()
     global CW, CH, LAY
     LAY = make_layout(a.aspect)
@@ -1297,14 +1298,30 @@ def main():
             w["uncertain"] = w.get("p", 1) < 0.15
     json.dump(words, open(job.p("words_main.json"), "w"), ensure_ascii=False)
     if plan is not None and str(plan.get("by", "")).startswith("Luật tự động"):
-        plan = None  # kế hoạch máy lập ở bản trước: lập lại theo luật mới nhất
+        plan = None  # kế hoạch máy lập ở bản trước: lập lại (AI nếu có mô hình, không thì luật mới nhất)
+    if a.ai_plan:
+        plan = None  # người dùng bấm "AI biên tập lại"
     broll_dir = (plan or {}).get("brollDir") or os.path.join(os.environ.get("DATA_DIR", os.path.join(P.ROOT, "data")), "video-assets", "broll")
     if plan is None:
-        plan = auto_plan(words, dur, re.split(r"[,\n]", a.keywords))
-        ev = P.plan_broll(words, dur, broll_library(broll_dir))
-        plan["broll"] = [{"t0": e["t0"], "t1": e["t1"], "file": e["file"], "keyword": e["keyword"]} for e in ev]
-        if ev:
-            plan["note"] += f" Minh hoạ theo từ khoá lời nói: {len(ev)} lần."
+        # Biên tập AI trong ứng dụng: mô hình mở chạy tại máy lập kế hoạch, luật ESV kiểm từng mục (ai_plan.py).
+        # Không có mô hình / lỗi → quay về kế hoạch theo luật, ghi rõ lý do trong ghi chú kế hoạch.
+        ai_note = ""
+        try:
+            import ai_plan
+            job.progress("aiplan", "Biên tập AI: đọc lời nói, chọn chữ nhấn / sơ đồ / minh hoạ (mô hình tại máy)", 31)
+            plan = ai_plan.plan(words, dur, broll_library(broll_dir), a.keywords, log=lambda m: print(m, file=sys.stderr))
+            if plan is None:
+                ai_note = " Biên tập AI: không có mô hình tại máy (llama-server) → lập theo luật."
+        except Exception as e:  # mô hình lỗi giữa chừng không được làm hỏng cả bản dựng
+            plan = None
+            ai_note = f" Biên tập AI lỗi ({str(e)[:120]}) → lập theo luật."
+        if plan is None:
+            plan = auto_plan(words, dur, re.split(r"[,\n]", a.keywords))
+            ev = P.plan_broll(words, dur, broll_library(broll_dir))
+            plan["broll"] = [{"t0": e["t0"], "t1": e["t1"], "file": e["file"], "keyword": e["keyword"]} for e in ev]
+            if ev:
+                plan["note"] += f" Minh hoạ theo từ khoá lời nói: {len(ev)} lần."
+            plan["note"] += ai_note
     json.dump(plan, open(job.p("plan.json"), "w"), ensure_ascii=False, indent=1)
     # Bảng biên tập: mục người dựng tắt (off = true) giữ trong kế hoạch nhưng không dựng
     for key in ("emphasis", "diagrams", "broll"):

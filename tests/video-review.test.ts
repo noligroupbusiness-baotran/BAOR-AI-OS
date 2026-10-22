@@ -214,3 +214,23 @@ test("phản biện S2: không dựng lại được (video chờ phê duyệt) 
   assert.equal(fs.readFileSync(path.join(tmp, "video-jobs", "v_p", "plan.json"), "utf8"), before, "kế hoạch không bị ghi");
   assert.equal(review.listComments("v_p")[0].status, "open");
 });
+
+test("S3: bản dựng do biên tập AI lập → kế hoạch AI thành kế hoạch video (bản cũ lưu trữ); không đè kế hoạch người khi không yêu cầu", () => {
+  seed("v_ai");
+  const dir = path.join(tmp, "video-jobs", "v_ai", "v2");
+  fs.mkdirSync(dir, { recursive: true });
+  const aiPlan = { by: "Biên tập AI tại máy (qwen)", emphasis: [{ t: 3, text: "PHÁ BĂNG", style: "blur" }], diagrams: [], broll: [] };
+  fs.writeFileSync(path.join(dir, "plan.json"), JSON.stringify(aiPlan));
+  const own = path.join(tmp, "video-jobs", "v_ai", "plan.json");
+  const job = { videoId: "v_ai", version: 2, status: "done" as const, sourceUploadId: "up", cutSilence: false, createdAt: "", by: "t" };
+  jobs.adoptAiPlan(job, dir);
+  assert.deepEqual(JSON.parse(fs.readFileSync(own, "utf8")), PLAN, "không yêu cầu AI lập lại → giữ kế hoạch người biên tập");
+  jobs.adoptAiPlan({ ...job, aiPlan: true }, dir);
+  assert.equal(JSON.parse(fs.readFileSync(own, "utf8")).by, aiPlan.by, "yêu cầu AI lập lại → kế hoạch AI thành kế hoạch video");
+  const prev = fs.readdirSync(path.join(tmp, "video-jobs", "v_ai")).filter((f) => f.startsWith("plan.prev-"));
+  assert.equal(prev.length, 1, "kế hoạch cũ được lưu trữ, không xoá");
+  // Kế hoạch theo luật (không phải AI) không bao giờ được nhận làm kế hoạch video
+  fs.writeFileSync(path.join(dir, "plan.json"), JSON.stringify({ ...aiPlan, by: "Luật tự động" }));
+  jobs.adoptAiPlan({ ...job, aiPlan: true }, dir);
+  assert.equal(JSON.parse(fs.readFileSync(own, "utf8")).by, aiPlan.by);
+});

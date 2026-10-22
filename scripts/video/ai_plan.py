@@ -15,7 +15,15 @@ Mục bị loại ghi lý do trong plan["ai"]["rejected"] để người biên t
 import argparse, hashlib, json, os, re, sys, time, unicodedata, urllib.error, urllib.request
 
 ENDPOINT = os.environ.get("BAOR_LLM_URL", "http://127.0.0.1:8091")
-MODEL_LABEL = os.environ.get("BAOR_LLM_LABEL", "Qwen2.5-14B-Instruct Q4_K_M (Apache-2.0, llama.cpp tại máy)")
+def model_label():
+    """Tên mô hình đang chạy (đọc từ llama-server /props), để kế hoạch ghi đúng mô hình nào đã lập."""
+    try:
+        with urllib.request.urlopen(ENDPOINT.rstrip("/") + "/props", timeout=3) as r:
+            path = json.loads(r.read()).get("model_path", "")
+        name = re.sub(r"-0000\d-of-0000\d|\.gguf$", "", os.path.basename(path))
+        return f"{name} (llama.cpp tại máy)" if name else "mô hình tại máy"
+    except (OSError, ValueError):
+        return "mô hình tại máy"
 
 
 def norm(s):
@@ -25,47 +33,96 @@ def norm(s):
 
 
 # ---------------------------------------------------------------- câu
-def sentences(words, gap=0.7, max_words=28):
-    """Gom từ thành câu: hết câu ở dấu . ? ! hoặc ngắt ≥ gap giây, hoặc quá dài."""
-    out, cur = [], []
+def sentences(words, gap=0.5, max_words=26):
+    """Gom từ thành câu. Lời nói máy nghe thường KHÔNG có dấu câu: hết câu ở . ? ! hoặc ngắt hơi ≥ gap; câu quá dài thì cắt ở
+    CHỖ NGẮT HƠI DÀI NHẤT trong câu (không cắt cứng theo số từ — cắt cứng làm gãy cụm như "hỏi tuổi | của khách hàng")."""
+    def pause(i):
+        return words[i + 1]["start"] - words[i].get("end", words[i]["start"]) if i + 1 < len(words) else 9.0
+    groups, cur = [], []
     for i, w in enumerate(words):
         cur.append(i)
-        txt = w["text"].strip()
-        nxt = words[i + 1] if i + 1 < len(words) else None
-        end = txt.endswith((".", "?", "!")) or nxt is None or (nxt["start"] - w.get("end", w["start"]) >= gap) or len(cur) >= max_words
-        if end:
-            out.append({"id": len(out) + 1, "idx": cur, "t0": words[cur[0]]["start"], "t1": words[cur[-1]].get("end", words[cur[-1]]["start"]),
-                        "text": " ".join(("[?]" if words[j].get("uncertain") else "") + words[j]["text"].strip() for j in cur)})
+        if w["text"].strip().endswith((".", "?", "!")) or pause(i) >= gap or i == len(words) - 1:
+            groups.append(cur)
             cur = []
+    out = []
+    def emit(g):
+        if len(g) > max_words:
+            k = max(range(len(g) // 4, len(g) - len(g) // 4), key=lambda m: pause(g[m]))  # ngắt dài nhất ở giữa câu
+            emit(g[:k + 1])
+            emit(g[k + 1:])
+            return
+        out.append({"id": len(out) + 1, "idx": g, "t0": words[g[0]]["start"], "t1": words[g[-1]].get("end", words[g[-1]]["start"]),
+                    "text": " ".join(("[?]" if words[j].get("uncertain") else "") + words[j]["text"].strip() for j in g)})
+    for g in groups:
+        emit(g)
     return out
 
 
-def locate(phrase, sent, words):
-    """Cụm `phrase` nằm nguyên văn, liền mạch trong câu? → (chỉ số từ đầu, chỉ số từ cuối) hoặc None. Bỏ nếu dính từ chưa chắc."""
-    want = [norm(x) for x in str(phrase).split() if norm(x)]
-    if not want:
-        return None
-    toks = [(j, norm(words[j]["text"])) for j in sent["idx"]]
-    toks = [(j, t) for j, t in toks if t]
-    for k in range(len(toks) - len(want) + 1):
-        if all(toks[k + m][1] == want[m] for m in range(len(want))):
-            js = [toks[k + m][0] for m in range(len(want))]
-            if any(words[j].get("uncertain") for j in js):
-                return None
-            return js[0], js[-1]
-    return None
+def tnorm(s):
+    """Chuẩn hoá GIỮ DẤU (tiếng Việt: bỏ dấu làm "chung"≡"chúng", "hỗ"≡"họ", "đề"≡"để" → lọc sai). Dùng cho mọi so khớp từ."""
+    return re.sub(r"[^\w%]", "", unicodedata.normalize("NFC", str(s).lower()))
 
 
-# Lời đệm / chào / xưng hô: không bao giờ là chữ nhấn (ESV: chữ nhấn là ý chính đáng nhớ)
-FILLER = set("da alo a o u ua vang da ha nhe nha nghe ne the thi ma la co khong roi oi chi anh em minh ban cac moi nguoi hat".split())
+# Lời đệm / chào / xưng hô: không bao giờ là chữ nhấn (ESV: chữ nhấn là ý chính đáng nhớ). So khớp CÓ DẤU.
+FILLER = set("dạ alo à ờ ừ ừa vâng hả nhé nha nghe nè thế thì mà là có không rồi ơi các mọi người hát á hông".split())
 
 
 def content_words(phrase):
-    return [w for w in (norm(x) for x in str(phrase).split()) if w and w not in FILLER]
+    return [w for w in (tnorm(x) for x in str(phrase).split()) if w and w not in FILLER]
+
+
+# Hư từ không được nằm ở ĐẦU / CUỐI cụm trên màn hình (cụm phải tự đứng được)
+EDGE = set("và của cho thì là mà với bên này đó các những một để ở tại vì nên khi ra vào lên xuống lại rồi nữa được gì cái".split())
+# Đại từ / xưng hô (có dấu): chữ nhấn chứa chúng không đứng một mình được ("HỎI HỌ", "BÀ CON")
+PRONOUN = set("họ mình chúng ta tôi bạn em anh chị bà cô chú nó".split())
+# Chữ đệm được phép bỏ khỏi chữ trên màn hình khi máy nghe chưa chắc (nằm giữa cụm): "dành tặng một [?]cái lời khen"
+DROPPABLE = {"cái"}
+
+
+def align(phrase, sent, words, maxw):
+    """Tìm đoạn LIỀN MẠCH trong lời nói của câu khớp nhất với cụm mô hình viết (mô hình chép đúng ý nhưng hay lệch chữ / ranh giới).
+    Điều kiện nhận: mọi từ có nghĩa của cụm đều có trong đoạn, đoạn ≤ maxw tiếng, không dính từ nghe chưa chắc; cắt hư từ hai đầu.
+    Chữ trên màn hình lấy từ LỜI NÓI, không lấy từ mô hình. → (chỉ số đầu, cuối) hoặc None."""
+    want = [tnorm(x) for x in str(phrase).split() if tnorm(x)]
+    core = [w for w in want if w not in FILLER and w not in EDGE] or want
+    if not want:
+        return None
+    toks = [(j, tnorm(words[j]["text"])) for j in sent["idx"]]
+    toks = [(j, t) for j, t in toks if t]
+    best = None
+    for a in range(len(toks)):
+        for b in range(a, min(len(toks), a + len(want) + 2)):
+            span = [t for _, t in toks[a:b + 1]]
+            missing = sum(1 for c in core if c not in span)
+            # mô hình hay thêm 1 từ diễn giải ("hạn chế sự đề phòng"): cho thiếu ≤ 1 từ có nghĩa khi cụm có ≥ 3 từ có nghĩa
+            if missing > (1 if len(core) >= 3 else 0):
+                continue
+            # bỏ hư từ ở hai đầu
+            lo, hi = a, b
+            while lo < hi and toks[lo][1] in EDGE | FILLER and toks[lo][1] not in core:
+                lo += 1
+            while hi > lo and toks[hi][1] in EDGE | FILLER and toks[hi][1] not in core:
+                hi -= 1
+            n = hi - lo + 1
+            if n > maxw:
+                continue
+            span2 = [t for _, t in toks[lo:hi + 1]]
+            # đủ từ có nghĩa, trừ điểm mỗi từ thừa (không có trong cụm mô hình viết)
+            score = sum(1 for c in core if c in span2) / len(core) - 0.1 * sum(1 for t in span2 if t not in want)
+            if best is None or score > best[0] or (score == best[0] and n < best[2] - best[1] + 1):
+                best = (score, lo, hi)
+    if not best or best[0] < 0.5:
+        return None
+    js = [toks[k][0] for k in range(best[1], best[2] + 1)]
+    if any(words[j].get("uncertain") and not (tnorm(words[j]["text"]) in DROPPABLE and j not in (js[0], js[-1])) for j in js):
+        return None
+    return js[0], js[-1]
 
 
 def spoken(words, a, b):
-    return " ".join(words[j]["text"].strip(",.?!") for j in range(a, b + 1))
+    """Chữ lên màn hình = đúng lời nói; chỉ bỏ chữ đệm nghe chưa chắc (DROPPABLE) nằm giữa cụm."""
+    return " ".join(words[j]["text"].strip(",.?!") for j in range(a, b + 1)
+                    if not (words[j].get("uncertain") and tnorm(words[j]["text"]) in DROPPABLE and a < j < b))
 
 
 # ---------------------------------------------------------------- mô hình
@@ -118,8 +175,9 @@ EXAMPLE = """VÍ DỤ BIÊN TẬP TỐT (video khác, chỉ để tham khảo c�
 SYSTEM = """Bạn là biên tập viên video ngắn tiếng Việt theo "Skill ESV" (video dạy kỹ năng bán hàng, 1 người nói trước máy quay).
 Nhiệm vụ: đọc lời nói đã chia CÂU (mỗi câu có số [n] và mốc giây) và chọn chỗ đặt đồ hoạ giúp người xem hiểu ý chính.
 LUẬT BẮT BUỘC:
-- Mọi chữ bạn đưa ra phải CHÉP NGUYÊN VĂN, LIỀN MẠCH từ đúng câu được nêu số. Không viết lại, không tóm tắt, không thêm chữ.
-- Bỏ qua từ có dấu [?] (nghe chưa chắc).
+- Mọi chữ bạn đưa ra phải CHÉP NGUYÊN VĂN, LIỀN MẠCH từ đúng câu được nêu số (không viết lại, không tóm tắt).
+  Cụm phải là cụm HOÀN CHỈNH, tự đứng được khi tách khỏi câu (vd "lời hứa hẹn", không phải "cảm giác thân").
+- Không chọn từ có dấu [?] (nghe chưa chắc).
 - Chữ nhấn (emphasis): 1–4 tiếng, là TỪ KHOÁ / ý chính đáng nhớ (khái niệm, con số, kết luận). Không chọn hư từ, lời chào.
 - Sơ đồ chỉ khi lời nói THẬT SỰ có cấu trúc đó:
   steps: người nói liệt kê 2–4 bước / ý theo thứ tự (mỗi bước là cụm nguyên văn ngắn 1–6 tiếng);
@@ -130,14 +188,14 @@ LUẬT BẮT BUỘC:
   chapter: chuyển sang phần / ý lớn mới (title = cụm nguyên văn 1–5 tiếng nêu tên phần).
 - Ít mà chất: chỉ chọn chỗ thật sự giúp hiểu; không cần phủ mọi câu.
 - Dùng bảng PHÂN TÍCH CẤU TRÚC được cung cấp: lists → steps, contrasts → compare, cause_effect → arrow, sections → chapter,
-  key_ideas → chữ nhấn (lấy đúng cụm từ khoá trong câu đó).
+  key_ideas → chữ nhấn (chọn đúng cụm từ khoá trong câu đó). Bảng phân tích là gợi ý vị trí, KHÔNG phải chữ để dùng.
 """ + EXAMPLE
 
 PLAN_SCHEMA = {
     "type": "object",
     "properties": {
         "summary": {"type": "string"},
-        "emphasis": {"type": "array", "maxItems": 14, "items": {"type": "object", "properties": {"sid": {"type": "integer"}, "phrase": {"type": "string"}, "why": {"type": "string"}}, "required": ["sid", "phrase"]}},
+        "emphasis": {"type": "array", "maxItems": 14, "items": {"type": "object", "properties": {"sid": {"type": "integer"}, "phrase": {"type": "string"}, "why": {"type": "string"}}, "required": ["sid", "phrase", "why"]}},
         "diagrams": {"type": "array", "maxItems": 8, "items": {"type": "object", "properties": {
             "type": {"type": "string", "enum": ["steps", "compare", "arrow", "mechanism", "quote", "chapter"]},
             "items": {"type": "array", "minItems": 1, "maxItems": 4, "items": {"type": "object", "properties": {"sid": {"type": "integer"}, "phrase": {"type": "string"}}, "required": ["sid", "phrase"]}},
@@ -154,8 +212,22 @@ BROLL_SCHEMA = {
 CHECK_SCHEMA = {"type": "object", "properties": {"fit": {"type": "boolean"}, "reason": {"type": "string"}}, "required": ["fit", "reason"]}
 
 
+JUDGE_SCHEMA = {"type": "object", "properties": {"verdicts": {"type": "array", "items": {"type": "object", "properties": {
+    "n": {"type": "integer"}, "score": {"type": "integer", "minimum": 1, "maximum": 5}, "reason": {"type": "string"}}, "required": ["n", "score", "reason"]}}}, "required": ["verdicts"]}
+JUDGE = """Bạn là TRƯỞNG BIÊN TẬP khắt khe duyệt đồ hoạ cho video dạy bán hàng. Mỗi mục là chữ / sơ đồ sẽ hiện trên màn hình, kèm câu nói gốc.
+Chấm TỪNG mục (theo số n) thang 1–5:
+5 = khái niệm / bước / kết luận cốt lõi của bài; 4 = ý chính rõ, đáng nhớ; 3 = có ích, giúp nhịp video;
+2 = vụn vặt; 1 = sai: tên người, lời đệm, xưng hô, cụm gãy thiếu chữ, hoặc sơ đồ có quan hệ sai với câu nói.
+Video dạy kỹ năng cần nhiều điểm nhấn: đừng hạ điểm chỉ vì ý đơn giản nếu nó đúng là thuật ngữ của bài."""
+
+
 def sent_block(sents):
     return "\n".join(f"[{s['id']}] ({s['t0']:.1f}s) {s['text']}" for s in sents)
+
+
+def sent_block_idx(sents, words):
+    """Câu kèm SỐ THỨ TỰ TỪ (0, 1, 2…): mô hình chọn đoạn từ `from`–`to` thay vì chép chữ → chữ trên màn hình luôn nguyên văn."""
+    return "\n".join(f"[{s['id']}] ({s['t0']:.1f}s) " + " ".join(f"{k}:{'?' if words[j].get('uncertain') else ''}{words[j]['text'].strip()}" for k, j in enumerate(s["idx"])) for s in sents)
 
 
 # ---------------------------------------------------------------- lập kế hoạch
@@ -175,7 +247,7 @@ def plan(words, dur, library=None, content_hint="", log=print):
         chunk = sents[k:k + 40]
         user = (f"Video dài {dur:.0f} giây. " + (f"Chủ đề / kịch bản: {content_hint[:600]}\n" if content_hint else "")
                 + f"Đoạn lời nói (câu {chunk[0]['id']}–{chunk[-1]['id']}):\n{sent_block(chunk)}\n\n"
-                + f"Chọn khoảng {max(1, round((chunk[-1]['t1'] - chunk[0]['t0']) / 15))} chữ nhấn và các sơ đồ thật sự có trong đoạn này.")
+                + f"Đề xuất khoảng {max(2, round((chunk[-1]['t1'] - chunk[0]['t0']) / 10))} chữ nhấn (mỗi cái 1–3 tiếng, chép đúng từ câu) và các sơ đồ thật sự có trong đoạn này.")
         ana = llm([{"role": "system", "content": ANALYZE}, {"role": "user", "content": sent_block(chunk)}], ANALYZE_SCHEMA, max_tokens=1400)
         analyses.append(ana)
         user += "\n\nPHÂN TÍCH CẤU TRÚC (đã làm ở bước trước):\n" + json.dumps(ana, ensure_ascii=False)
@@ -185,15 +257,23 @@ def plan(words, dur, library=None, content_hint="", log=print):
         raw_dias += out.get("diagrams", [])
 
     # 2) Kiểm nguyên văn + đặt mốc từ chính lời nói
-    def ground(sid, phrase, maxw=None):
-        s = by_id.get(sid)
-        if not s:
+    def ground(sid, phrase, maxw=6):
+        s_ = by_id.get(sid)
+        if not s_:
             return None, f"câu {sid} không tồn tại"
-        if maxw and len(str(phrase).split()) > maxw:
-            return None, f"“{phrase}” dài quá {maxw} tiếng"
-        loc = locate(phrase, s, words)
+        loc = align(phrase, s_, words, maxw)
+        if not loc:  # mô hình hay ghi lệch một câu khi cụm nằm ở ranh giới câu: tìm trong câu trước + câu này + câu sau
+            win = {"idx": [j for k in (sid - 1, sid, sid + 1) if k in by_id for j in by_id[k]["idx"]]}
+            loc = align(phrase, win, words, maxw)
+        if not loc:  # lệch xa hơn: tìm từng câu trong ±30 s, lấy lần xuất hiện GẦN câu được nêu nhất
+            near = sorted((x for x in sents if abs(x["t0"] - s_["t0"]) <= 30), key=lambda x: abs(x["t0"] - s_["t0"]))
+            for x in near:
+                win = {"idx": [j for k in (x["id"], x["id"] + 1) if k in by_id for j in by_id[k]["idx"]]}
+                loc = align(phrase, win, words, maxw)
+                if loc:
+                    break
         if not loc:
-            return None, f"“{phrase}” không nằm nguyên văn trong câu {sid} (hoặc có từ nghe chưa chắc)"
+            return None, f"“{phrase}” không ghép được vào lời nói câu {sid} (thiếu từ / quá {maxw} tiếng / nghe chưa chắc)"
         return loc, ""
 
     diagrams = []
@@ -263,12 +343,24 @@ def plan(words, dur, library=None, content_hint="", log=print):
         if not loc:
             rejected.append({"kind": "emphasis", "phrase": e.get("phrase"), "reason": why})
             continue
-        if not content_words(e.get("phrase", "")) or norm(str(e.get("phrase", "")).split()[0]) in FILLER:
-            rejected.append({"kind": "emphasis", "phrase": e.get("phrase"), "reason": "lời đệm / chào / xưng hô, không phải ý chính"})
+        phrase = spoken(words, *loc)
+        e["phrase"] = phrase
+        toks_ = [tnorm(x) for x in phrase.split()]
+        if len(toks_) == 1 and not toks_[0].isdigit():
+            rejected.append({"kind": "emphasis", "phrase": phrase, "reason": "một tiếng đứng riêng (dễ là chữ gãy / tên), không đủ nghĩa"})
+            continue
+        if any(t in PRONOUN for t in toks_):
+            rejected.append({"kind": "emphasis", "phrase": phrase, "reason": "có đại từ / xưng hô, không đứng một mình được"})
+            continue
+        if not content_words(phrase) or tnorm(phrase.split()[0]) in FILLER:
+            rejected.append({"kind": "emphasis", "phrase": phrase, "reason": "lời đệm / chào / xưng hô, không phải ý chính"})
             continue
         t = round(words[loc[0]]["start"], 2)
         if t < 0.8 or any(dd["t0"] - 0.5 <= t <= dd["t1"] + 0.5 for dd in diagrams):
             rejected.append({"kind": "emphasis", "phrase": e.get("phrase"), "reason": "trùng sơ đồ / quá sát đầu video"})
+            continue
+        if any(tnorm(x["text"]) == tnorm(spoken(words, *loc)) for x in emphasis):
+            rejected.append({"kind": "emphasis", "phrase": e.get("phrase"), "reason": "trùng chữ nhấn đã có"})
             continue
         if any(abs(t - x["t"]) < 4.0 for x in emphasis):
             rejected.append({"kind": "emphasis", "phrase": e.get("phrase"), "reason": "cách chữ nhấn khác < 4 s"})
@@ -281,6 +373,31 @@ def plan(words, dur, library=None, content_hint="", log=print):
     emphasis.sort(key=lambda x: x["t"])
     for k, e in enumerate(emphasis):  # nhịp kiểu: mở đầu nhoè vào, chữ nhấn giữa ánh kim, còn lại hiện mờ
         e["style"] = "blur" if k == 0 else ("shine" if k == len(emphasis) // 2 else "fade")
+
+    # 2b) Trưởng biên tập (mô hình đóng vai người duyệt khắt khe) chấm từng mục; mục bị chấm BỎ thì loại, ghi lý do
+    items_ = [("emphasis", e) for e in emphasis] + [("diagram", d) for d in diagrams]
+    if items_:
+        def ctx(t):  # lời nói ±4 s quanh mục (câu đã chia có thể gãy; người duyệt cần đủ ngữ cảnh)
+            return " ".join(w["text"].strip() for w in words if t - 4 <= w["start"] <= t + 4 and not w.get("uncertain"))
+        lines = []
+        for n, (k, x) in enumerate(items_):
+            if k == "emphasis":
+                lines.append(f"{n}. CHỮ NHẤN “{x['text']}” — câu nói: “{ctx(x['t'])}”")
+            else:
+                parts = [x.get("text")] + [x.get(f, {}).get("text") for f in ("wrong", "top", "mid", "bottom")] + [r["text"] for r in x.get("right", []) + x.get("steps", [])]
+                lines.append(f"{n}. SƠ ĐỒ {x['type']}: {' | '.join(p for p in parts if p)} — câu nói: “{ctx(x['t0'] + 0.4)}”")
+        try:
+            verdicts = {v["n"]: v for v in llm([{"role": "system", "content": JUDGE}, {"role": "user", "content": "\n".join(lines)}], JUDGE_SCHEMA, max_tokens=1600).get("verdicts", [])}
+        except (OSError, ValueError, KeyError):
+            verdicts = {}
+        drop = {n for n, v in verdicts.items() if int(v.get("score", 3)) < 3}
+        for n in sorted(drop):
+            k, x = items_[n]
+            rejected.append({"kind": k, "phrase": x.get("text") or x.get("type"), "reason": f"trưởng biên tập chấm {verdicts[n].get('score')}/5: {verdicts[n].get('reason', '')[:140]}"})
+        emphasis = [x for n, (k, x) in enumerate(items_) if k == "emphasis" and n not in drop]
+        diagrams = [x for n, (k, x) in enumerate(items_) if k == "diagram" and n not in drop]
+        for k, e in enumerate(emphasis):
+            e["style"] = "blur" if k == 0 else ("shine" if k == len(emphasis) // 2 else "fade")
 
     # 3) Minh hoạ: mô hình chọn theo mô tả thư viện, rồi kiểm riêng từng lựa chọn
     broll = []
@@ -314,14 +431,15 @@ def plan(words, dur, library=None, content_hint="", log=print):
             used.add(it["file"])
             last = t1
 
+    label = model_label()
     digest = hashlib.sha256(json.dumps([w["text"] for w in words], ensure_ascii=False).encode()).hexdigest()[:12]
     return {
-        "by": f"Biên tập AI tại máy ({MODEL_LABEL})",
+        "by": f"Biên tập AI tại máy ({label})",
         "note": " ".join(x for x in summaries if x)[:600],
         "emphasis": emphasis,
         "diagrams": diagrams,
         "broll": broll,
-        "ai": {"model": MODEL_LABEL, "endpoint": ENDPOINT, "wordsDigest": digest, "seconds": round(time.time() - t_start, 1),
+        "ai": {"model": label, "endpoint": ENDPOINT, "wordsDigest": digest, "seconds": round(time.time() - t_start, 1),
                "analysis": analyses, "proposed": {"emphasis": len(raw_emph), "diagrams": len(raw_dias)}, "kept": {"emphasis": len(emphasis), "diagrams": len(diagrams), "broll": len(broll)},
                "rejected": rejected[:80]},
     }

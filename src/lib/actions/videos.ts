@@ -117,9 +117,10 @@ export async function rerenderVideoAction(fd: FormData) {
   const back = str(fd, "back") || "/video-studio";
   const { rerenderVideo } = await import("@/lib/video/jobs");
   const frame = fd.get("aspect") === null ? undefined : { aspect: parseAspect(str(fd, "aspect")), framing: parseFraming(str(fd, "fx"), str(fd, "fy"), str(fd, "fz")) };
-  const r = rerenderVideo(str(fd, "id"), actor.name, fd.get("cut") === null ? undefined : str(fd, "cut") === "1", frame);
+  const ai = str(fd, "ai") === "1";
+  const r = rerenderVideo(str(fd, "id"), actor.name, fd.get("cut") === null ? undefined : str(fd, "cut") === "1", frame, ai ? "Biên tập AI lập lại kế hoạch (mô hình tại máy) rồi dựng" : undefined, ai);
   if (!r.ok) return fail(back, r.error);
-  done(back, `Đang dựng bản ${r.version}`);
+  done(back, ai ? `Biên tập AI đang lập kế hoạch và dựng bản ${r.version}` : `Đang dựng bản ${r.version}`);
 }
 
 // ---------------------------------------------------------------- Video Review: góp ý theo mốc thời gian
