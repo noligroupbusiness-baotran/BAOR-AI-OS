@@ -67,6 +67,7 @@ def tnorm(s):
 FILLER = set("dạ alo à ờ ừ ừa vâng hả nhé nha nghe nè thế thì mà là có rồi ơi các mọi người hát á hông".split())
 # Từ PHỦ ĐỊNH: không bao giờ bị cắt khỏi cụm; cụm đứng ngay sau từ phủ định bị loại ("không nên hứa hẹn" ≠ "HỨA HẸN")
 NEG = set("không chưa chẳng chả đừng chớ".split())
+CLAUSE = set("mà nhưng rồi thì còn".split())  # ranh giới mệnh đề khi nhìn ngược tìm từ phủ định
 
 
 def content_words(phrase):
@@ -328,8 +329,15 @@ def plan(words, dur, library=None, content_hint="", log=print):
         return loc, ""
 
     def negated_before(j0):
-        """Từ phủ định ngay trước cụm (trong 2 từ) → tách cụm ra sẽ ĐẢO nghĩa lời nói."""
-        return any(tnorm(words[j]["text"]) in NEG for j in (j0 - 1, j0 - 2) if j >= 0)
+        """Từ phủ định đứng trước cụm trong CÙNG MỆNH ĐỀ (nhìn lại ≤ 6 từ, dừng ở dấu câu hoặc từ nối "mà / nhưng / rồi /
+        thì / còn") → tách cụm ra sẽ ĐẢO nghĩa: "không được phép hứa hẹn…", "đừng bao giờ hứa hẹn…"."""
+        for j in range(j0 - 1, max(-1, j0 - 7), -1):
+            t = words[j]["text"].strip()
+            if tnorm(t) in NEG:
+                return True
+            if tnorm(t) in CLAUSE or t.endswith((",", ".", "?", "!", ";", ":")):
+                return False
+        return False
 
     diagrams = []
     for d in raw_dias:
@@ -525,14 +533,15 @@ def self_test():
     # plan() với MÔ HÌNH GIẢ: phủ định không bị đảo nghĩa; đầu ra rác không làm hỏng cả kế hoạch
     g = globals()
     real_llm, real_av = g["llm"], g["available"]
-    txt2 = "hôm nay các bạn không nên hứa hẹn với khách hàng mà hãy tạo ra cảm giác thân tình rồi chúng ta tìm điểm chung với khách hàng".split()
+    txt2 = ("hôm nay các bạn không nên hứa hẹn với khách hàng mà hãy tạo ra cảm giác thân tình rồi sau đó từ từ chúng ta "
+            "sẽ cùng nhau đi tìm điểm chung với khách hàng").split()
     w2 = [{"text": x, "start": 1.0 + i * 0.5, "end": 1.0 + i * 0.5 + 0.4} for i, x in enumerate(txt2)]
 
     def fake(messages, schema, **kw):
         if schema is PLAN_SCHEMA:
             return {"summary": "x", "emphasis": [{"sid": 1, "phrase": "hứa hẹn", "why": ""}, {"sid": 2, "phrase": "điểm chung", "why": ""},
                                                  {"sid": [1], "phrase": "rác"}, "chuỗi rác", {"sid": True, "phrase": "x"}],
-                    "diagrams": [{"type": "arrow", "items": [{"sid": 1, "phrase": "không nên hứa hẹn"}, {"sid": 2, "phrase": "khách hàng"}]},
+                    "diagrams": [{"type": "arrow", "items": [{"sid": 1, "phrase": "không nên hứa hẹn"}, {"sid": 2, "phrase": "cảm giác thân tình"}]},
                                  {"type": "lạ", "items": []}, {"type": "steps", "items": None}]}
         if schema is JUDGE_SCHEMA:
             return {"verdicts": [{"n": 99, "score": 1, "reason": "ngoài phạm vi"}, {"n": 0, "score": "cao", "reason": "điểm chữ"}, "rác"]}
@@ -558,6 +567,23 @@ def self_test():
     if not any(r.get("kind") == "broll" and "lỗi" in r.get("reason", "") for r in p["ai"]["rejected"]):
         bad += 1
         print("SAI: bước ảnh lỗi phải được ghi lý do")
+    # phủ định cách xa vài từ trong cùng mệnh đề vẫn bị chặn; sau "mà" là mệnh đề mới → giữ
+    for sent_txt, phrase, ok_want in (("không được phép hứa hẹn với khách hàng", "hứa hẹn với khách hàng", False),
+                                      ("đừng bao giờ hứa hẹn với khách hàng", "hứa hẹn với khách hàng", False),
+                                      ("không cần phải gấp gáp đâu nha", "gấp gáp", False),
+                                      ("không nên vội mà hãy tạo ra cảm giác thân tình", "cảm giác thân tình", True)):
+        wn = [{"text": x, "start": 5.0 + i * 0.5, "end": 5.0 + i * 0.5 + 0.4} for i, x in enumerate(sent_txt.split())]
+
+        def fk(messages, schema, _p=phrase, **kw):
+            return {"summary": "", "emphasis": [{"sid": 1, "phrase": _p, "why": ""}], "diagrams": []} if schema is PLAN_SCHEMA else {}
+        g["llm"], g["available"] = fk, (lambda timeout=3: True)
+        try:
+            pn = plan(wn, 30.0, [], log=lambda m: None)
+        finally:
+            g["llm"], g["available"] = real_llm, real_av
+        if bool(pn["emphasis"]) != ok_want:
+            bad += 1
+            print(f"SAI phủ định: “{sent_txt}” → {[e['text'] for e in pn['emphasis']]}")
     print(f"ai_plan tự kiểm: {'đạt' if not bad else f'{bad} lỗi'}")
     return bad == 0
 
