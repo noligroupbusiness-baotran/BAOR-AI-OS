@@ -40,7 +40,32 @@ GOLD, GOLD2, DARK_BROWN = "#D4AF37", "#E8C872", "#1E1408"
 SS = 2  # vẽ chữ ở 2x rồi thu về để nét mảnh (0,8 px) đúng
 
 
+# Font có giấy phép (S5): Tinos — SIL OFL 1.1, cùng số đo với Times New Roman (thay thế khớp từng ký tự), có tiếng Việt.
+# Kèm trong repo (public/fonts/Tinos-*.ttf + OFL-Tinos.txt). BAOR_FONT=times để quay về Times New Roman của hệ điều hành.
+FONT_ALIASES = {"Times New Roman Italic.ttf": "Tinos-Italic.ttf", "Times New Roman Bold Italic.ttf": "Tinos-BoldItalic.ttf"}
+LICENSED_FONT_DIR = os.path.join(os.path.dirname(os.path.dirname(HERE)), "public", "fonts")
+
+
+def font_source(name):
+    """(đường dẫn, tên hiển thị, giấy phép) của font sẽ dùng cho `name`."""
+    alias = FONT_ALIASES.get(name)
+    if alias and os.environ.get("BAOR_FONT", "").lower() != "times":
+        p = os.path.join(LICENSED_FONT_DIR, alias)
+        if os.path.exists(p):
+            return p, alias.replace(".ttf", ""), "SIL OFL 1.1 (public/fonts/OFL-Tinos.txt)"
+    for d in FONT_DIRS:
+        p = os.path.join(d, name) if d else ""
+        if p and os.path.exists(p):
+            return p, name.replace(".ttf", ""), ""
+    raise RuntimeError(f"Thiếu font {name}")
+
+
 def font(name, size):
+    path, _, _ = font_source(name)
+    return ImageFont.truetype(path, int(round(size)))
+
+
+def _font_os(name, size):
     for d in FONT_DIRS:
         p = os.path.join(d, name) if d else ""
         if p and os.path.exists(p):
@@ -1706,10 +1731,12 @@ def main():
     b_note = "; ".join(f"minh hoạ {b['t0']:.1f}–{b['t1']:.1f}s {b['file']}" for b in brolls) or "không minh hoạ"
     m_note = f"nhạc {music_info['file']}" if music_info.get("used") else f"không nhạc ({music_info['reason']})"
     pending_media = [b["file"] for b in brolls if "chờ OWNER" in str(b.get("license", ""))] + ([music_info["file"]] if music_info.get("used") and "chờ OWNER" in str(music_info["license"]) else [])
-    font_ok = bool(od.get("fontLicense"))
+    _, font_name, font_lic = font_source("Times New Roman Italic.ttf")
+    font_ok = bool(font_lic) or bool(od.get("fontLicense"))
     p_ok = font_ok and not pending_media
+    font_note = f"font {font_name}: {font_lic}" if font_lic else f"font {font_name}: {'OWNER xác nhận' if od.get('fontLicense') else 'chưa có giấy phép thương mại'}"
     add("P", "Nhạc / B-roll / font có giấy phép", "pass" if p_ok else "blocker",
-        f"font Times New Roman: {'OWNER xác nhận' if font_ok else 'chưa có giấy phép thương mại'}; {m_note}; {b_note}; SFX tổng hợp" + (f" — {odq}" if p_ok else ""))
+        f"{font_note}; {m_note}; {b_note}; SFX tổng hợp" + (f" — {odq}" if p_ok and not font_lic else ""))
     add("Q", "Câu doanh thu / thu nhập / kết quả có dòng 'Kết quả cá nhân, không cam kết'", "pass",
         "không phát sinh" if not rev_spans else f"{len(rev_spans)} đoạn có dòng phủ suốt câu: {[[round(a_, 1), round(b_, 1)] for a_, b_ in rev_spans][:6]} (vị trí tạm: đỉnh vùng chữ, chờ OWNER chốt)")
     onscreen = [e.text for e in emph] + [x for d in plan.get("diagrams", []) for x in

@@ -44,7 +44,8 @@ cat > "$B/manifest.json" <<'J'
 [{"file":"goi-dien.jpg","kind":"image","keywords":["gọi điện"],"license":"Tự tạo bằng ffmpeg lavfi","source":"selftest"},
  {"file":"khong-giay-phep.jpg","kind":"image","keywords":["khách hàng"],"license":"","source":"selftest"}]
 J
-DATA_DIR="$W/data" python3 "$HERE/esv_render.py" --input "$W/raw.mp4" --job-dir "$W/esv" --model small --keywords "lắng nghe,khách hàng" 2>"$W/log-esv.txt" | tail -1
+# Tự kiểm bộ dựng phải tất định: tắt biên tập AI (cổng 9 không có mô hình) → kế hoạch theo luật, chèn ảnh theo từ khoá
+BAOR_LLM_URL=http://127.0.0.1:9 DATA_DIR="$W/data" python3 "$HERE/esv_render.py" --input "$W/raw.mp4" --job-dir "$W/esv" --model small --keywords "lắng nghe,khách hàng" 2>"$W/log-esv.txt" | tail -1
 python3 - "$W/esv/report.json" <<'P'
 import json, sys
 r = json.load(open(sys.argv[1]))
