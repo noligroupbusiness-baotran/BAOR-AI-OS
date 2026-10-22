@@ -71,12 +71,13 @@ Cập nhật bởi MASTER sau mỗi checkpoint. Nguồn vận hành: `docs/BAOR_
 
 <!-- NEXT:START -->
 Nguồn ủy quyền: chỉ thị OWNER 22/10/2026 "CONTINUE BRAND ENGINE IMPLEMENTATION" + "SHARED OPERATING STANDARD". Mỗi mục đi đủ vòng BUILD (docs/BAOR_OPERATING_MODEL.md §2).
-1. [ĐANG LÀM] S3 AI biên tập video trong app (không Claude chat): lập kế hoạch bằng mô hình mở chạy tại máy (Qwen2.5-14B-Instruct GGUF, Apache-2.0, llama-server 127.0.0.1:8091,
-   tệp ở /Volumes/NOLI_AI_OS/models/), đầu ra theo schema → kiểm chỉ dùng lời nói thật, mốc khớp từ → worker ESV dựng → QA. Claude API chỉ khi OWNER cấp key.
-   Phải tự lập + dựng ít nhất 1 video trong app; chưa đẹp thì không báo xong.
-   Trạng thái 22/10: scripts/video/ai_plan.py (chưa commit) — câu → mô hình chọn theo số câu → kiểm nguyên văn / mật độ ESV / ảnh kiểm 2 lượt.
-   Lần chạy 1 (14B) trên 1011: 10 chữ nhấn / 4 sơ đồ / 1 ảnh, loại 17 đề xuất — CHƯA ĐẠT (chọn tên / lời đệm, bỏ sót thanh 3 bước).
-   Đang thử: bước phân tích cấu trúc + ví dụ video khác + lọc lời đệm; Qwen2.5-32B-Instruct (Apache-2.0) đang tải về /Volumes/NOLI_AI_OS/models/.
+1. [ĐANG NGHIỆM THU] S3 AI biên tập video trong app (0b0789c, 251548d + bản sửa "cái"): bộ dựng tự gọi biên tập AI khi chưa có
+   kế hoạch; nút "AI biên tập lại". Mô hình: Qwen2.5-32B-Instruct Q4_K_M (Apache-2.0) chạy bằng llama-server 127.0.0.1:8091
+   (tệp ở /Volumes/NOLI_AI_OS/models/qwen2.5-32b; bản 14B dự phòng ở qwen2.5-14b). Không có mô hình → kế hoạch theo luật.
+   Chạy THẬT trong app 22/10 13:00: video 1011 bản 8 — AI lập 11 chữ nhấn + 3 sơ đồ trong 6 phút, dựng xong, bảng kiểm A–R đạt,
+   kế hoạch AI thành kế hoạch video (bản cũ lưu plan.prev-*). Xem bằng mắt: chữ nhấn / sơ đồ đúng nghĩa và đúng lúc nói.
+   Chưa: phản biện độc lập; OWNER xem và nói đạt / chưa đạt (chỉ OWNER kết luận "đẹp"); minh hoạ: 0 ảnh qua kiểm hợp nghĩa
+   (thư viện chỉ có mô tả chữ — cân nhắc mô hình nhìn ảnh mở, vd Qwen2.5-VL, để mô tả ảnh).
 2. S4 Nội dung → Video: gắn kịch bản vào video, test chứng minh dữ liệu kịch bản sang Video Studio (sửa lời nghe theo kịch bản).
 3. S5 nhóm A: bố cục 16:9, dựng thật 4:5 và 1:1, chỉnh màu / da nhẹ, tự thử lại khi dựng lỗi, tải lên nối tiếp được, Insights reach / CPM / CTR, font có giấy phép (OFL).
 4. Sau mỗi nhóm được nghiệm thu: cập nhật docs/brand-engine/BAOR-BRAND-ENGINE-IMPLEMENTATION-PROGRESS.md (công thức chấm cố định, chỉ tính bằng chứng mới).

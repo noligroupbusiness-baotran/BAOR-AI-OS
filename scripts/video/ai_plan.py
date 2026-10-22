@@ -121,9 +121,9 @@ def align(phrase, sent, words, maxw):
 
 
 def spoken(words, a, b):
-    """Chữ lên màn hình = đúng lời nói; chỉ bỏ chữ đệm nghe chưa chắc (DROPPABLE) nằm giữa cụm."""
-    return " ".join(words[j]["text"].strip(",.?!") for j in range(a, b + 1)
-                    if not (words[j].get("uncertain") and tnorm(words[j]["text"]) in DROPPABLE and a < j < b))
+    """Chữ lên màn hình = đúng lời nói; chỉ bỏ chữ đệm "cái" nằm GIỮA cụm ("hạn chế cái sự đề phòng" → "hạn chế sự đề phòng"),
+    theo tiền lệ bản người biên tập ("sự đề phòng"). Mọi chữ khác giữ nguyên."""
+    return " ".join(words[j]["text"].strip(",.?!") for j in range(a, b + 1) if not (tnorm(words[j]["text"]) in DROPPABLE and a < j < b))
 
 
 # ---------------------------------------------------------------- mô hình
@@ -459,6 +459,7 @@ def self_test():
         ("hạn chế cảm giác thân tình", 6, "cảm giác thân tình"),     # mô hình thêm 1 từ diễn giải
         ("niềm tin", 4, None),                                 # không có trong lời nói
         ("tìm một điểm chung", 6, "tìm một điểm chung"),       # bỏ "cái" nghe chưa chắc ở giữa
+        ("hạn chế cái sự đề phòng", 6, None),                   # không có trong lời nói thử (đối chứng)
     ]
     bad = 0
     for ph, mx, want in cases:
