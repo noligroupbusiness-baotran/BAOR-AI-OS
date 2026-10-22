@@ -56,6 +56,8 @@ export const adCampaigns = sqliteTable("ad_campaigns", {
   spent: integer("spent").notNull().default(0),
   impressions: integer("impressions").notNull().default(0),
   clicks: integer("clicks").notNull().default(0),
+  // Số người duy nhất đã thấy (Meta Insights, trọn đời quảng cáo) — KHÔNG cộng được từ số theo ngày
+  reach: integer("reach").notNull().default(0),
   leads: integer("leads").notNull().default(0),
   audience: text("audience").notNull().default(""),
   contentId: text("content_id"),
@@ -86,6 +88,7 @@ export const adSpendDaily = sqliteTable(
     clicks: integer("clicks").notNull().default(0),
     leads: integer("leads").notNull().default(0),
     thruplays: integer("thruplays").notNull().default(0),
+    reach: integer("reach").notNull().default(0), // người duy nhất trong ngày (không cộng các ngày với nhau)
   },
   (t) => [uniqueIndex("ad_spend_daily_ad_date_idx").on(t.adId, t.date)],
 );

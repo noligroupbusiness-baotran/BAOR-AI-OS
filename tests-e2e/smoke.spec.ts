@@ -43,3 +43,10 @@ test("Video Studio: video đã dựng hiện trình phát và bảng biên tập
   await expect(page.getByText("Mũi tên 2 bước")).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+test("Quảng cáo: hiện reach / CPM / CTR / tần suất từ số liệu Insights", async ({ page }) => {
+  await login(page);
+  await page.goto("/publishing#ads");
+  const row = page.getByRole("row", { name: /E2E · Quảng cáo có số liệu/ });
+  await expect(row).toContainText("Reach 6.100 · CPM 24.000 ₫ · CTR 1,20% · tần suất 0,82");
+});

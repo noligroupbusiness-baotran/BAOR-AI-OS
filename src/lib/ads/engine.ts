@@ -9,7 +9,7 @@ import { campaignRepo } from "@/lib/campaigns/repository";
 import { connectorContext, readIntegrationConfig } from "@/lib/connectors/config";
 import { getUpload, uploadPath } from "@/lib/uploads";
 import { authorizationStatus, daysLeftInMonth, gateForAd, getAuthorization, insightsStale, isSampleAd, monthSpentDetail, projectionBaseFor, vnDate } from "./authorization";
-import { createPausedDraft, fetchDailyInsights, setDailyBudget, setDeliveryStatus, setObjectStatus, type Audience } from "./meta-marketing";
+import { createPausedDraft, fetchDailyInsights, fetchReachTotal, setDailyBudget, setDeliveryStatus, setObjectStatus, type Audience } from "./meta-marketing";
 
 const nowIso = () => new Date().toISOString();
 const newId = (p: string) => `${p}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
@@ -195,12 +195,14 @@ export async function syncAdInsights(): Promise<{ updated: number; errors: strin
       // Đọc cả tháng hiện tại mỗi lần (bù được ngày lần trước lỗi); đồng bộ thành công → insightsAt = mốc phủ cho monthSpentDetail.
       const since = `${today.slice(0, 7)}-01`;
       const rows = await fetchDailyInsights(connectorContext("meta_ads"), ad.metaCampaignId!, since, today);
+      // Reach trọn đời đọc riêng (người duy nhất không cộng được từ các ngày)
+      const reach = await fetchReachTotal(connectorContext("meta_ads"), ad.metaCampaignId!);
       db.transaction((tx) => {
         for (const r of rows) {
-          tx.insert(schema.adSpendDaily).values({ adId: ad.id, ...r }).onConflictDoUpdate({ target: [schema.adSpendDaily.adId, schema.adSpendDaily.date], set: { spend: r.spend, impressions: r.impressions, clicks: r.clicks, leads: r.leads, thruplays: r.thruplays } }).run();
+          tx.insert(schema.adSpendDaily).values({ adId: ad.id, ...r }).onConflictDoUpdate({ target: [schema.adSpendDaily.adId, schema.adSpendDaily.date], set: { spend: r.spend, impressions: r.impressions, clicks: r.clicks, leads: r.leads, thruplays: r.thruplays, reach: r.reach } }).run();
         }
         const all = tx.select().from(schema.adSpendDaily).where(eq(schema.adSpendDaily.adId, ad.id)).all();
-        tx.update(schema.adCampaigns).set({ spent: all.reduce((n, r) => n + r.spend, 0), impressions: all.reduce((n, r) => n + r.impressions, 0), clicks: all.reduce((n, r) => n + r.clicks, 0), leads: all.reduce((n, r) => n + r.leads, 0), insightsAt: nowIso() }).where(eq(schema.adCampaigns.id, ad.id)).run();
+        tx.update(schema.adCampaigns).set({ spent: all.reduce((n, r) => n + r.spend, 0), impressions: all.reduce((n, r) => n + r.impressions, 0), clicks: all.reduce((n, r) => n + r.clicks, 0), leads: all.reduce((n, r) => n + r.leads, 0), reach, insightsAt: nowIso() }).where(eq(schema.adCampaigns.id, ad.id)).run();
       });
       out.updated++;
     } catch (e) {

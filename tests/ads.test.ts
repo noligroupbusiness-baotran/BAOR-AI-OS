@@ -52,9 +52,10 @@ function fakeMarketing(failAt?: string, pages = false) {
     const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status });
     if (failAt && p.endsWith(failAt)) return json({ error: { message: "lỗi thử" } }, 400);
     if (p.endsWith("/adimages")) return json({ images: { "b.jpg": { hash: "HASH1" } } });
+    if (p.endsWith("/insights") && u.searchParams.get("date_preset") === "maximum") return json({ data: [{ reach: "6100" }] });
     if (p.endsWith("/insights") && u.searchParams.get("after") === "CUR2") return json({ data: [{ date_start: "2026-10-21", spend: "80000", impressions: "3000", clicks: "30", actions: [] }] });
     if (p.endsWith("/insights") && pages) return json({ data: [{ date_start: "2026-10-20", spend: "120000", impressions: "5000", clicks: "60", actions: [{ action_type: "lead", value: "3" }] }], paging: { cursors: { after: "CUR2" }, next: "https://graph.facebook.com/next" } });
-    if (p.endsWith("/insights")) return json({ data: [{ date_start: "2026-10-20", spend: "120000", impressions: "5000", clicks: "60", actions: [{ action_type: "lead", value: "3" }], video_thruplay_watched_actions: [{ action_type: "video_view", value: "900" }] }] });
+    if (p.endsWith("/insights")) return json({ data: [{ date_start: "2026-10-20", spend: "120000", impressions: "5000", reach: "4200", clicks: "60", actions: [{ action_type: "lead", value: "3" }], video_thruplay_watched_actions: [{ action_type: "video_view", value: "900" }] }] });
     return json({ id: `ID${++n}`, success: true });
   }) as typeof fetch;
   return { calls, f };
@@ -95,7 +96,7 @@ test("Meta: dừng từ chiến dịch vào trong, bật từ quảng cáo ra ng
   await mm.setDeliveryStatus(ctx(f), { campaignId: "C", adsetId: "S", adId: "A" }, "ACTIVE");
   assert.deepEqual(calls.map((c) => `${c.path}:${c.params.get("status")}`), ["C:PAUSED", "S:PAUSED", "A:PAUSED", "A:ACTIVE", "S:ACTIVE", "C:ACTIVE"]);
   const rows = await mm.fetchDailyInsights(ctx(fakeMarketing().f), "C", "2026-10-20", "2026-10-21");
-  assert.deepEqual(rows, [{ date: "2026-10-20", spend: 120000, impressions: 5000, clicks: 60, leads: 3, thruplays: 900 }]);
+  assert.deepEqual(rows, [{ date: "2026-10-20", spend: 120000, impressions: 5000, clicks: 60, leads: 3, thruplays: 900, reach: 4200 }]);
   const paged = await mm.fetchDailyInsights(ctx(fakeMarketing(undefined, true).f), "C", "2026-10-01", "2026-10-21");
   assert.deepEqual(paged.map((r) => r.date), ["2026-10-20", "2026-10-21"], "đi hết các trang kết quả");
 });
@@ -297,4 +298,33 @@ test("P2-4 (vòng 3): quảng cáo chỉ có trong app không bị ước; quả
   const st = (id: string) => d.select().from(db.schema.adCampaigns).where(eq(db.schema.adCampaigns.id, id)).get()!.status;
   assert.equal(st("ad_M"), "paused");
   assert.equal(st("ad_L"), "paused", "300k có thể đã tiêu hôm nay trước khi dừng → vẫn vượt trần");
+});
+
+test("Insights: reach trọn đời đọc riêng (không cộng theo ngày), CPM / CTR / tần suất tính từ số đã đồng bộ; chưa có lượt hiển thị thì không hiện số giả", async () => {
+  const metrics = await import("../src/lib/ads/metrics");
+  const d = db.getDb();
+  d.delete(db.schema.adCampaigns).run();
+  d.delete(db.schema.adSpendDaily).run();
+  d.insert(db.schema.adCampaigns).values({ id: "ad_r", name: "R", objective: "video_views", status: "active", dailyBudget: 100_000, spent: 0, impressions: 0, clicks: 0, leads: 0, audience: "", startedAt: new Date().toISOString(), metaCampaignId: "C1", metaAdsetId: "S1", metaAdId: "A1" }).run();
+  config.writeIntegrationConfig("meta_ads", { accessToken: "token-gia", adAccountId: "act_1" });
+  d.update(db.schema.integrations).set({ connected: true }).where(eq(db.schema.integrations.key, "meta_ads")).run();
+  const real = globalThis.fetch;
+  globalThis.fetch = fakeMarketing().f;
+  try {
+    const r = await engine.syncAdInsights();
+    assert.equal(r.updated, 1, r.errors.join("; "));
+  } finally {
+    globalThis.fetch = real;
+    d.update(db.schema.integrations).set({ connected: false }).where(eq(db.schema.integrations.key, "meta_ads")).run();
+  }
+  const ad = d.select().from(db.schema.adCampaigns).where(eq(db.schema.adCampaigns.id, "ad_r")).get()!;
+  assert.equal(ad.reach, 6100, "reach trọn đời từ lời gọi riêng, không phải 4200 của một ngày");
+  assert.equal(d.select().from(db.schema.adSpendDaily).all()[0].reach, 4200);
+  const m = metrics.adMetrics(ad);
+  assert.equal(m.cpm, 24_000, "120.000 ₫ / 5.000 lượt × 1.000");
+  assert.equal(m.ctr, 0.012);
+  assert.equal(m.frequency, 0.82);
+  assert.equal(m.cpc, 2_000);
+  assert.equal(metrics.pct(m.ctr), "1,20%");
+  assert.deepEqual(metrics.adMetrics({ spent: 0, impressions: 0, clicks: 0, reach: 0 }), { cpm: null, ctr: null, frequency: null, cpc: null });
 });

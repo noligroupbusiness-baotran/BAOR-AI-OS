@@ -5,6 +5,7 @@ import { Table, Th, Td } from "@/components/ui/table";
 import { ConfirmAction } from "@/components/campaigns/confirm-action";
 import { CampaignTags, LinkToCampaignForm } from "@/components/campaigns/entity-campaign";
 import { approveAd, proposeAdsAction, pushAdToMetaAction, rejectAd, revokeAdAuthorization, saveAdAuthorization, submitAdForApproval, toggleAd, updateBudget } from "@/lib/actions/ads";
+import { adMetrics, pct } from "@/lib/ads/metrics";
 import { authorizationStatus, daysLeftInMonth, getAuthorization, isSampleAd, monthSpentDetail, vnDate } from "@/lib/ads/authorization";
 import { getSetting } from "@/lib/admin";
 import { suggestionsFor } from "@/lib/ads/engine";
@@ -113,7 +114,18 @@ export function AdsPanel({ edit, link }: { edit?: string; link?: string }) {
                       <a href={`/publishing?edit=${a.id}#ads`} className="hover:underline">{formatNumber(a.dailyBudget)} ₫</a>
                     )}
                   </Td>
-                  <Td right className="num whitespace-nowrap">{formatNumber(a.spent)} ₫ · {a.leads}{cpl ? <div className="text-[11.5px] text-ink-2">{formatNumber(cpl)} ₫/lead</div> : null}</Td>
+                  <Td right className="num whitespace-nowrap">
+                    {formatNumber(a.spent)} ₫ · {a.leads}
+                    {cpl ? <div className="text-[11.5px] text-ink-2">{formatNumber(cpl)} ₫/lead</div> : null}
+                    {a.impressions > 0 && (() => {
+                      const m = adMetrics(a);
+                      return (
+                        <div className="text-[11.5px] text-ink-2" title="Số liệu Meta Insights đã đồng bộ. Reach = người duy nhất (trọn đời quảng cáo).">
+                          {a.reach > 0 ? `Reach ${formatNumber(a.reach)} · ` : ""}CPM {formatNumber(m.cpm ?? 0)} ₫ · CTR {pct(m.ctr)}{m.frequency ? ` · tần suất ${m.frequency.toString().replace(".", ",")}` : ""}
+                        </div>
+                      );
+                    })()}
+                  </Td>
                   <Td right>
                     <div className="flex flex-wrap justify-end gap-1.5">
                       <Pill tone={s.tone}>{s.label}</Pill>

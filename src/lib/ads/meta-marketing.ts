@@ -136,17 +136,19 @@ export interface DailyInsight {
   clicks: number;
   leads: number;
   thruplays: number;
+  /** Người duy nhất trong ngày — không cộng các ngày với nhau (tổng reach đọc riêng: fetchReachTotal). */
+  reach: number;
 }
 
 export interface DailyInsightsResponse extends AdsInsightsResponse {
-  data?: (NonNullable<AdsInsightsResponse["data"]>[number] & { date_start?: string; video_thruplay_watched_actions?: { action_type: string; value: string }[] })[];
+  data?: (NonNullable<AdsInsightsResponse["data"]>[number] & { date_start?: string; reach?: string; video_thruplay_watched_actions?: { action_type: string; value: string }[] })[];
 }
 
 export function readDailyInsights(res: DailyInsightsResponse): DailyInsight[] {
   return (res.data ?? []).map((row) => {
     const base = readAdsInsights({ data: [row] });
     const thru = (row.video_thruplay_watched_actions ?? []).reduce((n, a) => n + Number(a.value ?? 0), 0);
-    return { date: row.date_start ?? "", spend: base.spent, impressions: base.impressions, clicks: base.clicks, leads: base.leads, thruplays: thru };
+    return { date: row.date_start ?? "", spend: base.spent, impressions: base.impressions, clicks: base.clicks, leads: base.leads, thruplays: thru, reach: Math.round(Number(row.reach ?? 0)) || 0 };
   }).filter((r) => r.date);
 }
 
@@ -156,7 +158,7 @@ export async function fetchDailyInsights(ctx: ConnectorContext, campaignId: stri
   let after: string | undefined;
   for (let page = 0; page < 50; page++) {
     const res = await call<DailyInsightsResponse & { paging?: { next?: string; cursors?: { after?: string } } }>(ctx, "GET", `${campaignId}/insights`, {
-      fields: "spend,impressions,clicks,actions,video_thruplay_watched_actions",
+      fields: "spend,impressions,reach,clicks,actions,video_thruplay_watched_actions",
       time_range: JSON.stringify({ since, until }),
       time_increment: "1",
       limit: "100",
@@ -167,4 +169,10 @@ export async function fetchDailyInsights(ctx: ConnectorContext, campaignId: stri
     if (!after) break;
   }
   return out;
+}
+
+/** Tổng reach (người duy nhất) trọn đời chiến dịch: một dòng không chia ngày. Không có dữ liệu → 0. */
+export async function fetchReachTotal(ctx: ConnectorContext, campaignId: string): Promise<number> {
+  const res = await call<{ data?: { reach?: string }[] }>(ctx, "GET", `${campaignId}/insights`, { fields: "reach", date_preset: "maximum" });
+  return Math.round(Number(res.data?.[0]?.reach ?? 0)) || 0;
 }
