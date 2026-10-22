@@ -64,7 +64,9 @@ def tnorm(s):
 
 
 # Lời đệm / chào / xưng hô: không bao giờ là chữ nhấn (ESV: chữ nhấn là ý chính đáng nhớ). So khớp CÓ DẤU.
-FILLER = set("dạ alo à ờ ừ ừa vâng hả nhé nha nghe nè thế thì mà là có không rồi ơi các mọi người hát á hông".split())
+FILLER = set("dạ alo à ờ ừ ừa vâng hả nhé nha nghe nè thế thì mà là có rồi ơi các mọi người hát á hông".split())
+# Từ PHỦ ĐỊNH: không bao giờ bị cắt khỏi cụm; cụm đứng ngay sau từ phủ định bị loại ("không nên hứa hẹn" ≠ "HỨA HẸN")
+NEG = set("không chưa chẳng chả đừng chớ".split())
 
 
 def content_words(phrase):
@@ -173,6 +175,8 @@ EXAMPLE = """VÍ DỤ BIÊN TẬP TỐT (video khác, chỉ để tham khảo c�
 - Chữ nhấn XẤU: lời đệm / chào ("dạ alo", "à", "hả không"), cụm vô nghĩa khi tách khỏi câu, đại từ.
 - Khung trích dẫn (quote) chỉ cho câu chốt TRỌN VẸN 5–14 tiếng (vd "Hãy cùng đến với chúng tôi"), không cho cụm 2–3 tiếng."""
 
+NEED = {"steps": (2, 4), "compare": (2, 3), "arrow": (2, 2), "mechanism": (3, 3), "quote": (1, 1), "chapter": (1, 1)}  # số mục mỗi loại sơ đồ
+
 SYSTEM = """Bạn là biên tập viên video ngắn tiếng Việt theo "Skill ESV" (video dạy kỹ năng bán hàng, 1 người nói trước máy quay).
 Nhiệm vụ: đọc lời nói đã chia CÂU (mỗi câu có số [n] và mốc giây) và chọn chỗ đặt đồ hoạ giúp người xem hiểu ý chính.
 LUẬT BẮT BUỘC:
@@ -232,6 +236,41 @@ def sent_block_idx(sents, words):
 
 
 # ---------------------------------------------------------------- lập kế hoạch
+def pick_broll(lib, sents, by_id, diagrams, dur, rejected):
+    """Minh hoạ: mô hình chọn ảnh theo mô tả thư viện (chỉ ảnh / clip có giấy phép), rồi KIỂM RIÊNG từng lựa chọn."""
+    broll = []
+    if not lib:
+        return broll
+    catalog = "\n".join(f"#{i}: {os.path.splitext(os.path.basename(x['file']))[0].replace('_', ' ').replace('-', ' ')} — {', '.join(x.get('keywords', []))} — {x.get('source', '')[-60:]}" for i, x in enumerate(lib))
+    user = (f"Thư viện ảnh / clip minh hoạ (chỉ được chọn số trong danh sách):\n{catalog}\n\nLời nói:\n{sent_block(sents)}\n\n"
+            "Chọn tối đa 6 chỗ mà một ảnh trong thư viện minh hoạ ĐÚNG NGHĨA câu nói (đúng đối tượng / bối cảnh được nói tới). "
+            "Không chọn nếu chỉ trùng chữ mà khác nghĩa. Không chọn câu trong 3 giây đầu.")
+    picks = llm([{"role": "system", "content": "Bạn là biên tập viên hình ảnh, rất khắt khe về việc ảnh khớp nghĩa câu nói."}, {"role": "user", "content": user}], BROLL_SCHEMA, max_tokens=900).get("picks", [])
+    used, last = set(), -1e9
+    for p in sorted(picks, key=lambda p: by_id.get(p.get("sid"), {"t0": 1e9})["t0"]):
+        s, a = by_id.get(p.get("sid")), p.get("asset")
+        if not s or not isinstance(a, int) or isinstance(a, bool) or not (0 <= a < len(lib)):
+            rejected.append({"kind": "broll", "reason": f"câu {p.get('sid')} / ảnh #{a} không hợp lệ"})
+            continue
+        it = lib[a]
+        t0 = round(max(s["t0"], 3.0), 2)
+        t1 = round(min(t0 + 2.5, dur - 2.0), 2)
+        if it["file"] in used or t1 - t0 < 1.2 or t0 - last < 6 or any(dd["t0"] - 0.3 <= t0 <= dd["t1"] for dd in diagrams if dd["type"] in ("steps", "compare", "arrow", "mechanism")):
+            rejected.append({"kind": "broll", "file": it["file"], "reason": "trùng ảnh / quá sát minh hoạ trước / trùng sơ đồ / sát đầu-cuối"})
+            continue
+        chk = llm([{"role": "system", "content": "Trả lời khắt khe, tiếng Việt."},
+                   {"role": "user", "content": f"Câu nói: “{s['text']}”\nẢnh: {os.path.basename(it['file'])} — từ khoá: {', '.join(it.get('keywords', []))} — nguồn: {it.get('source', '')}\n"
+                                               "Ảnh này có minh hoạ ĐÚNG NGHĨA câu nói không (không chỉ trùng chữ)? Ví dụ: câu về 'mời ly cà phê gặp khách' thì ảnh tiệc liên hoan là KHÔNG hợp."}],
+                  CHECK_SCHEMA, max_tokens=200)
+        if not chk.get("fit"):
+            rejected.append({"kind": "broll", "file": it["file"], "reason": f"kiểm lần 2: không hợp — {chk.get('reason', '')[:140]}"})
+            continue
+        broll.append({"t0": t0, "t1": t1, "file": it["file"], "keyword": (it.get("keywords") or [""])[0], "why": f"{p.get('why', '')} | kiểm: {chk.get('reason', '')}"[:200]})
+        used.add(it["file"])
+        last = t1
+    return broll
+
+
 def plan(words, dur, library=None, content_hint="", log=print):
     """Trả kế hoạch dựng (mốc theo video gốc) hoặc None khi không có mô hình."""
     if not available():
@@ -253,9 +292,20 @@ def plan(words, dur, library=None, content_hint="", log=print):
         analyses.append(ana)
         user += "\n\nPHÂN TÍCH CẤU TRÚC (đã làm ở bước trước):\n" + json.dumps(ana, ensure_ascii=False)
         out = llm([{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}], PLAN_SCHEMA)
-        summaries.append(out.get("summary", ""))
-        raw_emph += out.get("emphasis", [])
-        raw_dias += out.get("diagrams", [])
+        out = out if isinstance(out, dict) else {}
+        summaries.append(str(out.get("summary", ""))[:300])
+        raw_emph += out.get("emphasis", []) if isinstance(out.get("emphasis"), list) else []
+        raw_dias += out.get("diagrams", []) if isinstance(out.get("diagrams"), list) else []
+
+    # Đầu ra mô hình có thể sai kiểu (dù đã ép schema): bỏ từng mục sai, ghi lý do — không làm hỏng cả kế hoạch
+    def ok_item(x):
+        return isinstance(x, dict) and isinstance(x.get("sid"), int) and not isinstance(x.get("sid"), bool) and isinstance(x.get("phrase"), str)
+    bad_e = [x for x in raw_emph if not ok_item(x)]
+    raw_emph = [x for x in raw_emph if ok_item(x)]
+    bad_d = [x for x in raw_dias if not (isinstance(x, dict) and x.get("type") in NEED and isinstance(x.get("items"), list) and all(ok_item(i) for i in x["items"]))]
+    raw_dias = [x for x in raw_dias if x not in bad_d]
+    if bad_e or bad_d:
+        rejected.append({"kind": "model", "reason": f"mô hình trả {len(bad_e)} chữ nhấn / {len(bad_d)} sơ đồ sai kiểu → bỏ"})
 
     # 2) Kiểm nguyên văn + đặt mốc từ chính lời nói
     def ground(sid, phrase, maxw=6):
@@ -277,15 +327,16 @@ def plan(words, dur, library=None, content_hint="", log=print):
             return None, f"“{phrase}” không ghép được vào lời nói câu {sid} (thiếu từ / quá {maxw} tiếng / nghe chưa chắc)"
         return loc, ""
 
+    def negated_before(j0):
+        """Từ phủ định ngay trước cụm (trong 2 từ) → tách cụm ra sẽ ĐẢO nghĩa lời nói."""
+        return any(tnorm(words[j]["text"]) in NEG for j in (j0 - 1, j0 - 2) if j >= 0)
+
     diagrams = []
     for d in raw_dias:
         typ, items = d.get("type"), d.get("items", [])
-        need = {"steps": (2, 4), "compare": (2, 3), "arrow": (2, 2), "mechanism": (3, 3), "quote": (1, 1), "chapter": (1, 1)}[typ]
+        need = NEED[typ]
         if not (need[0] <= len(items) <= need[1]):
             rejected.append({"kind": "diagram", "type": typ, "reason": f"{typ} cần {need[0]}–{need[1]} mục, có {len(items)}"})
-            continue
-        if typ == "quote" and len(str((items or [{}])[0].get("phrase", "")).split()) < 5:
-            rejected.append({"kind": "diagram", "type": typ, "reason": "trích dẫn quá ngắn (< 5 tiếng): không phải câu chốt"})
             continue
         locs, bad = [], ""
         for it in items:
@@ -293,7 +344,12 @@ def plan(words, dur, library=None, content_hint="", log=print):
             if not loc:
                 bad = why
                 break
+            if negated_before(loc[0]):
+                bad = f"“{spoken(words, *loc)}” đứng sau từ phủ định — tách ra sẽ sai nghĩa"
+                break
             locs.append(loc)
+        if not bad and typ == "quote" and len(spoken(words, *locs[0]).split()) < 5:
+            bad = "trích dẫn quá ngắn (< 5 tiếng): không phải câu chốt"
         if bad:
             rejected.append({"kind": "diagram", "type": typ, "reason": bad})
             continue
@@ -346,6 +402,9 @@ def plan(words, dur, library=None, content_hint="", log=print):
             continue
         phrase = spoken(words, *loc)
         e["phrase"] = phrase
+        if negated_before(loc[0]):
+            rejected.append({"kind": "emphasis", "phrase": phrase, "reason": "đứng sau từ phủ định — tách ra sẽ sai nghĩa"})
+            continue
         toks_ = [tnorm(x) for x in phrase.split()]
         if len(toks_) == 1 and not toks_[0].isdigit():
             rejected.append({"kind": "emphasis", "phrase": phrase, "reason": "một tiếng đứng riêng (dễ là chữ gãy / tên), không đủ nghĩa"})
@@ -387,11 +446,19 @@ def plan(words, dur, library=None, content_hint="", log=print):
             else:
                 parts = [x.get("text")] + [x.get(f, {}).get("text") for f in ("wrong", "top", "mid", "bottom")] + [r["text"] for r in x.get("right", []) + x.get("steps", [])]
                 lines.append(f"{n}. SƠ ĐỒ {x['type']}: {' | '.join(p for p in parts if p)} — câu nói: “{ctx(x['t0'] + 0.4)}”")
+        verdicts = {}
         try:
-            verdicts = {v["n"]: v for v in llm([{"role": "system", "content": JUDGE}, {"role": "user", "content": "\n".join(lines)}], JUDGE_SCHEMA, max_tokens=1600).get("verdicts", [])}
-        except (OSError, ValueError, KeyError):
-            verdicts = {}
-        drop = {n for n, v in verdicts.items() if int(v.get("score", 3)) < 3}
+            got = llm([{"role": "system", "content": JUDGE}, {"role": "user", "content": "\n".join(lines)}], JUDGE_SCHEMA, max_tokens=1600)
+            for v in (got.get("verdicts", []) if isinstance(got, dict) else []):
+                if isinstance(v, dict) and isinstance(v.get("n"), int) and not isinstance(v.get("n"), bool) and 0 <= v["n"] < len(items_):
+                    try:
+                        v["score"] = int(v.get("score", 3))
+                    except (TypeError, ValueError):
+                        continue
+                    verdicts[v["n"]] = v
+        except Exception as ex:  # bước chấm lỗi → giữ các mục đã qua luật, ghi lý do
+            rejected.append({"kind": "judge", "reason": f"bước trưởng biên tập lỗi, bỏ qua bước này: {str(ex)[:120]}"})
+        drop = {n for n, v in verdicts.items() if v["score"] < 3}
         for n in sorted(drop):
             k, x = items_[n]
             rejected.append({"kind": k, "phrase": x.get("text") or x.get("type"), "reason": f"trưởng biên tập chấm {verdicts[n].get('score')}/5: {verdicts[n].get('reason', '')[:140]}"})
@@ -403,35 +470,11 @@ def plan(words, dur, library=None, content_hint="", log=print):
     # 3) Minh hoạ: mô hình chọn theo mô tả thư viện, rồi kiểm riêng từng lựa chọn
     broll = []
     lib = [x for x in (library or []) if str(x.get("license", "")).strip() and not x.get("exclude")]
-    if lib:
-        catalog = "\n".join(f"#{i}: {os.path.splitext(os.path.basename(x['file']))[0].replace('_', ' ').replace('-', ' ')} — {', '.join(x.get('keywords', []))} — {x.get('source', '')[-60:]}" for i, x in enumerate(lib))
-        user = (f"Thư viện ảnh / clip minh hoạ (chỉ được chọn số trong danh sách):\n{catalog}\n\nLời nói:\n{sent_block(sents)}\n\n"
-                "Chọn tối đa 6 chỗ mà một ảnh trong thư viện minh hoạ ĐÚNG NGHĨA câu nói (đúng đối tượng / bối cảnh được nói tới). "
-                "Không chọn nếu chỉ trùng chữ mà khác nghĩa. Không chọn câu trong 3 giây đầu.")
-        picks = llm([{"role": "system", "content": "Bạn là biên tập viên hình ảnh, rất khắt khe về việc ảnh khớp nghĩa câu nói."}, {"role": "user", "content": user}], BROLL_SCHEMA, max_tokens=900).get("picks", [])
-        used, last = set(), -1e9
-        for p in sorted(picks, key=lambda p: by_id.get(p.get("sid"), {"t0": 1e9})["t0"]):
-            s, a = by_id.get(p.get("sid")), p.get("asset")
-            if not s or not isinstance(a, int) or not (0 <= a < len(lib)):
-                rejected.append({"kind": "broll", "reason": f"câu {p.get('sid')} / ảnh #{a} không hợp lệ"})
-                continue
-            it = lib[a]
-            t0 = round(max(s["t0"], 3.0), 2)
-            t1 = round(min(t0 + 2.5, dur - 2.0), 2)
-            if it["file"] in used or t1 - t0 < 1.2 or t0 - last < 6 or any(dd["t0"] - 0.3 <= t0 <= dd["t1"] for dd in diagrams if dd["type"] in ("steps", "compare", "arrow", "mechanism")):
-                rejected.append({"kind": "broll", "file": it["file"], "reason": "trùng ảnh / quá sát minh hoạ trước / trùng sơ đồ / sát đầu-cuối"})
-                continue
-            chk = llm([{"role": "system", "content": "Trả lời khắt khe, tiếng Việt."},
-                       {"role": "user", "content": f"Câu nói: “{s['text']}”\nẢnh: {os.path.basename(it['file'])} — từ khoá: {', '.join(it.get('keywords', []))} — nguồn: {it.get('source', '')}\n"
-                                                   "Ảnh này có minh hoạ ĐÚNG NGHĨA câu nói không (không chỉ trùng chữ)? Ví dụ: câu về 'mời ly cà phê gặp khách' thì ảnh tiệc liên hoan là KHÔNG hợp."}],
-                      CHECK_SCHEMA, max_tokens=200)
-            if not chk.get("fit"):
-                rejected.append({"kind": "broll", "file": it["file"], "reason": f"kiểm lần 2: không hợp — {chk.get('reason', '')[:140]}"})
-                continue
-            broll.append({"t0": t0, "t1": t1, "file": it["file"], "keyword": (it.get("keywords") or [""])[0], "why": f"{p.get('why', '')} | kiểm: {chk.get('reason', '')}"[:200]})
-            used.add(it["file"])
-            last = t1
-
+    try:
+        broll = pick_broll(lib, sents, by_id, diagrams, dur, rejected)
+    except Exception as ex:  # bước ảnh lỗi → không có ảnh, kế hoạch chữ / sơ đồ vẫn giữ
+        broll = []
+        rejected.append({"kind": "broll", "reason": f"bước chọn ảnh lỗi, bỏ qua: {str(ex)[:120]}"})
     label = model_label()
     digest = hashlib.sha256(json.dumps([w["text"] for w in words], ensure_ascii=False).encode()).hexdigest()[:12]
     return {
@@ -442,7 +485,7 @@ def plan(words, dur, library=None, content_hint="", log=print):
         "broll": broll,
         "ai": {"model": label, "endpoint": ENDPOINT, "wordsDigest": digest, "seconds": round(time.time() - t_start, 1),
                "analysis": analyses, "proposed": {"emphasis": len(raw_emph), "diagrams": len(raw_dias)}, "kept": {"emphasis": len(emphasis), "diagrams": len(diagrams), "broll": len(broll)},
-               "rejected": rejected[:80]},
+               "rejected": rejected[:300]},
     }
 
 
@@ -479,6 +522,42 @@ def self_test():
     if [len(x["idx"]) for x in ss] != [20, 20]:
         bad += 1
         print(f"SAI chia câu: {[len(x['idx']) for x in ss]}")
+    # plan() với MÔ HÌNH GIẢ: phủ định không bị đảo nghĩa; đầu ra rác không làm hỏng cả kế hoạch
+    g = globals()
+    real_llm, real_av = g["llm"], g["available"]
+    txt2 = "hôm nay các bạn không nên hứa hẹn với khách hàng mà hãy tạo ra cảm giác thân tình rồi chúng ta tìm điểm chung với khách hàng".split()
+    w2 = [{"text": x, "start": 1.0 + i * 0.5, "end": 1.0 + i * 0.5 + 0.4} for i, x in enumerate(txt2)]
+
+    def fake(messages, schema, **kw):
+        if schema is PLAN_SCHEMA:
+            return {"summary": "x", "emphasis": [{"sid": 1, "phrase": "hứa hẹn", "why": ""}, {"sid": 2, "phrase": "điểm chung", "why": ""},
+                                                 {"sid": [1], "phrase": "rác"}, "chuỗi rác", {"sid": True, "phrase": "x"}],
+                    "diagrams": [{"type": "arrow", "items": [{"sid": 1, "phrase": "không nên hứa hẹn"}, {"sid": 2, "phrase": "khách hàng"}]},
+                                 {"type": "lạ", "items": []}, {"type": "steps", "items": None}]}
+        if schema is JUDGE_SCHEMA:
+            return {"verdicts": [{"n": 99, "score": 1, "reason": "ngoài phạm vi"}, {"n": 0, "score": "cao", "reason": "điểm chữ"}, "rác"]}
+        if schema is BROLL_SCHEMA:
+            raise TimeoutError("hết giờ")
+        return {}
+    g["llm"], g["available"] = fake, (lambda timeout=3: True)
+    try:
+        p = plan(w2, 40.0, [{"file": "anh/a.jpg", "keywords": ["x"], "license": "OWNER"}], log=lambda m: None)
+    finally:
+        g["llm"], g["available"] = real_llm, real_av
+    texts = [e["text"].lower() for e in p["emphasis"]]
+    if "hứa hẹn" in texts:
+        bad += 1
+        print("SAI: “hứa hẹn” (sau “không nên”) lên màn hình — đảo nghĩa")
+    if "điểm chung" not in texts:
+        bad += 1
+        print(f"SAI: mất chữ nhấn hợp lệ khi mô hình trả rác: {texts}")
+    tops = [d.get("top", {}).get("text", "") for d in p["diagrams"] if d["type"] == "arrow"]
+    if any(t.startswith("hứa") for t in tops) or not any(t.startswith("không nên") for t in tops):
+        bad += 1
+        print(f"SAI: mũi tên phải giữ “không nên …”: {tops}")
+    if not any(r.get("kind") == "broll" and "lỗi" in r.get("reason", "") for r in p["ai"]["rejected"]):
+        bad += 1
+        print("SAI: bước ảnh lỗi phải được ghi lý do")
     print(f"ai_plan tự kiểm: {'đạt' if not bad else f'{bad} lỗi'}")
     return bad == 0
 
