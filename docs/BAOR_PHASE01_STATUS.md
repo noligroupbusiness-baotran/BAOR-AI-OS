@@ -71,10 +71,14 @@ Cập nhật bởi MASTER sau mỗi checkpoint. Nguồn vận hành: `docs/BAOR_
 
 <!-- NEXT:START -->
 Nguồn ủy quyền: chỉ thị OWNER 22/10/2026 "CONTINUE BRAND ENGINE IMPLEMENTATION" + "SHARED OPERATING STANDARD". Mỗi mục đi đủ vòng BUILD (docs/BAOR_OPERATING_MODEL.md §2).
-1. [ĐANG LÀM] S5 nhóm A — xong: Insights reach / CPM / CTR, tự thử lại khi dựng lỗi, font Tinos OFL, tải lên nối tiếp (chờ phản biện),
-   dựng thật 4:5 và 1:1 trên B1 (đạt toàn bộ bảng kiểm), cân sáng / màu nhẹ đo trước (giữ màu da), kiểm J ghi mốc + lọc tay dò nhầm.
-   CÒN: bố cục 16:9 né mặt ở cảnh cận (1017: J bắt 13 mẫu đè mặt thật 75–84 s) — dời chữ nhấn / dòng "Kết quả cá nhân…" theo vị trí
-   mặt từng đoạn; cập nhật docs/brand-engine/BAOR-BRAND-ENGINE-IMPLEMENTATION-PROGRESS.md (tạm tính 53,3%).
+1. [ĐANG LÀM] Skill ESV + Skill Edit Video Ngang v0.1.r2 (Notion 02 SKILL, ACTIVE — OWNER duyệt 22/10/2026 18:14).
+   XONG (a33bab7): kho tư liệu → thư viện nhạc / SFX (library_sync.py, chỉ ĐỦ-HỒ-SƠ đúng sha256), Cài đặt › Thư viện nhạc nền
+   (OWNER nghe + duyệt), AI chọn loại nhạc; 9:16 theo skill mới (phụ đề PA B y1600 không phát sáng, logo 340 x76/y107, nhạc −24 dB,
+   552792 / 241274 LOẠI, SFX ≤ −19 dB đo thật, bảng kiểm S / T).
+   ĐANG (chờ phản biện): 16:9 — scripts/video/ngang.py: thẻ ảnh M1 / M2 / M4 / M5 / M6 cạnh người (né cả người, ±2 s), phụ đề /
+   chữ nhấn / miễn trừ theo số 16:9, sơ đồ né mặt (bỏ nếu mọi chỗ chạm mặt), không logo. Dựng thật 1017: đạt toàn bộ bảng kiểm (J 0/204).
+   CÒN: M3 (split khúc cuối, dùng video người nói thu nhỏ trên nền navy), K1–K10 (skill ghi CHƯA CHỐT — chờ OWNER #134a), mật độ ảnh
+   16:9 thấp (thư viện ảnh chỉ có từ khoá chữ → cần mô tả ảnh), 4K (D-04). Cập nhật docs/brand-engine/…PROGRESS.md sau nghiệm thu.
 2. Nợ đã ghi (không chặn): script_align "Lan"→"Lành" khi kịch bản viết hoa tên khác; negated_before dừng ở "thì" có thể sót
    phủ định mệnh đề sau; mỗi video mới gọi mô hình ~6 phút (hàng đợi chậm khi tải nhiều); minh hoạ AI 0 ảnh qua kiểm
    (thư viện chỉ có mô tả chữ — cân nhắc mô hình nhìn ảnh mở để mô tả ảnh); khôi phục plan.prev-* chưa có nút trong app;

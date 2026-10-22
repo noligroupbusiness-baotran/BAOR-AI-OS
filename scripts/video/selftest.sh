@@ -125,6 +125,44 @@ print(f"SELFTEST {asp} ĐẠT: bản chính {m[0]}x{m[1]}, xem nhanh {p[0]}x{p[1
 P
 done
 
+# 16:9 — Skill Edit Video Ngang v0.1.r2: ảnh chỉ trong THẺ cạnh người nói (M1–M6), không B-roll toàn khung; chữ, thẻ, bóng trong title-safe 5 %
+python3 "$HERE/ngang.py" --self-test
+DUR=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$W/speech.aiff")  # $D bị vòng lặp 4:5 / 1:1 dùng lại làm thư mục
+ffmpeg -v error -y -f lavfi -i "testsrc2=s=1920x1080:r=30:d=$DUR" -i "$W/speech.aiff" -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest "$W/raw169.mp4"
+ffmpeg -v error -y -f lavfi -i "testsrc=s=1200x800" -frames:v 1 "$B/tap-the.jpg"
+ffmpeg -v error -y -f lavfi -i "rgbtestsrc=s=1200x800" -frames:v 1 "$B/tap-the-2.jpg"
+python3 - "$B/manifest.json" <<'P'
+import json, sys
+m = json.load(open(sys.argv[1]))
+m += [{"file": "tap-the.jpg", "kind": "image", "keywords": ["đồng đội"], "license": "Tự tạo bằng ffmpeg lavfi", "source": "selftest"},
+      {"file": "tap-the-2.jpg", "kind": "image", "keywords": ["đồng đội"], "license": "Tự tạo bằng ffmpeg lavfi", "source": "selftest"}]
+json.dump(m, open(sys.argv[1], "w"), ensure_ascii=False)
+P
+cat > "$W/plan-169.json" <<'J'
+{"by": "selftest", "emphasis": [{"t": 1.0, "text": "Mở đầu", "style": "fade"}, {"t": 9.0, "text": "LẮNG NGHE", "style": "shine"}],
+ "diagrams": [{"type": "arrow", "t0": 5.6, "t1": 7.6, "top": {"t": 5.7, "text": "hỏi"}, "bottom": {"t": 6.4, "text": "khen"}},
+              {"type": "fs06", "t0": 8.6, "t1": 9.8}, {"type": "leak", "t0": 0.2}],
+ "broll": [{"t0": 2.0, "t1": 5.0, "file": "goi-dien.jpg", "keyword": "gọi điện"}, {"t0": 11.2, "t1": 13.0, "file": "tap-the.jpg", "keyword": "khách hàng"},
+           {"t0": 6.0, "t1": 7.0, "file": "tap-the-2.jpg"}, {"t0": 13.4, "t1": 14.4, "file": "khong-giay-phep.jpg"}]}
+J
+BAOR_LLM_URL=http://127.0.0.1:9 DATA_DIR="$W/data" python3 "$HERE/esv_render.py" --input "$W/raw169.mp4" --job-dir "$W/esv-169" --plan "$W/plan-169.json" --words "$W/esv/words_main.json" --aspect 16:9 2>"$W/esv-169.log" | tail -1
+python3 - "$W/esv-169" <<'P'
+import json, subprocess, sys
+d = sys.argv[1]
+r = json.load(open(f"{d}/report.json"))
+qa = {q["id"]: q["status"] for q in r["qa"]}
+m = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0", f"{d}/master.mp4"], capture_output=True, text=True).stdout.strip()
+assert m == "1920,1080", m
+bad = [k for k in "ABCDEFGHQRT" if qa.get(k) not in ("pass", "info")]
+assert not bad, f"16:9: bảng kiểm chưa đạt {bad}: {[q for q in r['qa'] if q['id'] in bad]}"
+ev = r["broll"]["events"]
+assert ev and all(e.get("template", "").startswith("M") for e in ev), f"16:9: ảnh phải nằm trong thẻ M1–M6: {ev}"
+assert "khong-giay-phep.jpg" not in json.dumps(ev), "16:9: ảnh thiếu giấy phép phải bị loại"
+assert any("khung vẽ" in s["reason"] for s in r["broll"]["skipped"]), f"16:9: không đặt thẻ khi đang có khung vẽ: {r['broll']['skipped']}"
+assert r["skill"]["name"] == "Skill Edit Video Ngang"
+print(f"SELFTEST 16:9 ĐẠT: thẻ {[(e['template'], e['file']) for e in ev]}, bỏ {len(r['broll']['skipped'])}")
+P
+
 # Cân sáng / màu nhẹ: cảnh tối ám xanh lá → nâng gamma + hạ G; ám lạnh → ấm lại; cảnh ấm bình thường → KHÔNG chỉnh (giữ tông da)
 ffmpeg -v error -y -f lavfi -i "color=c=0x2a4a2a:s=640x360:d=2" -pix_fmt yuv420p "$W/g_dark_green.mp4"
 ffmpeg -v error -y -f lavfi -i "color=c=0x6a7a9a:s=640x360:d=2" -pix_fmt yuv420p "$W/g_cool.mp4"

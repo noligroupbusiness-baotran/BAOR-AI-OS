@@ -111,7 +111,7 @@ def text_mask(text, f, stroke=0):
 
 # ---------------------------------------------------------------- phụ đề karaoke (ESV mục 3)
 
-def build_sub_units(words, fsub):
+def build_sub_units(words, fsub, maxw=None):
     """Cụm theo ngắt câu (dấu câu / ngừng ≥ 0,35 s); cụm quá rộng tách đôi ở điểm cân nhất. Bỏ từ nghe chưa chắc."""
     ws = [w for w in words if not w.get("uncertain")]
     units, cur = [], []
@@ -129,7 +129,7 @@ def build_sub_units(words, fsub):
         return fsub.getlength(" ".join(x["text"] for x in ws_)) + 2.6 * len(ws_) + 6
 
     def split(u):
-        if width(u) <= SUB_MAXW or len(u) < 2:
+        if width(u) <= (maxw or SUB_MAXW) or len(u) < 2:
             out.append(u)
             return
         best = min(range(1, len(u)), key=lambda k: abs(width(u[:k]) - width(u[k:])))
@@ -148,12 +148,14 @@ def build_sub_units(words, fsub):
     return res
 
 
-def draw_subtitle(unit, hl, fsub_ss):
+def draw_subtitle(unit, hl, fsub_ss, cw=None, bottom=None, k=1.0):
     """1 dòng, đáy tại y1600 (PA B): bóng mềm, viền đen 2,45, chữ trắng nét trắng 0,8, từ đọc #FFC929.
     KHÔNG phát sáng (Skill ESV v0.1.r2 B3: OWNER 21/10 11:33 «chữ sub title không cần phát sáng»; QĐ-CEO 0958) — đã bỏ lớp quầng."""
+    cw = cw or W
+    bottom = SUB_BOTTOM if bottom is None else bottom
     words = [w["text"] for w in unit["words"]]
     text = " ".join(words)
-    bw, bh = W * SS, 200 * SS
+    bw, bh = cw * SS, 200 * SS
     canvas = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
     tw = fsub_ss.getlength(text)
     x0 = (bw - tw) / 2
@@ -166,16 +168,16 @@ def draw_subtitle(unit, hl, fsub_ss):
         x += fsub_ss.getlength(wd + (" " if i < len(words) - 1 else ""))
     # bóng
     sh_ = Image.new("L", (bw, bh), 0)
-    ImageDraw.Draw(sh_).text((x0 + 5.5 * SS, y0 + 3.8 * SS), text, font=fsub_ss, fill=255, stroke_width=int(round(2.45 * SS)), stroke_fill=255)
-    sh_ = sh_.filter(ImageFilter.GaussianBlur(4.4 * SS / 2))
+    ImageDraw.Draw(sh_).text((x0 + 5.5 * k * SS, y0 + 3.8 * k * SS), text, font=fsub_ss, fill=255, stroke_width=int(round(2.45 * k * SS)), stroke_fill=255)
+    sh_ = sh_.filter(ImageFilter.GaussianBlur(4.4 * k * SS / 2))
     canvas.paste((0, 0, 0, 255), (0, 0), sh_.point(lambda v: int(v * 0.67)))
     d = ImageDraw.Draw(canvas)
-    d.text((x0, y0), text, font=fsub_ss, fill=(0, 0, 0, 255), stroke_width=int(round(2.45 * SS)), stroke_fill=(0, 0, 0, 255))
+    d.text((x0, y0), text, font=fsub_ss, fill=(0, 0, 0, 255), stroke_width=max(1, int(round(2.45 * k * SS))), stroke_fill=(0, 0, 0, 255))
     for i, wd in enumerate(words):
         col = rgb("#FFC929") if i == hl else (255, 255, 255)
-        d.text((xs[i], y0), wd, font=fsub_ss, fill=col + (255,), stroke_width=int(round(0.8 * SS)), stroke_fill=col + (255,))
-    small = canvas.resize((W, 200), Image.LANCZOS)
-    return small, SUB_BOTTOM - 200 + 30  # ảnh, y đỉnh trên khung
+        d.text((xs[i], y0), wd, font=fsub_ss, fill=col + (255,), stroke_width=max(1, int(round(0.8 * k * SS))), stroke_fill=col + (255,))
+    small = canvas.resize((cw, 200), Image.LANCZOS)
+    return small, bottom - 200 + 30  # ảnh, y đỉnh trên khung
 
 
 # ---------------------------------------------------------------- chữ nhấn vàng ánh kim (ESV mục 4)
@@ -231,13 +233,16 @@ def fit_size(text, base=150, maxw=860):
 
 
 class Emphasis:
+    mode169 = False  # 16:9 (Skill Edit Video Ngang R8.3–R8.4)
+    right = False    # 16:9: mặt ở góc trái dưới → đặt chữ nhấn sát lề phải (đối xứng) [AI SUY LUẬN]
+
     def __init__(self, e, words):
         self.text = e["text"]
         self.style = e.get("style", "fade")
         self.t0 = float(e["t"])
         wend = max([w["end"] for w in words if self.t0 - 0.05 <= w["start"] <= self.t0 + 1.5] or [self.t0 + 0.6])
         self.t1 = float(e.get("end", max(wend + 0.8, self.t0 + 1.6)))
-        self.fs = fit_size(self.text)
+        self.fs = fit_size(self.text, 84, 820) if self.mode169 else fit_size(self.text)
         self.img, self.mask = render_gold(self.text, self.fs)
 
     def frame(self, t, layer, boxes):
@@ -278,6 +283,17 @@ class Emphasis:
                 shine = ImageChops.multiply(band, m)
                 img.paste(rgb("#FFF8EA") + (255,), (0, 0), shine)
         img = with_alpha(img, alpha * out_a)
+        if self.mode169:
+            import ngang as NG
+            slide = (NG.EMP_X_IN - NG.EMP_X) * (1 - ease_cubic(ms / 450))  # bay vào từ x163 → đứng x133 (R8.4)
+            pad = 0.35 * self.fs  # ảnh chữ vàng có lề trong suốt 0,35·fs mỗi bên (render_gold) → \an1 tính từ mép chữ
+            x = int(NG.EMP_X + slide - pad) if not self.right else int(CW - NG.EMP_X - slide - img.width + pad)
+            y = int(NG.EMP_BOTTOM - img.height * 0.80 + dy)
+            layer.alpha_composite(img, (x, y))
+            bb = img.getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox()
+            if bb:
+                boxes.append(("emp", (x + bb[0], y + bb[1], x + bb[2], y + bb[3])))
+            return
         x = int(540 - img.width / 2)
         y = int(EMP_BOTTOM - img.height * 0.80 + dy)  # đáy nét chữ ≈ y1402
         layer.alpha_composite(img, (x, y - BAND_Y0))
@@ -1413,6 +1429,184 @@ def auto_plan(words, dur, keywords):
 
 # ---------------------------------------------------------------- chính
 
+# ---------------------------------------------------------------- 16:9 — Skill Edit Video Ngang v0.1.r2 (ngang.py)
+
+def _inter(a, b, m=0.0):
+    return a[0] - m < b[2] and b[0] - m < a[2] and a[1] - m < b[3] and b[1] - m < a[3]
+
+
+DIA169 = (696, 376)  # dải sơ đồ 9:16 (VÀNG 916×495) thu ×0,76 vào dải B 16:9 cảnh 1 người (C-K.1: x250–1640, y1020–1780 @4K)
+
+
+def plan_ngang(src, info, cropf, plan, words, emph, dias, fs_events, rev_spans, zooms, A, broll_dir):
+    """Dò mặt theo thời gian rồi đặt mọi thứ của khung ngang TRƯỚC khi vẽ: chữ nhấn (trái / phải né mặt), sơ đồ (dải trái / phải),
+    thẻ ảnh M1–M6 vào chỗ trống lớn nhất xa mặt (R3.0.1). Trả (cards, bỏ qua kèm lý do, vị trí sơ đồ)."""
+    import ngang as NG
+    NG.FONT = font
+    track = NG.face_track(src, info, cropf)
+
+    def faces(t0, t1):
+        f0, f1 = int(t0 * FPS), int(t1 * FPS)
+        z = max([zoom_at(zooms, f) for f in range(f0, f1 + 1, 3)] or [1.0])
+        fb = NG.faces_at(track, (t0 + t1) / 2, z, A, span=(t1 - t0) / 2 + 2.0)  # ±2 s: máy dò sót mặt vài mẫu vẫn giữ được người
+        if not fb:  # không thấy mặt ≠ không có người (phản biện P2-2): giả định người ở vị trí quen / quanh tâm zoom
+            fb = [(A[0] + (x0 - A[0]) * z, A[1] + (y0 - A[1]) * z, A[0] + (x1 - A[0]) * z, A[1] + (y1 - A[1]) * z) for x0, y0, x1, y1 in NG.fallback_person(track, A)]
+        return fb
+
+    def fcx_of(fb):
+        return float(np.median([(q[0] + q[2]) / 2 for q in fb])) if fb else CW / 2
+
+    dropped_emph = []
+    for e in emph:  # chữ nhấn \an1 trái; đè mặt (hoặc trùng dòng miễn trừ góc trái) → sang phải; hai bên đều đè mặt → bỏ
+        w_ = e.img.width - 0.7 * e.fs
+        boxL = (NG.EMP_X, NG.EMP_BOTTOM - e.img.height * 0.8, NG.EMP_X + w_, NG.EMP_BOTTOM + 0.2 * e.fs)
+        boxR = (CW - NG.EMP_X - w_, boxL[1], CW - NG.EMP_X, boxL[3])
+        fb = faces(e.t0, e.t1)
+        left_ok = not any(_inter(boxL, q, 30) for q in fb) and not any(a_ < e.t1 and e.t0 < b_ for a_, b_ in rev_spans)
+        right_ok = not any(_inter(boxR, q, 30) for q in fb)
+        if not left_ok and right_ok:
+            e.right = True
+        elif not left_ok:
+            dropped_emph.append({"t": round(e.t0, 2), "text": e.text, "reason": "hai bên đều đè mặt người (Ngang R5.2: không chữ đè mặt)"})
+            e.t1 = e.t0  # tắt chữ nhấn này
+    dia_pos, dropped_dia = {}, []
+    for d in dias:
+        # Sơ đồ được vẽ trên THÂN người (dải 2 người C-K.1: "dưới cằm người nữ, trái mặt người nam"), chỉ cấm đè MẶT (A10.4).
+        # Thử: dải trái 1 người, dải 2 người (thấp hơn), dải phải, dải phải thấp, giữa thấp; chạm mặt hết → bỏ sơ đồ (A10.4 mục 6c).
+        fb = faces(d.t0, d.t1)
+        w_, h_ = DIA169
+        cands = [(125, 512), (125, 580), (CW - 125 - w_, 512), (CW - 125 - w_, 580), ((CW - w_) // 2, 580)]
+        # câu doanh thu: dòng miễn trừ góc trái dưới cũng là vật cản (phản biện P2-4: sơ đồ đè hộp miễn trừ)
+        obst = fb + ([NG.DISC["box"]] if any(a_ < d.t1 and d.t0 < b_ for a_, b_ in rev_spans) else [])
+        pick = next(((x, y) for x, y in cands if not any(_inter((x, y, x + w_, y + h_), q, 20) for q in obst)), None)
+        if pick is None:
+            dropped_dia.append({"t": round(d.t0, 2), "text": d.__class__.__name__, "reason": "mọi vị trí sơ đồ đều chạm mặt người (A10.4: bỏ khung vẽ đoạn đó)"})
+            d.t1 = d.t0
+            continue
+        dia_pos[id(d)] = pick
+    lib = {m["file"]: m for m in broll_library(broll_dir)}
+    busy = [(d.t0 - 1.0, d.t1 + 1.0) for d in dias] + [(float(x["t0"]) - 1.0, float(x["t1"]) + 1.0) for x in fs_events]
+    cards, skips, prev, counts = [], [], None, {}
+    items = sorted(plan.get("broll", []), key=lambda b: float(b["t0"]))
+    for b in items:
+        t0, t1 = float(b["t0"]), float(b["t1"])
+        m = lib.get(b.get("file"))
+        why = None
+        if not m:
+            why = "thiếu tệp / giấy phép / từ khoá trong thư viện"
+        elif any(a_ < t1 and t0 < b_ for a_, b_ in rev_spans):
+            why = "đoạn doanh thu / thu nhập / kết quả: 0 ảnh (R5.4)"
+        elif any(a_ < t1 and t0 < b_ for a_, b_ in busy):
+            why = "đang có khung vẽ / khung toàn màn hình (A10 luật phối 4)"
+        if why:
+            skips.append({"t0": t0, "file": b.get("file"), "reason": why})
+            continue
+        sent = " ".join(w["text"] for w in words if t0 - 1.5 <= w["start"] <= t1 + 1.0)
+        kw = set(P.norm(k) for k in m.get("keywords", []))
+        extras = [x for x in lib.values() if x["file"] != m["file"] and x["file"].lower().endswith(IMG_EXT)
+                  and kw & set(P.norm(k) for k in x.get("keywords", [])) and not any(x["file"] in c.files for c in cards[-3:])]
+        kind = NG.choose_template(sent, prev, counts, 1 + min(2, len(extras)), len(items))
+        label = str(b.get("keyword") or "")
+        if kind == "M4" and not (label and P.norm(label) in P.norm(sent)):
+            kind, label = ("M1" if prev != "M1" else "M2"), ""  # nhãn M4 phải nguyên văn lời (R3.4.2) — không có thì đổi mẫu
+        fb = faces(t0, t1)
+        fcx = fcx_of(fb)
+        extra = []
+        for e in emph:
+            if e.t0 < t1 and t0 < e.t1:
+                extra.append((CW - 1000, 760, CW - 96, 930) if e.right else (96, 760, 1000, 930))
+        free = NG.free_mask(fb, extra)
+        rect = None
+        for k in (kind, "M1") if kind != "M1" else ("M1",):
+            best = None
+            for j, ratio in enumerate(NG.Card.RATIOS[k]):
+                r = NG.best_rect(free, ratio, NG.Card.MAXW[k], 150 if k == "M5" else 260, fcx, pad=NG.PAD[k])
+                if r:
+                    area = (r[2] - r[0]) * (r[3] - r[1]) * (1.12 if j == 0 else 1.0)  # tỉ lệ chuẩn +12 % (best_multi)
+                    if not best or area > best[0]:
+                        best = (area, r)
+            if best and (k != "M5" or best[1][3] - best[1][1] >= 420):
+                rect, kind = best[1], k
+                break
+        if not rect:
+            skips.append({"t0": t0, "file": m["file"], "reason": "không đủ chỗ trống cạnh người nói (né mặt, phụ đề, chữ nhấn, title-safe)"})
+            continue
+        n = 1 + (min(2, len(extras)) if kind == "M6" else (1 if kind == "M5" and extras else 0))
+        ms_ = [m] + extras[:n - 1]
+        side = 1 if (rect[0] + rect[2]) / 2 > fcx else -1
+        c = NG.Card(kind, t0, t1, rect, [None] * n, label if kind == "M4" else "", side, counts.get("M2", 0))
+        c.media = [(NG.load_media(os.path.join(broll_dir, x["file"]), c.media_size(j), yc=float(x.get("yc", 0.38)), t0=float(b.get("from", 0)), dur=t1 - t0),
+                    1 if (len(cards) + j) % 2 == 0 else -1) for j, x in enumerate(ms_)]
+        c.files = [x["file"] for x in ms_]
+        c.license = "; ".join(sorted({str(x.get("license", "")) for x in ms_}))
+        c.source = "; ".join(sorted({str(x.get("source", "")) for x in ms_}))
+        cards.append(c)
+        prev, counts[kind] = kind, counts.get(kind, 0) + 1
+    skips += [{"t0": d["t"], "file": f"chữ nhấn “{d['text']}”", "reason": d["reason"]} for d in dropped_emph]
+    skips += [{"t0": d["t"], "file": f"sơ đồ {d['text']}", "reason": d["reason"]} for d in dropped_dia]
+    return cards, skips, dia_pos, track
+
+
+_DARK169 = {}
+
+
+def draw_ngang(t, cards, dias, dia_pos, emph, rev_spans, disc_img, units, sub_cache, fsub_ss):
+    """Một khung lớp chữ 16:9 (1920×1080): thẻ ảnh → sơ đồ (trên nền tối mềm) → chữ nhấn → dòng miễn trừ → phụ đề."""
+    import ngang as NG
+    layer = Image.new("RGBA", (CW, CH), (0, 0, 0, 0))
+    boxes = []
+    for c in cards:
+        b = c.frame(t, layer)
+        if b:
+            boxes.append(("card", b))
+    for d in dias:
+        if not (d.t0 <= t < d.t1):
+            continue
+        band = Image.new("RGBA", (W, BAND_Y1 - BAND_Y0), (0, 0, 0, 0))
+        d.frame(t, band, [])
+        g = band.crop((YEL[0], YEL[1] - BAND_Y0, YEL[2], YEL[3] - BAND_Y0)).resize(DIA169, Image.LANCZOS)
+        x0, y0 = dia_pos.get(id(d), (125, 512))
+        dk = max(0.0, min(1.0, (t - d.t0) / 0.3, (d.t1 - t) / 0.3))
+        if "d" not in _DARK169:  # nền tối mềm RGB(8,6,4) α ≤ 0,42 (A10), lùi vào trong để mép mờ không lọt title-safe
+            m = Image.new("L", (DIA169[0] + 100, DIA169[1] + 100), 0)
+            ImageDraw.Draw(m).rectangle((80, 60, DIA169[0] + 20, DIA169[1] + 40), fill=int(255 * 0.42))
+            dd = Image.new("RGBA", m.size, (8, 6, 4, 255))
+            dd.putalpha(m.filter(ImageFilter.GaussianBlur(18)))
+            _DARK169["d"] = dd
+        layer.alpha_composite(with_alpha(_DARK169["d"], dk), (x0 - 50, y0 - 50))
+        layer.alpha_composite(g, (x0, y0))
+        bb = g.getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox()
+        if bb:
+            boxes.append(("gfx", (x0 + bb[0], y0 + bb[1], x0 + bb[2], y0 + bb[3])))
+    for e in emph:
+        e.frame(t, layer, boxes)
+    for a_, b_ in rev_spans:  # R8.5: dòng miễn trừ trên hộp đen bo R11, phủ suốt câu
+        if a_ <= t < b_ and disc_img is not None:
+            al = min(1.0, (t - a_) / 0.15, (b_ - t) / 0.15)
+            x1 = max(NG.DISC["box"][2], NG.DISC["x"] + disc_img.width + 12)
+            bx = Image.new("RGBA", (x1 - NG.DISC["box"][0], NG.DISC["box"][3] - NG.DISC["box"][1]), (0, 0, 0, 0))
+            ImageDraw.Draw(bx).rounded_rectangle((0, 0, bx.width - 1, bx.height - 1), radius=NG.DISC["r"], fill=(0, 0, 0, int(255 * NG.DISC["alpha"])))
+            layer.alpha_composite(with_alpha(bx, al), (NG.DISC["box"][0], NG.DISC["box"][1]))
+            layer.alpha_composite(with_alpha(disc_img, al), (NG.DISC["x"], int(NG.DISC["cy"] - disc_img.height / 2)))
+            boxes.append(("disc", (NG.DISC["box"][0], NG.DISC["box"][1], x1, NG.DISC["box"][3])))
+    u = next((x for x in units if x["start"] <= t < x["end"]), None)
+    if u:
+        hl = -1
+        for k, w in enumerate(u["words"]):
+            nxt = u["words"][k + 1]["start"] if k + 1 < len(u["words"]) else u["end"]
+            if w["start"] <= t < max(nxt, w["end"]):
+                hl = k
+        key = (id(u), hl)
+        if key not in sub_cache:
+            sub_cache[key] = draw_subtitle(u, hl, fsub_ss, CW, NG.SUB_BOTTOM, NG.SUB_FS / 66)
+        img, ytop = sub_cache[key]
+        layer.alpha_composite(with_alpha(img, min(1.0, (t - u["start"]) / 0.045 + 0.0001)), (0, ytop))
+        bb = img.getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox()
+        if bb:
+            boxes.append(("sub", (bb[0], bb[1] + ytop, bb[2], bb[3] + ytop)))
+    return layer, boxes
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", required=True)
@@ -1537,9 +1731,12 @@ def main():
 
     # Lớp chữ / đồ hoạ
     job.progress("draw", "Vẽ phụ đề karaoke, chữ nhấn vàng, sơ đồ theo ESV", 45)
-    fsub = font("Times New Roman Italic.ttf", 66)
-    fsub_ss = font("Times New Roman Italic.ttf", 66 * SS)
-    units = build_sub_units(words, fsub)
+    FULL = a.aspect == "16:9"  # Skill Edit Video Ngang: lớp chữ / thẻ ảnh vẽ toàn khung 1920×1080 (không dùng dải chữ 9:16)
+    SUBFS = 48 if FULL else 66
+    fsub = font("Times New Roman Italic.ttf", SUBFS)
+    fsub_ss = font("Times New Roman Italic.ttf", SUBFS * SS)
+    units = build_sub_units(words, fsub, 1500 if FULL else None)
+    Emphasis.mode169 = FULL
     emph = [Emphasis(e, words) for e in plan.get("emphasis", [])]
     dias = [make_diagram(d) for d in plan.get("diagrams", []) if d["type"] in ("compare", "arrow", "steps", "mechanism", "process", "chapter", "quote")]
     fs_events = [d for d in plan.get("diagrams", []) if d["type"] in ("fs06", "fs05", "fs01")]
@@ -1550,7 +1747,7 @@ def main():
     tdir = job.p("work", "txt")
     os.makedirs(tdir, exist_ok=True)
     sub_cache = {}
-    bad_zone, overlap = 0, 0
+    bad_zone, overlap, bad_safe = 0, 0, []
     BH = BAND_Y1 - BAND_Y0
     REV_KW = ("doanh thu", "thu nhập", "lợi nhuận", "kiếm được", "triệu", "tỷ", "lương")
     rev_spans = []
@@ -1560,7 +1757,20 @@ def main():
                 rev_spans[-1][1] = u["end"]
             else:
                 rev_spans.append([u["start"], u["end"]])
-    disc_img = label_img("Kết quả cá nhân, không cam kết", 48) if rev_spans else None
+    disc_img = label_img("Kết quả cá nhân, không cam kết", 42 if FULL else 48) if rev_spans else None
+    # Zoom tính TRƯỚC khi vẽ: 16:9 cần biết mặt nằm đâu sau zoom để thẻ ảnh / sơ đồ / chữ nhấn né mặt
+    blocked = anim_windows + [(float(b["t0"]), float(b["t1"])) for b in plan.get("broll", [])] + [(d["t0"], d["t0"] + 3.6) for d in leaks]
+    if plan.get("pace") in ZOOM_PROFILES:
+        prof, pace = plan["pace"], {"why": "biên tập chọn"}
+    else:
+        prof, pace = pace_profile(units, words, len(cut_times) + len(plan.get("broll", [])) + 2 * len(fs_events) + len(leaks), dur, plan.get("content", ""))
+    zooms = [z for z in plan.get("zooms", []) if "nin" in z]
+    if not zooms:
+        zooms = place_zooms([(e.t0, 1.08 if e.style == "shine" else (1.07 if e.style == "blur" else 1.06)) for e in emph], prof, blocked, dur, cut_times)
+        zooms = fill_zooms(zooms, units, prof, blocked, dur, cut_times)
+    cards, card_skips, dia_pos, track169 = [], [], {}, []
+    if FULL:
+        cards, card_skips, dia_pos, track169 = plan_ngang(src, info, cropf, plan, words, emph, dias, fs_events, rev_spans, zooms, (ax * CW, ay * CH), broll_dir)
     frame_boxes = {}
     yy_ = np.arange(BH, dtype=np.float32)
     xx_ = np.arange(W, dtype=np.float32)
@@ -1568,6 +1778,23 @@ def main():
     DARK_RAMP = 0.55 * (np.clip(yy_ / 150.0, 0, 1) * np.clip((BH - yy_) / 150.0, 0, 1))[:, None] * (np.clip(xx_ / 180.0, 0, 1) * np.clip((W - xx_) / 180.0, 0, 1))[None, :]
     for f in range(N):
         t = f / FPS
+        if FULL:
+            layer, boxes = draw_ngang(t, cards, dias, dia_pos, emph, rev_spans, disc_img, units, sub_cache, fsub_ss)
+            abb = layer.getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox()
+            import ngang as NG
+            if abb and (abb[0] < NG.SAFE[0] or abb[1] < NG.SAFE[1] or abb[2] > NG.SAFE[2] or abb[3] > NG.SAFE[3]):
+                bad_zone += 1
+                bad_safe.append((round(t, 2), abb))
+            if f % 15 == 0:
+                frame_boxes[f] = [b for _, b in boxes]
+            subs = [b for k, b in boxes if k == "sub"]
+            others = [b for k, b in boxes if k != "sub"]
+            if any(s_[1] < o[3] - 6 and o[1] < s_[3] and s_[0] < o[2] and o[0] < s_[2] for s_ in subs for o in others):
+                overlap += 1
+            layer.save(os.path.join(tdir, f"{f:06d}.png"), compress_level=1)
+            if f % 150 == 0:
+                job.progress("draw", f"Vẽ lớp chữ / thẻ ảnh {f}/{N} khung", 45 + int(25 * f / N))
+            continue
         layer = Image.new("RGBA", (W, BH), (0, 0, 0, 0))
         boxes = []
         for d in dias:
@@ -1668,7 +1895,14 @@ def main():
         music_info = {"used": True, "file": os.path.basename(music_path), "license": music_lic, "gainDb": round(gain, 1), "a5": a5, **pick}
     sfx_info = {"used": False, "reason": "tắt"}
     if not a.no_sfx:
-        evs = sfx_events(plan, [b for b in plan.get("broll", []) if not b.get("off")])
+        if FULL:  # 16:9: tiếng theo đúng thứ thật sự hiện (thẻ đã đặt, chữ nhấn / sơ đồ không bị bỏ vì né mặt)
+            shown_e = {round(e.t0, 3) for e in emph if e.t1 > e.t0}
+            shown_d = {round(d.t0, 3) for d in dias if d.t1 > d.t0}
+            p_sfx = {**plan, "emphasis": [e for e in plan.get("emphasis", []) if round(float(e["t"]), 3) in shown_e],
+                     "diagrams": [d for d in plan.get("diagrams", []) if d["type"] not in ("compare", "arrow", "steps", "mechanism", "process", "chapter", "quote") or round(float(d["t0"]), 3) in shown_d]}
+            evs = sfx_events(p_sfx, [{"t0": c.t0} for c in cards])
+        else:
+            evs = sfx_events(plan, [b for b in plan.get("broll", []) if not b.get("off")])
         if evs:
             sfxw = job.p("work", "sfx.wav")
             placed, dropped = place_sfx(sfxw, evs, voice, dur)
@@ -1690,15 +1924,6 @@ def main():
     job.progress("encode", f"Xuất bản chính {CW}x{CH}", 78)
     # Zoom MƯỢT (ESV mục 6): biến đổi phối cảnh dưới điểm ảnh, làm trên khung gốc (vd 1216x2160) rồi mới thu về 1080x1920.
     # Không làm tròn kích thước theo từng khung (làm tròn gây giật 1–2 px). q = 1 − 1/z(t); tâm zoom A = mặt.
-    blocked = anim_windows + [(float(b["t0"]), float(b["t1"])) for b in plan.get("broll", [])] + [(d["t0"], d["t0"] + 3.6) for d in leaks]
-    if plan.get("pace") in ZOOM_PROFILES:
-        prof, pace = plan["pace"], {"why": "biên tập chọn"}
-    else:
-        prof, pace = pace_profile(units, words, len(cut_times) + len(plan.get("broll", [])) + 2 * len(fs_events) + len(leaks), dur, plan.get("content", ""))
-    zooms = [z for z in plan.get("zooms", []) if "nin" in z]
-    if not zooms:
-        zooms = place_zooms([(e.t0, 1.08 if e.style == "shine" else (1.07 if e.style == "blur" else 1.06)) for e in emph], prof, blocked, dur, cut_times)
-        zooms = fill_zooms(zooms, units, prof, blocked, dur, cut_times)
     zx = zoom_expr(zooms)
     Ax, Ay = ax * cw, ay * chh
     q = f"(1-1/{zx})"
@@ -1713,7 +1938,9 @@ def main():
     if os.path.exists(mf):
         manifest = {m["file"]: m for m in json.load(open(mf, encoding="utf-8"))}
     brolls, b_args, b_fc, last = [], [], "", "bg0"
-    for k, b in enumerate(plan.get("broll", [])):
+    if FULL:  # R5.1 / R6.3: 16:9 không B-roll toàn khung — ảnh nằm trong thẻ M1–M6 đã vẽ ở lớp chữ
+        brolls = [{"t0": round(c.t0, 2), "t1": round(c.t1, 2), "file": ", ".join(c.files), "template": c.kind, "license": c.license, "source": c.source} for c in cards]
+    for k, b in enumerate([] if FULL else plan.get("broll", [])):
         fpath = os.path.join(broll_dir, b["file"])
         meta = manifest.get(b["file"], {})
         if not os.path.isfile(fpath) or not str(meta.get("license", "")).strip() or meta.get("exclude"):
@@ -1732,7 +1959,7 @@ def main():
                  f"[{last}][b{k}]overlay=0:0:enable='between(t,{float(b['t0']):.3f},{float(b['t1']):.3f})':eof_action=pass[bg{k + 1}];")
         last = f"bg{k + 1}"
         brolls.append({**b, "license": meta.get("license", ""), "source": meta.get("source", "")})
-    n_in = 4 + len(brolls)
+    n_in = 4 + (0 if FULL else len(brolls))  # 16:9: ảnh nằm trong thẻ ở lớp chữ, không thêm đầu vào ffmpeg
     for k, fsd in enumerate(fs_events):
         t0_, d_ = float(fsd["t0"]), float(fsd["t1"]) - float(fsd["t0"])
         job.progress("encode", f"Dựng khung FS-06 {k + 1}/{len(fs_events)}", 78)
@@ -1754,8 +1981,8 @@ def main():
           + (f"[1:v]scale={logo_w}:-1:flags=lanczos,format=rgba,fade=t=in:st=0.3:d=0.6:alpha=1[lg];"
              f"[bg][lg]overlay=x='{LAY['logo_x']}-12*pow(1-min(max((t-0.3)/0.6\\,0)\\,1)\\,3)':y={LAY['logo_y']}:eval=frame[l];"
              if logo_w else "[bg]null[l];")
-          + (f"[2:v]format=rgba[tx];" if LAY["s"] == 1.0 else f"[2:v]format=rgba,scale=iw*{LAY['s']}:ih*{LAY['s']}:flags=lanczos[tx];")
-          + f"[l][tx]overlay={LAY['tx']}:{LAY['ty']}:format=auto,fade=t=out:st={max(0.0, dur - 0.9):.3f}:d=0.9,format=yuv420p[v]")
+          + (f"[2:v]format=rgba[tx];" if (LAY["s"] == 1.0 or FULL) else f"[2:v]format=rgba,scale=iw*{LAY['s']}:ih*{LAY['s']}:flags=lanczos[tx];")
+          + f"[l][tx]overlay={0 if FULL else LAY['tx']}:{0 if FULL else LAY['ty']}:format=auto,fade=t=out:st={max(0.0, dur - 0.9):.3f}:d=0.9,format=yuv420p[v]")
     master = job.p("master.mp4")
     P.sh(["ffmpeg", "-v", "error", "-y", "-i", src, "-loop", "1", "-i", a.logo, "-framerate", str(FPS), "-start_number", "0", "-i", os.path.join(tdir, "%06d.png"),
           "-i", final, *b_args, "-filter_complex", fc, "-map", "[v]", "-map", "3:a", "-frames:v", str(N),
@@ -1851,9 +2078,16 @@ def main():
                 f"logo rộng {LAY['logo_w']} tại ({lb[0]},{lb[1]}) hộp x{lb[0]}–{lb[2]} y{lb[1]}–{lb[3]} {'trong' if inside else 'NGOÀI'} XANH x64–425 y51–248 (Skill ESV v0.1.r2 B7)")
         else:
             add("F", "Bố cục: logo vùng XANH, chữ vùng VÀNG", "pass", f"logo rộng {LAY['logo_w']} tại ({lb[0]},{lb[1]}) — tỷ lệ {a.aspect}: thu theo khung [AI SUY LUẬN, skill chưa có số]")
-    add("G", "Đồ hoạ trong VÀNG", "pass" if bad_zone == 0 else "fail", f"{bad_zone} khung có điểm ảnh ngoài VÀNG (+19 px)")
+    if FULL:
+        add("G", "Chữ / đồ hoạ / thẻ ảnh trong title-safe 5 % (Ngang R3.0.2, R9.2)", "pass" if bad_zone == 0 else "fail",
+            f"{bad_zone} khung có điểm ảnh (α > 40) ngoài (96,54)–(1824,1026)" + (f": {bad_safe[:6]}" if bad_safe else ""))
+    else:
+        add("G", "Đồ hoạ trong VÀNG", "pass" if bad_zone == 0 else "fail", f"{bad_zone} khung có điểm ảnh ngoài VÀNG (+19 px)")
     add("H", "Phụ đề không chồng chữ nhấn / đồ hoạ", "pass" if overlap == 0 else "fail", f"{overlap} khung chồng")
-    add("I", "Quét điểm ảnh chữ ngoài VÀNG", "pass" if bad_zone == 0 else "fail", f"{bad_zone} khung")
+    if FULL:
+        add("I", "Quét điểm ảnh chữ ngoài VÀNG", "na", "16:9 không có vùng VÀNG cố định (C-K.3) — đo title-safe ở G")
+    else:
+        add("I", "Quét điểm ảnh chữ ngoài VÀNG", "pass" if bad_zone == 0 else "fail", f"{bad_zone} khung")
     # J: dò mặt trên bản chính mỗi 0,5 s
     import cv2
     cas = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
@@ -1871,6 +2105,10 @@ def main():
     mx = float(np.median([q[0] + q[2] / 2 for q in one])) if one else CW / 4
     my = float(np.median([q[1] + q[3] / 2 for q in one])) if one else CH / 6
     med_w = float(np.median([q[2] for q in one])) if one else 60.0
+    if a.aspect != "9:16":
+        import ngang as NG
+        flt = NG.plausible([(t_, [(q[0], q[1], q[0] + q[2], q[1] + q[3]) for q in d]) for t_, d in dets])
+        plaus_at = {t_: [(q[0], q[1], q[2] - q[0], q[3] - q[1]) for q in b] for t_, b in flt}
     for d_t, d in dets:
         sampled += 1
         x, y, w_, h_ = min(d, key=lambda q: (q[0] + q[2] / 2 - mx) ** 2 + (q[1] + q[3] / 2 - my) ** 2)
@@ -1886,17 +2124,34 @@ def main():
             # nhầm là mặt (đã thấy trên B1 4:5 ở 114,5 s và 152,5 s — chữ nằm dưới cằm). Nhiều người cùng khung vẫn được kiểm
             # vì mặt thật của họ cùng tầm.
             # mặt CẬN (to hơn hẳn trung vị, vd cảnh selfie) luôn được tính ở mọi vị trí — không che lỗi thật
-            plausible = [q for q in d if q[2] >= 0.6 * med_w and (abs((q[1] + q[3] / 2) - my) <= 0.6 * med_w or q[2] >= 1.3 * med_w)]
-            for (x, y, w_, h_) in plausible:
-                fx0, fy0, fx1, fy1 = x * 2, y * 2, (x + w_) * 2, (y + h_) * 2
+            # cùng luật lọc với lúc đặt (ngang.plausible), trung vị theo cửa sổ ±3 s (phản biện P2-1)
+            boxes_out = [(x * 2, y * 2, (x + w_) * 2, (y + h_) * 2) for (x, y, w_, h_) in plaus_at.get(d_t, [])]
+            if FULL:  # + mặt dò trên nguồn (đã áp zoom) — bắt được thẻ che KÍN mặt mà bản chính không còn thấy mặt (phản biện P2-3)
+                boxes_out += NG.faces_at(track169, d_t, zoom_at(zooms, int(d_t * FPS)), (ax * CW, ay * CH))
+            for (fx0, fy0, fx1, fy1) in boxes_out:
                 for bx0, by0, bx1, by1 in fb:
-                    X0, X1 = LAY["tx"] + bx0 * LAY["s"], LAY["tx"] + bx1 * LAY["s"]
-                    Y0, Y1 = LAY["ty"] + (by0 - BAND_Y0) * LAY["s"], LAY["ty"] + (by1 - BAND_Y0) * LAY["s"]
+                    if FULL:
+                        X0, X1, Y0, Y1 = bx0, bx1, by0, by1
+                    else:
+                        X0, X1 = LAY["tx"] + bx0 * LAY["s"], LAY["tx"] + bx1 * LAY["s"]
+                        Y0, Y1 = LAY["ty"] + (by0 - BAND_Y0) * LAY["s"], LAY["ty"] + (by1 - BAND_Y0) * LAY["s"]
                     if X0 < fx1 - 6 and fx0 + 6 < X1 and Y0 < fy1 - 6 and fy0 + 6 < Y1:
                         hit = True
             out_red += hit
             if hit:
                 bad_t.append(d_t)
+    if FULL:  # thời điểm bản chính KHÔNG thấy mặt (có thể vì bị thẻ che kín) nhưng nguồn có mặt: đo theo mặt nguồn
+        seen = {round(t_, 2) for t_, _ in dets}
+        for t_, b in track169:
+            if not b or round(t_, 2) in seen or t_ >= dur:
+                continue
+            sampled += 1
+            fb = frame_boxes.get(int(round(t_ * FPS / 15)) * 15, [])
+            z_ = zoom_at(zooms, int(t_ * FPS))
+            fbx = NG.faces_at([(t_, b)], t_, z_, (ax * CW, ay * CH))
+            if any(X0 < fx1 - 6 and fx0 + 6 < X1 and Y0 < fy1 - 6 and fy0 + 6 < Y1 for (fx0, fy0, fx1, fy1) in fbx for (X0, Y0, X1, Y1) in fb):
+                out_red += 1
+                bad_t.append(t_)
     j_name = "Mặt trong vùng ĐỎ ở mọi khung zoom" if a.aspect == "9:16" else "Không chữ / đồ hoạ đè mặt (đo giao hộp mặt với chữ thật)"
     add("J", j_name, ("pass" if out_red == 0 else "fail") if sampled else "unmeasured", f"{sampled} mẫu có mặt, {out_red} mẫu {'lệch ĐỎ' if a.aspect == '9:16' else 'có chữ đè mặt'}{(' tại ' + ', '.join(f'{t:.1f}s' for t in bad_t[:8])) if bad_t else ''}; tâm zoom theo mặt {'(dò được)' if face_ok else '(không dò được, giả định)'}")
     # S, T theo bảng kiểm Skill ESV v0.1.r2 B9 (cân màu chuyển sang V)
@@ -1909,9 +2164,9 @@ def main():
             + (f"; bỏ {len(sfx_info['dropped'])} cú rơi vào khoảng lặng" if sfx_info.get("dropped") else "") + "; SFX chưa được OWNER nghe duyệt (D-14)")
     else:
         add("S", "SFX: mỗi cú ≤ −19 dB so giọng; 0 SFX trên zoom", "na", sfx_info.get("reason", "không có cú SFX"))
-    add("T", "Phụ đề không phát sáng; PA B \\pos(540,1600)", "pass" if a.aspect != "16:9" else "info",
+    add("T", "Phụ đề không phát sáng; PA B \\pos(540,1600)" if a.aspect != "16:9" else "Phụ đề không phát sáng; \\an2\\pos(960,1015) (Ngang R8.1)", "pass",
         ("không lớp phát sáng; đáy phụ đề y1600 @1080x1920 (PA B)" + ("" if a.aspect == "9:16" else f" trong dải chữ thu ×{LAY['s']} cho {a.aspect}")) if a.aspect != "16:9" else
-        "16:9: phụ đề không phát sáng; vị trí theo bố cục dải chữ thu nhỏ (Ngang R8.1 y2030@4K CHƯA DỰNG THỬ trong skill)")
+        "16:9: không lớp phát sáng; Times Italic 48 (96 @4K), đáy y1015 (y2030 @4K) — số skill ghi CHƯA DỰNG THỬ, nay đã dựng thật (1017)")
     add("V", "Cân sáng / màu nhẹ (đo trước, chỉ chỉnh khi lệch rõ)", "info", grade_note)
     add("K", "So với bản trước", "na", "chưa so khung tự động với bản trước (dựng lại từ RAW)")
     add("L", "Độ đọc chữ trắng trên nền sáng", "info", "kiểm bằng mắt khi duyệt")
@@ -1932,7 +2187,8 @@ def main():
     add("P", "Nhạc / B-roll / font có giấy phép", "pass" if p_ok else "blocker",
         f"{font_note}; {m_note}; {b_note}; SFX tổng hợp tại chỗ (không tệp ngoài)" + (f" — {odq}" if p_ok and not font_lic else ""))
     add("Q", "Câu doanh thu / thu nhập / kết quả có dòng 'Kết quả cá nhân, không cam kết'", "pass",
-        "không phát sinh" if not rev_spans else f"{len(rev_spans)} đoạn có dòng phủ suốt câu: {[[round(a_, 1), round(b_, 1)] for a_, b_ in rev_spans][:6]} (vị trí tạm: đỉnh vùng chữ, chờ OWNER chốt)")
+        "không phát sinh" if not rev_spans else f"{len(rev_spans)} đoạn có dòng phủ suốt câu: {[[round(a_, 1), round(b_, 1)] for a_, b_ in rev_spans][:6]}"
+        + (" (hộp đen bo R11 tại x100–628 y861–919, Ngang R8.5)" if FULL else " (vị trí tạm: đỉnh vùng chữ, chờ OWNER chốt)"))
     onscreen = [e.text for e in emph] + [x for d in plan.get("diagrams", []) for x in
                 [d.get("wrong", {}).get("text", ""), d.get("top", {}).get("text", ""), d.get("bottom", {}).get("text", ""), d.get("mid", {}).get("text", "") if d.get("mid") else ""]
                 + [r["text"] for r in d.get("right", [])] + [st["text"] for st in d.get("steps", [])] + [d.get("text", "") if d.get("type") in ("chapter", "quote") else ""]]
@@ -1954,7 +2210,7 @@ def main():
     report = {
         "skill": ({"skillId": "edu-hau-ky-video-916-phu-luc", "name": "Skill ESV", "version": "v0.1.r2 (22/10/2026)", "status": "ACTIVE — OWNER duyệt 22/10/2026 18:14", "sourceUrl": "https://app.notion.com/p/4004ceb9517d81198fc4da9f9339234e", "engine": "esv_render.py (Pillow, không ASS)"}
                   if a.aspect != "16:9" else
-                  {"name": "Skill Edit Video Ngang", "version": "v0.1.r2 (22/10/2026)", "status": "ACTIVE — OWNER duyệt 22/10/2026 18:14", "sourceUrl": "https://app.notion.com/p/4004ceb9517d81849441f9d0f3757538", "engine": "esv_render.py (Pillow, không ASS) — chưa có mẫu khung M1–M6 / K1–K10"}),
+                  {"name": "Skill Edit Video Ngang", "version": "v0.1.r2 (22/10/2026)", "status": "ACTIVE — OWNER duyệt 22/10/2026 18:14", "sourceUrl": "https://app.notion.com/p/4004ceb9517d81849441f9d0f3757538", "engine": "esv_render.py + ngang.py (Pillow, không ASS) — thẻ ảnh M1, M2, M4, M5, M6; CHƯA có M3 (split khúc cuối) và K1–K10"}),
         "input": {"file": os.path.basename(src), **info, "crop": cropf},
         "output": {"master": "master.mp4", "preview": "preview.mp4", "aspect": a.aspect, "width": CW, "height": CH, "crop": cropf, "frames": N, "seconds": round(dur, 3), "cutSilence": bool(keep), "cuts": len(cut_times), "sourceSeconds": round(src_dur, 3),
                    "keep": [[a_, b_] for a_, b_ in keep] if keep else None},
@@ -1962,7 +2218,7 @@ def main():
                        "script": bool(script_text), "scriptFixes": script_fixes[:200]},
         "captions": {"units": len(units)},
         "emphasis": [{"t": round(e.t0, 2), "text": e.text, "kind": e.style} for e in emph],
-        "broll": {"events": brolls, "skipped": []},
+        "broll": {"events": brolls, "skipped": card_skips},
         "diagrams": [{"type": d["type"], "t0": d["t0"], "t1": d.get("t1", d["t0"] + 3.6)} for d in plan.get("diagrams", [])],
         "emphasisDropped": n_emph_plan - len(emph),
         "zoom": {"formula": "r3 smootherstep, một tâm, không zoom thở", "profile": prof, "pace": pace, "events": zooms, "anchor": [round(ax, 3), round(ay, 3)], "faceDetected": face_ok},
