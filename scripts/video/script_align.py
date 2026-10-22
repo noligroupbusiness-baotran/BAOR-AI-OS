@@ -71,6 +71,10 @@ def correct(words, script_text, low_p=0.6, min_run=3):
                 continue
             for k in range(i2 - i1):
                 w, target = words[i1 + k], sw[j1 + k]
+                # từ nghe chắc ở MÉP đoạn khớp, sát chỗ OWNER rẽ khỏi kịch bản ("… phá băng cô ơi" vs "… có không"): giữ nguyên
+                at_edge = (k == 0 and n > 0 and ops[n - 1][0] != "equal") or (k == i2 - i1 - 1 and n + 1 < len(ops) and ops[n + 1][0] != "equal")
+                if at_edge and not (w.get("uncertain") or w.get("p", 1.0) < low_p):
+                    continue
                 if tnorm(w["text"]) != tnorm(target):  # cùng chữ (bỏ dấu giống hệt), khác dấu → dấu theo kịch bản (cả "khong" → "không")
                     old = w["text"]
                     w["text"] = _apply(w, target)
@@ -91,6 +95,9 @@ def correct(words, script_text, low_p=0.6, min_run=3):
             if not left_ok or not right_ok:
                 continue
             if not at_end and abs((i2 - i1) - (j2 - j1)) > 1:
+                continue
+            # mọi từ trong khối phải gần giống kịch bản; có từ khác hẳn → OWNER nói khác, bỏ cả khối ("bán hàng" ≠ "phá băng")
+            if any(difflib.SequenceMatcher(None, a[i1 + k], b[j1 + k]).ratio() < 0.6 for k in range(min(i2 - i1, j2 - j1))):
                 continue
             for k in range(min(i2 - i1, j2 - j1)):
                 w, target = words[i1 + k], sw[j1 + k]
@@ -156,6 +163,13 @@ def self_test():
     w = W("mình khong nên vội vàng quá")
     correct(w, "mình không nên vội vàng quá")
     bad += w[1]["text"] != "không"
+    # 6d) khối có từ khác hẳn kịch bản → bỏ cả khối; từ nghe chắc ở mép chỗ rẽ khỏi kịch bản giữ nguyên
+    w = W("hôm nay mình nói về bán hàng với khách hàng nhé", p={5: 0.5})
+    correct(w, "hôm nay mình nói về phá băng với khách hàng nhé")
+    bad += [x["text"] for x in w][5:7] != ["bán", "hàng"]
+    w = W("chào các bạn hôm nay phá băng cô ơi")
+    correct(w, "chào các bạn hôm nay phá băng có không")
+    bad += w[7]["text"] != "cô"
     # 7) con số / phủ định / tên riêng không tự thay dù nghe chưa chắc
     w = W("giá cỡ 200 nghìn", unc={2})
     correct(w, "giá cỡ 300 nghìn")
