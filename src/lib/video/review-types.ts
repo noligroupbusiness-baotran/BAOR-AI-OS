@@ -170,7 +170,7 @@ export function applyFix(plan: Plan, fix: CommentFix): { plan: Plan; changed: bo
 export function normalizeFix(f: CommentFix): CommentFix {
   const t = f.target;
   return {
-    target: { kind: t.kind, t: Math.round(Number(t.t) * 100) / 100, label: String(t.label ?? "").slice(0, 120), ...(t.type ? { type: String(t.type).slice(0, 20) } : {}), ...(t.field ? { field: String(t.field) } : {}) },
+    target: { kind: t.kind, t: Math.round(Number(t.t) * 100) / 100, label: String(t.label ?? "").slice(0, 120), ...(t.type ? { type: String(t.type).slice(0, 20) } : {}), ...(t.field && f.action === "text" ? { field: String(t.field).slice(0, 40) } : {}) },
     action: f.action,
     ...(f.action === "text" || f.action === "style" ? { value: String(f.value ?? "").replace(/\s+/g, " ").trim().slice(0, 120) } : {}),
   };

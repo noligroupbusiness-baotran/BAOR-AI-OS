@@ -71,14 +71,15 @@ Cập nhật bởi MASTER sau mỗi checkpoint. Nguồn vận hành: `docs/BAOR_
 
 <!-- NEXT:START -->
 Nguồn ủy quyền: chỉ thị OWNER 22/10/2026 "CONTINUE BRAND ENGINE IMPLEMENTATION" + "SHARED OPERATING STANDARD". Mỗi mục đi đủ vòng BUILD (docs/BAOR_OPERATING_MODEL.md §2).
-1. [ĐANG NGHIỆM THU] S2 Video Review (d5461ef): chờ phản biện độc lập + kiểm góp ý trên bản dựng thật v7 của video 1011.
-   Còn mở sau S2: sửa chữ trong sơ đồ chỉ kiểm được qua kế hoạch (báo cáo dựng không ghi chữ sơ đồ); dựng lại vẫn dựng toàn bộ khung hình.
-2. S3 AI biên tập video trong app (không Claude chat): lập kế hoạch bằng mô hình mở chạy tại máy (Qwen2.5-14B-Instruct GGUF, Apache-2.0, llama-server 127.0.0.1:8091,
+1. [ĐANG LÀM] S3 AI biên tập video trong app (không Claude chat): lập kế hoạch bằng mô hình mở chạy tại máy (Qwen2.5-14B-Instruct GGUF, Apache-2.0, llama-server 127.0.0.1:8091,
    tệp ở /Volumes/NOLI_AI_OS/models/), đầu ra theo schema → kiểm chỉ dùng lời nói thật, mốc khớp từ → worker ESV dựng → QA. Claude API chỉ khi OWNER cấp key.
    Phải tự lập + dựng ít nhất 1 video trong app; chưa đẹp thì không báo xong.
-3. S4 Nội dung → Video: gắn kịch bản vào video, test chứng minh dữ liệu kịch bản sang Video Studio (sửa lời nghe theo kịch bản).
-4. S5 nhóm A: bố cục 16:9, dựng thật 4:5 và 1:1, chỉnh màu / da nhẹ, tự thử lại khi dựng lỗi, tải lên nối tiếp được, Insights reach / CPM / CTR, font có giấy phép (OFL).
-5. Sau mỗi nhóm được nghiệm thu: cập nhật docs/brand-engine/BAOR-BRAND-ENGINE-IMPLEMENTATION-PROGRESS.md (công thức chấm cố định, chỉ tính bằng chứng mới).
+   Trạng thái 22/10: scripts/video/ai_plan.py (chưa commit) — câu → mô hình chọn theo số câu → kiểm nguyên văn / mật độ ESV / ảnh kiểm 2 lượt.
+   Lần chạy 1 (14B) trên 1011: 10 chữ nhấn / 4 sơ đồ / 1 ảnh, loại 17 đề xuất — CHƯA ĐẠT (chọn tên / lời đệm, bỏ sót thanh 3 bước).
+   Đang thử: bước phân tích cấu trúc + ví dụ video khác + lọc lời đệm; Qwen2.5-32B-Instruct (Apache-2.0) đang tải về /Volumes/NOLI_AI_OS/models/.
+2. S4 Nội dung → Video: gắn kịch bản vào video, test chứng minh dữ liệu kịch bản sang Video Studio (sửa lời nghe theo kịch bản).
+3. S5 nhóm A: bố cục 16:9, dựng thật 4:5 và 1:1, chỉnh màu / da nhẹ, tự thử lại khi dựng lỗi, tải lên nối tiếp được, Insights reach / CPM / CTR, font có giấy phép (OFL).
+4. Sau mỗi nhóm được nghiệm thu: cập nhật docs/brand-engine/BAOR-BRAND-ENGINE-IMPLEMENTATION-PROGRESS.md (công thức chấm cố định, chỉ tính bằng chứng mới).
 <!-- NEXT:END -->
 
 ## Lỗi P2 trước khi đăng / chạy quảng cáo thật — ĐÃ SỬA 22/10/2026
@@ -93,6 +94,12 @@ Nguồn ủy quyền: chỉ thị OWNER 22/10/2026 "CONTINUE BRAND ENGINE IMPLEM
 - Dự chi quảng cáo giả định mỗi ngày ≤ ngân sách ngày; Meta cho một ngày tiêu tới ~1,75× (trần theo tuần). Ngày Insights theo múi giờ tài khoản quảng cáo, mã so theo giờ VN → khi kết nối thật: đọc `timezone_name` hoặc yêu cầu tài khoản đặt giờ VN.
 
 ## Nhật ký checkpoint
+
+- 22/10/2026 — **S2 Video Review ĐẠT** (d5461ef + de831f0): góp ý theo mốc / đoạn, yêu cầu sửa cụ thể, dựng lại có phạm vi,
+  tự kiểm bản mới theo kế hoạch + đầu ra bộ dựng, so 2 phiên bản, lịch sử không xoá. Chạy thật trên video 1011: góp ý tại 0:01.5
+  "PHÁ BĂNG → Ánh kim" → bản 7 dựng bằng bộ ESV thật (11 phút) → tự kiểm "Bản 7: có chữ nhấn PHÁ BĂNG (shine) ở 1.5 s", bảng kiểm đạt,
+  khung hình so bản 6 / 7 khác đúng chỗ. Phản biện: vòng 1 tìm 1 P1 (hai sơ đồ cùng mốc → sửa nhầm + kiểm sai) + 5 P2, vòng 2 APPROVE.
+  verify:full PASS gắn de831f0 (117 test, 5 E2E). Lỗi thật lộ ra khi chạy app: thời lượng 0:00, cột nút ép nội dung 177 px, lịch sử ghi trùng.
 
 - 22/10/2026 — **S1 Chuẩn vận hành dùng chung** (7d51f68 → 25128a0 → 33dc391 → d5461ef): một nguồn quy định 3 lớp; hook PreToolUse
   guard-bash (138 ca tự kiểm) + SessionStart; git hook pre-commit / pre-push (soát tên tệp theo commit, verify đúng commit);
