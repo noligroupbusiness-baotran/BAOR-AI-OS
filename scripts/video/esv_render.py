@@ -1438,7 +1438,7 @@ def _inter(a, b, m=0.0):
 DIA169 = (696, 376)  # dải sơ đồ 9:16 (VÀNG 916×495) thu ×0,76 vào dải B 16:9 cảnh 1 người (C-K.1: x250–1640, y1020–1780 @4K)
 
 
-def plan_ngang(src, info, cropf, plan, words, emph, dias, fs_events, rev_spans, zooms, A, broll_dir):
+def plan_ngang(src, info, cropf, plan, words, emph, dias, fs_events, rev_spans, zooms, A, broll_dir, m3=None):
     """Dò mặt theo thời gian rồi đặt mọi thứ của khung ngang TRƯỚC khi vẽ: chữ nhấn (trái / phải né mặt), sơ đồ (dải trái / phải),
     thẻ ảnh M1–M6 vào chỗ trống lớn nhất xa mặt (R3.0.1). Trả (cards, bỏ qua kèm lý do, vị trí sơ đồ)."""
     import ngang as NG
@@ -1464,6 +1464,9 @@ def plan_ngang(src, info, cropf, plan, words, emph, dias, fs_events, rev_spans, 
         fb = faces(e.t0, e.t1)
         left_ok = not any(_inter(boxL, q, 30) for q in fb) and not any(a_ < e.t1 and e.t0 < b_ for a_, b_ in rev_spans)
         right_ok = not any(_inter(boxR, q, 30) for q in fb)
+        in_m3 = m3 is not None and m3["t0"] - 0.5 < e.t1 and e.t0 < m3["t1"] + 0.5
+        if in_m3:
+            continue  # M3: chữ nhấn nằm trong thẻ người nói (R3.3.10), không sang phải đè cột ô (phản biện P2-1); J đo trên bản chính
         if not left_ok and right_ok:
             e.right = True
         elif not left_ok:
@@ -1492,8 +1495,12 @@ def plan_ngang(src, info, cropf, plan, words, emph, dias, fs_events, rev_spans, 
         t0, t1 = float(b["t0"]), float(b["t1"])
         m = lib.get(b.get("file"))
         why = None
+        if m3 and any(x["b"] is b for x in m3["tiles"]):
+            continue  # ảnh này là một ô của M3 (split khúc cuối)
         if not m:
             why = "thiếu tệp / giấy phép / từ khoá trong thư viện"
+        elif m3 and m3["t0"] - 0.5 < t1 and t0 < m3["t1"] + 0.5:
+            why = "trong cửa sổ M3 (split khúc cuối)"
         elif any(a_ < t1 and t0 < b_ for a_, b_ in rev_spans):
             why = "đoạn doanh thu / thu nhập / kết quả: 0 ảnh (R5.4)"
         elif any(a_ < t1 and t0 < b_ for a_, b_ in busy):
@@ -1550,11 +1557,14 @@ def plan_ngang(src, info, cropf, plan, words, emph, dias, fs_events, rev_spans, 
 _DARK169 = {}
 
 
-def draw_ngang(t, cards, dias, dia_pos, emph, rev_spans, disc_img, units, sub_cache, fsub_ss):
+def draw_ngang(t, cards, dias, dia_pos, emph, rev_spans, disc_img, units, sub_cache, fsub_ss, split3=None):
     """Một khung lớp chữ 16:9 (1920×1080): thẻ ảnh → sơ đồ (trên nền tối mềm) → chữ nhấn → dòng miễn trừ → phụ đề."""
     import ngang as NG
     layer = Image.new("RGBA", (CW, CH), (0, 0, 0, 0))
     boxes = []
+    base3 = split3.frame(t) if split3 else None
+    if split3:
+        boxes += [("card", b) for b in split3.tiles_frame(t, layer)]
     for c in cards:
         b = c.frame(t, layer)
         if b:
@@ -1604,6 +1614,9 @@ def draw_ngang(t, cards, dias, dia_pos, emph, rev_spans, disc_img, units, sub_ca
         bb = img.getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox()
         if bb:
             boxes.append(("sub", (bb[0], bb[1] + ytop, bb[2], bb[3] + ytop)))
+    if base3 is not None:
+        base3.alpha_composite(layer)
+        return (base3, layer), boxes
     return layer, boxes
 
 
@@ -1759,7 +1772,15 @@ def main():
                 rev_spans.append([u["start"], u["end"]])
     disc_img = label_img("Kết quả cá nhân, không cam kết", 42 if FULL else 48) if rev_spans else None
     # Zoom tính TRƯỚC khi vẽ: 16:9 cần biết mặt nằm đâu sau zoom để thẻ ảnh / sơ đồ / chữ nhấn né mặt
-    blocked = anim_windows + [(float(b["t0"]), float(b["t1"])) for b in plan.get("broll", [])] + [(d["t0"], d["t0"] + 3.6) for d in leaks]
+    m3 = None
+    if FULL:  # M3 split khúc cuối (Ngang R2.3, C3 M3): chọn trước để chặn zoom trong cửa sổ (R3.3.8)
+        import ngang as NG
+        ok_files = {m["file"] for m in broll_library(broll_dir)}
+        busy0 = [(d.t0 - 1.0, d.t1 + 1.0) for d in dias] + [(float(x["t0"]) - 1.0, float(x["t1"]) + 1.0) for x in fs_events] \
+            + [(float(x["t0"]) - 1.0, float(x["t0"]) + 4.6) for x in leaks]  # vệt sáng 3,6 s: nền M3 đục sẽ che mất
+        m3 = NG.pick_m3([b for b in plan.get("broll", []) if b.get("file") in ok_files], rev_spans, busy0, dur)
+    blocked = anim_windows + [(float(b["t0"]), float(b["t1"])) for b in plan.get("broll", [])] + [(d["t0"], d["t0"] + 3.6) for d in leaks] \
+        + ([(m3["t0"] - 1.0, m3["t1"] + 1.0)] if m3 else [])
     if plan.get("pace") in ZOOM_PROFILES:
         prof, pace = plan["pace"], {"why": "biên tập chọn"}
     else:
@@ -1768,9 +1789,19 @@ def main():
     if not zooms:
         zooms = place_zooms([(e.t0, 1.08 if e.style == "shine" else (1.07 if e.style == "blur" else 1.06)) for e in emph], prof, blocked, dur, cut_times)
         zooms = fill_zooms(zooms, units, prof, blocked, dur, cut_times)
-    cards, card_skips, dia_pos, track169 = [], [], {}, []
+    cards, card_skips, dia_pos, track169, split3 = [], [], {}, [], None
     if FULL:
-        cards, card_skips, dia_pos, track169 = plan_ngang(src, info, cropf, plan, words, emph, dias, fs_events, rev_spans, zooms, (ax * CW, ay * CH), broll_dir)
+        cards, card_skips, dia_pos, track169 = plan_ngang(src, info, cropf, plan, words, emph, dias, fs_events, rev_spans, zooms, (ax * CW, ay * CH), broll_dir, m3)
+        if m3:
+            base_vf = ",".join(["fps=30"] + ([cropf] if cropf else []) + GRADE + [f"scale={CW}:{CH}:flags=lanczos", "unsharp=5:5:0.3"])
+            f0 = int(math.floor(m3["t0"] * FPS))
+            while f0 / FPS < m3["t0"]:  # đúng điều kiện vòng vẽ dùng (t = f / FPS ≥ t0), tránh lệch 1 khung do số thực (phản biện P3-1)
+                f0 += 1
+            fcs = [(q[0] + q[2]) / 2 for tt, b in track169 if m3["t0"] <= tt <= m3["t1"] for q in b]
+            lib_ = {m["file"]: m for m in broll_library(broll_dir)}
+            split3 = NG.Split3(m3, NG.VideoReader(src, (f0 - 0.5) / FPS, int((m3["t1"] - f0 / FPS) * FPS) + 2, base_vf),
+                               float(np.median(fcs)) if fcs else ax * CW,
+                               [NG.load_media(os.path.join(broll_dir, x["file"]), NG.M3_TILE, yc=float(lib_[x["file"]].get("yc", 0.38)))[0].resize(NG.M3_TILE) for x in m3["tiles"]])
     frame_boxes = {}
     yy_ = np.arange(BH, dtype=np.float32)
     xx_ = np.arange(W, dtype=np.float32)
@@ -1779,8 +1810,10 @@ def main():
     for f in range(N):
         t = f / FPS
         if FULL:
-            layer, boxes = draw_ngang(t, cards, dias, dia_pos, emph, rev_spans, disc_img, units, sub_cache, fsub_ss)
-            abb = layer.getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox()
+            layer, boxes = draw_ngang(t, cards, dias, dia_pos, emph, rev_spans, disc_img, units, sub_cache, fsub_ss, split3)
+            # title-safe đo trên lớp NỘI DUNG (chữ / thẻ / ô / sơ đồ), không đo nền M3 đục toàn khung
+            abb = (layer[1] if isinstance(layer, tuple) else layer).getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox()
+            layer = layer[0] if isinstance(layer, tuple) else layer
             import ngang as NG
             if abb and (abb[0] < NG.SAFE[0] or abb[1] < NG.SAFE[1] or abb[2] > NG.SAFE[2] or abb[3] > NG.SAFE[3]):
                 bad_zone += 1
@@ -1848,6 +1881,8 @@ def main():
         if f % 150 == 0:
             job.progress("draw", f"Vẽ lớp chữ {f}/{N} khung", 45 + int(25 * f / N))
 
+    if FULL and split3:
+        split3.reader.close()
     # Âm thanh: giọng (lọc nhẹ, nén nhẹ) + nhạc nền có giấy phép (≈ −25 LUFS, nén theo giọng, vào 1 s / ra 2 s)
     # + SFX tổng hợp; tổng chuẩn −16 LUFS, đỉnh −2,5 dBTP.
     job.progress("audio", "Âm thanh: giọng, nhạc nền, SFX, chuẩn −16 LUFS", 72)
@@ -1900,7 +1935,9 @@ def main():
             shown_d = {round(d.t0, 3) for d in dias if d.t1 > d.t0}
             p_sfx = {**plan, "emphasis": [e for e in plan.get("emphasis", []) if round(float(e["t"]), 3) in shown_e],
                      "diagrams": [d for d in plan.get("diagrams", []) if d["type"] not in ("compare", "arrow", "steps", "mechanism", "process", "chapter", "quote") or round(float(d["t0"]), 3) in shown_d]}
-            evs = sfx_events(p_sfx, [{"t0": c.t0} for c in cards])
+            evs = sfx_events(p_sfx, [{"t0": c.t0} for c in cards] + ([{"t0": max(x["t"], m3["t0"] + 0.75 * 0.9)} for x in m3["tiles"]] if m3 else []))
+            if m3:  # mở / đóng split: tiếng ngân nhẹ như chuyển cảnh lớn (R3.3.9 — tiếng trượt tự tạo; giữ tiếng tổng hợp OWNER đã nghe)
+                evs = sorted(evs + [(m3["t0"] + 0.05, "swell", "M3 mở"), (m3["t1"] - 1.0, "swell", "M3 đóng")], key=lambda e: e[0])
         else:
             evs = sfx_events(plan, [b for b in plan.get("broll", []) if not b.get("off")])
         if evs:
@@ -1940,6 +1977,11 @@ def main():
     brolls, b_args, b_fc, last = [], [], "", "bg0"
     if FULL:  # R5.1 / R6.3: 16:9 không B-roll toàn khung — ảnh nằm trong thẻ M1–M6 đã vẽ ở lớp chữ
         brolls = [{"t0": round(c.t0, 2), "t1": round(c.t1, 2), "file": ", ".join(c.files), "template": c.kind, "license": c.license, "source": c.source} for c in cards]
+        if m3:
+            lib_ = {m["file"]: m for m in broll_library(broll_dir)}
+            ends = [m3["tiles"][k + 3]["t"] - 0.3 if k + 3 < len(m3["tiles"]) else m3["t1"] for k in range(len(m3["tiles"]))]
+            brolls += [{"t0": round(x["t"], 2), "t1": round(ends[k], 2), "file": x["file"], "template": "M3", "license": lib_[x["file"]].get("license", ""), "source": lib_[x["file"]].get("source", "")} for k, x in enumerate(m3["tiles"])]
+            brolls.sort(key=lambda b: b["t0"])
     for k, b in enumerate([] if FULL else plan.get("broll", [])):
         fpath = os.path.join(broll_dir, b["file"])
         meta = manifest.get(b["file"], {})
@@ -2126,7 +2168,7 @@ def main():
             # mặt CẬN (to hơn hẳn trung vị, vd cảnh selfie) luôn được tính ở mọi vị trí — không che lỗi thật
             # cùng luật lọc với lúc đặt (ngang.plausible), trung vị theo cửa sổ ±3 s (phản biện P2-1)
             boxes_out = [(x * 2, y * 2, (x + w_) * 2, (y + h_) * 2) for (x, y, w_, h_) in plaus_at.get(d_t, [])]
-            if FULL:  # + mặt dò trên nguồn (đã áp zoom) — bắt được thẻ che KÍN mặt mà bản chính không còn thấy mặt (phản biện P2-3)
+            if FULL and not (m3 and m3["t0"] <= d_t < m3["t1"]):  # + mặt dò trên nguồn (đã áp zoom) — bắt được thẻ che KÍN mặt (phản biện P2-3)
                 boxes_out += NG.faces_at(track169, d_t, zoom_at(zooms, int(d_t * FPS)), (ax * CW, ay * CH))
             for (fx0, fy0, fx1, fy1) in boxes_out:
                 for bx0, by0, bx1, by1 in fb:
@@ -2143,7 +2185,7 @@ def main():
     if FULL:  # thời điểm bản chính KHÔNG thấy mặt (có thể vì bị thẻ che kín) nhưng nguồn có mặt: đo theo mặt nguồn
         seen = {round(t_, 2) for t_, _ in dets}
         for t_, b in track169:
-            if not b or round(t_, 2) in seen or t_ >= dur:
+            if not b or round(t_, 2) in seen or t_ >= dur or (m3 and m3["t0"] <= t_ < m3["t1"]):
                 continue
             sampled += 1
             fb = frame_boxes.get(int(round(t_ * FPS / 15)) * 15, [])
@@ -2210,7 +2252,7 @@ def main():
     report = {
         "skill": ({"skillId": "edu-hau-ky-video-916-phu-luc", "name": "Skill ESV", "version": "v0.1.r2 (22/10/2026)", "status": "ACTIVE — OWNER duyệt 22/10/2026 18:14", "sourceUrl": "https://app.notion.com/p/4004ceb9517d81198fc4da9f9339234e", "engine": "esv_render.py (Pillow, không ASS)"}
                   if a.aspect != "16:9" else
-                  {"name": "Skill Edit Video Ngang", "version": "v0.1.r2 (22/10/2026)", "status": "ACTIVE — OWNER duyệt 22/10/2026 18:14", "sourceUrl": "https://app.notion.com/p/4004ceb9517d81849441f9d0f3757538", "engine": "esv_render.py + ngang.py (Pillow, không ASS) — thẻ ảnh M1, M2, M4, M5, M6; CHƯA có M3 (split khúc cuối) và K1–K10"}),
+                  {"name": "Skill Edit Video Ngang", "version": "v0.1.r2 (22/10/2026)", "status": "ACTIVE — OWNER duyệt 22/10/2026 18:14", "sourceUrl": "https://app.notion.com/p/4004ceb9517d81849441f9d0f3757538", "engine": "esv_render.py + ngang.py (Pillow, không ASS) — thẻ ảnh M1–M6 (M3 split khúc cuối); CHƯA có K1–K10 (skill CHƯA CHỐT)"}),
         "input": {"file": os.path.basename(src), **info, "crop": cropf},
         "output": {"master": "master.mp4", "preview": "preview.mp4", "aspect": a.aspect, "width": CW, "height": CH, "crop": cropf, "frames": N, "seconds": round(dur, 3), "cutSilence": bool(keep), "cuts": len(cut_times), "sourceSeconds": round(src_dur, 3),
                    "keep": [[a_, b_] for a_, b_ in keep] if keep else None},

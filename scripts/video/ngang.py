@@ -504,6 +504,152 @@ class Card:
         return box
 
 
+# ---------------------------------------------------------------- M3 · split screen + cột ảnh (khúc cuối, C3 M3)
+
+M3_CARD = (100, 60, 1300, 940)          # thẻ người nói (200,120)–(2600,1880) @4K, video thu 0,815
+M3_TILE = (470, 283)                    # ô 940×566 @4K
+M3_COL_X, M3_GAP = 1350, 15             # cột x2700 @4K, cách 31 → 15
+M3_OPEN, M3_CLOSE = 0.9, 1.0            # mở 900 ms, đóng 1000 ms (smootherstep)
+
+
+def pick_m3(broll, rev_spans, busy, dur):
+    """Chọn cửa sổ M3 (R2.3: M3 chỉ ở khúc cuối = sau đoạn doanh thu / kết quả, trước câu chào cuối) [AI SUY LUẬN — OWNER chưa nói mốc].
+    Điều kiện cho CẢ CỬA SỔ (không chỉ từng ảnh — phản biện 22/10 P1-2): 2–5 ô ảnh ở 40 % cuối video, sau mọi câu doanh thu;
+    cửa sổ [ô đầu − 0,9 s mở, ô cuối + 2,4 s + 1,0 s đóng] không giao câu doanh thu / khung vẽ / FS / vệt sáng (busy đã gồm ±1 s),
+    dài ≤ 16 s (P1-1), kết thúc ≤ hết video − 2,5 s (câu chào cuối toàn khung); ô cách nhau ≥ 0,9 s (R3.3.7).
+    Ô cuối luôn vào TRƯỚC lúc bắt đầu đóng (P2-2) vì t1 tính từ chính ô cuối. Chọn cửa sổ nhiều ô nhất, sớm nhất. Trả dict hoặc None."""
+    tail = max(0.6 * dur, (max(b for _, b in rev_spans) + 0.3) if rev_spans else 0.0)
+    cand = []
+    for b in sorted(broll, key=lambda x: float(x["t0"])):
+        t = float(b["t0"])
+        if t >= tail + M3_OPEN and (not cand or t - cand[-1]["t"] >= 0.9):
+            cand.append({"t": t, "file": b["file"], "b": b})
+    blocked = list(rev_spans) + list(busy)
+    best = None
+    for i in range(len(cand)):
+        for j in range(min(len(cand), i + 5) - 1, i, -1):
+            t0, t1 = cand[i]["t"] - M3_OPEN, cand[j]["t"] + 2.4 + M3_CLOSE
+            if t1 > dur - 2.5 or t1 - t0 > 16.0 or any(a_ < t1 and t0 < b_ for a_, b_ in blocked):
+                continue
+            if best is None or j - i + 1 > len(best["tiles"]):
+                best = {"t0": t0, "t1": t1, "tiles": cand[i:j + 1]}
+            break
+    return best
+
+
+class VideoReader:
+    """Đọc tuần tự khung của nền đã cắt khung / cân màu (KHÔNG zoom — R3.3.8 không zoom trong cửa sổ M3) cho đoạn [t0, t0 + n/30)."""
+
+    def __init__(self, src, t0, n, vf):
+        self.n, self.k, self.size = n, 0, (CW, CH)
+        self.p = subprocess.Popen(["ffmpeg", "-v", "error", "-ss", f"{t0:.3f}", "-i", src, "-frames:v", str(n), "-vf", vf,
+                                   "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], stdout=subprocess.PIPE)
+        self.last = Image.new("RGB", self.size, (0, 0, 0))
+
+    def read(self):
+        if self.k < self.n:
+            buf = self.p.stdout.read(CW * CH * 3)
+            if len(buf) == CW * CH * 3:
+                self.last = Image.frombuffer("RGB", self.size, buf)
+            elif self.k < self.n - 2:  # hỏng giữa chừng (lọc sai, nguồn ngắn): dừng bản dựng, không ra thẻ đen / đứng hình (phản biện P2-3)
+                self.close()
+                raise RuntimeError(f"M3: đọc khung nền lỗi ở khung {self.k}/{self.n}")
+            self.k += 1
+        return self.last
+
+    def close(self):
+        try:
+            self.p.stdout.close()
+            self.p.kill()
+            self.p.wait(timeout=5)
+        except Exception:
+            pass
+
+
+class Split3:
+    """M3: người nói thu vào thẻ (100,60)–(1300,940) bo R20 viền vàng 55 %, nền gradient navy #0B1426 → #16263F; khung cắt ngang
+    quanh mặt (cố định cả đoạn, không bám từng khung — R3.3.2); cột 3 ô bên phải: ô mới vào trên cùng bằng lộ từ trên (mép mềm,
+    600 ms) + scale 0,96→1, ô cũ trượt xuống 1 bậc (600 ms), ô đáy mờ hết 0,30 s TRƯỚC khi ô mới vào (R3.3.5 → không bao giờ có ô
+    thứ 4); ô chỉ hiện khi thẻ đã thu ≥ 85 % (R3.3.6); đóng: ô mờ tại chỗ, thẻ phóng ra toàn khung."""
+
+    def __init__(self, m3, reader, face_cx, tiles_media):
+        self.t0, self.t1, self.reader = m3["t0"], m3["t1"], reader
+        self.tiles = [dict(x, img=im) for x, im in zip(m3["tiles"], tiles_media)]
+        cw = (M3_CARD[2] - M3_CARD[0]) / (M3_CARD[3] - M3_CARD[1]) * CH  # bề rộng cửa sổ nguồn giữ tỉ lệ thẻ
+        self.win = (min(max(face_cx - cw / 2, 0), CW - cw), cw)
+        g = np.linspace(0, 1, CH)[:, None, None]
+        top, bot = np.array([0x0B, 0x14, 0x26]), np.array([0x16, 0x26, 0x3F])
+        self.bg = Image.fromarray((top * (1 - g) + bot * g).repeat(CW, 1).astype(np.uint8)).convert("RGBA")
+
+    def progress(self, t):
+        return max(0.0, ss((t - self.t0) / M3_OPEN) - ss((t - (self.t1 - M3_CLOSE)) / M3_CLOSE))
+
+    def frame(self, t):
+        """Nền M3 (đục) cho khung t, hoặc None ngoài cửa sổ. Phải gọi đúng thứ tự khung (đọc video tuần tự)."""
+        if t < self.t0 or t >= self.t1:
+            return None
+        src = self.reader.read()
+        p = self.progress(t)
+        L = lambda a, b: a + (b - a) * p  # noqa: E731
+        x0, y0, x1, y1 = L(0, M3_CARD[0]), L(0, M3_CARD[1]), L(CW, M3_CARD[2]), L(CH, M3_CARD[3])
+        wx, ww = self.win
+        sx0, sx1 = L(0, wx), L(CW, wx + ww)
+        out = self.bg.copy()
+        w, h = max(2, int(round(x1 - x0))), max(2, int(round(y1 - y0)))
+        card = src.crop((int(sx0), 0, int(round(sx1)), CH)).resize((w, h), Image.BILINEAR).convert("RGBA")
+        r = int(20 * p)
+        if r:
+            card.putalpha(rounded_mask((w, h), r, 0))
+            sh, pad = drop_shadow(card.getchannel("A"), 0.5 * p, 15, 7)
+            out.alpha_composite(sh, (int(x0) - pad, int(y0) - pad))
+        out.alpha_composite(card, (int(x0), int(y0)))
+        if p > 0.02:
+            rim = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+            ImageDraw.Draw(rim).rounded_rectangle((0, 0, w - 1, h - 1), radius=max(r, 1), outline=GOLD + (int(255 * 0.55 * p),), width=1)
+            out.alpha_composite(rim, (int(x0), int(y0)))
+        return out
+
+    def tiles_frame(self, t, layer):
+        """Cột ô ảnh (vẽ vào lớp nội dung để đo title-safe). Trả các hộp đã vẽ."""
+        if t < self.t0 or t >= self.t1:
+            return []
+        boxes = []
+        ready = self.t0 + 0.75 * M3_OPEN  # ss(0,75) ≈ 0,90 ≥ 85 %: thẻ đã thu đủ
+        close_a = 1 - ss((t - (self.t1 - M3_CLOSE)) / (0.6 * M3_CLOSE))
+        starts = [max(x["t"], ready) for x in self.tiles]
+        shown = [i for i, st in enumerate(starts) if st <= t]
+        for i in shown:
+            st = starts[i]
+            newer = [j for j in shown if j > i]
+            # ô thứ 4 không bao giờ có: ô bị đẩy xuống bậc 3 thì đã mờ hết 0,30 s trước khi ô mới vào
+            if len(newer) >= 3:
+                continue
+            nxt3 = starts[i + 3] if i + 3 < len(starts) else None
+            fade3 = 1.0 if nxt3 is None or len(newer) < 2 else max(0.0, min(1.0, (nxt3 - t) / 0.30))
+            slot = 0.0
+            for j in newer:
+                slot += ss((t - starts[j]) / 0.6)
+            u = ss((t - st) / 0.6)
+            y = M3_CARD[1] + slot * (M3_TILE[1] + M3_GAP)
+            if y + M3_TILE[1] > M3_CARD[3] + 0.5:
+                continue
+            tile = self.tiles[i]["img"].copy()
+            m = Image.new("L", M3_TILE, 0)
+            ImageDraw.Draw(m).rectangle((0, 0, M3_TILE[0], int((M3_TILE[1] + 40) * u)), fill=255)
+            m = ImageChops_multiply(m.filter(ImageFilter.GaussianBlur(14)), rounded_mask(M3_TILE, 12, 0))
+            tile.putalpha(m)
+            sc = 0.96 + 0.04 * u
+            b = paste_tf(layer, tile, M3_COL_X + M3_TILE[0] / 2, y + M3_TILE[1] / 2, sc, 0, min(fade3, close_a))
+            if b:
+                boxes.append(b)
+        return boxes
+
+
+def ImageChops_multiply(a, b):
+    from PIL import ImageChops
+    return ImageChops.multiply(a, b)
+
+
 # ---------------------------------------------------------------- chọn mẫu theo câu (C2.2, CHƯA CHỐT)
 
 TEMPLATE_RULES = [
@@ -626,6 +772,42 @@ def self_test():
                     break
     finally:
         os.remove(img)
+    # M3: chọn đúng khúc cuối; không bao giờ có ô thứ 4; ô không lấn thẻ người nói; mọi khung trong title-safe; nền đục
+    br = [{"t0": 20.0, "t1": 22.0, "file": "a"}, {"t0": 70.0, "t1": 72.0, "file": "b"}, {"t0": 72.0, "t1": 74.0, "file": "c"},
+          {"t0": 73.5, "t1": 75.0, "file": "d"}, {"t0": 75.0, "t1": 76.5, "file": "e"}]
+    m3 = pick_m3(br, [(60.0, 64.0)], [], 90.0)
+    check(m3 is not None and [x["file"] for x in m3["tiles"]] == ["b", "c", "d", "e"], f"M3 khúc cuối: {m3 and [x['file'] for x in m3['tiles']]}")
+    check(pick_m3(br, [(80.0, 85.0)], [], 90.0) is None, "M3 không mở trước / trong đoạn doanh thu")
+    check(pick_m3(br[:2], [], [], 90.0) is None, "M3 cần ≥ 2 ảnh ở khúc cuối")
+    many = pick_m3([{"t0": 70 + k, "t1": 70.5 + k, "file": f"f{k}"} for k in range(15)], [], [], 100.0)
+    check(many and len(many["tiles"]) <= 5 and many["t1"] - many["t0"] <= 16.0, f"P1-1: cửa sổ ≤ 16 s, ≤ 5 ô: {many and (many['t0'], many['t1'], len(many['tiles']))}")
+    dia = pick_m3([{"t0": 70.0, "t1": 71.0, "file": "a"}, {"t0": 76.0, "t1": 77.0, "file": "b"}], [], [(71.5, 74.5)], 100.0)
+    check(dia is None, f"P1-2: sơ đồ nằm trong cửa sổ → không M3: {dia}")
+    late = pick_m3([{"t0": 25.0, "t1": 26.0, "file": "a"}, {"t0": 27.4, "t1": 27.5, "file": "b"}], [], [], 30.0)
+    check(late is None or all(x["t"] <= late["t1"] - M3_CLOSE - 0.5 for x in late["tiles"]), f"P2-2: ô cuối vào trước lúc đóng: {late}")
+
+    class FakeReader:
+        def read(self):
+            return Image.new("RGB", (CW, CH), (90, 120, 150))
+
+        def close(self):
+            pass
+    if m3:
+        sp = Split3(m3, FakeReader(), 960, [Image.new("RGBA", M3_TILE, (200, 50, 50, 255)) for _ in m3["tiles"]])
+        most = 0
+        t = m3["t0"]
+        while t < m3["t1"]:
+            base = sp.frame(t)
+            lay = Image.new("RGBA", (CW, CH), (0, 0, 0, 0))
+            bx = sp.tiles_frame(t, lay)
+            most = max(most, len(bx))
+            check(base is not None and base.getchannel("A").getextrema()[0] == 255, "nền M3 phải đục toàn khung")
+            bb = lay.getchannel("A").point(lambda v: 255 if v > 5 else 0).getbbox()
+            if bb and not (bb[0] >= M3_CARD[2] and bb[0] >= SAFE[0] and bb[1] >= SAFE[1] - 1 and bb[2] <= SAFE[2] and bb[3] <= SUB_FORBID_Y):
+                check(False, f"ô M3 lúc {t:.2f}s lấn thẻ / lọt safe {bb}")
+                break
+            t += 1 / 15
+        check(1 <= most <= 3, f"M3: tối đa 3 ô cùng lúc (thấy {most})")
     print(f"ngang tự kiểm: {'đạt' if not bad else f'{bad} lỗi'}")
     return bad == 0
 

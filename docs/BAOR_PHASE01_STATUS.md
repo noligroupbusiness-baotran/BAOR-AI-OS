@@ -75,10 +75,11 @@ Nguồn ủy quyền: chỉ thị OWNER 22/10/2026 "CONTINUE BRAND ENGINE IMPLEM
    XONG (a33bab7): kho tư liệu → thư viện nhạc / SFX (library_sync.py, chỉ ĐỦ-HỒ-SƠ đúng sha256), Cài đặt › Thư viện nhạc nền
    (OWNER nghe + duyệt), AI chọn loại nhạc; 9:16 theo skill mới (phụ đề PA B y1600 không phát sáng, logo 340 x76/y107, nhạc −24 dB,
    552792 / 241274 LOẠI, SFX ≤ −19 dB đo thật, bảng kiểm S / T).
-   ĐANG (chờ phản biện): 16:9 — scripts/video/ngang.py: thẻ ảnh M1 / M2 / M4 / M5 / M6 cạnh người (né cả người, ±2 s), phụ đề /
-   chữ nhấn / miễn trừ theo số 16:9, sơ đồ né mặt (bỏ nếu mọi chỗ chạm mặt), không logo. Dựng thật 1017: đạt toàn bộ bảng kiểm (J 0/204).
-   CÒN: M3 (split khúc cuối, dùng video người nói thu nhỏ trên nền navy), K1–K10 (skill ghi CHƯA CHỐT — chờ OWNER #134a), mật độ ảnh
-   16:9 thấp (thư viện ảnh chỉ có từ khoá chữ → cần mô tả ảnh), 4K (D-04). Cập nhật docs/brand-engine/…PROGRESS.md sau nghiệm thu.
+   XONG (2a35675 + commit M3): 16:9 — scripts/video/ngang.py: thẻ ảnh M1–M6 (M3 split khúc cuối: thẻ người nói trên nền navy +
+   cột 3 ô) cạnh người, né cả người (±2 s, lọc mặt chung với J), phụ đề / chữ nhấn / miễn trừ theo số 16:9, sơ đồ né mặt, không logo.
+   Dựng thật 1017 đạt toàn bộ bảng kiểm (J 205 mẫu, 0 đè mặt); B1 4:5 không hồi quy (J 381 mẫu, 0).
+   CÒN: K1–K10 (skill ghi CHƯA CHỐT — chờ OWNER #134a); mật độ ảnh 16:9 thấp (thư viện ảnh chỉ có từ khoá chữ → cần mô tả ảnh /
+   mô hình nhìn ảnh mở); 4K (D-04); mọi số mẫu M1–M6 là MẪU THAM KHẢO chờ OWNER xem. Cập nhật docs/brand-engine/…PROGRESS.md.
 2. Nợ đã ghi (không chặn): script_align "Lan"→"Lành" khi kịch bản viết hoa tên khác; negated_before dừng ở "thì" có thể sót
    phủ định mệnh đề sau; mỗi video mới gọi mô hình ~6 phút (hàng đợi chậm khi tải nhiều); minh hoạ AI 0 ảnh qua kiểm
    (thư viện chỉ có mô tả chữ — cân nhắc mô hình nhìn ảnh mở để mô tả ảnh); khôi phục plan.prev-* chưa có nút trong app;

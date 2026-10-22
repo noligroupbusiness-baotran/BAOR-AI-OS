@@ -128,7 +128,8 @@ done
 # 16:9 — Skill Edit Video Ngang v0.1.r2: ảnh chỉ trong THẺ cạnh người nói (M1–M6), không B-roll toàn khung; chữ, thẻ, bóng trong title-safe 5 %
 python3 "$HERE/ngang.py" --self-test
 DUR=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$W/speech.aiff")  # $D bị vòng lặp 4:5 / 1:1 dùng lại làm thư mục
-ffmpeg -v error -y -f lavfi -i "testsrc2=s=1920x1080:r=30:d=$DUR" -i "$W/speech.aiff" -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest "$W/raw169.mp4"
+DUR2=$(python3 -c "print(round(2 * $DUR, 3))")  # dài gấp đôi lời nói: có "khúc cuối" cho M3 (split)
+ffmpeg -v error -y -f lavfi -i "testsrc2=s=1920x1080:r=30:d=$DUR2" -i "$W/speech.aiff" -filter_complex "[1:a]apad=whole_dur=$DUR2[a]" -map 0:v -map "[a]" -c:v libx264 -pix_fmt yuv420p -c:a aac -t $DUR2 "$W/raw169.mp4"
 ffmpeg -v error -y -f lavfi -i "testsrc=s=1200x800" -frames:v 1 "$B/tap-the.jpg"
 ffmpeg -v error -y -f lavfi -i "rgbtestsrc=s=1200x800" -frames:v 1 "$B/tap-the-2.jpg"
 python3 - "$B/manifest.json" <<'P'
@@ -143,7 +144,8 @@ cat > "$W/plan-169.json" <<'J'
  "diagrams": [{"type": "arrow", "t0": 5.6, "t1": 7.6, "top": {"t": 5.7, "text": "hỏi"}, "bottom": {"t": 6.4, "text": "khen"}},
               {"type": "fs06", "t0": 8.6, "t1": 9.8}, {"type": "leak", "t0": 0.2}],
  "broll": [{"t0": 2.0, "t1": 5.0, "file": "goi-dien.jpg", "keyword": "gọi điện"}, {"t0": 11.2, "t1": 13.0, "file": "tap-the.jpg", "keyword": "khách hàng"},
-           {"t0": 6.0, "t1": 7.0, "file": "tap-the-2.jpg"}, {"t0": 13.4, "t1": 14.4, "file": "khong-giay-phep.jpg"}]}
+           {"t0": 6.0, "t1": 7.0, "file": "tap-the-2.jpg"}, {"t0": 13.4, "t1": 14.4, "file": "khong-giay-phep.jpg"},
+           {"t0": 20.0, "t1": 21.5, "file": "tap-the-2.jpg"}, {"t0": 21.6, "t1": 23.0, "file": "goi-dien.jpg"}, {"t0": 23.2, "t1": 24.6, "file": "tap-the.jpg"}]}
 J
 BAOR_LLM_URL=http://127.0.0.1:9 DATA_DIR="$W/data" python3 "$HERE/esv_render.py" --input "$W/raw169.mp4" --job-dir "$W/esv-169" --plan "$W/plan-169.json" --words "$W/esv/words_main.json" --aspect 16:9 2>"$W/esv-169.log" | tail -1
 python3 - "$W/esv-169" <<'P'
@@ -160,6 +162,18 @@ assert ev and all(e.get("template", "").startswith("M") for e in ev), f"16:9: �
 assert "khong-giay-phep.jpg" not in json.dumps(ev), "16:9: ảnh thiếu giấy phép phải bị loại"
 assert any("khung vẽ" in s["reason"] for s in r["broll"]["skipped"]), f"16:9: không đặt thẻ khi đang có khung vẽ: {r['broll']['skipped']}"
 assert r["skill"]["name"] == "Skill Edit Video Ngang"
+m3 = [e for e in ev if e["template"] == "M3"]
+assert len(m3) == 3, f"16:9: khúc cuối phải thành M3 (split) với 3 ô: {ev}"
+fr = subprocess.run(["ffmpeg", "-v", "error", "-ss", str(m3[-1]["t0"] + 0.8), "-i", f"{d}/master.mp4", "-frames:v", "1", "-vf", "crop=8:8:1905:5", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], capture_output=True).stdout
+assert fr and max(fr) < 90 and fr[2] > fr[0], f"16:9: trong M3 góc trên phải phải là nền navy: {list(fr[:3])}"
+nm3 = subprocess.run(["ffmpeg", "-v", "error", "-ss", "3.0", "-i", f"{d}/master.mp4", "-frames:v", "1", "-vf", "crop=8:8:1905:5", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], capture_output=True).stdout
+assert nm3 != fr, "ngoài M3 không có nền navy"
+# trong thẻ người nói phải là VIDEO đang chạy (không đen / không navy / không đứng hình) — phản biện P2-3
+def px(t):
+    return subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{t:.2f}", "-i", f"{d}/master.mp4", "-frames:v", "1", "-vf", "crop=200:120:500:400", "-f", "rawvideo", "-pix_fmt", "gray", "-"], capture_output=True).stdout
+c1, c2 = px(m3[1]["t0"] + 0.5), px(m3[1]["t0"] + 1.3)
+assert c1 and sum(c1) / len(c1) > 50, "thẻ M3 đen / trống"
+assert c1 != c2, "thẻ M3 đứng hình (nền video không chạy)"
 print(f"SELFTEST 16:9 ĐẠT: thẻ {[(e['template'], e['file']) for e in ev]}, bỏ {len(r['broll']['skipped'])}")
 P
 
