@@ -24,9 +24,10 @@ export async function scheduleVideoAction(fd: FormData) {
 
 export async function retryVideoPostAction(fd: FormData) {
   const actor = await requirePermission("manager", "/publishing");
-  const r = retryVideoPost(str(fd, "id"));
+  const note = str(fd, "note");
+  const r = retryVideoPost(str(fd, "id"), note);
   if (!r.ok) return fail("/publishing", r.error ?? "Không thử lại được");
-  logActivity("human", `${actor.name} cho thử đăng lại một bài video.`, "publishing");
+  logActivity("human", `${actor.name} cho thử đăng lại một bài video${note ? ` (xác nhận: ${note.slice(0, 160)})` : ""}.`, "publishing");
   done("/publishing", "Đã xếp đăng lại");
 }
 

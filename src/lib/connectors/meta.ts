@@ -9,7 +9,7 @@ export const GRAPH = "https://graph.facebook.com/v21.0";
 /** Đăng video theo hướng dẫn Video API hiện hành (Resumable Upload API → /{page-id}/videos), bản v26.0. */
 export const GRAPH_VIDEO = "https://graph.facebook.com/v26.0";
 
-type GraphError = { error?: { message?: string; code?: number; type?: string } };
+type GraphError = { error?: { message?: string; code?: number; type?: string; is_transient?: boolean } };
 
 function describe(e: unknown, fallback: string): string {
   if (e && typeof e === "object" && "error" in e) {
@@ -138,6 +138,11 @@ export async function publishPageVideo(ctx: ConnectorContext, req: VideoPublishR
       return { ok: false, ambiguous: true, message: `Đã gửi lệnh đăng nhưng không nhận được phản hồi (${e instanceof Error ? e.message : e}). Kiểm tra trang trước khi thử lại.` };
     }
     if (j3.error?.message?.startsWith("Phản hồi không phải JSON")) return { ok: false, ambiguous: true, message: `${j3.error.message}. Kiểm tra trang trước khi thử lại.` };
+    // Lệnh đăng đã gửi: chỉ coi là "chắc chắn chưa tạo bài" khi Meta từ chối rõ ràng (4xx, không phải lỗi tạm).
+    // 5xx, lỗi tạm (is_transient / mã 1, 2), hoặc 200 mà không có mã bài → Meta CÓ THỂ đã tạo bài → mơ hồ, không tự thử lại.
+    if (r3.status >= 500 || j3.error?.is_transient || j3.error?.code === 1 || j3.error?.code === 2 || (r3.ok && !j3.error && !j3.id)) {
+      return { ok: false, ambiguous: true, message: `${describe(j3, `Meta trả HTTP ${r3.status} sau khi đã gửi lệnh đăng`)}. Bài có thể đã lên: kiểm tra trang trước khi thử lại.` };
+    }
     if (!r3.ok || j3.error || !j3.id) throw j3;
     return { ok: true, externalId: j3.id, message: `Meta nhận video (mã ${j3.id}), đang xác minh.` };
   } catch (e) {

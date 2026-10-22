@@ -2,7 +2,7 @@
 // → đọc chi phí theo ngày → đề xuất tối ưu. Không bao giờ tự tiêu tiền để thử; không đổi quyền tài khoản quảng cáo.
 import { and, eq, isNotNull } from "drizzle-orm";
 import { getDb, schema } from "@/db";
-import { getSetting } from "@/lib/admin";
+import { getSetting, setSetting } from "@/lib/admin";
 import { logActivity } from "@/lib/activity";
 import { sendAlert } from "@/lib/alerts";
 import { campaignRepo } from "@/lib/campaigns/repository";
@@ -204,6 +204,9 @@ export async function syncAdInsights(): Promise<{ updated: number; errors: strin
       out.errors.push(`${ad.name}: ${e instanceof Error ? e.message : e}`);
     }
   }
+  // Báo lỗi Insights để OWNER biết chi tiêu tháng đang có phần ước tính (monthSpentDetail)
+  setSetting("ads.insightsError", out.errors.length ? JSON.stringify({ at: nowIso(), errors: out.errors.slice(0, 5) }) : "");
+  if (out.errors.length) void sendAlert({ level: "warn", title: "Đồng bộ chi phí quảng cáo lỗi", text: out.errors.join("; ").slice(0, 400), href: "/publishing#ads" });
   return out;
 }
 
@@ -275,10 +278,11 @@ export async function enforceAuthorization(): Promise<{ paused: number; failed: 
   const auth = getAuthorization();
   const st = authorizationStatus(auth);
   const active = db.select().from(schema.adCampaigns).where(eq(schema.adCampaigns.status, "active")).all().filter((a) => !isSampleAd(a.id));
-  const stop = async (id: string, reason: string) => {
+  const stop = async (id: string, reason: string): Promise<boolean> => {
     const r = await pauseAd(id, "Hệ thống", reason);
     if (r.ok) out.paused++;
     else out.failed.push(r.error);
+    return r.ok;
   };
   if (!st.active) {
     for (const a of active) await stop(a.id, `Tự dừng: ${st.reason}`);
@@ -287,18 +291,16 @@ export async function enforceAuthorization(): Promise<{ paused: number; failed: 
   const now = Date.now();
   let running = active;
   for (const a of active) {
-    if (a.endAt && Date.parse(a.endAt) < now) {
-      await stop(a.id, "Tự dừng: đã qua ngày kết thúc");
-      running = running.filter((x) => x.id !== a.id);
-    }
+    // Chỉ bỏ khỏi phép dự chi khi đã dừng THẬT; dừng hỏng nghĩa là vẫn đang tiêu tiền.
+    if (a.endAt && Date.parse(a.endAt) < now && (await stop(a.id, "Tự dừng: đã qua ngày kết thúc"))) running = running.filter((x) => x.id !== a.id);
   }
   const spent = monthSpent();
   const days = daysLeftInMonth();
   const projected = () => spent + running.reduce((n, a) => n + a.dailyBudget, 0) * days;
   for (const a of [...running].sort((x, y) => y.dailyBudget - x.dailyBudget)) {
     if (projected() <= auth!.monthlyCapVnd) break;
-    await stop(a.id, `Tự dừng: dự chi tháng vượt trần ${auth!.monthlyCapVnd.toLocaleString("vi-VN")} ₫`);
-    running = running.filter((x) => x.id !== a.id);
+    // Dừng hỏng (vd mất kết nối Meta): quảng cáo vẫn tiêu → giữ trong dự chi và dừng tiếp quảng cáo khác.
+    if (await stop(a.id, `Tự dừng: dự chi tháng vượt trần ${auth!.monthlyCapVnd.toLocaleString("vi-VN")} ₫`)) running = running.filter((x) => x.id !== a.id);
   }
   if (out.failed.length) void sendAlert({ level: "error", title: "Không dừng được quảng cáo vượt ủy quyền", text: out.failed.join("; ").slice(0, 500), href: "/publishing#ads" });
   return out;

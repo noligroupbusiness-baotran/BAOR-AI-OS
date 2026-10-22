@@ -92,18 +92,61 @@ export function daysLeftInMonth(today = vnDate()): number {
   return last - d + 1;
 }
 
+export interface MonthSpentDetail {
+  /** Tổng dùng cho cổng chi tiêu = đo được + ước tính. */
+  total: number;
+  /** Cộng chi tiêu theo ngày đọc từ Meta (Insights). */
+  measured: number;
+  /** Ước cho ngày thiếu số liệu của quảng cáo đang chạy (ngân sách ngày × số ngày thiếu). */
+  estimated: number;
+  estimatedAds: { id: string; name: string; days: number; vnd: number }[];
+}
+
+function dayRange(from: string, to: string): string[] {
+  const out: string[] = [];
+  for (let d = new Date(`${from}T00:00:00Z`); d.toISOString().slice(0, 10) <= to; d.setUTCDate(d.getUTCDate() + 1)) out.push(d.toISOString().slice(0, 10));
+  return out;
+}
+
 /**
- * Đã chi trong tháng: cộng chi tiêu theo ngày đọc từ Meta; quảng cáo chưa có số liệu theo ngày thì cộng tổng đã chi
- * ghi nhận (chặt hơn, không lỏng hơn).
+ * Đã chi trong tháng, không bao giờ tính THIẾU: cộng chi tiêu theo ngày đọc từ Meta; quảng cáo đang chạy mà có ngày chưa có số liệu
+ * (Insights lỗi / chưa đồng bộ) thì ước những ngày đó theo ngân sách ngày; quảng cáo chưa có số liệu theo ngày thì lấy
+ * max(tổng đã chi ghi nhận, ngân sách ngày × số ngày chạy trong tháng).
  */
-export function monthSpent(today = vnDate()): number {
+export function monthSpentDetail(today = vnDate()): MonthSpentDetail {
   const db = getDb();
   const from = `${today.slice(0, 7)}-01`;
   const rows = db.select().from(schema.adSpendDaily).where(and(gte(schema.adSpendDaily.date, from), lte(schema.adSpendDaily.date, today))).all();
   const withDaily = new Set(db.select({ id: schema.adSpendDaily.adId }).from(schema.adSpendDaily).all().map((r) => r.id));
-  const daily = rows.reduce((n, r) => n + r.spend, 0);
-  const legacy = db.select().from(schema.adCampaigns).all().filter((a) => !withDaily.has(a.id) && !isSampleAd(a.id)).reduce((n, a) => n + a.spent, 0);
-  return daily + legacy;
+  const ads = db.select().from(schema.adCampaigns).all().filter((a) => !isSampleAd(a.id));
+  const measured = rows.filter((r) => !isSampleAd(r.adId)).reduce((n, r) => n + r.spend, 0);
+  let estimated = 0;
+  const estimatedAds: MonthSpentDetail["estimatedAds"] = [];
+  for (const a of ads) {
+    // Chỉ ước khi biết ngày bắt đầu chạy (startedAt ghi lúc bật, hoặc startAt của lịch); không biết thì giữ số đã ghi nhận.
+    const startIso = a.startedAt ?? a.startAt;
+    const start = startIso ? startIso.slice(0, 10) : null;
+    const runDays = a.status === "active" && start ? dayRange(start > from ? start : from, today) : [];
+    if (withDaily.has(a.id)) {
+      const have = new Set(rows.filter((r) => r.adId === a.id).map((r) => r.date));
+      const missing = runDays.filter((d) => !have.has(d)).length;
+      if (missing > 0) {
+        estimated += missing * a.dailyBudget;
+        estimatedAds.push({ id: a.id, name: a.name, days: missing, vnd: missing * a.dailyBudget });
+      }
+    } else {
+      const est = runDays.length * a.dailyBudget;
+      if (est > a.spent) {
+        estimated += est;
+        estimatedAds.push({ id: a.id, name: a.name, days: runDays.length, vnd: est });
+      } else estimated += a.spent;
+    }
+  }
+  return { total: measured + estimated, measured, estimated, estimatedAds };
+}
+
+export function monthSpent(today = vnDate()): number {
+  return monthSpentDetail(today).total;
 }
 
 /** Cổng cho một quảng cáo cụ thể, lấy số liệu từ CSDL. */

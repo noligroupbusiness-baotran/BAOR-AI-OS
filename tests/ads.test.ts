@@ -165,3 +165,39 @@ test("giữ chi tiêu trong ủy quyền khi đang chạy: hết hạn thì dừ
   await engine.enforceAuthorization();
   assert.equal(st("ad_small"), "paused", "ủy quyền hết hạn thì dừng mọi quảng cáo đang chạy");
 });
+
+test("P2-3: dừng hỏng (mất kết nối Meta) vẫn tính là đang tiêu → dừng thêm quảng cáo khác cho tới khi dự chi về trong trần", async () => {
+  const d = db.getDb();
+  d.delete(db.schema.adCampaigns).run();
+  const mk = (id: string, daily: number, extra: Record<string, unknown> = {}) => d.insert(db.schema.adCampaigns).values({ id, name: id, objective: "video_views", status: "active", dailyBudget: daily, spent: 0, impressions: 0, clicks: 0, leads: 0, audience: "", ...extra }).run();
+  // Quảng cáo lớn nằm trên Meta, Meta mất kết nối → không dừng được, vẫn tiêu 300k/ngày
+  mk("ad_meta_big", 300_000, { metaCampaignId: "C9", metaAdsetId: "S9", metaAdId: "A9" });
+  mk("ad_mid", 200_000);
+  mk("ad_small", 50_000);
+  auth.saveAuthorization(A({ monthlyCapVnd: 100_000 * auth.daysLeftInMonth(), dailyCapVnd: 300_000 }));
+  const r = await engine.enforceAuthorization();
+  const st = (id: string) => d.select().from(db.schema.adCampaigns).where(eq(db.schema.adCampaigns.id, id)).get()!.status;
+  assert.equal(st("ad_meta_big"), "active", "không đánh dấu dừng giả");
+  assert.equal(r.failed.length, 1);
+  assert.equal(st("ad_mid"), "paused");
+  assert.equal(st("ad_small"), "paused", "quảng cáo không dừng được vẫn tiêu 300k/ngày > trần → phải dừng cả quảng cáo nhỏ");
+});
+
+test("P2-4: chi tiêu tháng không bị tính thiếu khi Insights chưa đồng bộ — ngày thiếu số liệu ước theo ngân sách ngày, có báo ước tính", () => {
+  const d = db.getDb();
+  d.delete(db.schema.adCampaigns).run();
+  d.delete(db.schema.adSpendDaily).run();
+  d.insert(db.schema.adCampaigns).values({ id: "ad_stale", name: "Insights cũ", objective: "video_views", status: "active", dailyBudget: 100_000, spent: 90_000, impressions: 0, clicks: 0, leads: 0, audience: "", metaCampaignId: "C1", metaAdsetId: "S1", metaAdId: "A1", startAt: "2026-10-01T00:00:00+07:00" }).run();
+  d.insert(db.schema.adSpendDaily).values({ adId: "ad_stale", date: "2026-10-01", spend: 90_000, impressions: 1000, clicks: 10, leads: 1, thruplays: 100 }).run();
+  const det = auth.monthSpentDetail("2026-10-21");
+  assert.equal(det.measured, 90_000);
+  assert.equal(det.estimated, 100_000 * 20, "20 ngày (2→21/10) chưa có số liệu, ước theo ngân sách ngày");
+  assert.equal(det.total, 90_000 + 2_000_000);
+  assert.equal(auth.monthSpent("2026-10-21"), det.total);
+  assert.equal(det.estimatedAds[0].days, 20);
+  // Có đủ số liệu thì không ước
+  for (let day = 2; day <= 21; day++) d.insert(db.schema.adSpendDaily).values({ adId: "ad_stale", date: `2026-10-${String(day).padStart(2, "0")}`, spend: 80_000, impressions: 0, clicks: 0, leads: 0, thruplays: 0 }).run();
+  const full = auth.monthSpentDetail("2026-10-21");
+  assert.equal(full.estimated, 0);
+  assert.equal(full.total, 90_000 + 80_000 * 20);
+});

@@ -246,6 +246,24 @@ function pythonBin(): string {
   return process.env.PYTHON_BIN || "python3";
 }
 
+/** Lệnh đọc dòng lệnh của một tiến trình theo hệ điều hành (Windows không có `ps`). */
+export function processCommandLineCmd(platform: NodeJS.Platform, pid: number): [string, string[]] {
+  if (platform === "win32") {
+    return ["powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `(Get-CimInstance Win32_Process -Filter "ProcessId=${Math.trunc(pid)}").CommandLine`]];
+  }
+  return ["ps", ["-o", "command=", "-p", String(Math.trunc(pid))]];
+}
+
+/** Lệnh dừng cả cây tiến trình trên Windows (process.kill(-pid) không có tác dụng ở Windows). */
+export function killTreeCmd(platform: NodeJS.Platform, pid: number): [string, string[]] | null {
+  return platform === "win32" ? ["taskkill", ["/PID", String(Math.trunc(pid)), "/T", "/F"]] : null;
+}
+
+export function isRendererCommandLine(cmd: string): boolean {
+  // Cả hai bộ dựng: pipeline.py (bộ cũ) và esv_render.py (Skill ESV, mặc định).
+  return cmd.includes("pipeline.py") || cmd.includes("esv_render.py");
+}
+
 /** Còn sống VÀ đúng là bộ dựng của mình (sau khi máy khởi động lại, PID có thể đã thuộc tiến trình khác). */
 function isOurRenderer(pid: number | undefined): boolean {
   if (!pid || pid === process.pid) return false;
@@ -254,13 +272,18 @@ function isOurRenderer(pid: number | undefined): boolean {
   } catch {
     return false;
   }
-  const r = spawnSync("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8", timeout: 5_000 });
-  // Cả hai bộ dựng: pipeline.py (bộ cũ) và esv_render.py (Skill ESV, mặc định). Trước đây chỉ nhận pipeline.py → không dừng được bộ ESV.
-  return r.status === 0 && (r.stdout.includes("pipeline.py") || r.stdout.includes("esv_render.py"));
+  const [cmd, args] = processCommandLineCmd(process.platform, pid);
+  const r = spawnSync(cmd, args, { encoding: "utf8", timeout: 10_000, windowsHide: true });
+  return r.status === 0 && isRendererCommandLine(r.stdout ?? "");
 }
 
 /** Dừng cả nhóm tiến trình (python + ffmpeg / whisper con), không để tiến trình con chạy mồ côi. */
 function killGroup(pid: number) {
+  const tree = killTreeCmd(process.platform, pid);
+  if (tree) {
+    spawnSync(tree[0], tree[1], { timeout: 10_000, windowsHide: true });
+    return;
+  }
   try {
     process.kill(-pid, "SIGKILL");
   } catch {

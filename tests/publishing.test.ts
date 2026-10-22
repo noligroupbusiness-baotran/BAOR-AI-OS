@@ -200,3 +200,47 @@ test("chống trùng sau khi nền tảng đã nhận video; lỗi mơ hồ ở 
   assert.equal(post.status, "scheduled");
   assert.match(post.error ?? "", /Chế độ thử/);
 });
+
+test("P2-1: Meta trả 5xx dạng JSON ở bước đăng cuối → coi là mơ hồ, KHÔNG tự thử lại (tránh đăng trùng); lỗi 4xx rõ ràng vẫn được thử lại", async () => {
+  admin.setSetting("publishing.dryRun", "0");
+  const past = new Date(Date.now() - 60_000).toISOString();
+  const real = globalThis.fetch;
+  const run = async (videoId: string, step3: () => Response) => {
+    seedVideo(videoId, "approved");
+    assert.equal(pub.scheduleVideoPosts({ videoId, platforms: ["facebook"], whenIso: past, caption: "Bình luận bên dưới", by: "t" }).ok, true);
+    globalThis.fetch = (async (url: string, init?: RequestInit) => (String(url).endsWith("/111/videos") ? step3() : fakeMeta().f(url, init))) as typeof fetch;
+    try {
+      await pub.publishDueVideoPosts();
+    } finally {
+      globalThis.fetch = real;
+    }
+    return pub.videoPostsFor(videoId)[0];
+  };
+  const j = (b: unknown, status: number) => new Response(JSON.stringify(b), { status, headers: { "Content-Type": "application/json" } });
+  // 500 kèm JSON lỗi (Meta "An unknown error has occurred", code 1, is_transient): bài có thể đã được tạo
+  let post = await run("v_5xx", () => j({ error: { message: "An unknown error has occurred.", code: 1, is_transient: true } }, 500));
+  assert.equal(post.status, "failed", "5xx sau khi gửi lệnh đăng: không xếp thử lại");
+  assert.match(post.error ?? "", /kiểm tra trang/i);
+  // 200 nhưng không có mã bài: cũng mơ hồ
+  post = await run("v_noid", () => j({ success: true }, 200));
+  assert.equal(post.status, "failed");
+  assert.match(post.error ?? "", /kiểm tra trang/i);
+  // 400 lỗi tham số (Meta từ chối rõ ràng, chưa tạo bài): được thử lại tự động
+  post = await run("v_400", () => j({ error: { message: "Invalid parameter", code: 100 } }, 400));
+  assert.equal(post.status, "scheduled", "lỗi rõ ràng 4xx: xếp thử lại");
+});
+
+test("P2-2: bài lỗi mơ hồ chỉ được đăng lại khi người dựng xác nhận đã kiểm tra trang", async () => {
+  const post = pub.videoPostsFor("v_5xx")[0];
+  assert.equal(post.status, "failed");
+  const r1 = pub.retryVideoPost(post.id);
+  assert.equal(r1.ok, false, "thiếu xác nhận thì không cho đăng lại");
+  assert.match(r1.error ?? "", /kiểm tra trang/i);
+  const r2 = pub.retryVideoPost(post.id, "Đã mở trang Facebook lúc 10:05, không thấy bài");
+  assert.equal(r2.ok, true);
+  assert.equal(pub.videoPostsFor("v_5xx")[0].status, "scheduled");
+  // Bài lỗi rõ ràng (không mơ hồ) đăng lại không cần xác nhận
+  const d = db.getDb();
+  d.update(db.schema.scheduledPosts).set({ status: "failed" }).where(eq(db.schema.scheduledPosts.id, pub.videoPostsFor("v_400")[0].id)).run();
+  assert.equal(pub.retryVideoPost(pub.videoPostsFor("v_400")[0].id).ok, true);
+});

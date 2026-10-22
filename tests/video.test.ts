@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { eq } from "drizzle-orm";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "baor-video-"));
@@ -207,4 +208,20 @@ test("bảng biên tập: lưu kế hoạch chỉ nhận khoá đã biết, gi�
   assert.equal(saved.broll[1].file, "anh/x.jpg");
   assert.equal(saved.pace, "VUA");
   assert.equal(jobs.readEditorPlan("v_plan").source, "video");
+});
+
+test("P2-5: nhận diện / dừng bộ dựng trên Windows không dùng `ps` (PowerShell + taskkill /T); macOS / Linux giữ ps + nhóm tiến trình", () => {
+  const [wc, wa] = jobs.processCommandLineCmd("win32", 4242);
+  assert.equal(wc, "powershell.exe");
+  assert.match(wa.join(" "), /ProcessId=4242/);
+  assert.deepEqual(jobs.killTreeCmd("win32", 4242), ["taskkill", ["/PID", "4242", "/T", "/F"]]);
+  assert.deepEqual(jobs.processCommandLineCmd("darwin", 7), ["ps", ["-o", "command=", "-p", "7"]]);
+  assert.equal(jobs.killTreeCmd("linux", 7), null);
+  assert.equal(jobs.isRendererCommandLine("C:\\\\py\\\\python.exe C:\\\\baor\\\\scripts\\\\video\\\\esv_render.py --input=x"), true);
+  assert.equal(jobs.isRendererCommandLine("python other.py"), false);
+  // Chạy thật trên máy này: tiến trình hiện tại (node) không phải bộ dựng
+  const [c, a] = jobs.processCommandLineCmd(process.platform, process.pid);
+  const r = spawnSync(c, a, { encoding: "utf8" });
+  assert.equal(r.status, 0);
+  assert.equal(jobs.isRendererCommandLine(r.stdout), false);
 });

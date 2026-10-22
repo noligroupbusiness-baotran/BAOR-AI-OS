@@ -5,7 +5,8 @@ import { Table, Th, Td } from "@/components/ui/table";
 import { ConfirmAction } from "@/components/campaigns/confirm-action";
 import { CampaignTags, LinkToCampaignForm } from "@/components/campaigns/entity-campaign";
 import { approveAd, proposeAdsAction, pushAdToMetaAction, rejectAd, revokeAdAuthorization, saveAdAuthorization, submitAdForApproval, toggleAd, updateBudget } from "@/lib/actions/ads";
-import { authorizationStatus, daysLeftInMonth, getAuthorization, isSampleAd, monthSpent, vnDate } from "@/lib/ads/authorization";
+import { authorizationStatus, daysLeftInMonth, getAuthorization, isSampleAd, monthSpentDetail, vnDate } from "@/lib/ads/authorization";
+import { getSetting } from "@/lib/admin";
 import { suggestionsFor } from "@/lib/ads/engine";
 import { campaignRepo } from "@/lib/campaigns/repository";
 import { listAds } from "@/lib/queries";
@@ -21,7 +22,15 @@ export function AdsPanel({ edit, link }: { edit?: string; link?: string }) {
   const st = authorizationStatus(auth);
   const ads = listAds().filter((a) => a.status !== "rejected");
   const adLinks = campaignRepo.linksForEntities("ad", ads.map((a) => a.id));
-  const spent = monthSpent();
+  const spentDetail = monthSpentDetail();
+  const spent = spentDetail.total;
+  const insightsError = (() => {
+    try {
+      return JSON.parse(getSetting("ads.insightsError") || "null") as { at: string; errors: string[] } | null;
+    } catch {
+      return null;
+    }
+  })();
   const activeDaily = ads.filter((a) => a.status === "active" && !isSampleAd(a.id)).reduce((n, a) => n + a.dailyBudget, 0);
   const projected = spent + activeDaily * daysLeftInMonth();
 
@@ -48,6 +57,10 @@ export function AdsPanel({ edit, link }: { edit?: string; link?: string }) {
             <div className="text-ink">{st.reason}</div>
             {auth && <div className="text-ink-2">Đặt bởi {auth.authorizedBy}{auth.allowAutoScale ? " · AI được tự tăng trong trần" : " · AI chỉ đề xuất, không tự tăng"}</div>}
             <div className="text-ink-2">Đã chi tháng này <span className="num font-semibold text-ink">{formatNumber(spent)} ₫</span></div>
+            {spentDetail.estimated > 0 && (
+              <div className="text-[12px] text-amber">Trong đó {formatNumber(spentDetail.estimated)} ₫ là ước tính (ngân sách ngày × ngày chưa có số liệu Insights): {spentDetail.estimatedAds.map((x) => `${x.name} ${x.days} ngày`).join(", ")}. Cổng chi tiêu dùng số này để không tính thiếu.</div>
+            )}
+            {insightsError && <div className="text-[12px] text-brick">Đồng bộ Insights lỗi lúc {insightsError.at.slice(0, 16).replace("T", " ")}: {insightsError.errors.slice(0, 2).join("; ")}</div>}
             <div className="text-ink-2">Dự chi tới cuối tháng <span className={cn("num font-semibold", auth && projected > auth.monthlyCapVnd ? "text-brick" : "text-ink")}>{formatNumber(projected)} ₫</span></div>
             {auth && <ConfirmAction action={revokeAdAuthorization} fields={{}} label="Thu hồi ủy quyền" title="Thu hồi ủy quyền ngân sách?" message="Mọi quảng cáo đang chạy sẽ bị tạm dừng; không quảng cáo nào bật được cho tới khi ủy quyền lại." confirmLabel="Thu hồi" danger />}
           </div>

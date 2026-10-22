@@ -209,7 +209,7 @@ export async function publishDueVideoPosts(): Promise<{ published: number; teste
         // Lỗi mơ hồ sau khi đã gửi lệnh đăng: không tự thử lại (có thể đã lên), để người kiểm tra trang.
         const retry = attempts < MAX_ATTEMPTS && !res.ambiguous;
         db.update(schema.scheduledPosts)
-          .set(retry ? { status: "scheduled", error: `${res.message} (thử lại lần ${attempts + 1})`, scheduledFor: new Date(Date.now() + attempts * 10 * 60_000).toISOString() } : { status: "failed", error: res.message })
+          .set(retry ? { status: "scheduled", error: `${res.message} (thử lại lần ${attempts + 1})`, scheduledFor: new Date(Date.now() + attempts * 10 * 60_000).toISOString() } : { status: "failed", error: res.ambiguous ? `${AMBIGUOUS_MARK} ${res.message}` : res.message })
           .where(eq(schema.scheduledPosts.id, post.id))
           .run();
         finishRun(runId, false, res.message);
@@ -273,12 +273,22 @@ export async function syncVideoPostMetrics(): Promise<{ updated: number; errors:
   return out;
 }
 
-export function retryVideoPost(postId: string): { ok: boolean; error?: string } {
+/** Đánh dấu lỗi mơ hồ (lệnh đăng đã gửi, không rõ bài đã lên chưa): đăng lại phải có xác nhận đã kiểm tra trang. */
+export const AMBIGUOUS_MARK = "[CẦN KIỂM TRA TRANG]";
+
+export function isAmbiguousFailure(p: { status: string; error: string | null }): boolean {
+  return p.status === "failed" && (p.error ?? "").startsWith(AMBIGUOUS_MARK);
+}
+
+export function retryVideoPost(postId: string, checkedNote?: string): { ok: boolean; error?: string } {
   const db = getDb();
   const p = db.select().from(schema.scheduledPosts).where(eq(schema.scheduledPosts.id, postId)).get();
   if (!p?.videoId) return { ok: false, error: "Không tìm thấy bài video" };
   if (p.status !== "failed") return { ok: false, error: "Chỉ thử lại bài lỗi" };
   if (p.externalId) return { ok: false, error: `Nền tảng đã nhận video (mã ${p.externalId}). Kiểm tra trang, không đăng lại để tránh trùng.` };
+  if (isAmbiguousFailure(p) && (checkedNote ?? "").trim().length < 10) {
+    return { ok: false, error: "Lần trước lệnh đăng đã gửi nhưng không rõ kết quả: kiểm tra trang trước, rồi ghi xác nhận (vd 'Đã mở trang lúc 10:05, không thấy bài')." };
+  }
   db.update(schema.scheduledPosts).set({ status: "scheduled", scheduledFor: nowIso(), error: null }).where(eq(schema.scheduledPosts.id, postId)).run();
   return { ok: true };
 }
