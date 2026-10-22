@@ -71,9 +71,10 @@ Cập nhật bởi MASTER sau mỗi checkpoint. Nguồn vận hành: `docs/BAOR_
 
 <!-- NEXT:START -->
 Nguồn ủy quyền: chỉ thị OWNER 22/10/2026 "CONTINUE BRAND ENGINE IMPLEMENTATION" + "SHARED OPERATING STANDARD". Mỗi mục đi đủ vòng BUILD (docs/BAOR_OPERATING_MODEL.md §2).
-1. [ĐANG LÀM] S5 nhóm A — đã xong (chờ phản biện gộp): Insights reach / CPM / CTR (bcedf4e), tự thử lại khi dựng lỗi (528a3be),
-   font có giấy phép Tinos OFL (98f48a5). Còn: dựng thật 4:5 và 1:1 + bố cục 16:9 trên video thật, chỉnh màu / da nhẹ,
-   tải lên nối tiếp được (resumable), rồi E2E cho từng phần.
+1. [ĐANG LÀM] S5 nhóm A — xong: Insights reach / CPM / CTR, tự thử lại khi dựng lỗi, font Tinos OFL, tải lên nối tiếp (chờ phản biện),
+   dựng thật 4:5 và 1:1 trên B1 (đạt toàn bộ bảng kiểm), cân sáng / màu nhẹ đo trước (giữ màu da), kiểm J ghi mốc + lọc tay dò nhầm.
+   CÒN: bố cục 16:9 né mặt ở cảnh cận (1017: J bắt 13 mẫu đè mặt thật 75–84 s) — dời chữ nhấn / dòng "Kết quả cá nhân…" theo vị trí
+   mặt từng đoạn; cập nhật docs/brand-engine/BAOR-BRAND-ENGINE-IMPLEMENTATION-PROGRESS.md (tạm tính 53,3%).
 2. Nợ đã ghi (không chặn): script_align "Lan"→"Lành" khi kịch bản viết hoa tên khác; negated_before dừng ở "thì" có thể sót
    phủ định mệnh đề sau; mỗi video mới gọi mô hình ~6 phút (hàng đợi chậm khi tải nhiều); minh hoạ AI 0 ảnh qua kiểm
    (thư viện chỉ có mô tả chữ — cân nhắc mô hình nhìn ảnh mở để mô tả ảnh); khôi phục plan.prev-* chưa có nút trong app;
