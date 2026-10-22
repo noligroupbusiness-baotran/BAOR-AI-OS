@@ -16,12 +16,14 @@ let db: typeof import("../src/db");
 let auth: typeof import("../src/lib/ads/authorization");
 let mm: typeof import("../src/lib/ads/meta-marketing");
 let engine: typeof import("../src/lib/ads/engine");
+let config: typeof import("../src/lib/connectors/config");
 
 before(async () => {
   db = await import("../src/db");
   auth = await import("../src/lib/ads/authorization");
   mm = await import("../src/lib/ads/meta-marketing");
   engine = await import("../src/lib/ads/engine");
+  config = await import("../src/lib/connectors/config");
 });
 
 const A = (over: Partial<import("../src/lib/ads/authorization").AdAuthorization> = {}) => ({ monthlyCapVnd: 3_000_000, dailyCapVnd: 200_000, validUntil: "2099-12-31", adAccountId: "act_1", autoPauseCplAbove: 50_000, allowAutoScale: false, authorizedBy: "OWNER", authorizedAt: "", note: "", ...over });
@@ -267,4 +269,32 @@ test("P2-4 (phản biện vòng 2): tự dừng giữ phần đã tiêu hôm nay
   // Quảng cáo chưa từng chạy (nháp / chờ duyệt) không bị ước
   d.update(db.schema.adCampaigns).set({ status: "pending_approval", startedAt: null }).where(eq(db.schema.adCampaigns.id, "ad_P")).run();
   assert.equal(auth.monthSpentDetail("2026-10-21").estimated, 0);
+});
+
+test("P2-4 (vòng 3): quảng cáo chỉ có trong app không bị ước; quảng cáo Meta vừa tự dừng khi Insights cũ vẫn giữ phần hôm nay chưa đo", async () => {
+  const d = db.getDb();
+  d.delete(db.schema.adCampaigns).run();
+  d.delete(db.schema.adSpendDaily).run();
+  const base = { objective: "video_views", spent: 0, impressions: 0, clicks: 0, leads: 0, audience: "" };
+  d.insert(db.schema.adCampaigns).values({ ...base, id: "ad_local", name: "Nội bộ", status: "paused", dailyBudget: 500_000, startedAt: "2026-10-01T02:00:00Z" }).run();
+  assert.equal(auth.monthSpentDetail("2026-10-21").estimated, 0, "không nằm trên Meta → không tiêu tiền thật");
+  // M (Meta, Insights cũ 5 giờ, 300k/ngày) bị dừng vì vượt trần; phần hôm nay chưa đo (300k) + L 100k × ngày còn lại vượt trần → dừng cả L
+  d.delete(db.schema.adCampaigns).run();
+  const stale = new Date(Date.now() - 5 * 3_600_000).toISOString();
+  d.insert(db.schema.adCampaigns).values({ ...base, id: "ad_M", name: "M", status: "active", dailyBudget: 300_000, startedAt: stale, insightsAt: stale, metaCampaignId: "C1", metaAdsetId: "S1", metaAdId: "A1" }).run();
+  d.insert(db.schema.adCampaigns).values({ ...base, id: "ad_L", name: "L", status: "active", dailyBudget: 100_000, startedAt: new Date().toISOString() }).run();
+  config.writeIntegrationConfig("meta_ads", { accessToken: "token-gia", adAccountId: "act_1" });
+  d.update(db.schema.integrations).set({ connected: true }).where(eq(db.schema.integrations.key, "meta_ads")).run();
+  auth.saveAuthorization(A({ monthlyCapVnd: 100_000 * auth.daysLeftInMonth() + 150_000, dailyCapVnd: 300_000 }));
+  const real = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify({ success: true }), { status: 200, headers: { "Content-Type": "application/json" } })) as typeof fetch;
+  try {
+    await engine.enforceAuthorization();
+  } finally {
+    globalThis.fetch = real;
+    d.update(db.schema.integrations).set({ connected: false }).where(eq(db.schema.integrations.key, "meta_ads")).run();
+  }
+  const st = (id: string) => d.select().from(db.schema.adCampaigns).where(eq(db.schema.adCampaigns.id, id)).get()!.status;
+  assert.equal(st("ad_M"), "paused");
+  assert.equal(st("ad_L"), "paused", "300k có thể đã tiêu hôm nay trước khi dừng → vẫn vượt trần");
 });

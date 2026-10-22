@@ -113,6 +113,12 @@ export interface MonthSpentDetail {
  * Nền dự chi cho một TẬP quảng cáo sẽ còn chạy (id → ngân sách ngày dùng trong dự chi): chỉ quảng cáo trong tập mới được trừ
  * phần hôm nay (tối đa ngân sách của nó). Quảng cáo đã dừng giữ nguyên số đã tiêu hôm nay.
  */
+/** Đồng bộ Insights thành công cuối đã cũ (> 2 giờ): phần hôm nay của quảng cáo chưa đo được đầy đủ. */
+export function insightsStale(a: { insightsAt: string | null; startedAt: string | null }, now = Date.now()): boolean {
+  const at = a.insightsAt ?? a.startedAt;
+  return !at || now - Date.parse(at) > 2 * 3_600_000;
+}
+
 export function projectionBaseFor(d: Pick<MonthSpentDetail, "total" | "todayByAd">, running: Map<string, number>): number {
   let base = d.total;
   for (const [id, budget] of running) base -= Math.min(d.todayByAd[id] ?? 0, budget);
@@ -154,7 +160,8 @@ export function monthSpentDetail(today = vnDate()): MonthSpentDetail {
     // Số đã ghi nhận nhưng không có dòng theo ngày (nhập tay / dữ liệu cũ): giữ nguyên, tính là đo được, không phải ước.
     if (!withDaily.has(a.id) && a.spent > 0) measured += a.spent;
     // Đang chạy, hoặc đã từng chạy rồi tạm dừng: ngày đã chạy mà Insights chưa phủ vẫn phải ước (dừng không xoá tiền đã tiêu).
-    const ran = a.status === "active" || (a.status === "paused" && !!a.startedAt);
+    // Chỉ quảng cáo nằm trên Meta mới tiêu tiền thật (quảng cáo chỉ có trong app không có chi tiêu để ước).
+    const ran = !!a.metaCampaignId && (a.status === "active" || (a.status === "paused" && !!a.startedAt));
     if (!ran) continue;
     const coverIso = a.insightsAt ?? a.startedAt ?? a.startAt;
     if (!coverIso) continue;
@@ -162,7 +169,7 @@ export function monthSpentDetail(today = vnDate()): MonthSpentDetail {
     const days = dayRange(cover > from ? cover : from, yesterday);
     // Quảng cáo đã dừng không nằm trong dự chi → hôm nay cũng phải ước nếu lần đồng bộ thành công cuối đã cũ (> 2 giờ):
     // có thể nó đã tiêu trong hôm nay trước khi dừng mà chưa đo được.
-    if (a.status !== "active" && cover <= today && Date.now() - Date.parse(coverIso) > 2 * 3_600_000) days.push(today);
+    if (a.status !== "active" && cover <= today && insightsStale({ insightsAt: a.insightsAt, startedAt: coverIso })) days.push(today);
     let vnd = 0;
     let n = 0;
     for (const d of days) {

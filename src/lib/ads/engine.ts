@@ -8,7 +8,7 @@ import { sendAlert } from "@/lib/alerts";
 import { campaignRepo } from "@/lib/campaigns/repository";
 import { connectorContext, readIntegrationConfig } from "@/lib/connectors/config";
 import { getUpload, uploadPath } from "@/lib/uploads";
-import { authorizationStatus, daysLeftInMonth, gateForAd, getAuthorization, isSampleAd, monthSpentDetail, projectionBaseFor, vnDate } from "./authorization";
+import { authorizationStatus, daysLeftInMonth, gateForAd, getAuthorization, insightsStale, isSampleAd, monthSpentDetail, projectionBaseFor, vnDate } from "./authorization";
 import { createPausedDraft, fetchDailyInsights, setDailyBudget, setDeliveryStatus, setObjectStatus, type Audience } from "./meta-marketing";
 
 const nowIso = () => new Date().toISOString();
@@ -303,7 +303,10 @@ export async function enforceAuthorization(): Promise<{ paused: number; failed: 
   const detail = monthSpentDetail();
   const days = daysLeftInMonth();
   // Tính lại nền theo tập còn chạy sau mỗi lần dừng: quảng cáo đã dừng giữ nguyên phần đã tiêu hôm nay.
-  const projected = () => projectionBaseFor(detail, new Map(running.map((a) => [a.id, a.dailyBudget]))) + running.reduce((n, a) => n + a.dailyBudget, 0) * days;
+  // Quảng cáo trên Meta vừa dừng trong lượt này khi Insights đã cũ: phần hôm nay chưa đo (tới mức ngân sách) vẫn tính.
+  const unmeasuredToday = () =>
+    active.filter((a) => a.metaCampaignId && !running.includes(a) && insightsStale(a)).reduce((n, a) => n + Math.max(0, a.dailyBudget - (detail.todayByAd[a.id] ?? 0)), 0);
+  const projected = () => projectionBaseFor(detail, new Map(running.map((a) => [a.id, a.dailyBudget]))) + unmeasuredToday() + running.reduce((n, a) => n + a.dailyBudget, 0) * days;
   for (const a of [...running].sort((x, y) => y.dailyBudget - x.dailyBudget)) {
     if (projected() <= auth!.monthlyCapVnd) break;
     // Dừng hỏng (vd mất kết nối Meta): quảng cáo vẫn tiêu → giữ trong dự chi và dừng tiếp quảng cáo khác.
