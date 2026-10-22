@@ -55,6 +55,9 @@ export interface VideoJob {
   status: JobStatus;
   sourceUploadId: string;
   cutSilence: boolean;
+  /** Số lần đã tự thử lại sau lỗi tạm thời (jobs.ts failJob) và lỗi lần trước. */
+  attempt?: number;
+  lastError?: string;
   /** Biên tập AI lập lại kế hoạch ở lần dựng này (bỏ kế hoạch cũ; esv_render --ai-plan). */
   aiPlan?: boolean;
   aspect?: Aspect;

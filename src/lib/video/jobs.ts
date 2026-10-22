@@ -602,6 +602,16 @@ function verifyCommentsLater(videoId: string) {
   return import("./review").then((m) => m.verifyComments(videoId)).catch(() => 0);
 }
 
+export const MAX_RENDER_RETRIES = 1;
+
+/**
+ * Lỗi dựng có đáng tự thử lại không. KHÔNG thử lại: người dùng dừng, mất tệp nguồn, quá thời gian (thử lại cũng quá),
+ * video đã xoá. Còn lại (bộ dựng sập giữa chừng, thiếu bộ nhớ, ffmpeg lỗi, không ra bản chính) là lỗi tạm thời.
+ */
+export function isRetryableRenderError(msg: string): boolean {
+  return !/Đã dừng theo yêu cầu|Không tìm thấy tệp nguồn|Dựng quá \d+ phút|Đã xoá video|không hợp lệ/i.test(msg);
+}
+
 function failJob(job: VideoJob, msg: string, runId: string, title: string) {
   const now = new Date().toISOString();
   // Video đã bị xoá (deleteVideo dừng bộ dựng rồi chuyển thư mục đi): không ghi lại job.json vào chỗ cũ.
@@ -609,8 +619,18 @@ function failJob(job: VideoJob, msg: string, runId: string, title: string) {
     finishRun(runId, false, `Đã xoá video “${title}”, dừng dựng`);
     return;
   }
+  // Lỗi tạm thời (bộ dựng sập, thiếu bộ nhớ, không ra bản chính…): tự xếp hàng dựng lại MỘT lần, không báo lỗi ngay
+  if (isRetryableRenderError(msg) && (job.attempt ?? 0) < MAX_RENDER_RETRIES) {
+    const attempt = (job.attempt ?? 0) + 1;
+    writeJob({ ...job, status: "queued", attempt, lastError: msg.slice(0, 600), pid: undefined, startedAt: undefined, runId });
+    getDb().update(schema.videos).set({ note: `Dựng lỗi, tự thử lại lần ${attempt}: ${msg.slice(0, 200)}`, updatedAt: now }).where(eq(schema.videos.id, job.videoId)).run();
+    finishRun(runId, false, `${msg} → tự thử lại lần ${attempt}`);
+    logActivity("system", `Dựng “${title}” bản ${job.version} lỗi (${msg.slice(0, 120)}) — tự thử lại lần ${attempt}.`, "video");
+    void kickWorker();
+    return;
+  }
   writeJob({ ...job, status: "error", finishedAt: now, error: msg.slice(0, 600), runId });
-  getDb().update(schema.videos).set({ note: `Dựng lỗi: ${msg.slice(0, 300)}`, updatedAt: now }).where(eq(schema.videos.id, job.videoId)).run();
+  getDb().update(schema.videos).set({ note: `Dựng lỗi${job.attempt ? ` (đã tự thử lại ${job.attempt} lần)` : ""}: ${msg.slice(0, 300)}`, updatedAt: now }).where(eq(schema.videos.id, job.videoId)).run();
   finishRun(runId, false, msg);
   logActivity("system", `Dựng “${title}” bản ${job.version} lỗi: ${msg.slice(0, 160)}`, "video");
   void sendAlert({ level: "error", title: "Dựng video lỗi", text: `${title}: ${msg.slice(0, 300)}`, href: "/video-studio" });
