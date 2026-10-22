@@ -121,3 +121,58 @@ export async function rerenderVideoAction(fd: FormData) {
   if (!r.ok) return fail(back, r.error);
   done(back, `Đang dựng bản ${r.version}`);
 }
+
+// ---------------------------------------------------------------- Video Review: góp ý theo mốc thời gian
+
+function readFix(fd: FormData): import("@/lib/video/review-types").CommentFix | null | "bad" {
+  const raw = str(fd, "fix");
+  if (!raw) return null;
+  try {
+    const f = JSON.parse(raw);
+    return f && typeof f === "object" ? f : "bad";
+  } catch {
+    return "bad";
+  }
+}
+
+export async function addVideoCommentAction(fd: FormData) {
+  const actor = await currentActor();
+  const back = str(fd, "back") || "/video-studio";
+  const fix = readFix(fd);
+  if (fix === "bad") return fail(back, "Yêu cầu sửa không đọc được");
+  const { addComment } = await import("@/lib/video/review");
+  const tEnd = str(fd, "tEnd");
+  const r = addComment({ videoId: str(fd, "id"), version: Number(str(fd, "version")), t: Number(str(fd, "t")), tEnd: tEnd ? Number(tEnd) : null, text: str(fd, "text"), fix, by: actor.name });
+  if (!r.ok) return fail(back, r.error);
+  done(back, "Đã lưu góp ý");
+}
+
+export async function setVideoCommentFixAction(fd: FormData) {
+  const actor = await currentActor();
+  const back = str(fd, "back") || "/video-studio";
+  const fix = readFix(fd);
+  if (fix === "bad") return fail(back, "Yêu cầu sửa không đọc được");
+  const { setCommentFix } = await import("@/lib/video/review");
+  const r = setCommentFix(str(fd, "commentId"), fix, actor.name);
+  if (!r.ok) return fail(back, r.error);
+  done(back, fix ? "Đã đặt yêu cầu sửa" : "Đã bỏ yêu cầu sửa");
+}
+
+export async function applyVideoCommentsAction(fd: FormData) {
+  const actor = await currentActor();
+  const back = str(fd, "back") || "/video-studio";
+  const { applyComments } = await import("@/lib/video/review");
+  const r = applyComments(str(fd, "id"), actor.name);
+  if (!r.ok) return fail(back, r.error);
+  done(back, `Đã áp ${r.applied} yêu cầu sửa, đang dựng bản ${r.version}`);
+}
+
+export async function resolveVideoCommentAction(fd: FormData) {
+  const actor = await currentActor();
+  const back = str(fd, "back") || "/video-studio";
+  const { resolveComment } = await import("@/lib/video/review");
+  const reopen = str(fd, "reopen") === "1";
+  const r = resolveComment(str(fd, "commentId"), actor.name, reopen);
+  if (!r.ok) return fail(back, r.error);
+  done(back, reopen ? "Đã mở lại góp ý" : "Đã xác nhận góp ý xong");
+}

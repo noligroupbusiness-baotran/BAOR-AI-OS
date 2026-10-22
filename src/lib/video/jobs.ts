@@ -219,7 +219,7 @@ export function startVideoJob(videoId: string, by: string, opts: { aspect: Aspec
 }
 
 /** Dựng lại từ cùng nguồn thành bản mới (vN+1). Bản trước giữ nguyên. */
-export function rerenderVideo(videoId: string, by: string, cutSilence?: boolean, frame?: { aspect: Aspect; framing?: Framing }): { ok: true; version: number } | { ok: false; error: string } {
+export function rerenderVideo(videoId: string, by: string, cutSilence?: boolean, frame?: { aspect: Aspect; framing?: Framing }, feedbackNote?: string): { ok: true; version: number } | { ok: false; error: string } {
   const prev = latestJob(videoId);
   const v = getDb().select().from(schema.videos).where(eq(schema.videos.id, videoId)).get();
   if (!prev || !v) return { ok: false, error: "Video này không có nguồn để dựng lại" };
@@ -234,7 +234,8 @@ export function rerenderVideo(videoId: string, by: string, cutSilence?: boolean,
   writeJob({ videoId, version, status: "queued", sourceUploadId: prev.job.sourceUploadId, cutSilence: cutSilence ?? prev.job.cutSilence, aspect, framing, prompt: prev.job.prompt ?? "", createdAt: now, by });
   getDb().update(schema.videos).set({ status: "editing", version, updatedAt: now, note: `Đang dựng bản ${version}.` }).where(eq(schema.videos.id, videoId)).run();
   campaignRepo.syncEntityStatus("video", videoId, "editing");
-  addVideoFeedback({ videoId, version, kind: "rerender", note: `Dựng lại từ cùng nguồn${(cutSilence ?? prev.job.cutSilence) ? ", cắt khoảng lặng" : ""}, khung ${aspect}${framing ? ` (tâm ${framing.x !== undefined ? Math.round(framing.x * 100) + "%" : "mặt"}, ${framing.y !== undefined ? Math.round(framing.y * 100) + "%" : "giữa"}, phóng ×${(framing.zoom ?? 1).toFixed(2)})` : ""}`, by });
+  // Một lần dựng = một dòng lịch sử (lý do cụ thể do nơi gọi đưa, vd "Dựng lại theo 2 góp ý: …")
+  addVideoFeedback({ videoId, version, kind: "rerender", note: feedbackNote ?? `Dựng lại từ cùng nguồn${(cutSilence ?? prev.job.cutSilence) ? ", cắt khoảng lặng" : ""}, khung ${aspect}${framing ? ` (tâm ${framing.x !== undefined ? Math.round(framing.x * 100) + "%" : "mặt"}, ${framing.y !== undefined ? Math.round(framing.y * 100) + "%" : "giữa"}, phóng ×${(framing.zoom ?? 1).toFixed(2)})` : ""}`, by });
   logActivity("human", `${by} yêu cầu dựng lại “${v.title}” thành bản ${version}.`, "video");
   void kickWorker();
   return { ok: true, version };
@@ -521,6 +522,12 @@ function finishJob(job: VideoJob, dir: string, runId: string, title: string, sta
   writeJob({ ...job, status: "done", startedAt: started, finishedAt: now, runId, masterUploadId: upId });
   finishRun(runId, true, `Dựng xong “${title}” bản ${job.version} → Chờ kiểm tra`, 1);
   logActivity("ai", `Agent Edit Video dựng xong “${title}” bản ${job.version} theo ${engineLabel()}, chờ kiểm tra.`, "video");
+  void verifyCommentsLater(job.videoId);
+}
+
+/** Bản mới xong / lỗi: kiểm các góp ý đang chờ bản này (Video Review). Nạp động để tránh vòng import jobs ↔ review. */
+function verifyCommentsLater(videoId: string) {
+  return import("./review").then((m) => m.verifyComments(videoId)).catch(() => 0);
 }
 
 function failJob(job: VideoJob, msg: string, runId: string, title: string) {
@@ -535,6 +542,7 @@ function failJob(job: VideoJob, msg: string, runId: string, title: string) {
   finishRun(runId, false, msg);
   logActivity("system", `Dựng “${title}” bản ${job.version} lỗi: ${msg.slice(0, 160)}`, "video");
   void sendAlert({ level: "error", title: "Dựng video lỗi", text: `${title}: ${msg.slice(0, 300)}`, href: "/video-studio" });
+  void verifyCommentsLater(job.videoId);
 }
 
 // ---------------------------------------------------------------- bảng biên tập (kế hoạch cấp video)

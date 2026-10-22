@@ -59,7 +59,8 @@ const SEG_RULES = [
   [/^gh\s+api\b.*\s(-X|--method)(=|\s*)(POST|PUT|PATCH|DELETE)\b/i, "gh api chỉ dùng để đọc: ghi qua API đi vòng mọi git hook (ref, ghép, tệp, bảo vệ nhánh)."],
   [/^gh\s+api\b.*\s(-f|-F|--field|--raw-field|--input)(=|\s)/, "gh api có tham số ghi (-f / -F / --input) = ghi dữ liệu GitHub: không cho."],
   [/^gh\s+api\s+graphql\b/, "gh api graphql không dùng (có thể là mutation ghép / đổi ref)."],
-  [/^gh\s+(repo\s+(delete|edit|rename|archive|sync)|ruleset|secret|variable|release\s+(create|delete|edit))\b/, "Đổi cấu hình / bí mật / bản phát hành repo là việc của OWNER."],
+  [/^gh\s+(repo\s+(delete|edit|rename|archive|sync)|ruleset\s+(?!list|view|check)|secret\s+(set|delete|remove)|variable\s+(set|delete|remove)|release\s+(create|delete|edit))\b/, "Đổi cấu hình / bí mật / bản phát hành repo là việc của OWNER."],
+  [/^gh\s+(workflow\s+(run|enable)|run\s+rerun)\b/, "Không tự chạy workflow GitHub (deploy.yml có workflow_dispatch = triển khai production)."],
   // ---- stage / commit
   [/^git add\b(.*\s)?(-A|--al[a-z]*|\.|:\/|:\/:|\*|-u|--up[a-z]*)(?=\s|$)/, "Repo công khai: stage đúng từng tệp, không `git add -A` / `git add .` / `-u`."],
   [/^git add\b.*\s(\.\/)?(data(-[a-z]+)?(\/|(?=\s|$))|docs\/brand-engine|docs\/?(\*|(?=\s|$))|artifacts\/|\S*\.env(\.(?!example(?=\s|$))\S+)?(?=\s|$))/, "Không stage dữ liệu thật / tài liệu nội bộ (data/, docs/brand-engine/, .env). Stage từng tệp docs cụ thể."],
@@ -230,6 +231,13 @@ const CASES = [
   ["git commit --amend --no-edit", "feature/x", false],
   ["git push origin feature/brand-cp01 2>&1 | tail -9", "feature/brand-cp01", false],
   ["cat .githooks/pre-push", "feature/x", false],
+  // phản biện vòng 3
+  ["gh workflow run deploy.yml --ref feature/x", "feature/x", true],
+  ["gh workflow run \"Deploy to VPS\"", "feature/x", true],
+  ["gh run rerun 123", "feature/x", true],
+  ["gh secret list", "feature/x", false],
+  ["gh secret set VPS_HOST -b x", "feature/x", true],
+  ["gh run list --workflow CI --limit 3", "feature/x", false],
 ];
 
 if (process.argv.includes("--self-test")) {

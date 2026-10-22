@@ -1,6 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
+
+/** Điều khiển từ ngoài (Video Review): tua tới mốc, đọc mốc đang xem. */
+export type PlayerControl = { seek: (t: number) => void; time: () => number; pause: () => void };
 
 const fmt = (s: number) => {
   if (!Number.isFinite(s)) return "0:00";
@@ -11,7 +14,7 @@ const fmt = (s: number) => {
 // Trình phát với thanh điều khiển riêng (phát, thời gian, tua, âm lượng, ⛶) — một nút phóng to duy nhất ở thanh dưới.
 // ⛶: thử toàn màn hình thật; nơi chặn toàn màn hình (vd khung trình duyệt nhúng trong app) thì phủ kín cửa sổ.
 // Thoát: bấm lại nút (✕), phím Esc, hoặc bấm vùng nền đen.
-export function VideoPlayer({ src, hdSrc }: { src: string; hdSrc?: string }) {
+export function VideoPlayer({ src, hdSrc, control, onTime, label }: { src: string; hdSrc?: string; control?: Ref<PlayerControl>; onTime?: (t: number) => void; label?: string }) {
   const wrap = useRef<HTMLDivElement>(null);
   const vid = useRef<HTMLVideoElement>(null);
   const [mode, setMode] = useState<"normal" | "native" | "fill">("normal");
@@ -21,6 +24,14 @@ export function VideoPlayer({ src, hdSrc }: { src: string; hdSrc?: string }) {
   const [muted, setMuted] = useState(false);
   const [hd, setHd] = useState(false);
   const resume = useRef<{ t: number; play: boolean } | null>(null);
+  useImperativeHandle(control, () => ({
+    seek: (to: number) => {
+      const v = vid.current;
+      if (v) v.currentTime = Math.max(0, Math.min(to, Number.isFinite(v.duration) ? v.duration : to));
+    },
+    time: () => vid.current?.currentTime ?? 0,
+    pause: () => vid.current?.pause(),
+  }));
 
   // Đổi chất lượng: giữ đúng chỗ đang xem và trạng thái phát.
   function setQuality(next: boolean) {
@@ -30,6 +41,11 @@ export function VideoPlayer({ src, hdSrc }: { src: string; hdSrc?: string }) {
     setHd(next);
   }
 
+  // Video có thể đã nạp xong thông tin TRƯỚC khi React gắn sự kiện (trang dựng sẵn ở máy chủ): đọc lại thời lượng khi gắn.
+  useEffect(() => {
+    const v = vid.current;
+    if (v && v.readyState >= 1 && Number.isFinite(v.duration)) setD(v.duration);
+  }, []);
   useEffect(() => {
     const onFs = () => setMode((m) => (document.fullscreenElement ? "native" : m === "native" ? "normal" : m));
     document.addEventListener("fullscreenchange", onFs);
@@ -83,7 +99,12 @@ export function VideoPlayer({ src, hdSrc }: { src: string; hdSrc?: string }) {
           onDoubleClick={toggleFull}
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}
-          onTimeUpdate={(e) => setT(e.currentTarget.currentTime)}
+          aria-label={label}
+          onTimeUpdate={(e) => {
+            setT(e.currentTarget.currentTime);
+            onTime?.(e.currentTarget.currentTime);
+          }}
+          onSeeked={(e) => onTime?.(e.currentTarget.currentTime)}
           onLoadedMetadata={(e) => {
             const v = e.currentTarget;
             setD(v.duration);

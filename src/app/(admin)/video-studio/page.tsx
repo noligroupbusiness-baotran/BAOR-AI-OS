@@ -18,6 +18,8 @@ import { AutoRefresh } from "@/components/video/auto-refresh";
 import { VideoPlayer } from "@/components/video/video-player";
 import { FramingEditor } from "@/components/video/framing-editor";
 import { PlanEditor } from "@/components/video/plan-editor";
+import { CompareVersions, ReviewWorkspace } from "@/components/video/review-workspace";
+import { comparableVersions, listComments, verifyComments } from "@/lib/video/review";
 import { listContent } from "@/lib/queries";
 import { fileUrl } from "@/lib/uploads";
 import { listVideos } from "@/lib/videos/repository";
@@ -111,6 +113,10 @@ export default async function VideoStudioPage({ searchParams }: { searchParams: 
               const hasPreview = !!report && jv!.files.includes("preview.mp4");
               const versions = jobVersions(v.id);
               const feedback = isOpen ? listVideoFeedback(v.id) : [];
+              // Video Review: kiểm góp ý đang chờ bản mới (lặp an toàn; bộ dựng cũng gọi khi xong), rồi đọc danh sách
+              if (isOpen) verifyComments(v.id);
+              const comments = isOpen ? listComments(v.id) : [];
+              const compare = isOpen ? comparableVersions(v.id) : [];
               const approveBlockers = v.status === "pending_approval" ? blockersForVideo(v) : [];
               const canRerender = jv && !running && jv.job.status !== "setup" && (v.status === "review" || v.status === "needs_changes" || v.status === "editing" || jv.job.status === "error");
               return (
@@ -148,7 +154,25 @@ export default async function VideoStudioPage({ searchParams }: { searchParams: 
                     )}
                     {jv?.job.status === "error" && <p className="mt-1 text-[12px] text-brick">{jv.job.error}</p>}
                     {v.note && !running && <p className="mt-1 text-[12px] text-ink">{v.note}</p>}
-                    {hasPreview ? <VideoPlayer src={jobFile(v.id, jv!.job.version, "preview.mp4")} hdSrc={v.uploadId ? fileUrl(v.uploadId) : undefined} /> : v.uploadId && <VideoPlayer src={fileUrl(v.uploadId)} />}
+                    {hasPreview && isOpen ? (
+                      <ReviewWorkspace
+                        videoId={v.id}
+                        version={jv!.job.version}
+                        back={withCampaignContext(`/video-studio?tab=${tab}&open=${v.id}`, ctx)}
+                        src={jobFile(v.id, jv!.job.version, "preview.mp4")}
+                        hdSrc={v.uploadId ? fileUrl(v.uploadId) : undefined}
+                        plan={readEditorPlan(v.id).plan}
+                        keep={report?.output.keep ?? null}
+                        comments={comments}
+                        canApply={!!canRerender}
+                      />
+                    ) : hasPreview ? (
+                      <VideoPlayer src={jobFile(v.id, jv!.job.version, "preview.mp4")} hdSrc={v.uploadId ? fileUrl(v.uploadId) : undefined} />
+                    ) : (
+                      v.uploadId && <VideoPlayer src={fileUrl(v.uploadId)} />
+                    )}
+                    {isOpen && !hasPreview && comments.length > 0 && <p className="mt-1 text-[12px] text-ink-2">{comments.filter((c) => c.status === "planned").length} góp ý đang chờ bản dựng mới; kết quả kiểm hiện khi dựng xong.</p>}
+                    {isOpen && compare.length >= 2 && <div className="mt-3"><CompareVersions videoId={v.id} versions={compare} /></div>}
 
                     {isOpen && jv && !running && jv.job.status !== "setup" && (
                       <div className="mt-3">

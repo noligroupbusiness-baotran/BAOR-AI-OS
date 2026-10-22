@@ -705,6 +705,32 @@ export const videoFeedback = sqliteTable(
   (t) => [index("video_feedback_video_idx").on(t.videoId)],
 );
 
+// Góp ý theo mốc thời gian trên một bản dựng (Video Review). Chỉ thêm và đổi trạng thái, không xoá (lịch sử phản hồi).
+// Mốc t / tEnd theo bản dựng (đã cắt lặng); srcT / srcTEnd theo video gốc để áp vào kế hoạch biên tập.
+// fix: yêu cầu sửa cụ thể { target: { kind, t, text }, action: off | text | style, value } — trống = chỉ ghi chú cho người dựng.
+export const videoComments = sqliteTable(
+  "video_comments",
+  {
+    id: text("id").primaryKey(),
+    videoId: text("video_id").notNull(),
+    version: integer("version").notNull(),
+    t: real("t").notNull(),
+    tEnd: real("t_end"),
+    srcT: real("src_t").notNull(),
+    srcTEnd: real("src_t_end"),
+    text: text("text").notNull(),
+    fix: text("fix"),
+    status: text("status").notNull().default("open"), // open | planned | applied | failed | resolved
+    appliedVersion: integer("applied_version"),
+    verifyNote: text("verify_note").notNull().default(""),
+    by: text("by").notNull().default(""),
+    at: text("at").notNull(),
+    resolvedBy: text("resolved_by"),
+    resolvedAt: text("resolved_at"),
+  },
+  (t) => [index("video_comments_video_idx").on(t.videoId)],
+);
+
 // CP06: đề xuất cải tiến từ số liệu thật (nội dung, video, quảng cáo, kiến thức, skill dựng video).
 // Mọi đề xuất là GIẢ THUYẾT kèm căn cứ và cỡ mẫu cho tới khi OWNER chấp nhận. Không tự sửa Second Brain hay skill.
 export const improvementProposals = sqliteTable(
