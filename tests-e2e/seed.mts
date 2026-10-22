@@ -65,5 +65,5 @@ db.insert(schema.contentItems).values({ id: "c_e2e_script", title: "E2E · Kịc
   draft: "1. Mở đầu (0–5 giây)\nLời thoại: Hôm nay mình chào hỏi phá băng\n", createdAt: now, updatedAt: now } as typeof schema.contentItems.$inferInsert).run();
 // Quảng cáo đã có số liệu Insights (không nằm trên Meta, không tiêu tiền) để kiểm hiển thị reach / CPM / CTR
 db.insert(schema.adCampaigns).values({ id: "ad_e2e_metrics", name: "E2E · Quảng cáo có số liệu", objective: "video_views", status: "paused", dailyBudget: 100000,
-  spent: 120000, impressions: 5000, clicks: 60, reach: 6100, leads: 3, audience: "" } as typeof schema.adCampaigns.$inferInsert).run();
+  spent: 120000, impressions: 5000, clicks: 60, reach: 4000, leads: 3, audience: "" } as typeof schema.adCampaigns.$inferInsert).run();
 console.log(`E2E seed: ${VID} (v1, v2) trong ${dataDir}`);

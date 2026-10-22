@@ -609,7 +609,7 @@ export const MAX_RENDER_RETRIES = 1;
  * video đã xoá. Còn lại (bộ dựng sập giữa chừng, thiếu bộ nhớ, ffmpeg lỗi, không ra bản chính) là lỗi tạm thời.
  */
 export function isRetryableRenderError(msg: string): boolean {
-  return !/Đã dừng theo yêu cầu|Không tìm thấy tệp nguồn|Dựng quá \d+ phút|Đã xoá video|không hợp lệ/i.test(msg);
+  return !/Đã dừng theo yêu cầu|Không tìm thấy tệp nguồn|Dựng quá \d+ phút|Đã xoá video|không hợp lệ|Thiếu font|Chỉ nhận|không đọc được/i.test(msg);
 }
 
 function failJob(job: VideoJob, msg: string, runId: string, title: string) {

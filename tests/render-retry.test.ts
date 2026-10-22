@@ -26,6 +26,7 @@ test("phân loại lỗi: tạm thời thì thử lại; dừng tay / mất ngu�
   assert.equal(jobs.isRetryableRenderError("Đã dừng theo yêu cầu"), false);
   assert.equal(jobs.isRetryableRenderError("Không tìm thấy tệp nguồn trong kho tải lên"), false);
   assert.equal(jobs.isRetryableRenderError("Dựng quá 90 phút, đã dừng"), false);
+  assert.equal(jobs.isRetryableRenderError("Thiếu font Times New Roman Italic.ttf"), false, "lỗi cấu hình chắc chắn lặp lại");
 });
 
 test("bộ dựng sập (python giả) → tự xếp hàng thử lại đúng 1 lần, lần 2 vẫn lỗi thì báo lỗi kèm số lần đã thử", async () => {

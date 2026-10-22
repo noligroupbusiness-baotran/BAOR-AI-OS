@@ -48,5 +48,5 @@ test("Quảng cáo: hiện reach / CPM / CTR / tần suất từ số liệu Ins
   await login(page);
   await page.goto("/publishing#ads");
   const row = page.getByRole("row", { name: /E2E · Quảng cáo có số liệu/ });
-  await expect(row).toContainText("Reach 6.100 · CPM 24.000 ₫ · CTR 1,20% · tần suất 0,82");
+  await expect(row).toContainText("Reach 4.000 · CPM 24.000 ₫ · CTR 1,20% · tần suất 1,25");
 });

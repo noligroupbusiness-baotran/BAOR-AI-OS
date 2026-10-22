@@ -73,6 +73,11 @@ def _font_os(name, size):
     raise RuntimeError(f"Thiếu font {name}")
 
 
+def half(n):
+    """Nửa kích thước, làm tròn xuống số CHẴN: H.264 (yuv420p) bắt buộc chiều chẵn — 4:5 1080x1350 → 540x674, không phải 675."""
+    return (n // 2) // 2 * 2
+
+
 def rgb(h):
     h = h.lstrip("#")
     return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
@@ -1528,7 +1533,7 @@ def main():
           f"aresample=192000,alimiter=limit=0.70:attack=1:release=80:level=false,aresample=48000,afade=t=out:st={max(0.0, dur - 0.7):.3f}:d=0.7", "-c:a", "pcm_s24le", final])
 
     # Bản chính: khung + zoom chỉ nền → logo → lớp chữ
-    job.progress("encode", "Xuất bản chính 1080x1920", 78)
+    job.progress("encode", f"Xuất bản chính {CW}x{CH}", 78)
     # Zoom MƯỢT (ESV mục 6): biến đổi phối cảnh dưới điểm ảnh, làm trên khung gốc (vd 1216x2160) rồi mới thu về 1080x1920.
     # Không làm tròn kích thước theo từng khung (làm tròn gây giật 1–2 px). q = 1 − 1/z(t); tâm zoom A = mặt.
     blocked = anim_windows + [(float(b["t0"]), float(b["t1"])) for b in plan.get("broll", [])] + [(d["t0"], d["t0"] + 3.6) for d in leaks]
@@ -1618,7 +1623,7 @@ def main():
 
     job.progress("preview", "Bản xem nhanh 540p, ảnh mốc", 88)
     preview = job.p("preview.mp4")
-    P.sh(["ffmpeg", "-v", "error", "-y", "-i", master, "-vf", f"scale={CW // 2}:{CH // 2}:flags=lanczos", "-c:v", "libx264", "-profile:v", "main", "-level", "3.1", "-preset", "slow", "-crf", "26",
+    P.sh(["ffmpeg", "-v", "error", "-y", "-i", master, "-vf", f"scale={half(CW)}:{half(CH)}:flags=lanczos", "-c:v", "libx264", "-profile:v", "main", "-level", "3.1", "-preset", "slow", "-crf", "26",
           "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-af", "aresample=192000,alimiter=limit=0.66:attack=1:release=60:level=false,aresample=48000", "-movflags", "+faststart", preview])
     # AAC có thể đẩy đỉnh vượt vài dB ở vài chỗ (đã gặp: 0,0 dBTP dù bộ chặn ra −3,6): đo lại, vượt thì nén lại riêng tiếng với ngưỡng thấp hơn
     lim = 0.66
@@ -1692,7 +1697,7 @@ def main():
     cas = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
     out_red, sampled, dets = 0, 0, []
     for k in range(int(dur * 2)):
-        r = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{k / 2:.2f}", "-i", master, "-frames:v", "1", "-vf", f"scale={CW // 2}:{CH // 2}", "-f", "image2pipe", "-vcodec", "png", "-"], capture_output=True)
+        r = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{k / 2:.2f}", "-i", master, "-frames:v", "1", "-vf", f"scale={half(CW)}:{half(CH)}", "-f", "image2pipe", "-vcodec", "png", "-"], capture_output=True)
         if not r.stdout:
             continue
         g = cv2.imdecode(np.frombuffer(r.stdout, np.uint8), cv2.IMREAD_GRAYSCALE)
@@ -1731,7 +1736,10 @@ def main():
     b_note = "; ".join(f"minh hoạ {b['t0']:.1f}–{b['t1']:.1f}s {b['file']}" for b in brolls) or "không minh hoạ"
     m_note = f"nhạc {music_info['file']}" if music_info.get("used") else f"không nhạc ({music_info['reason']})"
     pending_media = [b["file"] for b in brolls if "chờ OWNER" in str(b.get("license", ""))] + ([music_info["file"]] if music_info.get("used") and "chờ OWNER" in str(music_info["license"]) else [])
-    _, font_name, font_lic = font_source("Times New Roman Italic.ttf")
+    # Kiểm CẢ HAI font bộ dựng dùng (thường + đậm): thiếu một nửa bộ Tinos thì phần đậm rơi về Times → chưa có giấy phép
+    srcs = [font_source(n) for n in ("Times New Roman Italic.ttf", "Times New Roman Bold Italic.ttf")]
+    font_name = " + ".join(x[1] for x in srcs)
+    font_lic = srcs[0][2] if all(x[2] for x in srcs) else ""
     font_ok = bool(font_lic) or bool(od.get("fontLicense"))
     p_ok = font_ok and not pending_media
     font_note = f"font {font_name}: {font_lic}" if font_lic else f"font {font_name}: {'OWNER xác nhận' if od.get('fontLicense') else 'chưa có giấy phép thương mại'}"

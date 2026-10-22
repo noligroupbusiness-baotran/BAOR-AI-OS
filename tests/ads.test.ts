@@ -323,7 +323,8 @@ test("Insights: reach trọn đời đọc riêng (không cộng theo ngày), CP
   const m = metrics.adMetrics(ad);
   assert.equal(m.cpm, 24_000, "120.000 ₫ / 5.000 lượt × 1.000");
   assert.equal(m.ctr, 0.012);
-  assert.equal(m.frequency, 0.82);
+  assert.equal(m.frequency, null, "reach trọn đời (6.100) > lượt hiển thị đã đồng bộ (5.000): khác khung thời gian → không hiện");
+  assert.equal(metrics.adMetrics({ spent: 100, impressions: 5000, clicks: 10, reach: 4000 }).frequency, 1.25);
   assert.equal(m.cpc, 2_000);
   assert.equal(metrics.pct(m.ctr), "1,20%");
   assert.deepEqual(metrics.adMetrics({ spent: 0, impressions: 0, clicks: 0, reach: 0 }), { cpm: null, ctr: null, frequency: null, cpc: null });

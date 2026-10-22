@@ -109,6 +109,9 @@ export function toolCheck(): ToolStatus {
     python: ok(py, ["-c", "import numpy, PIL"]),
     whisper: ok(py, ["-c", "import whisper"]),
     opencv: ok(py, ["-c", "import cv2; cv2.CascadeClassifier"]),
-    fonts: fontDirs.some((d) => d && fs.existsSync(path.join(d, "Times New Roman Italic.ttf")) && fs.existsSync(path.join(d, "Times New Roman Bold Italic.ttf"))),
+    // Bộ dựng ESV dùng Tinos (OFL, kèm trong repo) khi có; không có thì Times New Roman của hệ điều hành
+    fonts:
+      ["Tinos-Italic.ttf", "Tinos-BoldItalic.ttf"].every((f) => fs.existsSync(path.join(process.cwd(), "public", "fonts", f))) ||
+      fontDirs.some((d) => d && fs.existsSync(path.join(d, "Times New Roman Italic.ttf")) && fs.existsSync(path.join(d, "Times New Roman Bold Italic.ttf"))),
   };
 }

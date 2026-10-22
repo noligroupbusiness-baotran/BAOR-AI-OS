@@ -16,7 +16,9 @@ export function adMetrics(a: { spent: number; impressions: number; clicks: numbe
   return {
     cpm: imp ? Math.round((a.spent / imp) * 1000) : null,
     ctr: imp ? a.clicks / imp : null,
-    frequency: imp && a.reach > 0 ? Math.round((imp / a.reach) * 100) / 100 : null,
+    // reach là trọn đời trên Meta, lượt hiển thị là tổng các ngày đã đồng bộ: reach > lượt hiển thị nghĩa là hai số khác
+    // khung thời gian (quảng cáo chạy trước khi app đồng bộ) → không hiện tần suất sai (< 1)
+    frequency: imp && a.reach > 0 && a.reach <= imp ? Math.round((imp / a.reach) * 100) / 100 : null,
     cpc: a.clicks > 0 ? Math.round(a.spent / a.clicks) : null,
   };
 }

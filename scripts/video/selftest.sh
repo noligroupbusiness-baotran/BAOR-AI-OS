@@ -84,3 +84,26 @@ assert [b["file"] for b in r["broll"]["events"]] == ["goi-dien.jpg"], "chỉ ả
 assert r["zoom"]["profile"] == "VUA" and "smootherstep" in r["zoom"]["formula"]
 print(f"SELFTEST ESV HIỆU ỨNG ĐẠT: {types}, zoom {r['zoom']['profile']} {len(r['zoom']['events'])} lần, SFX {r['audio']['sfx'].get('used')}")
 P
+
+# 4:5 và 1:1: kích thước bản chính / bản xem nhanh phải hợp lệ cho H.264 (chiều chẵn). Lỗi thật 22/10/2026: 4:5 1080x1350 →
+# bản xem nhanh 540x675 (lẻ) làm ffmpeg dừng ở bước cuối.
+for ASP in 4:5 1:1; do
+  D="$W/esv-${ASP/:/x}"
+  BAOR_LLM_URL=http://127.0.0.1:9 DATA_DIR="$W/data" python3 "$HERE/esv_render.py" --input "$W/raw.mp4" --job-dir "$D" --plan "$W/plan-fx.json" --words "$W/esv/words_main.json" --aspect "$ASP" 2>"$D.log" | tail -1
+  python3 - "$D" "$ASP" <<'P'
+import json, subprocess, sys
+d, asp = sys.argv[1], sys.argv[2]
+r = json.load(open(f"{d}/report.json"))
+def dims(f):
+    o = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0", f], capture_output=True, text=True).stdout.strip()
+    return tuple(int(x) for x in o.split(","))
+m, p = dims(f"{d}/master.mp4"), dims(f"{d}/preview.mp4")
+want = {"4:5": (1080, 1350), "1:1": (1080, 1080)}[asp]
+assert m == want, f"{asp}: bản chính {m}, cần {want}"
+assert p[0] % 2 == 0 and p[1] % 2 == 0 and p[0] < m[0], f"{asp}: bản xem nhanh {p} không hợp lệ"
+qa = {q["id"]: q["status"] for q in r["qa"]}
+bad = [k for k in "ABCDEGHIQR" if qa.get(k) != "pass"]
+assert not bad, f"{asp}: bảng kiểm chưa đạt {bad}"
+print(f"SELFTEST {asp} ĐẠT: bản chính {m[0]}x{m[1]}, xem nhanh {p[0]}x{p[1]}")
+P
+done
