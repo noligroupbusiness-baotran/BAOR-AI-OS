@@ -219,14 +219,23 @@ export function startVideoJob(videoId: string, by: string, opts: { aspect: Aspec
 }
 
 /** Dựng lại từ cùng nguồn thành bản mới (vN+1). Bản trước giữ nguyên. */
-export function rerenderVideo(videoId: string, by: string, cutSilence?: boolean, frame?: { aspect: Aspect; framing?: Framing }, feedbackNote?: string): { ok: true; version: number } | { ok: false; error: string } {
+/** Lý do KHÔNG dựng lại được lúc này (null = được). Dùng chung cho Dựng lại và Video Review (kiểm trước khi ghi gì). */
+export function rerenderBlock(videoId: string): string | null {
   const prev = latestJob(videoId);
   const v = getDb().select().from(schema.videos).where(eq(schema.videos.id, videoId)).get();
-  if (!prev || !v) return { ok: false, error: "Video này không có nguồn để dựng lại" };
+  if (!prev || !v) return "Video này không có nguồn để dựng lại";
   // Video đã gửi phê duyệt hoặc đã duyệt: không kéo ngược về "Đang dựng" (muốn sửa thì Yêu cầu chỉnh sửa trước).
-  if (!["editing", "review", "needs_changes"].includes(v.status)) return { ok: false, error: "Chỉ dựng lại video đang dựng, chờ kiểm tra hoặc cần chỉnh sửa" };
-  if (prev.job.status === "queued" || prev.job.status === "running") return { ok: false, error: "Video đang trong hàng dựng" };
-  if (prev.job.status === "setup") return { ok: false, error: "Video đang chờ chọn khung hình: chọn xong bấm Bắt đầu dựng" };
+  if (!["editing", "review", "needs_changes"].includes(v.status)) return "Chỉ dựng lại video đang dựng, chờ kiểm tra hoặc cần chỉnh sửa";
+  if (prev.job.status === "queued" || prev.job.status === "running") return "Video đang trong hàng dựng";
+  if (prev.job.status === "setup") return "Video đang chờ chọn khung hình: chọn xong bấm Bắt đầu dựng";
+  return null;
+}
+
+export function rerenderVideo(videoId: string, by: string, cutSilence?: boolean, frame?: { aspect: Aspect; framing?: Framing }, feedbackNote?: string): { ok: true; version: number } | { ok: false; error: string } {
+  const block = rerenderBlock(videoId);
+  if (block) return { ok: false, error: block };
+  const prev = latestJob(videoId)!;
+  const v = getDb().select().from(schema.videos).where(eq(schema.videos.id, videoId)).get()!;
   const version = Math.max(prev.job.version, v.version) + 1;
   const now = new Date().toISOString();
   const aspect = frame?.aspect ?? prev.job.aspect ?? "9:16";

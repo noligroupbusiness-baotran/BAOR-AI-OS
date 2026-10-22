@@ -7,8 +7,8 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { logActivity } from "@/lib/activity";
 import { toSourceTime } from "./job-types";
-import { applyFix, validateFix, verifyFix, type CommentFix, type CommentStatus, type RenderOutput } from "./review-types";
-import { jobDir, latestJob, readEditorPlan, readJob, readReport, rerenderVideo, writeEditorPlan } from "./jobs";
+import { applyFix, normalizeFix, validateFix, verifyFix, type CommentFix, type CommentStatus, type RenderOutput } from "./review-types";
+import { jobDir, latestJob, readEditorPlan, readJob, readReport, rerenderBlock, rerenderVideo, writeEditorPlan } from "./jobs";
 
 const newId = () => `vc_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 const round = (n: number) => Math.round(n * 100) / 100;
@@ -49,11 +49,12 @@ export function addComment(i: { videoId: string; version: number; t: number; tEn
     const e = validateFix(i.fix);
     if (e) return { ok: false, error: e };
   }
+  const fix = i.fix ? normalizeFix(i.fix) : null;
   const keep = report.output.keep ?? null;
   const id = newId();
   getDb()
     .insert(schema.videoComments)
-    .values({ id, videoId: i.videoId, version: i.version, t: round(i.t), tEnd: tEnd === null ? null : round(tEnd), srcT: round(toSourceTime(keep, i.t)), srcTEnd: tEnd === null ? null : round(toSourceTime(keep, tEnd)), text, fix: i.fix ? JSON.stringify(i.fix) : null, status: "open", by: i.by, at: new Date().toISOString() })
+    .values({ id, videoId: i.videoId, version: i.version, t: round(i.t), tEnd: tEnd === null ? null : round(tEnd), srcT: round(toSourceTime(keep, i.t)), srcTEnd: tEnd === null ? null : round(toSourceTime(keep, tEnd)), text, fix: fix ? JSON.stringify(fix) : null, status: "open", by: i.by, at: new Date().toISOString() })
     .run();
   logActivity("human", `${i.by} góp ý video ${i.videoId} bản ${i.version} tại ${i.t.toFixed(1)} s${i.fix ? " (kèm yêu cầu sửa)" : ""}.`, "video");
   return { ok: true, id };
@@ -68,7 +69,7 @@ export function setCommentFix(id: string, fix: CommentFix | null, by: string): {
     const e = validateFix(fix);
     if (e) return { ok: false, error: e };
   }
-  getDb().update(schema.videoComments).set({ fix: fix ? JSON.stringify(fix) : null, status: "open", verifyNote: "" }).where(eq(schema.videoComments.id, id)).run();
+  getDb().update(schema.videoComments).set({ fix: fix ? JSON.stringify(normalizeFix(fix)) : null, status: "open", verifyNote: "" }).where(eq(schema.videoComments.id, id)).run();
   logActivity("human", `${by} ${fix ? "đặt" : "bỏ"} yêu cầu sửa cho góp ý ${id}.`, "video");
   return { ok: true };
 }
@@ -80,12 +81,17 @@ export function setCommentFix(id: string, fix: CommentFix | null, by: string): {
 export function applyComments(videoId: string, by: string): { ok: true; version: number; applied: number } | { ok: false; error: string } {
   const open = listComments(videoId).filter((c) => (c.status === "open" || c.status === "failed") && c.fix);
   if (!open.length) return { ok: false, error: "Chưa có góp ý nào kèm yêu cầu sửa cụ thể" };
+  // Kiểm điều kiện dựng lại TRƯỚC khi ghi kế hoạch (không để kế hoạch đổi mà không có bản dựng nào kiểm nó)
+  const block = rerenderBlock(videoId);
+  if (block) return { ok: false, error: block };
   let plan = readEditorPlan(videoId).plan as Parameters<typeof applyFix>[0];
   const failedById = new Map<string, string>();
   const used: VideoComment[] = [];
   for (const c of open) {
     const r = applyFix(plan, c.fix!);
-    if (r.error) failedById.set(c.id, r.error);
+    // Góp ý "chưa áp dụng được" mà kế hoạch đã có thay đổi (bộ dựng bỏ qua lần trước): dựng lại để kiểm lần nữa là hợp lệ
+    if (r.unchanged && c.status === "failed") used.push(c);
+    else if (r.error) failedById.set(c.id, r.error);
     else {
       plan = r.plan;
       used.push(c);

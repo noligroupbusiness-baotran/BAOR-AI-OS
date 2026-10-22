@@ -23,7 +23,7 @@ import { comparableVersions, listComments, verifyComments } from "@/lib/video/re
 import { listContent } from "@/lib/queries";
 import { fileUrl } from "@/lib/uploads";
 import { listVideos } from "@/lib/videos/repository";
-import { brollLibrary, editSettings, engineLabel, jobVersions, latestJob, readEditorPlan } from "@/lib/video/jobs";
+import { brollLibrary, editSettings, engineLabel, jobVersions, latestJob, readEditorPlan, readReport } from "@/lib/video/jobs";
 import { blockersForVideo } from "@/lib/video/approval";
 import { qaLabel, qaTone } from "@/lib/video/job-types";
 import { feedbackLabel, listVideoFeedback, type FeedbackKind } from "@/lib/video/feedback";
@@ -114,9 +114,18 @@ export default async function VideoStudioPage({ searchParams }: { searchParams: 
               const versions = jobVersions(v.id);
               const feedback = isOpen ? listVideoFeedback(v.id) : [];
               // Video Review: kiểm góp ý đang chờ bản mới (lặp an toàn; bộ dựng cũng gọi khi xong), rồi đọc danh sách
-              if (isOpen) verifyComments(v.id);
+              if (isOpen) {
+                try {
+                  verifyComments(v.id);
+                } catch (e) {
+                  console.error(`[BAOR] Kiểm góp ý video ${v.id} lỗi:`, e);
+                }
+              }
               const comments = isOpen ? listComments(v.id) : [];
               const compare = isOpen ? comparableVersions(v.id) : [];
+              // Bản mới đang dựng / lỗi: góp ý vẫn xem được trên bản đã dựng xong gần nhất (kết quả kiểm "chưa áp dụng" phải thấy được)
+              const reviewVersion = hasPreview ? jv!.job.version : (compare[0] ?? null);
+              const reviewReport = reviewVersion !== null && !hasPreview ? readReport(v.id, reviewVersion) : report;
               const approveBlockers = v.status === "pending_approval" ? blockersForVideo(v) : [];
               const canRerender = jv && !running && jv.job.status !== "setup" && (v.status === "review" || v.status === "needs_changes" || v.status === "editing" || jv.job.status === "error");
               return (
@@ -154,15 +163,15 @@ export default async function VideoStudioPage({ searchParams }: { searchParams: 
                     )}
                     {jv?.job.status === "error" && <p className="mt-1 text-[12px] text-brick">{jv.job.error}</p>}
                     {v.note && !running && <p className="mt-1 text-[12px] text-ink">{v.note}</p>}
-                    {hasPreview && isOpen ? (
+                    {isOpen && reviewVersion !== null && (hasPreview || comments.length > 0 || jv?.job.status === "error") ? (
                       <ReviewWorkspace
                         videoId={v.id}
-                        version={jv!.job.version}
+                        version={reviewVersion}
                         back={withCampaignContext(`/video-studio?tab=${tab}&open=${v.id}`, ctx)}
-                        src={jobFile(v.id, jv!.job.version, "preview.mp4")}
-                        hdSrc={v.uploadId ? fileUrl(v.uploadId) : undefined}
+                        src={jobFile(v.id, reviewVersion, "preview.mp4")}
+                        hdSrc={hasPreview && v.uploadId ? fileUrl(v.uploadId) : undefined}
                         plan={readEditorPlan(v.id).plan}
-                        keep={report?.output.keep ?? null}
+                        keep={reviewReport?.output.keep ?? null}
                         comments={comments}
                         canApply={!!canRerender}
                       />
@@ -171,7 +180,7 @@ export default async function VideoStudioPage({ searchParams }: { searchParams: 
                     ) : (
                       v.uploadId && <VideoPlayer src={fileUrl(v.uploadId)} />
                     )}
-                    {isOpen && !hasPreview && comments.length > 0 && <p className="mt-1 text-[12px] text-ink-2">{comments.filter((c) => c.status === "planned").length} góp ý đang chờ bản dựng mới; kết quả kiểm hiện khi dựng xong.</p>}
+                    {isOpen && !hasPreview && comments.some((c) => c.status === "planned") && <p className="mt-1 text-[12px] text-ink-2">{comments.filter((c) => c.status === "planned").length} góp ý đang chờ bản dựng mới (đang xem bản {reviewVersion}); kết quả kiểm hiện khi dựng xong.</p>}
                     {isOpen && compare.length >= 2 && <div className="mt-3"><CompareVersions videoId={v.id} versions={compare} /></div>}
 
                     {isOpen && jv && !running && jv.job.status !== "setup" && (
@@ -232,7 +241,7 @@ export default async function VideoStudioPage({ searchParams }: { searchParams: 
                       <LinkToCampaignForm entityType="video" entityId={v.id} status={v.status} back={back} links={vLinks} compact open={sp.link === v.id} />
                     </div>
                   </div>
-                  <div className="flex flex-wrap gap-1.5 lg:justify-end">
+                  <div className="flex flex-wrap content-start gap-1.5 lg:max-w-[260px] lg:justify-end">
                     {!running && (v.status === "editing" || v.status === "needs_changes") && (
                       <ConfirmAction action={transitionVideo} fields={{ id: v.id, kind: "send_review", back }} label="Gửi kiểm tra" title="Chuyển video sang chờ kiểm tra?" message="Dùng khi bản dựng đã xong và bạn muốn xem bản này." confirmLabel="Gửi kiểm tra" variant="soft" />
                     )}

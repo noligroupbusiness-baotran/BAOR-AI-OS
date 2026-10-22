@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { eq } from "drizzle-orm";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "baor-review-"));
 process.env.DATA_DIR = tmp;
@@ -161,4 +162,55 @@ test("kiểm bản mới: đạt khi đầu ra bộ dựng khớp; KHÔNG đạt
 test("so phiên bản: chỉ liệt kê bản đã dựng xong có preview", () => {
   for (const v of [1, 3]) fs.writeFileSync(path.join(tmp, "video-jobs", "v_b", `v${v}`, "preview.mp4"), "x");
   assert.deepEqual(review.comparableVersions("v_b"), [3, 1]);
+});
+
+test("phản biện S2: hai sơ đồ cùng mốc → sửa đúng mục được chọn, kiểm không báo sai; mốc mơ hồ bị từ chối", () => {
+  const plan = {
+    emphasis: [],
+    broll: [],
+    diagrams: [
+      { type: "leak", t0: 20 },
+      { type: "chapter", t0: 20, t1: 23, text: "phần hai", num: "02" },
+    ],
+  };
+  const cands = rt.candidatesNear(plan, null, 20, null);
+  const chap = cands.find((c) => c.label.includes("chapter"))!;
+  assert.equal(chap.type, "chapter");
+  const fix = { target: { kind: chap.kind, t: chap.t, label: chap.label, type: chap.type }, action: "off" as const };
+  const r = rt.applyFix(plan, fix);
+  assert.equal(r.error, undefined);
+  assert.equal((r.plan.diagrams![0] as { off?: boolean }).off, undefined, "vệt sáng cùng mốc KHÔNG bị tắt");
+  assert.equal((r.plan.diagrams![1] as { off?: boolean }).off, true);
+  // Bộ dựng vẫn vẽ thẻ chương → phải báo chưa áp dụng (trước đây khớp nhầm vệt sáng rồi báo đạt)
+  const wrongPlan = structuredClone(plan) as typeof plan & { diagrams: { off?: boolean }[] };
+  wrongPlan.diagrams[0].off = true;
+  const v = rt.verifyFix(fix, wrongPlan, { diagrams: [{ type: "chapter", t0: 20 }], output: { keep: null } });
+  assert.equal(v.ok, false);
+  // Hai mục giống hệt cùng mốc → mơ hồ, không đoán
+  const twin = { emphasis: [{ t: 5, text: "A" }, { t: 5, text: "A" }] };
+  assert.match(rt.applyFix(twin, { target: { kind: "emphasis", t: 5, label: "Chữ nhấn “A”" }, action: "off" }).error ?? "", /mơ hồ/);
+});
+
+test("phản biện S2: yêu cầu không làm đổi gì bị từ chối; ô chữ không tồn tại bị từ chối", () => {
+  const plan = { emphasis: [{ t: 5, text: "PHÁ BĂNG", style: "blur" }], diagrams: [{ type: "arrow", t0: 9, t1: 12, top: { t: 9, text: "a" }, bottom: { t: 10, text: "b" } }] };
+  const E = { kind: "emphasis" as const, t: 5, label: "Chữ nhấn “PHÁ BĂNG”" };
+  assert.match(rt.applyFix(plan, { target: E, action: "text", value: "PHÁ BĂNG" }).error ?? "", /không làm thay đổi/);
+  assert.match(rt.applyFix(plan, { target: E, action: "style", value: "blur" }).error ?? "", /không làm thay đổi/);
+  const A = { kind: "diagrams" as const, t: 9, label: "Sơ đồ arrow “a”", type: "arrow" };
+  assert.match(rt.applyFix(plan, { target: { ...A, field: "steps.9.text" }, action: "text", value: "x" }).error ?? "", /ô chữ/i);
+  assert.match(rt.applyFix(plan, { target: A, action: "text", value: "x" }).error ?? "", /ô chữ/i, "sơ đồ arrow không có trường text gốc");
+  assert.equal(rt.applyFix(plan, { target: { ...A, field: "bottom.text" }, action: "text", value: "c" }).error, undefined);
+});
+
+test("phản biện S2: không dựng lại được (video chờ phê duyệt) thì KHÔNG ghi kế hoạch; fix được chuẩn hoá trước khi lưu", () => {
+  seed("v_p");
+  review.addComment({ videoId: "v_p", version: 1, t: 7, text: "Bỏ", fix: { target: { kind: "emphasis", t: 10, label: "x".repeat(5000) }, action: "off" }, by: "OWNER" });
+  const c = review.listComments("v_p")[0];
+  assert.ok(c.fix!.target.label.length <= 120, "nhãn bị cắt");
+  db.getDb().update(db.schema.videos).set({ status: "pending_approval" }).where(eq(db.schema.videos.id, "v_p")).run();
+  const before = fs.readFileSync(path.join(tmp, "video-jobs", "v_p", "plan.json"), "utf8");
+  const r = review.applyComments("v_p", "OWNER");
+  assert.equal(r.ok, false);
+  assert.equal(fs.readFileSync(path.join(tmp, "video-jobs", "v_p", "plan.json"), "utf8"), before, "kế hoạch không bị ghi");
+  assert.equal(review.listComments("v_p")[0].status, "open");
 });

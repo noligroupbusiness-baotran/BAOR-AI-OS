@@ -39,7 +39,7 @@ function FixPicker({ candidates, onChange }: { candidates: Candidate[]; onChange
   const c = idx >= 0 ? candidates[idx] : undefined;
   const emit = (i: number, a: FixAction, f: string, v: string) => {
     const cc = i >= 0 ? candidates[i] : undefined;
-    onChange(cc ? { target: { kind: cc.kind, t: cc.t, label: cc.label, ...(f ? { field: f } : {}) }, action: a, ...(a === "text" || a === "style" ? { value: v } : {}) } : null);
+    onChange(cc ? { target: { kind: cc.kind, t: cc.t, label: cc.label, ...(cc.type ? { type: cc.type } : {}), ...(f ? { field: f } : {}) }, action: a, ...(a === "text" || a === "style" ? { value: v } : {}) } : null);
   };
   const actions: FixAction[] = c ? [c.off ? "on" : "off", ...(c.fields.length ? (["text"] as FixAction[]) : []), ...(c.kind === "emphasis" ? (["style"] as FixAction[]) : [])] : [];
   return (
@@ -63,7 +63,7 @@ function FixPicker({ candidates, onChange }: { candidates: Candidate[]; onChange
         >
           <option value={-1}>Chỉ ghi chú cho người dựng</option>
           {candidates.map((x, i) => (
-            <option key={`${x.kind}-${x.t}`} value={i}>{`${mmss(x.cutT)} · ${x.label}${x.off ? " (đang tắt)" : ""}`}</option>
+            <option key={`${i}-${x.kind}-${x.type ?? ""}-${x.t}`} value={i}>{`${mmss(x.cutT)} · ${x.label}${x.off ? " (đang tắt)" : ""}`}</option>
           ))}
         </select>
       </label>
@@ -120,7 +120,7 @@ export function ReviewWorkspace(props: { videoId: string; version: number; back:
             Góp ý tại {mmss(now)}
           </button>
           {mark && (
-            <button type="button" disabled={now <= mark.t} onClick={() => { player.current?.pause(); setMark({ ...mark, tEnd: Math.round(now * 10) / 10 }); }} className="h-7 rounded-full border border-border-2 px-2.5 font-medium text-ink hover:border-ink-3 disabled:opacity-40">
+            <button type="button" disabled={now <= mark.t} onClick={() => { player.current?.pause(); setMark({ ...mark, tEnd: Math.round(now * 10) / 10 }); setFix(null); }} className="h-7 rounded-full border border-border-2 px-2.5 font-medium text-ink hover:border-ink-3 disabled:opacity-40">
               Kết thúc đoạn tại {mmss(now)}
             </button>
           )}

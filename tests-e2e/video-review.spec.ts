@@ -67,6 +67,9 @@ test("góp ý tại mốc + yêu cầu sửa → tua bằng mốc → so phiên 
   await page.getByRole("button", { name: "Dựng lại theo 1 góp ý" }).click();
   await expect(page).toHaveURL(/toast=.*b%E1%BA%A3n%203|toast=/);
   await expect(page.getByText("1 góp ý đang chờ bản dựng mới")).toBeVisible();
+  // Bản mới đang dựng: khung góp ý vẫn hiện trên bản đã dựng xong gần nhất, góp ý ở trạng thái "Đang dựng lại"
+  await expect(ws(page)).toBeVisible();
+  await expect(page.getByTestId("review-comment").first()).toContainText("Đang dựng lại");
   await expect(page.getByText(/Dựng lại theo 1 góp ý: 1\.\d s “Chữ nhấn mở đầu thừa, bỏ đi”/)).toBeVisible();
 
   // Kế hoạch cấp video: chỉ chữ nhấn được góp ý bị tắt; mục khác giữ nguyên

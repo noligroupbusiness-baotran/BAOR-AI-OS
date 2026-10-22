@@ -71,8 +71,8 @@ Cập nhật bởi MASTER sau mỗi checkpoint. Nguồn vận hành: `docs/BAOR_
 
 <!-- NEXT:START -->
 Nguồn ủy quyền: chỉ thị OWNER 22/10/2026 "CONTINUE BRAND ENGINE IMPLEMENTATION" + "SHARED OPERATING STANDARD". Mỗi mục đi đủ vòng BUILD (docs/BAOR_OPERATING_MODEL.md §2).
-1. [ĐANG LÀM] S2 Video Review (bài thử chuẩn vận hành): góp ý theo mốc thời gian / đoạn trên bản dựng → đổi thành yêu cầu sửa cụ thể
-   (tắt / sửa chữ mục kế hoạch) → dựng lại có phạm vi → kiểm bản mới đã áp dụng → so 2 phiên bản → lịch sử. AC + E2E trong tests-e2e/video-review.spec.ts.
+1. [ĐANG NGHIỆM THU] S2 Video Review (d5461ef): chờ phản biện độc lập + kiểm góp ý trên bản dựng thật v7 của video 1011.
+   Còn mở sau S2: sửa chữ trong sơ đồ chỉ kiểm được qua kế hoạch (báo cáo dựng không ghi chữ sơ đồ); dựng lại vẫn dựng toàn bộ khung hình.
 2. S3 AI biên tập video trong app (không Claude chat): lập kế hoạch bằng mô hình mở chạy tại máy (Qwen2.5-14B-Instruct GGUF, Apache-2.0, llama-server 127.0.0.1:8091,
    tệp ở /Volumes/NOLI_AI_OS/models/), đầu ra theo schema → kiểm chỉ dùng lời nói thật, mốc khớp từ → worker ESV dựng → QA. Claude API chỉ khi OWNER cấp key.
    Phải tự lập + dựng ít nhất 1 video trong app; chưa đẹp thì không báo xong.
@@ -93,6 +93,12 @@ Nguồn ủy quyền: chỉ thị OWNER 22/10/2026 "CONTINUE BRAND ENGINE IMPLEM
 - Dự chi quảng cáo giả định mỗi ngày ≤ ngân sách ngày; Meta cho một ngày tiêu tới ~1,75× (trần theo tuần). Ngày Insights theo múi giờ tài khoản quảng cáo, mã so theo giờ VN → khi kết nối thật: đọc `timezone_name` hoặc yêu cầu tài khoản đặt giờ VN.
 
 ## Nhật ký checkpoint
+
+- 22/10/2026 — **S1 Chuẩn vận hành dùng chung** (7d51f68 → 25128a0 → 33dc391 → d5461ef): một nguồn quy định 3 lớp; hook PreToolUse
+  guard-bash (138 ca tự kiểm) + SessionStart; git hook pre-commit / pre-push (soát tên tệp theo commit, verify đúng commit);
+  guardrails GR-01…07 + 12 đột biến; `npm run verify(:full)` gắn SHA; E2E Playwright trên bản build production; CI ở ranh giới ghép.
+  Phản biện độc lập 3 vòng: vòng 1 tìm 2 P1 (git -C lách guard → đẩy được main; commit -nm lọt docs/brand-engine), vòng 2 tìm
+  3 P1 (tiền tố --no-verif, gh api ghi, hồi quy git clean --force), vòng 3 APPROVE. CI GitHub run 39724193780 (7d51f68): success.
 
 - 21/10/2026 — Review vòng 4: APPROVE (0 P0/P1). Theo yêu cầu OWNER, làm mới toàn bộ dữ liệu thử ở máy để test lại từ đầu; bản lưu trữ ở `data/reset-archive-20261021-193350/` (CSDL + video). Giữ chỉ mục Second Brain, cài đặt, kết nối. Cờ `data.sampleCleared` chặn tự nạp lại dữ liệu mẫu.
 

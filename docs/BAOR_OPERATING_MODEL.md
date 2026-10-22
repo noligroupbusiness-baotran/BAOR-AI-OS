@@ -148,7 +148,10 @@ Lý do: khoảng 20/31 sự cố ở Noli do chính bộ máy điều phối gâ
   giao cùng hợp đồng cho agent general-purpose.
 
 **Giới hạn khôi phục:** Claude Code **không tự mở phiên mới** khi phiên cũ kết thúc. Phiên tiếp theo bắt đầu khi OWNER (hoặc lịch) mở nó; khi đó hook tự nạp trạng thái và MASTER làm tiếp không cần hướng dẫn.
-Cách chạy liên tục thực tế, nếu OWNER muốn: một tác vụ theo lịch của ứng dụng Claude (Scheduled tasks) với câu lệnh cố định *"Tiếp tục BAOR theo docs/BAOR_OPERATING_MODEL.md"* — chưa bật vì mỗi lần chạy tốn hạn mức sử dụng; bật là quyết định của OWNER.
+Cách chạy liên tục thực tế, nếu OWNER muốn: một **tác vụ theo lịch của ứng dụng Claude (Scheduled tasks)** — đã kiểm 22/10/2026:
+ứng dụng có công cụ này, danh sách hiện trống — với câu lệnh cố định *"Tiếp tục BAOR theo docs/BAOR_OPERATING_MODEL.md và khối
+VIỆC TIẾP THEO"*; mỗi lần chạy mở một phiên mới, hook SessionStart nạp trạng thái. Chưa bật: đây là cấu hình thường trực tự mở
+phiên và tốn hạn mức sử dụng, nên cần OWNER đồng ý (chọn giờ chạy). Chưa kiểm chứng một chuỗi nhiều phiên tự nối nhau.
 Không có tiến trình nền nào tự phát triển mã; worker nền của app chỉ dựng video / đăng lịch / đồng bộ số liệu.
 
 ### §10. Báo cáo OWNER
