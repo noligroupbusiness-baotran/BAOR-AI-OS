@@ -12,7 +12,7 @@ Mục bị loại ghi lý do trong plan["ai"]["rejected"] để người biên t
 
   python3 scripts/video/ai_plan.py --words words_main.json --duration 180 --library DATA/video-assets/broll --out plan.json
 """
-import argparse, hashlib, json, os, re, sys, time, unicodedata, urllib.error, urllib.request
+import argparse, hashlib, json, math, os, re, sys, time, unicodedata, urllib.error, urllib.request
 
 ENDPOINT = os.environ.get("BAOR_LLM_URL", "http://127.0.0.1:8091")
 def model_label():
@@ -94,8 +94,9 @@ def align(phrase, sent, words, maxw):
         for b in range(a, min(len(toks), a + len(want) + 2)):
             span = [t for _, t in toks[a:b + 1]]
             missing = sum(1 for c in core if c not in span)
-            # mô hình hay thêm 1 từ diễn giải ("hạn chế sự đề phòng"): cho thiếu ≤ 1 từ có nghĩa khi cụm có ≥ 3 từ có nghĩa
-            if missing > (1 if len(core) >= 3 else 0):
+            # mô hình hay thêm từ diễn giải ("hạn chế sự đề phòng"; "hạn chế" là 1 từ 2 tiếng): cụm ≥ 3 tiếng có nghĩa được
+            # thiếu tối đa 1/3 số tiếng đó (làm tròn lên), và phải khớp ít nhất 2 tiếng
+            if missing > (math.ceil(len(core) / 3) if len(core) >= 3 else 0) or len(core) - missing < min(2, len(core)):
                 continue
             # bỏ hư từ ở hai đầu
             lo, hi = a, b
@@ -445,7 +446,45 @@ def plan(words, dur, library=None, content_hint="", log=print):
     }
 
 
+def self_test():
+    """Kiểm lõi không cần mô hình (chạy trong npm run verify qua tests/ai-plan.test.ts)."""
+    txt = "và chúng ta sẽ tạo ra cảm giác thân tình với khách hàng bằng lời hứa hẹn tìm một cái điểm chung".split()
+    words = [{"text": w, "start": i * 0.3, "end": i * 0.3 + 0.25} for i, w in enumerate(txt)]
+    words[19]["uncertain"] = True  # "cái" nghe chưa chắc
+    sent = {"id": 1, "idx": list(range(len(words)))}
+    cases = [
+        ("lời hứa hẹn", 4, "lời hứa hẹn"),
+        ("với khách hàng", 4, "khách hàng"),                  # hư từ đầu cụm bị cắt
+        ("tạo cảm giác thân tình", 6, "tạo ra cảm giác thân tình"),  # mô hình bỏ chữ → lấy đúng lời nói
+        ("hạn chế cảm giác thân tình", 6, "cảm giác thân tình"),     # mô hình thêm 1 từ diễn giải
+        ("niềm tin", 4, None),                                 # không có trong lời nói
+        ("tìm một điểm chung", 6, "tìm một điểm chung"),       # bỏ "cái" nghe chưa chắc ở giữa
+    ]
+    bad = 0
+    for ph, mx, want in cases:
+        r = align(ph, sent, words, mx)
+        got = spoken(words, *r) if r else None
+        if got != want:
+            bad += 1
+            print(f"SAI align({ph!r}) = {got!r}, cần {want!r}")
+    # so khớp GIỮ DẤU: "chung" (điểm chung) không phải đại từ "chúng"; "đề" (đề phòng) không phải hư từ "để"
+    for w, s_, want in (("chung", PRONOUN, False), ("chúng", PRONOUN, True), ("hỗ", PRONOUN, False), ("đề", EDGE, False), ("để", EDGE, True)):
+        if (tnorm(w) in s_) != want:
+            bad += 1
+            print(f"SAI tập từ: {w!r}")
+    # chia câu: không cắt cứng theo số từ mà ở chỗ ngắt hơi dài nhất
+    ws = [{"text": f"t{i}", "start": i * 0.3 + (0.4 if i >= 20 else 0), "end": i * 0.3 + 0.25 + (0.4 if i >= 20 else 0)} for i in range(40)]
+    ss = sentences(ws, gap=0.5, max_words=26)
+    if [len(x["idx"]) for x in ss] != [20, 20]:
+        bad += 1
+        print(f"SAI chia câu: {[len(x['idx']) for x in ss]}")
+    print(f"ai_plan tự kiểm: {'đạt' if not bad else f'{bad} lỗi'}")
+    return bad == 0
+
+
 def main():
+    if "--self-test" in sys.argv:
+        sys.exit(0 if self_test() else 1)
     ap = argparse.ArgumentParser()
     ap.add_argument("--words", required=True)
     ap.add_argument("--duration", type=float, required=True)
