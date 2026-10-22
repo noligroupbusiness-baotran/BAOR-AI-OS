@@ -195,8 +195,14 @@ export async function syncAdInsights(): Promise<{ updated: number; errors: strin
       // Đọc cả tháng hiện tại mỗi lần (bù được ngày lần trước lỗi); đồng bộ thành công → insightsAt = mốc phủ cho monthSpentDetail.
       const since = `${today.slice(0, 7)}-01`;
       const rows = await fetchDailyInsights(connectorContext("meta_ads"), ad.metaCampaignId!, since, today);
-      // Reach trọn đời đọc riêng (người duy nhất không cộng được từ các ngày)
-      const reach = await fetchReachTotal(connectorContext("meta_ads"), ad.metaCampaignId!);
+      // Reach trọn đời đọc riêng (người duy nhất không cộng được từ các ngày). Lỗi reach KHÔNG được chặn việc ghi chi phí
+      // (chi phí theo ngày là số của cổng ngân sách): lỗi thì giữ reach cũ.
+      let reach = ad.reach;
+      try {
+        reach = await fetchReachTotal(connectorContext("meta_ads"), ad.metaCampaignId!);
+      } catch (e) {
+        out.errors.push(`${ad.name}: đọc reach lỗi (${e instanceof Error ? e.message : e}), chi phí vẫn đồng bộ`);
+      }
       db.transaction((tx) => {
         for (const r of rows) {
           tx.insert(schema.adSpendDaily).values({ adId: ad.id, ...r }).onConflictDoUpdate({ target: [schema.adSpendDaily.adId, schema.adSpendDaily.date], set: { spend: r.spend, impressions: r.impressions, clicks: r.clicks, leads: r.leads, thruplays: r.thruplays, reach: r.reach } }).run();

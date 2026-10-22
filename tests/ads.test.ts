@@ -328,3 +328,25 @@ test("Insights: reach trọn đời đọc riêng (không cộng theo ngày), CP
   assert.equal(metrics.pct(m.ctr), "1,20%");
   assert.deepEqual(metrics.adMetrics({ spent: 0, impressions: 0, clicks: 0, reach: 0 }), { cpm: null, ctr: null, frequency: null, cpc: null });
 });
+
+test("Insights: đọc reach lỗi KHÔNG chặn ghi chi phí theo ngày (số của cổng ngân sách)", async () => {
+  const d = db.getDb();
+  d.delete(db.schema.adCampaigns).run();
+  d.delete(db.schema.adSpendDaily).run();
+  d.insert(db.schema.adCampaigns).values({ id: "ad_r2", name: "R2", objective: "video_views", status: "active", dailyBudget: 100_000, spent: 0, impressions: 0, clicks: 0, leads: 0, audience: "", reach: 50, startedAt: new Date().toISOString(), metaCampaignId: "C1", metaAdsetId: "S1", metaAdId: "A1" }).run();
+  d.update(db.schema.integrations).set({ connected: true }).where(eq(db.schema.integrations.key, "meta_ads")).run();
+  const real = globalThis.fetch;
+  const base = fakeMarketing().f;
+  globalThis.fetch = (async (url: string, init?: RequestInit) => (new URL(String(url)).searchParams.get("date_preset") === "maximum" ? new Response(JSON.stringify({ error: { message: "reach tạm lỗi", code: 2 } }), { status: 500 }) : base(url, init))) as typeof fetch;
+  try {
+    const r = await engine.syncAdInsights();
+    assert.equal(r.updated, 1, "vẫn tính là đã đồng bộ chi phí");
+    assert.match(r.errors.join(";"), /đọc reach lỗi/);
+  } finally {
+    globalThis.fetch = real;
+    d.update(db.schema.integrations).set({ connected: false }).where(eq(db.schema.integrations.key, "meta_ads")).run();
+  }
+  const ad = d.select().from(db.schema.adCampaigns).where(eq(db.schema.adCampaigns.id, "ad_r2")).get()!;
+  assert.equal(ad.spent, 120_000, "chi phí theo ngày đã ghi");
+  assert.equal(ad.reach, 50, "giữ reach cũ khi đọc lỗi");
+});
