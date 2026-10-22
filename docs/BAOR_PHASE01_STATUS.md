@@ -7,7 +7,7 @@ Cập nhật bởi MASTER sau mỗi checkpoint. Nguồn vận hành: `docs/BAOR_
 1. Nhánh làm việc: `feature/brand-cp01` (đã đẩy lên GitHub; `main` KHÔNG đổi). `git status` phải sạch, trừ `docs/brand-engine/` (tài liệu nội bộ, cố ý không commit).
 2. Mở app: preview `baor-dev` (cổng 3010, `.claude/launch.json`). Dev tự đăng nhập bằng `DEV_AUTO_LOGIN_EMAIL`.
 3. CSDL dev tự migrate khi tiến trình khởi động. Nếu dev server chạy từ trước khi có migration mới: `npx tsx -e 'import("./src/db/index.ts").then(m=>m.getDb())'`.
-4. Gate: `npx tsc --noEmit -p .` · `npm run lint` · `npm test` · `npx next build` · `npm run security` · `npm run video:selftest` (bộ dựng, footage tổng hợp hợp pháp).
+4. Cổng: `npm run verify` (guardrails · typecheck · lint · security · test · build), `npm run verify:full` (+ E2E Playwright), `npm run video:selftest` (bộ dựng, footage tổng hợp hợp pháp). Bằng chứng: `artifacts/verification-evidence/latest.json`.
 5. Dữ liệu và bằng chứng chạy thật nằm trong `data/` (không commit): `data/baor.db`, `data/brand-engine/`, `data/video-jobs/`, `data/uploads/`.
 
 ## Bảng checkpoint
@@ -66,19 +66,30 @@ Cập nhật bởi MASTER sau mỗi checkpoint. Nguồn vận hành: `docs/BAOR_
   Video Studio có "Bảng biên tập": tắt / sửa / đổi ảnh / thêm chữ nhấn theo mốc thời gian rồi dựng lại (kế hoạch cấp video).
   Notion không có tệp mẫu animation (chỉ mô tả; thông số chi tiết "nằm trong code mẫu của đội") → các khung vẽ lại theo mô tả skill.
 
-## Phải làm trước khi bật đăng thật / quảng cáo thật (review vòng 4, P2)
+## VIỆC TIẾP THEO (backlog OWNER đã ủy quyền — tự làm theo thứ tự, không chờ nhắc)
 
-- Lỗi HTTP 5xx dạng JSON ở bước đăng video cuối vẫn tự thử lại (có thể đăng trùng) → coi là mơ hồ như lỗi mạng.
-- Lên lịch lại tay sau lỗi mơ hồ chưa có cảnh báo "kiểm tra trang trước".
-- enforceAuthorization bỏ quảng cáo dừng thất bại khỏi phép tính → các quảng cáo khác có thể vượt trần.
-- monthSpent tính thiếu khi Insights tháng này lỗi / chưa đồng bộ → ước theo ngân sách ngày × số ngày chạy, và báo lỗi Insights.
-- Windows (start.bat): không dừng được bộ dựng cũ khi khởi động lại (không có `ps`).
+<!-- NEXT:START -->
+Nguồn ủy quyền: chỉ thị OWNER 22/10/2026 "CONTINUE BRAND ENGINE IMPLEMENTATION" + "SHARED OPERATING STANDARD". Mỗi mục đi đủ vòng BUILD (docs/BAOR_OPERATING_MODEL.md §2).
+1. [ĐANG LÀM] S2 Video Review (bài thử chuẩn vận hành): góp ý theo mốc thời gian / đoạn trên bản dựng → đổi thành yêu cầu sửa cụ thể
+   (tắt / sửa chữ mục kế hoạch) → dựng lại có phạm vi → kiểm bản mới đã áp dụng → so 2 phiên bản → lịch sử. AC + E2E trong tests-e2e/video-review.spec.ts.
+2. S3 AI biên tập video trong app (không Claude chat): lập kế hoạch bằng mô hình mở chạy tại máy (Qwen2.5-14B-Instruct GGUF, Apache-2.0, llama-server 127.0.0.1:8091,
+   tệp ở /Volumes/NOLI_AI_OS/models/), đầu ra theo schema → kiểm chỉ dùng lời nói thật, mốc khớp từ → worker ESV dựng → QA. Claude API chỉ khi OWNER cấp key.
+   Phải tự lập + dựng ít nhất 1 video trong app; chưa đẹp thì không báo xong.
+3. S4 Nội dung → Video: gắn kịch bản vào video, test chứng minh dữ liệu kịch bản sang Video Studio (sửa lời nghe theo kịch bản).
+4. S5 nhóm A: bố cục 16:9, dựng thật 4:5 và 1:1, chỉnh màu / da nhẹ, tự thử lại khi dựng lỗi, tải lên nối tiếp được, Insights reach / CPM / CTR, font có giấy phép (OFL).
+5. Sau mỗi nhóm được nghiệm thu: cập nhật docs/brand-engine/BAOR-BRAND-ENGINE-IMPLEMENTATION-PROGRESS.md (công thức chấm cố định, chỉ tính bằng chứng mới).
+<!-- NEXT:END -->
+
+## Lỗi P2 trước khi đăng / chạy quảng cáo thật — ĐÃ SỬA 22/10/2026
+
+5 lỗi P2 (df59581) + 5 lỗi P1 phản biện tìm ra trong bản sửa (b2bb0b0, 57a7d23) + 2 P2 (6ef2711). Phản biện độc lập 3 vòng: APPROVE.
 
 ## Rủi ro / nợ đã biết (DEFERRED)
 
 - Build `next build` ở máy kéo cả `data/` vào `.next/standalone` (do instrumentation dùng fs động, có từ trước). Docker production không bị vì `.dockerignore` loại `data`. Không đóng gói standalone từ máy cá nhân.
 - Căn cứ kịch bản gắn theo cảnh, không theo câu (một thẻ hợp lệ hợp thức hoá số liệu cả cảnh).
 - API Meta (đăng video, Marketing API) viết theo tài liệu chính thức nhưng chưa chạy với tài khoản thật.
+- Dự chi quảng cáo giả định mỗi ngày ≤ ngân sách ngày; Meta cho một ngày tiêu tới ~1,75× (trần theo tuần). Ngày Insights theo múi giờ tài khoản quảng cáo, mã so theo giờ VN → khi kết nối thật: đọc `timezone_name` hoặc yêu cầu tài khoản đặt giờ VN.
 
 ## Nhật ký checkpoint
 

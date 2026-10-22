@@ -51,10 +51,9 @@ dữ liệu riêng để hai tiến trình không ghi cùng một tệp SQLite:
 | `baor-customers` | 3014 | `data-customers` | Khách hàng và Automation |
 | `baor-infra` | 3015 | `data-infra` | Hạ tầng, bảo mật, deploy |
 
-Bản bàn giao chi tiết cho từng vị trí (vùng sở hữu, 5 việc làm ngay, câu mở đầu dán sẵn): `docs/SESSIONS.md`.
-Thư mục dữ liệu mới tự tạo với dữ liệu mẫu giống nhau. Mỗi session làm trên nhánh riêng (`feature/<vị trí>`), chỉ `git add`
-đúng tệp của mình, không sửa `src/db/schema.ts`, `drizzle/`, `src/db/seed.ts`, `src/config/`, `src/components/shell`,
-`next.config.ts` khi chưa báo session điều phối. Tài khoản dev: xem `.env.local`.
+Cách làm việc của mọi phiên Claude Code / agent: **`docs/BAOR_OPERATING_MODEL.md`** (chuẩn vận hành dùng chung; bản theo vị trí cũ
+đã lưu trữ ở `docs/archive/SESSIONS-2026-09.md`). Cổng chất lượng: `npm run verify` (có giao diện: `npm run verify:full`).
+Tài khoản dev: xem `.env.local`.
 
 ## Công nghệ
 

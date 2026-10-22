@@ -1,3 +1,6 @@
+> **LƯU TRỮ — HẾT HIỆU LỰC (22/10/2026).** Mô hình nhiều session theo vị trí (nhánh từ `feature/campaigns`) đã thay bằng
+> chuẩn vận hành dùng chung `docs/BAOR_OPERATING_MODEL.md`. Không làm theo tệp này.
+
 # Bàn giao theo vị trí (session)
 
 Mỗi vị trí là một session Claude Code làm trong cùng repo, trên nhánh riêng, với dev server và thư mục dữ liệu riêng

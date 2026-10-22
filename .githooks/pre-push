@@ -1,0 +1,19 @@
+#!/bin/sh
+# BAOR: main TỰ TRIỂN KHAI production → không đẩy main từ máy; nhánh khác phải qua verify nhanh (không build) trước khi đẩy.
+# Bằng chứng đầy đủ (có build + E2E) chạy trên CI: .github/workflows/ci.yml
+while read local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/heads/main)
+      echo "BAOR pre-push: không đẩy main (production). Ghép qua PR khi OWNER nói MERGE." >&2
+      exit 1 ;;
+  esac
+done
+npm run -s verify -- --no-build >/tmp/baor-prepush-$$.log 2>&1
+code=$?
+tail -12 /tmp/baor-prepush-$$.log
+rm -f /tmp/baor-prepush-$$.log
+if [ $code -ne 0 ]; then
+  echo "BAOR pre-push: verify đỏ — sửa rồi đẩy lại (không dùng --no-verify)." >&2
+  exit 1
+fi
+exit 0
