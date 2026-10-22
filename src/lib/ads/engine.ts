@@ -8,7 +8,7 @@ import { sendAlert } from "@/lib/alerts";
 import { campaignRepo } from "@/lib/campaigns/repository";
 import { connectorContext, readIntegrationConfig } from "@/lib/connectors/config";
 import { getUpload, uploadPath } from "@/lib/uploads";
-import { authorizationStatus, daysLeftInMonth, gateForAd, getAuthorization, isSampleAd, monthSpentForProjection, vnDate } from "./authorization";
+import { authorizationStatus, daysLeftInMonth, gateForAd, getAuthorization, isSampleAd, monthSpentDetail, projectionBaseFor, vnDate } from "./authorization";
 import { createPausedDraft, fetchDailyInsights, setDailyBudget, setDeliveryStatus, setObjectStatus, type Audience } from "./meta-marketing";
 
 const nowIso = () => new Date().toISOString();
@@ -300,9 +300,10 @@ export async function enforceAuthorization(): Promise<{ paused: number; failed: 
     // Chỉ bỏ khỏi phép dự chi khi đã dừng THẬT; dừng hỏng nghĩa là vẫn đang tiêu tiền.
     if (a.endAt && Date.parse(a.endAt) < now && (await stop(a.id, "Tự dừng: đã qua ngày kết thúc"))) running = running.filter((x) => x.id !== a.id);
   }
-  const spent = monthSpentForProjection();
+  const detail = monthSpentDetail();
   const days = daysLeftInMonth();
-  const projected = () => spent + running.reduce((n, a) => n + a.dailyBudget, 0) * days;
+  // Tính lại nền theo tập còn chạy sau mỗi lần dừng: quảng cáo đã dừng giữ nguyên phần đã tiêu hôm nay.
+  const projected = () => projectionBaseFor(detail, new Map(running.map((a) => [a.id, a.dailyBudget]))) + running.reduce((n, a) => n + a.dailyBudget, 0) * days;
   for (const a of [...running].sort((x, y) => y.dailyBudget - x.dailyBudget)) {
     if (projected() <= auth!.monthlyCapVnd) break;
     // Dừng hỏng (vd mất kết nối Meta): quảng cáo vẫn tiêu → giữ trong dự chi và dừng tiếp quảng cáo khác.

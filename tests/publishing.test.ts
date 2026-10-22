@@ -250,3 +250,19 @@ test("P2-2: bài lỗi mơ hồ chỉ được đăng lại khi người dựng 
   d.update(db.schema.scheduledPosts).set({ status: "failed" }).where(eq(db.schema.scheduledPosts.id, pub.videoPostsFor("v_400")[0].id)).run();
   assert.equal(pub.retryVideoPost(pub.videoPostsFor("v_400")[0].id).ok, true);
 });
+
+test("P2-2 (phản biện vòng 2): bài kẹt 'đang đăng' khi máy chủ khởi động lại là lỗi MƠ HỒ — đăng lại phải ghi đã kiểm tra trang", async () => {
+  admin.setSetting("publishing.dryRun", "0");
+  seedVideo("v_stuck", "approved");
+  assert.equal(pub.scheduleVideoPosts({ videoId: "v_stuck", platforms: ["facebook"], whenIso: new Date(Date.now() + 3_600_000).toISOString(), caption: "Bình luận bên dưới", by: "t" }).ok, true);
+  const d = db.getDb();
+  const id = pub.videoPostsFor("v_stuck")[0].id;
+  d.update(db.schema.scheduledPosts).set({ status: "publishing" }).where(eq(db.schema.scheduledPosts.id, id)).run();
+  await pub.publishDueVideoPosts();
+  const post = pub.videoPostsFor("v_stuck")[0];
+  assert.equal(post.status, "failed");
+  assert.equal(pub.isAmbiguousFailure(post), true);
+  assert.equal(pub.retryVideoPost(id).ok, false, "không có ghi chú thì không đăng lại");
+  assert.equal(pub.scheduleVideoPosts({ videoId: "v_stuck", platforms: ["facebook"], whenIso: new Date().toISOString(), caption: "Bình luận bên dưới", by: "t" }).ok, false, "không lách bằng lên lịch mới");
+  admin.setSetting("publishing.dryRun", "1");
+});

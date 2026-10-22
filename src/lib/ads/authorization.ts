@@ -100,11 +100,23 @@ export interface MonthSpentDetail {
   /** Ước cho ngày đã qua mà Insights chưa phủ của quảng cáo đang chạy (ngân sách ngày − số đo được của ngày đó). */
   estimated: number;
   estimatedAds: { id: string; name: string; days: number; vnd: number }[];
+  /** Chi tiêu đo được HÔM NAY theo quảng cáo (để trừ phần đã nằm trong dự chi, xem projectionBase). */
+  todayByAd: Record<string, number>;
   /**
-   * Nền cho phép dự chi (cổng + tự dừng): total trừ phần hôm nay của quảng cáo đang chạy đã nằm trong
-   * "ngân sách ngày × số ngày còn lại" (daysLeftInMonth tính cả hôm nay) — tránh cộng hôm nay hai lần.
+   * Nền dự chi khi tập quảng cáo đang chạy là các quảng cáo đang active: total trừ phần hôm nay của chúng đã nằm trong
+   * "ngân sách ngày × số ngày còn lại" (daysLeftInMonth tính cả hôm nay). Tập khác (vd sau khi tự dừng) → projectionBaseFor.
    */
   projectionBase: number;
+}
+
+/**
+ * Nền dự chi cho một TẬP quảng cáo sẽ còn chạy (id → ngân sách ngày dùng trong dự chi): chỉ quảng cáo trong tập mới được trừ
+ * phần hôm nay (tối đa ngân sách của nó). Quảng cáo đã dừng giữ nguyên số đã tiêu hôm nay.
+ */
+export function projectionBaseFor(d: Pick<MonthSpentDetail, "total" | "todayByAd">, running: Map<string, number>): number {
+  let base = d.total;
+  for (const [id, budget] of running) base -= Math.min(d.todayByAd[id] ?? 0, budget);
+  return base;
 }
 
 function dayRange(from: string, to: string): string[] {
@@ -141,11 +153,16 @@ export function monthSpentDetail(today = vnDate()): MonthSpentDetail {
   for (const a of ads) {
     // Số đã ghi nhận nhưng không có dòng theo ngày (nhập tay / dữ liệu cũ): giữ nguyên, tính là đo được, không phải ước.
     if (!withDaily.has(a.id) && a.spent > 0) measured += a.spent;
-    if (a.status !== "active") continue;
+    // Đang chạy, hoặc đã từng chạy rồi tạm dừng: ngày đã chạy mà Insights chưa phủ vẫn phải ước (dừng không xoá tiền đã tiêu).
+    const ran = a.status === "active" || (a.status === "paused" && !!a.startedAt);
+    if (!ran) continue;
     const coverIso = a.insightsAt ?? a.startedAt ?? a.startAt;
     if (!coverIso) continue;
     const cover = vnDate(new Date(coverIso));
     const days = dayRange(cover > from ? cover : from, yesterday);
+    // Quảng cáo đã dừng không nằm trong dự chi → hôm nay cũng phải ước nếu lần đồng bộ thành công cuối đã cũ (> 2 giờ):
+    // có thể nó đã tiêu trong hôm nay trước khi dừng mà chưa đo được.
+    if (a.status !== "active" && cover <= today && Date.now() - Date.parse(coverIso) > 2 * 3_600_000) days.push(today);
     let vnd = 0;
     let n = 0;
     for (const d of days) {
@@ -161,10 +178,11 @@ export function monthSpentDetail(today = vnDate()): MonthSpentDetail {
       estimatedAds.push({ id: a.id, name: a.name, days: n, vnd });
     }
   }
-  const activeBudget = new Map(ads.filter((a) => a.status === "active").map((a) => [a.id, a.dailyBudget]));
-  const todayInProjection = rows.filter((r) => r.date === today && activeBudget.has(r.adId)).reduce((n, r) => n + Math.min(r.spend, activeBudget.get(r.adId)!), 0);
+  const todayByAd: Record<string, number> = {};
+  for (const r of rows) if (r.date === today) todayByAd[r.adId] = (todayByAd[r.adId] ?? 0) + r.spend;
   const total = measured + estimated;
-  return { total, measured, estimated, estimatedAds, projectionBase: total - todayInProjection };
+  const active = new Map(ads.filter((a) => a.status === "active").map((a) => [a.id, a.dailyBudget]));
+  return { total, measured, estimated, estimatedAds, todayByAd, projectionBase: projectionBaseFor({ total, todayByAd }, active) };
 }
 
 export function monthSpent(today = vnDate()): number {
@@ -182,12 +200,15 @@ export function gateForAd(adId: string, dailyBudget: number): { ok: boolean; rea
   const ad = db.select().from(schema.adCampaigns).where(eq(schema.adCampaigns.id, adId)).get();
   const active = db.select().from(schema.adCampaigns).where(eq(schema.adCampaigns.status, "active")).all().filter((a) => !isSampleAd(a.id));
   const auth = getAuthorization();
+  const others = active.filter((a) => a.id !== adId);
+  // Tập sẽ chạy: các quảng cáo đang chạy khác + quảng cáo này với ngân sách mới
+  const running = new Map([...others.map((a) => [a.id, a.dailyBudget] as [string, number]), [adId, dailyBudget]]);
   return spendGate({
     auth,
     dailyBudget,
     currentDaily: ad?.status === "active" ? ad.dailyBudget : 0,
-    otherActiveDaily: active.filter((a) => a.id !== adId).reduce((n, a) => n + a.dailyBudget, 0),
-    monthSpent: monthSpentForProjection(),
+    otherActiveDaily: others.reduce((n, a) => n + a.dailyBudget, 0),
+    monthSpent: projectionBaseFor(monthSpentDetail(), running),
     daysLeft: daysLeftInMonth(),
     // Quảng cáo đã nằm trên Meta: tài khoản đang kết nối phải đúng tài khoản OWNER ủy quyền.
     adAccountId: ad?.metaCampaignId ? readIntegrationConfig("meta_ads").adAccountId || "?" : undefined,

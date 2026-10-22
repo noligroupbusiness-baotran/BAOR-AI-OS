@@ -152,7 +152,7 @@ export async function publishDueVideoPosts(): Promise<{ published: number; teste
   // Máy chủ khởi động lại giữa lúc đăng: không tự đăng lại (có thể đã lên), đánh lỗi để người kiểm tra.
   for (const p of db.select().from(schema.scheduledPosts).where(eq(schema.scheduledPosts.status, "publishing")).all()) {
     if (p.videoId && !inFlight.has(p.id)) {
-      db.update(schema.scheduledPosts).set({ status: "failed", error: "Máy chủ dừng giữa lúc đăng. Kiểm tra trang trước khi thử lại để tránh đăng trùng." }).where(eq(schema.scheduledPosts.id, p.id)).run();
+      db.update(schema.scheduledPosts).set({ status: "failed", error: `${AMBIGUOUS_MARK} Máy chủ dừng giữa lúc đăng. Kiểm tra trang trước khi thử lại để tránh đăng trùng.` }).where(eq(schema.scheduledPosts.id, p.id)).run();
     }
   }
   const due = db

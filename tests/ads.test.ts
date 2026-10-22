@@ -240,3 +240,31 @@ test("P2-4 (phản biện): không ước trùng hôm nay, không ước ngày �
   assert.equal(r.paused, 0, "vừa được cổng cho bật thì bộ giữ trần không tự dừng");
   assert.equal(d.select().from(db.schema.adCampaigns).where(eq(db.schema.adCampaigns.id, "ad_edge")).get()!.status, "active");
 });
+
+test("P2-4 (phản biện vòng 2): tự dừng giữ phần đã tiêu hôm nay của quảng cáo vừa dừng; quảng cáo đã dừng vẫn được ước ngày chưa đo", async () => {
+  const d = db.getDb();
+  d.delete(db.schema.adCampaigns).run();
+  d.delete(db.schema.adSpendDaily).run();
+  const base = { objective: "video_views", spent: 0, impressions: 0, clicks: 0, leads: 0, audience: "" };
+  const today = auth.vnDate();
+  const days = auth.daysLeftInMonth();
+  // A tiêu 150k hôm nay rồi bị dừng: 150k đó vẫn là tiền thật → C (100k/ngày) cũng phải dừng
+  d.insert(db.schema.adCampaigns).values({ ...base, id: "ad_A", name: "A", status: "active", dailyBudget: 200_000, startedAt: new Date().toISOString(), insightsAt: new Date().toISOString() }).run();
+  d.insert(db.schema.adCampaigns).values({ ...base, id: "ad_C", name: "C", status: "active", dailyBudget: 100_000, startedAt: new Date().toISOString(), insightsAt: new Date().toISOString() }).run();
+  d.insert(db.schema.adSpendDaily).values({ adId: "ad_A", date: today, spend: 150_000, impressions: 0, clicks: 0, leads: 0, thruplays: 0 }).run();
+  auth.saveAuthorization(A({ monthlyCapVnd: 100_000 * days + 75_000, dailyCapVnd: 300_000 }));
+  await engine.enforceAuthorization();
+  const st = (id: string) => d.select().from(db.schema.adCampaigns).where(eq(db.schema.adCampaigns.id, id)).get()!.status;
+  assert.equal(st("ad_A"), "paused");
+  assert.equal(st("ad_C"), "paused", "150k đã tiêu hôm nay + 100k × ngày còn lại > trần → dừng cả C");
+
+  // Quảng cáo đã dừng, Insights lỗi từ 18/10: ngày 18–20 và hôm nay (21) vẫn ước, không về 0 khi chuyển sang paused
+  d.delete(db.schema.adCampaigns).run();
+  d.delete(db.schema.adSpendDaily).run();
+  d.insert(db.schema.adCampaigns).values({ ...base, id: "ad_P", name: "P", status: "paused", dailyBudget: 1_000_000, startedAt: "2026-10-10T02:00:00Z", insightsAt: "2026-10-18T03:00:00Z", metaCampaignId: "C1", metaAdsetId: "S1", metaAdId: "A1" }).run();
+  const det = auth.monthSpentDetail("2026-10-21");
+  assert.equal(det.estimated, 4_000_000, "18, 19, 20 và hôm nay (đồng bộ cuối đã cũ) — dừng không xoá tiền đã tiêu");
+  // Quảng cáo chưa từng chạy (nháp / chờ duyệt) không bị ước
+  d.update(db.schema.adCampaigns).set({ status: "pending_approval", startedAt: null }).where(eq(db.schema.adCampaigns.id, "ad_P")).run();
+  assert.equal(auth.monthSpentDetail("2026-10-21").estimated, 0);
+});
