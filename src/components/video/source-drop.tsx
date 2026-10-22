@@ -74,14 +74,13 @@ export function SourceDrop({ scripts = [], defaultContentId = "", defaultCut = t
       update(idx, { note: `${res.error ?? "Lỗi"} — đang thử tiếp (lần ${fails}/6)` });
       await new Promise((r) => setTimeout(r, Math.min(15_000, 500 * 2 ** (fails - 1))));
       // Hỏi máy chủ đã nhận tới đâu (khúc có thể đã vào trọn dù trình duyệt không nhận được trả lời)
-      const info = await fetch(`/api/video-sources/resumable?${q({ sid })}`).then((r) => r.json() as Promise<{ ok: boolean; offset?: number }>).catch(() => null);
+      const r = await fetch(`/api/video-sources/resumable?${q({ sid })}`).catch(() => null);
+      if (r?.status === 401) return update(idx, { status: "error", error: "Phiên đăng nhập hết hạn — đăng nhập lại rồi chọn lại tệp để tải tiếp từ chỗ dừng" });
+      const info = r ? await (r.json() as Promise<{ ok: boolean; offset?: number; done?: boolean }>).catch(() => null) : null;
+      if (info?.ok && info.done) break; // khúc cuối đã vào trọn trước khi mất trả lời: máy chủ xác nhận đã tạo video
       if (info?.ok && typeof info.offset === "number") offset = info.offset;
       else if (typeof res.offset === "number") offset = res.offset;
-      else if (info && !info.ok) {
-        // phiên đã đóng: có thể khúc cuối đã hoàn tất video trước khi mất trả lời
-        router.refresh();
-        return update(idx, { status: "done", pct: 100, note: "Phiên đã đóng — kiểm tra video trong danh sách" });
-      }
+      else if (r && r.status === 404) return update(idx, { status: "error", error: "Phiên tải lên đã hết hạn — chọn lại tệp để tải lại" });
     }
     update(idx, { status: "done", pct: 100 });
     router.refresh();

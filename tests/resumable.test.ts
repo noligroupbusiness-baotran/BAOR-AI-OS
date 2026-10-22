@@ -60,7 +60,7 @@ test("tải nối tiếp: khúc đúng vị trí, đứt giữa khúc không đ�
   assert.equal(up.size, 3000);
   assert.deepEqual(new Uint8Array(fs.readFileSync(path.join(tmp, "uploads", up.fileName))), data, "tệp ghép lại đúng từng byte");
   assert.equal(v.title, "quay tho");
-  assert.equal(rs.sessionInfo(sid, ME).ok, false, "phiên đã đóng sau khi hoàn tất");
+  assert.deepEqual(rs.sessionInfo(sid, ME), { ok: true, offset: 3000, size: 3000, done: true, videoId }, "hỏi lại sau khi xong → biết chắc đã tạo video");
 });
 
 test("tải nối tiếp: chặn định dạng lạ, cỡ sai, tệp > 8 GB; phiên quá 48 giờ bị dọn", () => {
@@ -70,4 +70,24 @@ test("tải nối tiếp: chặn định dạng lạ, cỡ sai, tệp > 8 GB; ph
   const o = rs.openSession({ original: "cu.mp4", size: 10, key: "cu", params, by: ME }) as { sid: string };
   assert.equal(rs.sweepSessions(Date.now() + 49 * 3_600_000) >= 1, true);
   assert.equal(rs.sessionInfo(o.sid, ME).ok, false);
+});
+
+test("phản biện: hoàn tất để lại dấu 'đã xong' (hỏi lại / gửi lại khúc cuối không tạo trùng); không dọn phiên vừa ghi dù mở đã lâu", async () => {
+  const data = new Uint8Array(500).fill(9);
+  const o = rs.openSession({ original: "xong.mp4", size: 500, key: "xong|500|1", params, by: ME }) as { sid: string };
+  const r = await rs.appendChunk(o.sid, 0, stream(data), ME);
+  assert.equal(r.ok && r.done, true);
+  const vid = (r as { videoId: string }).videoId;
+  assert.deepEqual(rs.sessionInfo(o.sid, ME), { ok: true, offset: 500, size: 500, done: true, videoId: vid });
+  const again = await rs.appendChunk(o.sid, 0, stream(data), ME);
+  assert.deepEqual(again, { ok: true, offset: 500, done: true, videoId: vid }, "gửi lại khúc cuối → trả lại video cũ, không tạo trùng");
+  assert.equal(db.getDb().select().from(db.schema.uploads).all().filter((u) => u.name === "xong.mp4").length, 1);
+  // phiên mở 49 giờ trước nhưng vừa ghi khúc → không bị dọn
+  const p2 = rs.openSession({ original: "lau.mp4", size: 1000, key: "lau|1000|1", params, by: ME }) as { sid: string };
+  await rs.appendChunk(p2.sid, 0, stream(new Uint8Array(100)), ME);
+  const meta = path.join(tmp, "uploads", ".partial", `${p2.sid}.json`);
+  const m = JSON.parse(fs.readFileSync(meta, "utf8"));
+  fs.writeFileSync(meta, JSON.stringify({ ...m, createdAt: new Date(Date.now() - 49 * 3_600_000).toISOString() }));
+  rs.sweepSessions();
+  assert.equal(rs.sessionInfo(p2.sid, ME).ok, true, "tính hạn theo lần ghi cuối, không theo lúc mở");
 });

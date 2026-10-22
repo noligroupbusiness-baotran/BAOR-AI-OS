@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { fileBody } from "@/lib/file-stream";
 import path from "node:path";
 import { getCurrentUser } from "@/lib/auth";
 import { jobDir } from "@/lib/video/jobs";
@@ -38,8 +39,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ videoId:
     const start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
     const end = range[1] && range[2] ? Math.min(size - 1, Number(range[2])) : size - 1;
     if (start >= size || start > end) return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${size}` } });
-    const stream = fs.createReadStream(full, { start, end });
-    return new Response(stream as unknown as ReadableStream, { status: 206, headers: { ...headers, "Content-Range": `bytes ${start}-${end}/${size}`, "Content-Length": String(end - start + 1) } });
+    return new Response(fileBody(full, { start, end }), { status: 206, headers: { ...headers, "Content-Range": `bytes ${start}-${end}/${size}`, "Content-Length": String(end - start + 1) } });
   }
-  return new Response(fs.createReadStream(full) as unknown as ReadableStream, { headers: { ...headers, "Content-Length": String(size) } });
+  return new Response(fileBody(full), { headers: { ...headers, "Content-Length": String(size) } });
 }
