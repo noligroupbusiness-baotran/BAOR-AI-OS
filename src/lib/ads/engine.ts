@@ -8,7 +8,7 @@ import { sendAlert } from "@/lib/alerts";
 import { campaignRepo } from "@/lib/campaigns/repository";
 import { connectorContext, readIntegrationConfig } from "@/lib/connectors/config";
 import { getUpload, uploadPath } from "@/lib/uploads";
-import { authorizationStatus, daysLeftInMonth, gateForAd, getAuthorization, isSampleAd, monthSpent, vnDate } from "./authorization";
+import { authorizationStatus, daysLeftInMonth, gateForAd, getAuthorization, isSampleAd, monthSpentForProjection, vnDate } from "./authorization";
 import { createPausedDraft, fetchDailyInsights, setDailyBudget, setDeliveryStatus, setObjectStatus, type Audience } from "./meta-marketing";
 
 const nowIso = () => new Date().toISOString();
@@ -181,16 +181,19 @@ export async function changeDailyBudget(adId: string, vnd: number, by: string): 
 /** Đọc chi phí theo ngày từ Meta cho quảng cáo đã nằm trên Meta (mỗi giờ). */
 export async function syncAdInsights(): Promise<{ updated: number; errors: string[] }> {
   const out = { updated: 0, errors: [] as string[] };
-  if (!metaConnected()) return out;
+  if (!metaConnected()) {
+    // Không đọc được Insights: ghi lý do để bảng giải thích phần ước tính (nếu có quảng cáo trên Meta đang chạy)
+    const onMeta = getDb().select().from(schema.adCampaigns).where(isNotNull(schema.adCampaigns.metaCampaignId)).all().some((a) => a.status === "active");
+    setSetting("ads.insightsError", onMeta ? JSON.stringify({ at: nowIso(), errors: ["Mất kết nối Meta Ads: không đọc được chi phí"] }) : "");
+    return out;
+  }
   const db = getDb();
   const today = vnDate();
   for (const ad of db.select().from(schema.adCampaigns).where(isNotNull(schema.adCampaigns.metaCampaignId)).all()) {
     if (ad.status !== "active" && ad.status !== "paused") continue;
     try {
-      // Chỉ đọc tháng hiện tại (đủ cho cổng chi tiêu); hàm đọc đi hết các trang kết quả.
-      const monthStart = `${today.slice(0, 7)}-01`;
-      const start = (ad.startAt ?? nowIso()).slice(0, 10);
-      const since = start > monthStart ? (start < today ? start : today) : monthStart;
+      // Đọc cả tháng hiện tại mỗi lần (bù được ngày lần trước lỗi); đồng bộ thành công → insightsAt = mốc phủ cho monthSpentDetail.
+      const since = `${today.slice(0, 7)}-01`;
       const rows = await fetchDailyInsights(connectorContext("meta_ads"), ad.metaCampaignId!, since, today);
       db.transaction((tx) => {
         for (const r of rows) {
@@ -205,8 +208,11 @@ export async function syncAdInsights(): Promise<{ updated: number; errors: strin
     }
   }
   // Báo lỗi Insights để OWNER biết chi tiêu tháng đang có phần ước tính (monthSpentDetail)
+  const prevErr = getSetting("ads.insightsError");
   setSetting("ads.insightsError", out.errors.length ? JSON.stringify({ at: nowIso(), errors: out.errors.slice(0, 5) }) : "");
-  if (out.errors.length) void sendAlert({ level: "warn", title: "Đồng bộ chi phí quảng cáo lỗi", text: out.errors.join("; ").slice(0, 400), href: "/publishing#ads" });
+  // Chỉ cảnh báo khi lỗi mới xuất hiện / đổi nội dung (đồng bộ mỗi giờ, không gửi lặp)
+  const sameErr = (() => { try { return JSON.stringify((JSON.parse(prevErr || "null") as { errors?: string[] } | null)?.errors) === JSON.stringify(out.errors.slice(0, 5)); } catch { return false; } })();
+  if (out.errors.length && !sameErr) void sendAlert({ level: "warn", title: "Đồng bộ chi phí quảng cáo lỗi", text: out.errors.join("; ").slice(0, 400), href: "/publishing#ads" });
   return out;
 }
 
@@ -294,7 +300,7 @@ export async function enforceAuthorization(): Promise<{ paused: number; failed: 
     // Chỉ bỏ khỏi phép dự chi khi đã dừng THẬT; dừng hỏng nghĩa là vẫn đang tiêu tiền.
     if (a.endAt && Date.parse(a.endAt) < now && (await stop(a.id, "Tự dừng: đã qua ngày kết thúc"))) running = running.filter((x) => x.id !== a.id);
   }
-  const spent = monthSpent();
+  const spent = monthSpentForProjection();
   const days = daysLeftInMonth();
   const projected = () => spent + running.reduce((n, a) => n + a.dailyBudget, 0) * days;
   for (const a of [...running].sort((x, y) => y.dailyBudget - x.dailyBudget)) {

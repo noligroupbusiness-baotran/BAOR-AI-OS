@@ -108,7 +108,10 @@ export function scheduleVideoPosts(input: { videoId: string; platforms: string[]
   const keys = platforms.map((p) => `${p}:${v.id}`);
   const existing = db.select().from(schema.scheduledPosts).where(inArray(schema.scheduledPosts.dedupeKey, keys)).all();
   // Bài lỗi nhưng nền tảng ĐÃ nhận video (có externalId) vẫn tính là đã đăng: không lên lịch lại để tránh trùng.
-  const live = existing.filter((e) => (e.status !== "failed" && e.status !== "cancelled") || !!e.externalId);
+  // Bài lỗi MƠ HỒ (có thể đã lên trang) cũng tính là còn sống: chỉ đăng lại qua "Thử lại" kèm ghi chú đã kiểm tra trang.
+  const live = existing.filter((e) => (e.status !== "failed" && e.status !== "cancelled") || !!e.externalId || isAmbiguousFailure(e));
+  if (!dry && live.some((e) => e.status === "failed" && !e.externalId))
+    return { ok: false, error: `Bài trên ${live.filter((e) => isAmbiguousFailure(e)).map((e) => e.platform).join(", ")} lỗi mơ hồ, có thể đã lên trang. Kiểm tra trang rồi dùng “Thử lại” (ghi lại đã kiểm tra), không lên lịch mới.` };
   if (!dry && live.length) return { ok: false, error: `Video đã có bài trên ${live.map((e) => e.platform).join(", ")} (${live.map((e) => e.status).join(", ")}). Không đăng trùng.` };
   const thumb = makeThumbnail(masterPath, v.title, input.by);
   const rows = platforms.map((p) => ({

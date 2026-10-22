@@ -93,13 +93,18 @@ export function daysLeftInMonth(today = vnDate()): number {
 }
 
 export interface MonthSpentDetail {
-  /** Tổng dùng cho cổng chi tiêu = đo được + ước tính. */
+  /** Đã chi trong tháng = đo được + ước tính (hiển thị "Đã chi"). */
   total: number;
-  /** Cộng chi tiêu theo ngày đọc từ Meta (Insights). */
+  /** Cộng chi tiêu theo ngày đọc từ Meta (Insights), cộng số đã ghi nhận của quảng cáo chưa có số liệu theo ngày. */
   measured: number;
-  /** Ước cho ngày thiếu số liệu của quảng cáo đang chạy (ngân sách ngày × số ngày thiếu). */
+  /** Ước cho ngày đã qua mà Insights chưa phủ của quảng cáo đang chạy (ngân sách ngày − số đo được của ngày đó). */
   estimated: number;
   estimatedAds: { id: string; name: string; days: number; vnd: number }[];
+  /**
+   * Nền cho phép dự chi (cổng + tự dừng): total trừ phần hôm nay của quảng cáo đang chạy đã nằm trong
+   * "ngân sách ngày × số ngày còn lại" (daysLeftInMonth tính cả hôm nay) — tránh cộng hôm nay hai lần.
+   */
+  projectionBase: number;
 }
 
 function dayRange(from: string, to: string): string[] {
@@ -108,45 +113,67 @@ function dayRange(from: string, to: string): string[] {
   return out;
 }
 
+function prevDay(day: string): string {
+  const d = new Date(`${day}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
 /**
- * Đã chi trong tháng, không bao giờ tính THIẾU: cộng chi tiêu theo ngày đọc từ Meta; quảng cáo đang chạy mà có ngày chưa có số liệu
- * (Insights lỗi / chưa đồng bộ) thì ước những ngày đó theo ngân sách ngày; quảng cáo chưa có số liệu theo ngày thì lấy
- * max(tổng đã chi ghi nhận, ngân sách ngày × số ngày chạy trong tháng).
+ * Đã chi trong tháng, không bao giờ tính THIẾU nhưng cũng không ước bừa:
+ * - Đo được: chi tiêu theo ngày đọc từ Meta.
+ * - Ước tính: chỉ cho NGÀY ĐÃ QUA (tới hôm qua; hôm nay đã nằm trong phần dự chi) mà lần đồng bộ Insights thành công cuối
+ *   chưa phủ tới. Đồng bộ thành công (insightsAt) đọc cả tháng nên mọi ngày TRƯỚC ngày đồng bộ là đã biết (không có dòng
+ *   = không phân phối = 0 ₫); ngày đồng bộ và sau đó tới hôm qua mới thiếu số liệu thật. Chưa từng đồng bộ thì tính từ ngày
+ *   bật (startedAt) / ngày lịch (startAt), theo giờ Việt Nam. Ngày thiếu ước = max(0, ngân sách ngày − số đo được ngày đó).
+ * - Chỉ ước cho quảng cáo đang chạy và biết ngày bắt đầu.
  */
 export function monthSpentDetail(today = vnDate()): MonthSpentDetail {
   const db = getDb();
   const from = `${today.slice(0, 7)}-01`;
-  const rows = db.select().from(schema.adSpendDaily).where(and(gte(schema.adSpendDaily.date, from), lte(schema.adSpendDaily.date, today))).all();
+  const yesterday = prevDay(today);
+  const rows = db.select().from(schema.adSpendDaily).where(and(gte(schema.adSpendDaily.date, from), lte(schema.adSpendDaily.date, today))).all().filter((r) => !isSampleAd(r.adId));
   const withDaily = new Set(db.select({ id: schema.adSpendDaily.adId }).from(schema.adSpendDaily).all().map((r) => r.id));
   const ads = db.select().from(schema.adCampaigns).all().filter((a) => !isSampleAd(a.id));
-  const measured = rows.filter((r) => !isSampleAd(r.adId)).reduce((n, r) => n + r.spend, 0);
+  let measured = rows.reduce((n, r) => n + r.spend, 0);
   let estimated = 0;
   const estimatedAds: MonthSpentDetail["estimatedAds"] = [];
   for (const a of ads) {
-    // Chỉ ước khi biết ngày bắt đầu chạy (startedAt ghi lúc bật, hoặc startAt của lịch); không biết thì giữ số đã ghi nhận.
-    const startIso = a.startedAt ?? a.startAt;
-    const start = startIso ? startIso.slice(0, 10) : null;
-    const runDays = a.status === "active" && start ? dayRange(start > from ? start : from, today) : [];
-    if (withDaily.has(a.id)) {
-      const have = new Set(rows.filter((r) => r.adId === a.id).map((r) => r.date));
-      const missing = runDays.filter((d) => !have.has(d)).length;
-      if (missing > 0) {
-        estimated += missing * a.dailyBudget;
-        estimatedAds.push({ id: a.id, name: a.name, days: missing, vnd: missing * a.dailyBudget });
+    // Số đã ghi nhận nhưng không có dòng theo ngày (nhập tay / dữ liệu cũ): giữ nguyên, tính là đo được, không phải ước.
+    if (!withDaily.has(a.id) && a.spent > 0) measured += a.spent;
+    if (a.status !== "active") continue;
+    const coverIso = a.insightsAt ?? a.startedAt ?? a.startAt;
+    if (!coverIso) continue;
+    const cover = vnDate(new Date(coverIso));
+    const days = dayRange(cover > from ? cover : from, yesterday);
+    let vnd = 0;
+    let n = 0;
+    for (const d of days) {
+      const got = rows.filter((r) => r.adId === a.id && r.date === d).reduce((x, r) => x + r.spend, 0);
+      const gap = Math.max(0, a.dailyBudget - got);
+      if (gap > 0) {
+        vnd += gap;
+        n++;
       }
-    } else {
-      const est = runDays.length * a.dailyBudget;
-      if (est > a.spent) {
-        estimated += est;
-        estimatedAds.push({ id: a.id, name: a.name, days: runDays.length, vnd: est });
-      } else estimated += a.spent;
+    }
+    if (vnd > 0) {
+      estimated += vnd;
+      estimatedAds.push({ id: a.id, name: a.name, days: n, vnd });
     }
   }
-  return { total: measured + estimated, measured, estimated, estimatedAds };
+  const activeBudget = new Map(ads.filter((a) => a.status === "active").map((a) => [a.id, a.dailyBudget]));
+  const todayInProjection = rows.filter((r) => r.date === today && activeBudget.has(r.adId)).reduce((n, r) => n + Math.min(r.spend, activeBudget.get(r.adId)!), 0);
+  const total = measured + estimated;
+  return { total, measured, estimated, estimatedAds, projectionBase: total - todayInProjection };
 }
 
 export function monthSpent(today = vnDate()): number {
   return monthSpentDetail(today).total;
+}
+
+/** Nền cho phép dự chi "đã chi + ngân sách ngày × số ngày còn lại (kể cả hôm nay)". */
+export function monthSpentForProjection(today = vnDate()): number {
+  return monthSpentDetail(today).projectionBase;
 }
 
 /** Cổng cho một quảng cáo cụ thể, lấy số liệu từ CSDL. */
@@ -160,7 +187,7 @@ export function gateForAd(adId: string, dailyBudget: number): { ok: boolean; rea
     dailyBudget,
     currentDaily: ad?.status === "active" ? ad.dailyBudget : 0,
     otherActiveDaily: active.filter((a) => a.id !== adId).reduce((n, a) => n + a.dailyBudget, 0),
-    monthSpent: monthSpent(),
+    monthSpent: monthSpentForProjection(),
     daysLeft: daysLeftInMonth(),
     // Quảng cáo đã nằm trên Meta: tài khoản đang kết nối phải đúng tài khoản OWNER ủy quyền.
     adAccountId: ad?.metaCampaignId ? readIntegrationConfig("meta_ads").adAccountId || "?" : undefined,

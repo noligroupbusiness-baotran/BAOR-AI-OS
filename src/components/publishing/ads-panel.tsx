@@ -32,7 +32,7 @@ export function AdsPanel({ edit, link }: { edit?: string; link?: string }) {
     }
   })();
   const activeDaily = ads.filter((a) => a.status === "active" && !isSampleAd(a.id)).reduce((n, a) => n + a.dailyBudget, 0);
-  const projected = spent + activeDaily * daysLeftInMonth();
+  const projected = spentDetail.projectionBase + activeDaily * daysLeftInMonth(); // hôm nay đã nằm trong ngân sách × ngày còn lại
 
   return (
     <>

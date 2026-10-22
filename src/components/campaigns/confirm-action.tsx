@@ -29,7 +29,7 @@ export function ConfirmAction({
   size?: "sm" | "md";
   danger?: boolean;
   /** Cho phép ghi chú kèm quyết định (VD: lý do yêu cầu chỉnh sửa). */
-  withNote?: { label: string; placeholder?: string; required?: boolean };
+  withNote?: { label: string; placeholder?: string; required?: boolean; minLength?: number };
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -46,7 +46,7 @@ export function ConfirmAction({
           {withNote && (
             <label className="block">
               <span className="lbl">{withNote.label}</span>
-              <textarea name="note" rows={3} required={withNote.required} placeholder={withNote.placeholder} className="mt-1 w-full rounded-md border border-border-2 bg-surface px-2.5 py-2 text-[13px] text-ink outline-none focus-visible:outline-2 focus-visible:outline-jade" />
+              <textarea name="note" rows={3} required={withNote.required} minLength={withNote.minLength} placeholder={withNote.placeholder} className="mt-1 w-full rounded-md border border-border-2 bg-surface px-2.5 py-2 text-[13px] text-ink outline-none focus-visible:outline-2 focus-visible:outline-jade" />
             </label>
           )}
           <div className="flex justify-end gap-2">

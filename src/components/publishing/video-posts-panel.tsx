@@ -80,7 +80,7 @@ export function VideoPostsPanel() {
                 </div>
                 <div className="flex gap-1.5">
                   {p.status === "failed" && !p.externalId && (isAmbiguousFailure(p) ? (
-                    <ConfirmAction action={retryVideoPostAction} fields={{ id: p.id }} label="Thử lại" title="Lần trước không rõ đã đăng chưa" message="Lệnh đăng đã gửi nhưng nền tảng không trả kết quả rõ ràng: bài CÓ THỂ đã lên. Mở trang kiểm tra trước; chỉ đăng lại khi chắc chắn chưa có bài." confirmLabel="Đã kiểm tra, đăng lại" variant="soft" withNote={{ label: "Xác nhận đã kiểm tra trang", required: true, placeholder: "VD: Đã mở trang lúc 10:05, không thấy bài" }} />
+                    <ConfirmAction action={retryVideoPostAction} fields={{ id: p.id }} label="Thử lại" title="Lần trước không rõ đã đăng chưa" message="Lệnh đăng đã gửi nhưng nền tảng không trả kết quả rõ ràng: bài CÓ THỂ đã lên. Mở trang kiểm tra trước; chỉ đăng lại khi chắc chắn chưa có bài." confirmLabel="Đã kiểm tra, đăng lại" variant="soft" withNote={{ label: "Xác nhận đã kiểm tra trang", required: true, minLength: 10, placeholder: "VD: Đã mở trang lúc 10:05, không thấy bài" }} />
                   ) : (
                     <ConfirmAction action={retryVideoPostAction} fields={{ id: p.id }} label="Thử lại" title="Thử đăng lại?" message="Kiểm tra trang trước: nếu bài đã lên thì đừng thử lại để tránh đăng trùng. Bài sẽ được đăng ở lượt chạy tới." confirmLabel="Thử lại" variant="soft" />
                   ))}

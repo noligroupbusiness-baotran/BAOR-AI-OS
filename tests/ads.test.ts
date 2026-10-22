@@ -191,13 +191,52 @@ test("P2-4: chi tiêu tháng không bị tính thiếu khi Insights chưa đồn
   d.insert(db.schema.adSpendDaily).values({ adId: "ad_stale", date: "2026-10-01", spend: 90_000, impressions: 1000, clicks: 10, leads: 1, thruplays: 100 }).run();
   const det = auth.monthSpentDetail("2026-10-21");
   assert.equal(det.measured, 90_000);
-  assert.equal(det.estimated, 100_000 * 20, "20 ngày (2→21/10) chưa có số liệu, ước theo ngân sách ngày");
-  assert.equal(det.total, 90_000 + 2_000_000);
+  // Chưa đồng bộ thành công lần nào: ngày 01 thiếu 10k so với ngân sách, 02→20/10 thiếu trọn; hôm nay (21) nằm trong phần dự chi
+  assert.equal(det.estimated, 10_000 + 100_000 * 19, "ngày đã qua chưa có số liệu, ước theo ngân sách ngày");
+  assert.equal(det.total, 90_000 + 1_910_000);
   assert.equal(auth.monthSpent("2026-10-21"), det.total);
   assert.equal(det.estimatedAds[0].days, 20);
   // Có đủ số liệu thì không ước
   for (let day = 2; day <= 21; day++) d.insert(db.schema.adSpendDaily).values({ adId: "ad_stale", date: `2026-10-${String(day).padStart(2, "0")}`, spend: 80_000, impressions: 0, clicks: 0, leads: 0, thruplays: 0 }).run();
+  d.update(db.schema.adCampaigns).set({ insightsAt: "2026-10-21T05:00:00Z" }).where(eq(db.schema.adCampaigns.id, "ad_stale")).run();
   const full = auth.monthSpentDetail("2026-10-21");
   assert.equal(full.estimated, 0);
   assert.equal(full.total, 90_000 + 80_000 * 20);
+});
+
+test("P2-4 (phản biện): không ước trùng hôm nay, không ước ngày đã được đồng bộ phủ; vừa bật xong thì không bị tự dừng", async () => {
+  const d = db.getDb();
+  d.delete(db.schema.adCampaigns).run();
+  d.delete(db.schema.adSpendDaily).run();
+  const base = { objective: "video_views", dailyBudget: 100_000, spent: 0, impressions: 0, clicks: 0, leads: 0, audience: "" };
+  // a) Hôm nay chưa có số liệu: không ước (đã nằm trong ngân sách × ngày còn lại); ngày bật theo giờ VN, không theo UTC
+  d.insert(db.schema.adCampaigns).values({ ...base, id: "ad_new", name: "Mới bật", status: "active", startedAt: "2026-10-20T18:30:00Z" }).run(); // 01:30 ngày 21 giờ VN
+  let det = auth.monthSpentDetail("2026-10-21");
+  assert.equal(det.estimated, 0, "bật lúc 01:30 sáng 21/10 giờ VN, hôm nay 21/10 → không có ngày đã qua để ước");
+  // Hôm nay đã chi 60k: "Đã chi" hiện 60k, nhưng nền dự chi trừ phần này vì ngân sách hôm nay đã nằm trong dự chi
+  d.insert(db.schema.adSpendDaily).values({ adId: "ad_new", date: "2026-10-21", spend: 60_000, impressions: 0, clicks: 0, leads: 0, thruplays: 0 }).run();
+  det = auth.monthSpentDetail("2026-10-21");
+  assert.equal(det.total, 60_000);
+  assert.equal(det.projectionBase, 0);
+
+  // b) Bật 01/10, chạy 01–02, tạm dừng, bật lại hôm nay; đồng bộ Insights thành công lúc 10:00 ngày 21 → chỉ ngày 21 chưa phủ trọn
+  d.delete(db.schema.adCampaigns).run();
+  d.delete(db.schema.adSpendDaily).run();
+  d.insert(db.schema.adCampaigns).values({ ...base, id: "ad_resume", name: "Bật lại", status: "active", startedAt: "2026-10-01T02:00:00Z", insightsAt: "2026-10-21T03:00:00Z", metaCampaignId: "C1", metaAdsetId: "S1", metaAdId: "A1" }).run();
+  for (const day of ["01", "02"]) d.insert(db.schema.adSpendDaily).values({ adId: "ad_resume", date: `2026-10-${day}`, spend: 100_000, impressions: 0, clicks: 0, leads: 0, thruplays: 0 }).run();
+  det = auth.monthSpentDetail("2026-10-22");
+  assert.equal(det.measured, 200_000);
+  assert.equal(det.estimated, 100_000, "chỉ ước ngày 21 (đồng bộ giữa ngày); 18 ngày dừng đã được đồng bộ phủ → 0 ₫, không ước 2 triệu");
+  d.update(db.schema.adCampaigns).set({ insightsAt: "2026-10-22T01:00:00Z" }).where(eq(db.schema.adCampaigns.id, "ad_resume")).run();
+  assert.equal(auth.monthSpentDetail("2026-10-22").estimated, 0, "đồng bộ hôm nay thành công → hết ước tính");
+
+  // c) Cổng cho bật ở đúng trần, rồi bộ giữ trần chạy ngay: không tự dừng quảng cáo vừa bật
+  d.delete(db.schema.adCampaigns).run();
+  d.delete(db.schema.adSpendDaily).run();
+  auth.saveAuthorization(A({ monthlyCapVnd: 100_000 * auth.daysLeftInMonth(), dailyCapVnd: 300_000 }));
+  d.insert(db.schema.adCampaigns).values({ ...base, id: "ad_edge", name: "Đúng trần", status: "active", startedAt: new Date().toISOString() }).run();
+  assert.equal(auth.gateForAd("ad_edge", 100_000).ok, true);
+  const r = await engine.enforceAuthorization();
+  assert.equal(r.paused, 0, "vừa được cổng cho bật thì bộ giữ trần không tự dừng");
+  assert.equal(d.select().from(db.schema.adCampaigns).where(eq(db.schema.adCampaigns.id, "ad_edge")).get()!.status, "active");
 });

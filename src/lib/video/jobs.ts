@@ -281,8 +281,9 @@ function isOurRenderer(pid: number | undefined): boolean {
 function killGroup(pid: number) {
   const tree = killTreeCmd(process.platform, pid);
   if (tree) {
-    spawnSync(tree[0], tree[1], { timeout: 10_000, windowsHide: true });
-    return;
+    const r = spawnSync(tree[0], tree[1], { timeout: 10_000, windowsHide: true });
+    if (r.status === 0) return;
+    // taskkill lỗi: ít nhất dừng tiến trình chính
   }
   try {
     process.kill(-pid, "SIGKILL");

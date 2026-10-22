@@ -233,6 +233,12 @@ test("P2-1: Meta trả 5xx dạng JSON ở bước đăng cuối → coi là mơ
 test("P2-2: bài lỗi mơ hồ chỉ được đăng lại khi người dựng xác nhận đã kiểm tra trang", async () => {
   const post = pub.videoPostsFor("v_5xx")[0];
   assert.equal(post.status, "failed");
+  // Lên lịch lại cùng video, cùng kênh không được lách qua bước xác nhận
+  admin.setSetting("publishing.dryRun", "0");
+  const again = pub.scheduleVideoPosts({ videoId: "v_5xx", platforms: ["facebook"], whenIso: new Date().toISOString(), caption: "Bình luận bên dưới", by: "t" });
+  assert.equal(again.ok, false, "bài lỗi mơ hồ chặn lên lịch mới");
+  assert.match((again as { error: string }).error, /mơ hồ/);
+  assert.equal(pub.videoPostsFor("v_5xx").length, 1, "không tạo bài thứ hai");
   const r1 = pub.retryVideoPost(post.id);
   assert.equal(r1.ok, false, "thiếu xác nhận thì không cho đăng lại");
   assert.match(r1.error ?? "", /kiểm tra trang/i);
