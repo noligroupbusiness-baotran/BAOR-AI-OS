@@ -27,6 +27,7 @@ const steps: Step[] = e2eOnly
       ...(noBuild ? [] : [{ name: "build", cmd: ["npx", "next", "build"] }]),
     ];
 if (withE2e) steps.push({ name: "e2e", cmd: ["npx", "playwright", "test"] });
+const buildStamp = path.join("artifacts", "verification-evidence", "build-stamp.json");
 
 const git = (c: string) => {
   try {
@@ -44,6 +45,22 @@ const results: { name: string; result: "PASS" | "FAIL"; ms: number; tail?: strin
 let failed = false;
 for (const s of steps) {
   const t = Date.now();
+  // E2E phải chạy trên bản build của ĐÚNG mã hiện tại (dấu build ghi sau bước build thành công)
+  if (s.name === "e2e") {
+    let stamp: { fingerprint?: string } = {};
+    try {
+      stamp = JSON.parse(fs.readFileSync(buildStamp, "utf8"));
+    } catch {
+      /* chưa có */
+    }
+    if (stamp.fingerprint !== fingerprint) {
+      const why = `Bản build .next không khớp mã hiện tại (build ${stamp.fingerprint ?? "chưa có"}, mã ${fingerprint}). Chạy npm run verify:full.`;
+      console.log(`\n=== e2e: ${why}`);
+      results.push({ name: "e2e", result: "FAIL", ms: 0, tail: why });
+      failed = true;
+      break;
+    }
+  }
   process.stdout.write(`\n=== ${s.name}: ${s.cmd.join(" ").slice(0, 140)}\n`);
   const r = spawnSync(s.cmd[0], s.cmd.slice(1), { stdio: ["ignore", "pipe", "pipe"], encoding: "utf8", env: { ...process.env, ...s.env }, maxBuffer: 256 * 1024 * 1024 });
   const outText = `${r.stdout ?? ""}${r.stderr ?? ""}`;
@@ -54,9 +71,14 @@ for (const s of steps) {
     failed = true;
     break;
   }
+  if (s.name === "build") {
+    fs.mkdirSync(path.dirname(buildStamp), { recursive: true });
+    fs.writeFileSync(buildStamp, JSON.stringify({ commitSha, fingerprint, at: new Date().toISOString() }));
+  }
 }
 
-const scope = e2eOnly ? "e2e" : withE2e ? "full" : noBuild ? "quick" : "verify";
+// Phạm vi ghi đúng những gì đã chạy: "full" chỉ khi có build + E2E trong cùng lần chạy
+const scope = e2eOnly ? "e2e" : withE2e ? (noBuild ? "quick+e2e" : "full") : noBuild ? "quick" : "verify";
 const evidence = {
   commitSha,
   fingerprint,

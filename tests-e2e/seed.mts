@@ -4,8 +4,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
-const dataDir = process.env.DATA_DIR ?? "";
-if (!dataDir.includes(path.join("artifacts", "e2e"))) throw new Error(`seed E2E chỉ chạy với DATA_DIR tạm (artifacts/e2e), nhận: ${dataDir}`);
+// Chỉ xoá / ghi đúng thư mục E2E đã định (so đường dẫn tuyệt đối đã chuẩn hoá — không lọt kiểu artifacts/e2e/../../data)
+const expected = path.resolve(import.meta.dirname, "..", "artifacts", "e2e", "data");
+const dataDir = path.resolve(process.env.DATA_DIR ?? "");
+if (dataDir !== expected) throw new Error(`seed E2E chỉ chạy với DATA_DIR = ${expected}, nhận: ${process.env.DATA_DIR}`);
 fs.rmSync(dataDir, { recursive: true, force: true });
 fs.mkdirSync(path.join(dataDir, "uploads"), { recursive: true });
 

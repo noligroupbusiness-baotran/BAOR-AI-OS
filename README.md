@@ -37,19 +37,11 @@ Chưa có `.env.local` (hoặc thiếu ADMIN_EMAIL / ADMIN_PASSWORD) thì mọi 
 Đặt `DEV_AUTO_LOGIN_EMAIL=dev@local.test` trong `.env.local`: khi chạy `next dev`, mở bất kỳ trang nào là vào thẳng quản trị với
 tài khoản đó (`src/proxy.ts`). Bản build production bỏ qua biến này hoàn toàn. Bỏ dòng đó khi muốn thử màn hình đăng nhập.
 
-## Nhiều session làm song song (mỗi vị trí một session)
+## Dev server
 
-`.claude/launch.json` (đã đưa vào repo) có sẵn một cấu hình dev server cho mỗi vị trí, mỗi cấu hình một cổng và một thư mục
-dữ liệu riêng để hai tiến trình không ghi cùng một tệp SQLite:
-
-| Cấu hình | Cổng | DATA_DIR | Vị trí |
-|---|---|---|---|
-| `baor-dev` | 3010 | `data` | dùng chung / điều phối |
-| `baor-campaigns` | 3011 | `data-campaigns` | Chiến dịch và Báo cáo |
-| `baor-content` | 3012 | `data-content` | Nội dung và Video |
-| `baor-ads` | 3013 | `data-ads` | Đăng bài và Quảng cáo |
-| `baor-customers` | 3014 | `data-customers` | Khách hàng và Automation |
-| `baor-infra` | 3015 | `data-infra` | Hạ tầng, bảo mật, deploy |
+`.claude/launch.json` có cấu hình `baor-dev` (cổng 3010, dữ liệu `data/`) là app dùng để kiểm. Các cấu hình theo vị trí cũ
+(`baor-campaigns`, `baor-content`…, mỗi cấu hình một cổng và thư mục dữ liệu riêng) chỉ còn để mở lại dữ liệu cũ; mô hình nhiều
+session theo vị trí đã HẾT HIỆU LỰC (một nhánh làm việc, xem chuẩn vận hành §7).
 
 Cách làm việc của mọi phiên Claude Code / agent: **`docs/BAOR_OPERATING_MODEL.md`** (chuẩn vận hành dùng chung; bản theo vị trí cũ
 đã lưu trữ ở `docs/archive/SESSIONS-2026-09.md`). Cổng chất lượng: `npm run verify` (có giao diện: `npm run verify:full`).

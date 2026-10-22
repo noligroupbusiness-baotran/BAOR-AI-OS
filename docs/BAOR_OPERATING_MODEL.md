@@ -121,11 +121,11 @@ Lý do: khoảng 20/31 sự cố ở Noli do chính bộ máy điều phối gâ
 
 | Quy tắc | Cơ chế | Kiểm chứng |
 |---|---|---|
-| Không đẩy / ép đẩy `main`, không ghép PR, không ssh / deploy, không `git add -A`, không stage `data/` · `docs/brand-engine/` · `.env`, không `git clean -f`, không `rm -rf data`, không `--no-verify` | Hook **PreToolUse** `scripts/agent/guard-bash.mjs` + `permissions.deny` trong `.claude/settings.json` (mọi phiên trong repo) | `node scripts/agent/guard-bash.mjs --self-test` (trong GR-05) |
-| Không commit dữ liệu thật / tài liệu nội bộ / `.env` | Git hook `.githooks/pre-commit` (cài qua `npm install` → `core.hooksPath`) | Thử commit tệp `data/` bị chặn |
-| Không đẩy khi cổng đỏ; không đẩy main | Git hook `.githooks/pre-push` chạy `verify --no-build` | Lần đẩy có log verify |
-| Không tắt test / nới TypeScript / tắt lint cả tệp; hook bảo vệ và khối khôi phục còn nguyên; reviewer không có quyền sửa | `scripts/guardrails.mts` GR-01…07 (bước đầu của verify) | Vi phạm → verify đỏ |
-| Cổng chất lượng đủ 7 lớp, gắn SHA | `scripts/verify.mts` → `artifacts/verification-evidence/` | Tệp bằng chứng |
+| Không đẩy / ép đẩy `main`, không ghép PR, không ssh / deploy, không `git add -A`, không stage `data/` · `docs/brand-engine/` · `.env`, không `git clean -f`, không `rm -rf data`, không `--no-verify` | Hook **PreToolUse** `scripts/agent/guard-bash.mjs` (Bash + terminal của app; chuẩn hoá lệnh trước khi so) + `permissions.deny` trong `.claude/settings.json` | `node scripts/agent/guard-bash.mjs --self-test` (trong GR-05) |
+| Không commit / đẩy dữ liệu thật / tài liệu nội bộ / `.env` | Git hook `.githooks/pre-commit` + `pre-push` soát tên tệp trong đúng các commit sắp đẩy + `security-check` (tệp bị theo dõi) | Thử commit / đẩy tệp `data/`, `docs/brand-engine/` bị chặn |
+| Không đẩy khi cổng đỏ; không đẩy main | Git hook `.githooks/pre-push` chạy `verify --no-build` trên ĐÚNG commit được đẩy (worktree tạm nếu cây có thay đổi) | Lần đẩy có log verify |
+| Không tắt test / nới TypeScript (kể cả cờ con, exclude) / tắt lint cả tệp; hook bảo vệ còn nguyên (kể cả `disableAllHooks` cục bộ); khối khôi phục còn; reviewer không có quyền sửa | `scripts/guardrails.mts` GR-01…07 (bước đầu của verify) | `tests/guardrails.test.ts`: 12 đột biến đều làm đỏ |
+| Cổng chất lượng đủ 7 lớp, gắn SHA; E2E chỉ chạy trên bản build khớp mã | `scripts/verify.mts` → `artifacts/verification-evidence/` (+ `build-stamp.json`) | Tệp bằng chứng |
 | Kiểm tra cuối ở ranh giới ghép | `.github/workflows/ci.yml` (PR vào main có nhãn `merge-candidate`) | Lần chạy CI trên GitHub |
 | Phiên mới tự khôi phục | Hook **SessionStart** `scripts/agent/session-start.mjs`: in chuẩn, nhánh, verify gần nhất có khớp HEAD, VIỆC TIẾP THEO | Mở phiên mới thấy khối khôi phục |
 
@@ -136,7 +136,18 @@ Lý do: khoảng 20/31 sự cố ở Noli do chính bộ máy điều phối gâ
 3. **Hook SessionStart** đưa (1)+(2) vào mọi phiên mới tự động, không cần OWNER dán lệnh.
 4. Bộ nhớ Claude (`~/.claude/projects/…/memory`) chỉ là phụ; nguồn sự thật là repo.
 
-**Giới hạn (đã kiểm, nói thẳng):** Claude Code **không tự mở phiên mới** khi phiên cũ kết thúc. Phiên tiếp theo bắt đầu khi OWNER (hoặc lịch) mở nó; khi đó hook tự nạp trạng thái và MASTER làm tiếp không cần hướng dẫn.
+**Giới hạn của lớp cưỡng chế (nói thẳng, phản biện S1 22/10/2026):**
+
+- `guard-bash` là lớp **cục bộ dựa trên mẫu lệnh** (đã chuẩn hoá `git -C`, cờ gộp, dấu nháy, `sh -c`; tự kiểm 102 ca). Nó chỉ áp
+  cho công cụ Bash và terminal của app, không áp cho thao tác ngoài Claude Code. Người hay công cụ cố tình viết lệnh lạ vẫn có thể lách.
+- Git hook nằm ở máy, ai có quyền máy đều tắt được. `guardrails` GR-04 báo đỏ khi hook Claude bị tắt bằng `disableAllHooks`.
+- **Lớp không lách được là branch protection / ruleset cho `main` trên GitHub** (chặn đẩy thẳng và ép đẩy, bắt buộc qua PR + CI).
+  Hiện `main` **chưa có** bảo vệ. Bật nó là đổi chính sách quyền truy cập, thuộc quyền OWNER (BỊ CHẶN, xem trạng thái).
+- Agent `baor-reviewer` không có Edit / Write nhưng vẫn có Bash: "chỉ đọc" được giữ bằng hợp đồng + kiểm `git status` sau review,
+  chưa phải bằng quyền máy. Agent định nghĩa trong `.claude/agents/` chỉ nạp khi mở phiên mới; trong phiên đang chạy, MASTER
+  giao cùng hợp đồng cho agent general-purpose.
+
+**Giới hạn khôi phục:** Claude Code **không tự mở phiên mới** khi phiên cũ kết thúc. Phiên tiếp theo bắt đầu khi OWNER (hoặc lịch) mở nó; khi đó hook tự nạp trạng thái và MASTER làm tiếp không cần hướng dẫn.
 Cách chạy liên tục thực tế, nếu OWNER muốn: một tác vụ theo lịch của ứng dụng Claude (Scheduled tasks) với câu lệnh cố định *"Tiếp tục BAOR theo docs/BAOR_OPERATING_MODEL.md"* — chưa bật vì mỗi lần chạy tốn hạn mức sử dụng; bật là quyết định của OWNER.
 Không có tiến trình nền nào tự phát triển mã; worker nền của app chỉ dựng video / đăng lịch / đồng bộ số liệu.
 

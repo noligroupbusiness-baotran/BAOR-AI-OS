@@ -35,6 +35,7 @@ Cập nhật bởi MASTER sau mỗi checkpoint. Nguồn vận hành: `docs/BAOR_
 | Video B1 | OWNER nghe lại 39 từ chưa chắc, quyết tên người trong phụ đề (#92), cỡ logo (#98a), giấy phép font | Chưa phê duyệt |
 | Câu hỏi mở skill | #78c SFX, #100, #102, #103, nhạc nền | Giữ mặc định an toàn |
 | Đưa lên mkt.baor.vn | OWNER nói MERGE | `main` chậm hơn nhánh làm việc |
+| Bảo vệ nhánh `main` trên GitHub | OWNER bật branch protection / ruleset (chặn đẩy thẳng + ép đẩy, bắt buộc PR + CI \`verify\`) — đổi chính sách quyền truy cập | Hiện chỉ có lớp chặn ở máy (hook); lớp không lách được còn thiếu |
 | Vá lỗ hổng Next.js | Phiên riêng (nhánh `fix/next-16.4.2-security`) | `npm run security` báo lỗi tới khi ghép |
 
 ## Phản hồi OWNER cần xử lý

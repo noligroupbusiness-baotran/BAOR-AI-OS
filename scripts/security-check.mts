@@ -18,6 +18,7 @@ for (const f of tracked) {
   if (/^\.env(\..+)?$/.test(base) && base !== ".env.example") errors.push(`Tệp môi trường bị theo dõi: ${f}`);
   if (/\.(db|sqlite|sqlite3|db-wal|db-shm|pem|key|p12|pfx)$/i.test(base)) errors.push(`Tệp dữ liệu / khóa bị theo dõi: ${f}`);
   if (/^data(-[a-z]+)?\//.test(f)) errors.push(`Thư mục dữ liệu bị theo dõi: ${f}`);
+  if (/^(docs\/brand-engine|artifacts)\//.test(f)) errors.push(`Tài liệu nội bộ / bằng chứng máy bị theo dõi (repo công khai): ${f}`);
 }
 
 // 2) Mẫu secret thật. Chỉ quét tệp văn bản nhỏ; bỏ lock file và tệp test có giá trị giả rõ ràng.

@@ -29,8 +29,9 @@ if (dirty.length) out.push(`  ${dirty.slice(0, 8).join("\n  ")}${dirty.length > 
 
 try {
   const ev = JSON.parse(fs.readFileSync(path.join(root, "artifacts", "verification-evidence", "latest.json"), "utf8"));
-  const same = ev.commitSha?.startsWith(head) && ev.clean;
-  out.push(`Verify gần nhất: ${ev.result} · ${ev.scope} · ${ev.commitSha?.slice(0, 7)} · ${ev.finishedAt} — ${same ? "KHỚP HEAD" : "KHÔNG khớp HEAD / cây bẩn: chạy lại `npm run verify` trước khi báo xong"}`);
+  const same = ev.commitSha?.startsWith(head) && ev.clean && dirty.length === 0;
+  const enough = ev.result === "PASS" && (ev.scope === "full" || ev.scope === "verify");
+  out.push(`Verify gần nhất: ${ev.result} · ${ev.scope} · ${ev.commitSha?.slice(0, 7)} · ${ev.finishedAt} — ${same && enough ? "KHỚP HEAD, đủ làm bằng chứng" : same ? "khớp HEAD nhưng chỉ là kiểm nhanh (chưa build / E2E)" : "KHÔNG khớp HEAD hoặc cây đang có thay đổi: chạy lại `npm run verify` trước khi báo xong"}`);
 } catch {
   out.push("Verify gần nhất: chưa có bằng chứng ở máy này (npm run verify).");
 }
