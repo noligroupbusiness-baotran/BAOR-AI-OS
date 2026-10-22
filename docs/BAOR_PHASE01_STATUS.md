@@ -71,16 +71,14 @@ Cập nhật bởi MASTER sau mỗi checkpoint. Nguồn vận hành: `docs/BAOR_
 
 <!-- NEXT:START -->
 Nguồn ủy quyền: chỉ thị OWNER 22/10/2026 "CONTINUE BRAND ENGINE IMPLEMENTATION" + "SHARED OPERATING STANDARD". Mỗi mục đi đủ vòng BUILD (docs/BAOR_OPERATING_MODEL.md §2).
-1. [ĐANG NGHIỆM THU] S3 AI biên tập video trong app (0b0789c, 251548d + bản sửa "cái"): bộ dựng tự gọi biên tập AI khi chưa có
-   kế hoạch; nút "AI biên tập lại". Mô hình: Qwen2.5-32B-Instruct Q4_K_M (Apache-2.0) chạy bằng llama-server 127.0.0.1:8091
-   (tệp ở /Volumes/NOLI_AI_OS/models/qwen2.5-32b; bản 14B dự phòng ở qwen2.5-14b). Không có mô hình → kế hoạch theo luật.
-   Chạy THẬT trong app 22/10 13:00: video 1011 bản 8 — AI lập 11 chữ nhấn + 3 sơ đồ trong 6 phút, dựng xong, bảng kiểm A–R đạt,
-   kế hoạch AI thành kế hoạch video (bản cũ lưu plan.prev-*). Xem bằng mắt: chữ nhấn / sơ đồ đúng nghĩa và đúng lúc nói.
-   Chưa: phản biện độc lập; OWNER xem và nói đạt / chưa đạt (chỉ OWNER kết luận "đẹp"); minh hoạ: 0 ảnh qua kiểm hợp nghĩa
-   (thư viện chỉ có mô tả chữ — cân nhắc mô hình nhìn ảnh mở, vd Qwen2.5-VL, để mô tả ảnh).
-2. S4 Nội dung → Video: gắn kịch bản vào video, test chứng minh dữ liệu kịch bản sang Video Studio (sửa lời nghe theo kịch bản).
-3. S5 nhóm A: bố cục 16:9, dựng thật 4:5 và 1:1, chỉnh màu / da nhẹ, tự thử lại khi dựng lỗi, tải lên nối tiếp được, Insights reach / CPM / CTR, font có giấy phép (OFL).
-4. Sau mỗi nhóm được nghiệm thu: cập nhật docs/brand-engine/BAOR-BRAND-ENGINE-IMPLEMENTATION-PROGRESS.md (công thức chấm cố định, chỉ tính bằng chứng mới).
+1. [ĐANG LÀM] S5 nhóm A — đã xong (chờ phản biện gộp): Insights reach / CPM / CTR (bcedf4e), tự thử lại khi dựng lỗi (528a3be),
+   font có giấy phép Tinos OFL (98f48a5). Còn: dựng thật 4:5 và 1:1 + bố cục 16:9 trên video thật, chỉnh màu / da nhẹ,
+   tải lên nối tiếp được (resumable), rồi E2E cho từng phần.
+2. Nợ đã ghi (không chặn): script_align "Lan"→"Lành" khi kịch bản viết hoa tên khác; negated_before dừng ở "thì" có thể sót
+   phủ định mệnh đề sau; mỗi video mới gọi mô hình ~6 phút (hàng đợi chậm khi tải nhiều); minh hoạ AI 0 ảnh qua kiểm
+   (thư viện chỉ có mô tả chữ — cân nhắc mô hình nhìn ảnh mở để mô tả ảnh); khôi phục plan.prev-* chưa có nút trong app;
+   gắn lại kịch bản không gỡ liên kết chiến dịch kế thừa từ kịch bản cũ.
+3. Sau mỗi nhóm được nghiệm thu: cập nhật docs/brand-engine/BAOR-BRAND-ENGINE-IMPLEMENTATION-PROGRESS.md (công thức chấm cố định, chỉ tính bằng chứng mới).
 <!-- NEXT:END -->
 
 ## Lỗi P2 trước khi đăng / chạy quảng cáo thật — ĐÃ SỬA 22/10/2026
@@ -95,6 +93,14 @@ Nguồn ủy quyền: chỉ thị OWNER 22/10/2026 "CONTINUE BRAND ENGINE IMPLEM
 - Dự chi quảng cáo giả định mỗi ngày ≤ ngân sách ngày; Meta cho một ngày tiêu tới ~1,75× (trần theo tuần). Ngày Insights theo múi giờ tài khoản quảng cáo, mã so theo giờ VN → khi kết nối thật: đọc `timezone_name` hoặc yêu cầu tài khoản đặt giờ VN.
 
 ## Nhật ký checkpoint
+
+- 22/10/2026 — **S4 Nội dung → Video ĐẠT** (ca540e5 → 0123fcb → 6a7d493 → 98f48a5): kịch bản đã duyệt → script.txt → bộ dựng
+  (gợi ý Whisper, sửa chữ nghe sai chỉ trong đoạn khớp dài, ngữ cảnh biên tập AI); gắn / bỏ gắn cho video có sẵn. Phản biện 3 vòng:
+  2 P1 (đổi nghĩa lời OWNER "Cô giáo"→"Có giáo"; kịch bản nháp lọt qua tải lên) + 6 P2, vòng 3 APPROVE. Test chuỗi dữ liệu thật
+  (CSDL → script.txt → Python), test runJob với python giả, E2E gắn / bỏ gắn.
+- 22/10/2026 — **S3 AI biên tập trong app ĐẠT kỹ thuật** (0b0789c … f252837): bộ dựng tự gọi mô hình mở tại máy (Qwen2.5-32B, llama.cpp),
+  chạy thật trong app trên video 1011 bản 8 (11 chữ nhấn + 3 sơ đồ, bảng kiểm đạt). Phản biện 3 vòng: P1 cắt từ phủ định → đảo nghĩa
+  ("không nên hứa hẹn" → "HỨA HẸN"), P2 đầu ra rác làm mất cả kế hoạch; vòng 3 APPROVE. CHỜ OWNER xem bản 8 và nói đẹp / chưa.
 
 - 22/10/2026 — **S2 Video Review ĐẠT** (d5461ef + de831f0): góp ý theo mốc / đoạn, yêu cầu sửa cụ thể, dựng lại có phạm vi,
   tự kiểm bản mới theo kế hoạch + đầu ra bộ dựng, so 2 phiên bản, lịch sử không xoá. Chạy thật trên video 1011: góp ý tại 0:01.5
