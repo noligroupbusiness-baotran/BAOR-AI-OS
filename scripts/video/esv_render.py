@@ -1771,6 +1771,7 @@ def main():
     one = [d[0] for _, d in dets if len(d) == 1] or [max(d, key=lambda q: q[2] * q[3]) for _, d in dets]
     mx = float(np.median([q[0] + q[2] / 2 for q in one])) if one else CW / 4
     my = float(np.median([q[1] + q[3] / 2 for q in one])) if one else CH / 6
+    med_w = float(np.median([q[2] for q in one])) if one else 60.0
     for d_t, d in dets:
         sampled += 1
         x, y, w_, h_ = min(d, key=lambda q: (q[0] + q[2] / 2 - mx) ** 2 + (q[1] + q[3] / 2 - my) ** 2)
@@ -1782,7 +1783,12 @@ def main():
             # Tỷ lệ khác: đúng luật gốc "không chữ, không đồ hoạ đè mặt" — mặt giao với hộp chữ / đồ hoạ thật của khung đó
             fb = frame_boxes.get(int(round(d_t * FPS / 15)) * 15, [])
             hit = False
-            for (x, y, w_, h_) in d:  # mọi mặt người nói (nhiều người cùng khung)
+            # Chỉ tính "mặt" có cỡ và độ cao giống mặt người nói (trung vị các mẫu): hai bàn tay khum ngang ngực bị máy dò nhận
+            # nhầm là mặt (đã thấy trên B1 4:5 ở 114,5 s và 152,5 s — chữ nằm dưới cằm). Nhiều người cùng khung vẫn được kiểm
+            # vì mặt thật của họ cùng tầm.
+            # mặt CẬN (to hơn hẳn trung vị, vd cảnh selfie) luôn được tính ở mọi vị trí — không che lỗi thật
+            plausible = [q for q in d if q[2] >= 0.6 * med_w and (abs((q[1] + q[3] / 2) - my) <= 0.6 * med_w or q[2] >= 1.3 * med_w)]
+            for (x, y, w_, h_) in plausible:
                 fx0, fy0, fx1, fy1 = x * 2, y * 2, (x + w_) * 2, (y + h_) * 2
                 for bx0, by0, bx1, by1 in fb:
                     X0, X1 = LAY["tx"] + bx0 * LAY["s"], LAY["tx"] + bx1 * LAY["s"]
