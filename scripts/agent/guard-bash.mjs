@@ -21,11 +21,17 @@ export function segments(command) {
     // lời nhắn commit: -m "…" / -am '…' / --message=… / -F tệp
     .replace(/(\s-[a-zA-Z]*m)(=|\s*)("(?:[^"\\]|\\.)*"|'[^']*')/g, "$1 MSG")
     .replace(/(\s--message)(=|\s+)("(?:[^"\\]|\\.)*"|'[^']*'|\S+)/g, "$1 MSG");
-  // core.hooksPath đặt qua tuỳ chọn toàn cục (-c core.hookspath=…) phải bắt TRƯỚC khi bỏ tuỳ chọn toàn cục
-  const hookOverride = /\bgit\b[^\n;&|]*\s-c\s*["']?core\.hookspath/i.test(c);
-  // lệnh lồng trong sh -c "…" / bash -c '…' / eval "…": đưa ra thành đoạn riêng (bỏ dấu nháy dưới đây)
+  // Tắt git hook qua tuỳ chọn / biến môi trường / sửa thẳng tệp: bắt TRƯỚC khi chuẩn hoá (sau đó các dấu vết này bị bỏ)
+  const hookOverride =
+    /\bgit\b[^\n;&|]*\s(-c|--config-env)(=|\s*)["']?core\.hookspath/i.test(c) ||
+    /\bGIT_CONFIG_(COUNT|KEY_\d+|VALUE_\d+|PARAMETERS|GLOBAL|SYSTEM|NOSYSTEM)\s*=/.test(c) ||
+    /\b(chmod|mv|rm|cp|tee|truncate|ln)\b[^\n;&|]*(\.githooks|\.git\/(config|hooks))/.test(c) ||
+    /\bsed\s+(-[a-zA-Z]*i|--in-place)\b[^\n;&|]*(\.githooks|\.git\/(config|hooks))/.test(c) ||
+    />{1,2}\s*["']?\S*(\.githooks\/|\.git\/(config|hooks))/.test(c);
   c = c.replace(GIT_GLOBAL, "git"); // lần 1: giá trị có nháy (vd -C "đường dẫn có dấu cách")
-  c = c.replace(/["'`]/g, " ").replace(/\$\(/g, " ; ").replace(/\)/g, " ; ");
+  // Dấu nháy / gạch chéo GHÉP các mảnh như shell làm (mai''n, m\ain → main); lệnh con $(…) và `…` thành đoạn riêng;
+  // lệnh lồng trong sh -c "…" / eval "…" được tách đoạn ở bước split dưới đây
+  c = c.replace(/\$\(/g, " ; ").replace(/`/g, " ; ").replace(/\)/g, " ; ").replace(/\\(.)/g, "$1").replace(/["']/g, "");
   c = c.replace(GIT_GLOBAL, "git"); // lần 2: lệnh lồng trong sh -c "…"
   const segs = c
     .split(/\n|;|&&|\|\||\||\b(?:sh|bash|zsh|eval)\s+-c\b|\beval\b/)
@@ -33,29 +39,38 @@ export function segments(command) {
     // bỏ tiền tố không đổi ý nghĩa lệnh: biến môi trường, sudo, time, command, exec, nohup, env
     .map((s) => s.replace(/^((\w+=\S*|sudo|time|command|exec|nohup|env)\s+)+/, ""))
     .filter(Boolean);
-  if (hookOverride) segs.push("git config core.hooksPath OVERRIDE");
+  if (hookOverride) segs.push("HOOK-OVERRIDE");
   return segs;
 }
 
+// Tiền tố viết tắt của tuỳ chọn dài: git chấp nhận mọi tiền tố không nhập nhằng (--no-verif, --for, --del…)
+const NOVERIFY = "--no-v[a-z-]*";
 const SEG_RULES = [
+  [/^HOOK-OVERRIDE$/, "Không tắt / đổi git hook (core.hooksPath, GIT_CONFIG_*, sửa .githooks / .git/config)."],
   // ---- đẩy / ghép
-  [/^git push\b.*\s(--force(-with-lease)?(=\S*)?|-[a-zA-Z]*f[a-zA-Z]*)(?=\s|$)/, "Ép đẩy (force push) bị cấm."],
-  [/^git push\b.*\s(--mirror|--delete|-d|--prune)(?=\s|$)/, "Đẩy --mirror / xoá nhánh xa bị cấm."],
+  [/^git push\b.*\s(--for[a-z-]*(=\S*)?|-[a-zA-Z]*f[a-zA-Z]*)(?=\s|$)/, "Ép đẩy (force push) bị cấm."],
+  [/^git push\b.*\s(--mi[a-z]*|--del[a-z]*|--de|-d|--pru[a-z]*)(?=\s|$)/, "Đẩy --mirror / xoá nhánh xa bị cấm."],
   [new RegExp(`^git push\\b.*\\s(\\S*:)?(refs/heads/)?main${END}`), "Không đẩy lên main: main tự triển khai production. Ghép chỉ khi OWNER nói MERGE, qua PR."],
   [/^git push\b.*\s\+\S+/, "Refspec có dấu + (ép đẩy) bị cấm."],
-  [/^git push\b.*\s--no-verify(?=\s|$)/, "Không bỏ qua git hook (--no-verify): cổng verify phải chạy."],
+  [/^git push\b.*\$/, "Không dùng biến trong lệnh git push (không kiểm được đích)."],
+  [new RegExp(`^git (push|commit|merge|rebase|am|cherry-pick|revert)\\b.*\\s${NOVERIFY}(?=\\s|$)`), "Không bỏ qua git hook (--no-verify): cổng verify phải chạy."],
   [/^gh\b.*\bpr\s+merge\b/, "Không tự ghép PR: ghép = triển khai production, chỉ khi OWNER nói MERGE."],
-  [/^gh\s+api\b.*\/(merge|merges)\b/, "Không tự ghép qua GitHub API: ghép = triển khai production."],
-  [/^gh\s+api\b(?=.*\/(branches\/[^/\s]+\/protection|rulesets)\b)(?=.*(-X|--method)\s*(DELETE|PUT|PATCH|POST)\b)/i, "Không đổi bảo vệ nhánh / ruleset (quyền OWNER)."],
+  // gh api chỉ để ĐỌC: ghi qua API (đổi ref, ghép, đẩy tệp qua contents, graphql mutation, bảo vệ nhánh) đi vòng mọi git hook
+  [/^gh\s+api\b.*\s(-X|--method)(=|\s*)(POST|PUT|PATCH|DELETE)\b/i, "gh api chỉ dùng để đọc: ghi qua API đi vòng mọi git hook (ref, ghép, tệp, bảo vệ nhánh)."],
+  [/^gh\s+api\b.*\s(-f|-F|--field|--raw-field|--input)(=|\s)/, "gh api có tham số ghi (-f / -F / --input) = ghi dữ liệu GitHub: không cho."],
+  [/^gh\s+api\s+graphql\b/, "gh api graphql không dùng (có thể là mutation ghép / đổi ref)."],
+  [/^gh\s+(repo\s+(delete|edit|rename|archive|sync)|ruleset|secret|variable|release\s+(create|delete|edit))\b/, "Đổi cấu hình / bí mật / bản phát hành repo là việc của OWNER."],
   // ---- stage / commit
-  [/^git add\b(.*\s)?(-A|--all|\.|:\/|:\/:|\*|-u|--update)(?=\s|$)/, "Repo công khai: stage đúng từng tệp, không `git add -A` / `git add .` / `-u`."],
-  [/^git add\b.*\s(\.\/)?(data(-[a-z]+)?(\/|(?=\s|$))|docs\/brand-engine|docs\/?(?=\s|$)|artifacts\/|\S*\.env(\.(?!example(?=\s|$))\S+)?(?=\s|$))/, "Không stage dữ liệu thật / tài liệu nội bộ (data/, docs/brand-engine/, .env). Stage từng tệp docs cụ thể."],
-  [/^git commit\b.*\s(-[a-zA-Z]*[an][a-zA-Z]*|--all|--no-verify)(?=\s|$)/, "Không `git commit -a` / `-n` / `--no-verify`: stage đúng từng tệp, để git hook chạy."],
-  [/^git clean\b.*\s-[a-zA-Z]*f/, "Không `git clean -f`: sẽ xoá docs/brand-engine/ và dữ liệu chưa theo dõi."],
+  [/^git add\b(.*\s)?(-A|--al[a-z]*|\.|:\/|:\/:|\*|-u|--up[a-z]*)(?=\s|$)/, "Repo công khai: stage đúng từng tệp, không `git add -A` / `git add .` / `-u`."],
+  [/^git add\b.*\s(\.\/)?(data(-[a-z]+)?(\/|(?=\s|$))|docs\/brand-engine|docs\/?(\*|(?=\s|$))|artifacts\/|\S*\.env(\.(?!example(?=\s|$))\S+)?(?=\s|$))/, "Không stage dữ liệu thật / tài liệu nội bộ (data/, docs/brand-engine/, .env). Stage từng tệp docs cụ thể."],
+  [/^git add\b.*\s(-f|--for[a-z]*)(?=\s|$)/, "Không ép stage tệp bị .gitignore (git add -f)."],
+  [/^git commit\b.*\s(-[a-zA-Z]*[an][a-zA-Z]*|--al[a-z]*)(?=\s|$)/, "Không `git commit -a` / `-n`: stage đúng từng tệp, để git hook chạy."],
+  [/^git clean\b.*\s(-[a-zA-Z]*f[a-zA-Z]*|--f[a-z]*)(?=\s|$)/, "Không `git clean -f / --force`: sẽ xoá docs/brand-engine/ và dữ liệu chưa theo dõi."],
   [/^git config\b(?!.*\s--(get|get-all|list|get-regexp)\b).*\bcore\.hookspath\b(?!\s+\.githooks\s*$)/i, "Không đổi core.hooksPath (git hook bảo vệ của BAOR)."],
   [/^git (update-ref|branch\s+-[fD]\b.*\bmain\b)/, "Không sửa ref trực tiếp / ép nhánh main."],
   // ---- xoá dữ liệu
   [/^rm\b.*\s-[a-zA-Z]*[rR][a-zA-Z]*\b.*(\s|\/)(\.\/)?data(-[a-z]+)?(\/|$|\s)/, "Không xoá thư mục dữ liệu (data/). Lưu trữ thay vì xoá."],
+  [/^rm\b.*\s-[a-zA-Z]*[rR][a-zA-Z]*\b.*(\s|\/)docs\/brand-engine/, "Không xoá docs/brand-engine/ (tài liệu nội bộ chỉ có ở máy)."],
   [/^(find|xargs)\b.*\bdata(-[a-z]+)?\/.*(-delete|\brm\b)/, "Không xoá hàng loạt trong data/."],
   // ---- triển khai / máy khác
   [/^((bash|sh|zsh)(\s+-(?!n\b)[a-z]+)*\s+|(source|\.)\s+)?(\.\/)?deploy\/[\w.-]+\.sh\b/, "Không tự chạy script triển khai (production là điểm dừng OWNER)."],
@@ -184,6 +199,37 @@ const CASES = [
   ["git merge-base origin/main HEAD", "feature/x", false],
   ["grep -rn 'git push origin main' docs", "feature/x", false],
   ["git update-ref refs/heads/main HEAD", "feature/x", true],
+  // phản biện vòng 2
+  ["git add docs/*", "feature/x", true],
+  ["git commit --no-verif -m docs", "feature/x", true],
+  ["git push --no-verif bare HEAD:refs/heads/feature/x", "feature/x", true],
+  ["git push --no-ver origin feature/x", "feature/x", true],
+  ["git push bare HEAD:refs/heads/mai''n", "feature/x", true],
+  ["git push origin HEAD:m\\ain", "feature/x", true],
+  ["B=main; git push origin HEAD:$B", "feature/x", true],
+  ["git push --for origin feature/x", "feature/x", true],
+  ["git push --del origin feature/x", "feature/x", true],
+  ["git push --mirror", "feature/x", true],
+  ["gh api -X PATCH repos/o/r/git/refs/heads/main -f sha=abc", "feature/x", true],
+  ["gh api repos/o/r/git/refs/heads/main -f sha=abc -X PATCH", "feature/x", true],
+  ["gh api graphql -f query=mutation{mergePullRequest(input:{})}", "feature/x", true],
+  ["gh api -X PUT repos/o/r/contents/docs/brand-engine/x.md -f content=eA==", "feature/x", true],
+  ["gh api repos/o/r/pulls/3", "feature/x", false],
+  ["gh repo delete o/r --yes", "feature/x", true],
+  ["git clean --force -d", "feature/x", true],
+  ["git clean -q --force -d", "feature/x", true],
+  ["git clean --f -d", "feature/x", true],
+  ["git add -f data/baor.db", "feature/x", true],
+  ["GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null git commit -m x", "feature/x", true],
+  ["git --config-env=core.hooksPath=X commit -m x", "feature/x", true],
+  ["chmod -x .githooks/pre-push", "feature/x", true],
+  ["mv .githooks /tmp/x", "feature/x", true],
+  ["echo '[core] hooksPath=/dev/null' >> .git/config", "feature/x", true],
+  ["sed -i '' 's/x/y/' .git/config", "feature/x", true],
+  ["rm -rf docs/brand-engine", "feature/x", true],
+  ["git commit --amend --no-edit", "feature/x", false],
+  ["git push origin feature/brand-cp01 2>&1 | tail -9", "feature/brand-cp01", false],
+  ["cat .githooks/pre-push", "feature/x", false],
 ];
 
 if (process.argv.includes("--self-test")) {
