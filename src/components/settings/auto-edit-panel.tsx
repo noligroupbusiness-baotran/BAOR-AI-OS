@@ -37,7 +37,7 @@ export function AutoEditPanel() {
             </Field>
             <Field label="Nhạc nền" hint="Chỉ bài đã ghi giấy phép. Nhạc tự hạ khi có tiếng nói.">
               <select name="musicUploadId" defaultValue={s.musicUploadId} className={inputClass}>
-                <option value="">Bài mặc định của thư viện nhạc</option>
+                <option value="">Tự chọn theo nội dung (chỉ bài đã duyệt trong Thư viện nhạc nền)</option>
                 <option value="none">Không dùng nhạc</option>
                 {music.map((m) => <option key={m.id} value={m.id}>{String(m.meta.title || m.name)}{String(m.meta.license ?? "").trim() ? "" : " (chưa có giấy phép)"}</option>)}
               </select>
@@ -52,7 +52,7 @@ export function AutoEditPanel() {
           </label>
           <label className="flex items-start gap-2 text-[13px] text-ink">
             <input type="checkbox" name="sfx" defaultChecked={s.sfx} className="mt-0.5 h-3.5 w-3.5 accent-[var(--jade)]" />
-            <span>Hiệu ứng âm thanh <span className="text-ink-3">(“tách” ở chữ nhấn, “vút” khi vào ảnh / clip minh hoạ; tổng hợp tại chỗ, không cần giấy phép; OWNER duyệt dùng)</span></span>
+            <span>Hiệu ứng âm thanh <span className="text-ink-3">(“tách” ở chữ nhấn, tiếng ngân nhẹ ở chuyển cảnh lớn; không “vút” khi vào ảnh theo góp ý OWNER 21/10; tổng hợp tại chỗ, không cần giấy phép; OWNER duyệt dùng)</span></span>
           </label>
           <div className="flex flex-wrap gap-2"><SubmitButton pendingText="Đang lưu…">Lưu cấu hình</SubmitButton></div>
           <div className="border-t border-border pt-3">

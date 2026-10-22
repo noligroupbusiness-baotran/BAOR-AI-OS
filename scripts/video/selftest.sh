@@ -60,7 +60,7 @@ P
 
 # --- Bộ dựng Skill ESV r3: kế hoạch biên tập có đủ loại hiệu ứng (thanh bước, cơ chế dọc, so sánh có tick, quy trình, FS-06, vệt sáng)
 cat > "$W/plan-fx.json" <<'J'
-{"by": "selftest", "content": "hướng dẫn",
+{"by": "selftest", "content": "hướng dẫn", "music": {"mood": "acoustic", "why": "selftest"},
  "emphasis": [{"t": 1.0, "text": "Mở đầu", "style": "blur"}, {"t": 11.0, "text": "LẮNG NGHE", "style": "shine"}],
  "diagrams": [{"type": "fs06", "t0": 2.0, "t1": 5.0}, {"type": "steps", "t0": 2.2, "t1": 5.0, "steps": [{"t": 2.4, "text": "một"}, {"t": 3.2, "text": "hai"}]},
   {"type": "leak", "t0": 5.2},
@@ -70,6 +70,16 @@ cat > "$W/plan-fx.json" <<'J'
   {"type": "chapter", "t0": 11.3, "t1": 12.4, "num": "2", "text": "chương"}, {"type": "quote", "t0": 12.5, "t1": 14.6, "text": "câu chốt, đúng nguyên lời"},
   {"type": "fs05", "t0": 0.2, "t1": 1.9}, {"type": "fs01", "t0": 12.0, "t1": 14.6}],
  "broll": [{"t0": 12.5, "t1": 14.0, "file": "goi-dien.jpg"}, {"t0": 1.5, "t1": 2.5, "file": "khong-giay-phep.jpg"}]}
+J
+# Thư viện nhạc: bộ dựng theo loại nhạc kế hoạch chọn ("acoustic") nhưng CHỈ tự dùng bài đã duyệt; bài "chờ OWNER nghe duyệt"
+# cùng loại chỉ được gợi ý (dùng nó thì bảng kiểm P chặn đăng). Nhạc tự tạo bằng ffmpeg (không tài sản ngoài).
+M="$W/data/video-assets/music"
+mkdir -p "$M"
+for n in mac-dinh acoustic-da-duyet acoustic-cho-duyet; do ffmpeg -v error -y -f lavfi -i "sine=frequency=330:duration=20" -c:a libmp3lame "$M/$n.mp3"; done
+cat > "$M/manifest.json" <<'J'
+[{"file":"mac-dinh.mp3","genre":"lofi-chill","license":"Tự tạo bằng ffmpeg lavfi","default":true},
+ {"file":"acoustic-cho-duyet.mp3","genre":"acoustic","license":"Tự tạo — kho tư liệu: ĐỦ-HỒ-SƠ — chờ OWNER nghe duyệt","catalogStatus":"ĐỦ-HỒ-SƠ"},
+ {"file":"acoustic-da-duyet.mp3","genre":"acoustic","license":"Tự tạo — kho tư liệu: ĐỦ-HỒ-SƠ — OWNER nghe duyệt 22/10/2026 (selftest)","catalogStatus":"ĐỦ-HỒ-SƠ"}]
 J
 DATA_DIR="$W/data" python3 "$HERE/esv_render.py" --input "$W/raw.mp4" --job-dir "$W/esv-fx" --plan "$W/plan-fx.json" --words "$W/esv/words_main.json" 2>"$W/log-esv-fx.txt" | tail -1
 python3 - "$W/esv-fx/report.json" <<'P'
@@ -82,6 +92,13 @@ types = sorted({d["type"] for d in r["diagrams"]})
 assert types == ["chapter", "compare", "fs01", "fs05", "fs06", "leak", "mechanism", "process", "quote", "steps"], types
 assert [b["file"] for b in r["broll"]["events"]] == ["goi-dien.jpg"], "chỉ ảnh có giấy phép được chèn"
 assert r["zoom"]["profile"] == "VUA" and "smootherstep" in r["zoom"]["formula"]
+assert qa.get("S") == "pass", f"SFX ≤ −19 dB so giọng: {[q for q in r['qa'] if q['id'] == 'S']}"
+assert qa.get("T") == "pass" and qa.get("F") == "pass", "phụ đề PA B không phát sáng; logo 340 px trong XANH"
+mu = r["audio"]["music"]
+assert mu.get("used") and mu["file"] == "acoustic-da-duyet.mp3" and "acoustic" in mu.get("chosenBy", ""), f"nhạc theo loại, chỉ bài đã duyệt: {mu}"
+assert mu.get("suggest") == ["acoustic-cho-duyet.mp3"], f"bài chưa duyệt chỉ được gợi ý: {mu}"
+assert qa.get("P") != "blocker" or "chờ OWNER" not in mu["license"], "bài tự chọn không được làm bảng kiểm P chặn"
+print(f"SELFTEST ESV HIỆU ỨNG ĐẠT: nhạc {mu['file']} ({mu['chosenBy']})")
 print(f"SELFTEST ESV HIỆU ỨNG ĐẠT: {types}, zoom {r['zoom']['profile']} {len(r['zoom']['events'])} lần, SFX {r['audio']['sfx'].get('used')}")
 P
 

@@ -23,6 +23,7 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import pipeline as P  # noqa: E402  (dùng lại: probe, sh, ebur, transcribe, đếm khung, giải mã, sha256, Job)
+from music_pick import music_genres, music_library, pick_music  # noqa: E402  (chọn nhạc nền: không phụ thuộc numpy, test được ở CI)
 
 W, H, FPS = 1080, 1920, 30  # hệ toạ độ thiết kế 9:16 của Skill ESV (lớp chữ / sơ đồ vẽ ở hệ này)
 ASPECTS = {"9:16": (1080, 1920), "4:5": (1080, 1350), "1:1": (1080, 1080), "16:9": (1920, 1080)}
@@ -31,7 +32,7 @@ CW, CH = W, H  # khung xuất thật (đặt lại trong main theo --aspect)
 RED = (0, 274, 1080, 1089)          # mặt
 YEL = (82, 1118, 998, 1613)         # mọi chữ / đồ hoạ
 BAND_Y0, BAND_Y1 = 1100, 1630        # lớp chữ vẽ trong dải này (bao trọn VÀNG)
-SUB_BOTTOM = 1540                    # \an2\pos(540,1540)
+SUB_BOTTOM = 1600                    # PA B \an2\pos(540,1600) — Skill ESV v0.1.r2 B3 (OWNER 22/10 09:16 «chọn phương án B.»)
 SUB_MAXW = 904
 EMP_BOTTOM = 1402                    # chữ nhấn \an2\pos(540,1402)
 FONT_DIRS = [os.environ.get("BAOR_FONT_DIR", ""), "/System/Library/Fonts/Supplemental", "/Library/Fonts", "/usr/share/fonts/truetype/msttcorefonts"]
@@ -148,7 +149,8 @@ def build_sub_units(words, fsub):
 
 
 def draw_subtitle(unit, hl, fsub_ss):
-    """1 dòng, đáy tại y1540: bóng mềm, viền đen 2,45, quầng quanh từ đang đọc, chữ trắng nét trắng 0,8, từ đọc #FFC929."""
+    """1 dòng, đáy tại y1600 (PA B): bóng mềm, viền đen 2,45, chữ trắng nét trắng 0,8, từ đọc #FFC929.
+    KHÔNG phát sáng (Skill ESV v0.1.r2 B3: OWNER 21/10 11:33 «chữ sub title không cần phát sáng»; QĐ-CEO 0958) — đã bỏ lớp quầng."""
     words = [w["text"] for w in unit["words"]]
     text = " ".join(words)
     bw, bh = W * SS, 200 * SS
@@ -167,12 +169,6 @@ def draw_subtitle(unit, hl, fsub_ss):
     ImageDraw.Draw(sh_).text((x0 + 5.5 * SS, y0 + 3.8 * SS), text, font=fsub_ss, fill=255, stroke_width=int(round(2.45 * SS)), stroke_fill=255)
     sh_ = sh_.filter(ImageFilter.GaussianBlur(4.4 * SS / 2))
     canvas.paste((0, 0, 0, 255), (0, 0), sh_.point(lambda v: int(v * 0.67)))
-    # quầng sáng quanh từ đang đọc (v9 có; #100(b) còn mở)
-    if hl >= 0:
-        g = Image.new("L", (bw, bh), 0)
-        ImageDraw.Draw(g).text((xs[hl], y0), words[hl], font=fsub_ss, fill=255, stroke_width=int(round(4.6 * SS)), stroke_fill=255)
-        g = g.filter(ImageFilter.GaussianBlur(9.2 * SS / 2))
-        canvas.alpha_composite(Image.composite(Image.new("RGBA", (bw, bh), rgb("#FFB800") + (255,)), Image.new("RGBA", (bw, bh), (0, 0, 0, 0)), g.point(lambda v: int(v * 0.75))))
     d = ImageDraw.Draw(canvas)
     d.text((x0, y0), text, font=fsub_ss, fill=(0, 0, 0, 255), stroke_width=int(round(2.45 * SS)), stroke_fill=(0, 0, 0, 255))
     for i, wd in enumerate(words):
@@ -762,13 +758,15 @@ def make_layout(aspect):
     vùng mặt = phần trên dải chữ; logo, thẻ ảnh, khung người (PIP) tính theo khung xuất. [AI SUY LUẬN — skill chưa có số cho tỷ lệ khác]"""
     cw, ch = ASPECTS[aspect]
     if aspect == "9:16":
-        return {"aspect": aspect, "CW": cw, "CH": ch, "s": 1.0, "tx": 0, "ty": BAND_Y0, "logo_w": 440, "logo_x": 50, "logo_y": 120,
+        # Logo 340 px tại x76/y107, trọn trong XANH (Skill ESV v0.1.r2 B7; QĐ-CEO 0815 #98, 0958)
+        return {"aspect": aspect, "CW": cw, "CH": ch, "s": 1.0, "tx": 0, "ty": BAND_Y0, "logo_w": 340, "logo_x": 76, "logo_y": 107,
                 "red": (RED[1], RED[3]), "card_cy": 820.0, "card_w": 940, "card_h": 1180, "pip": (615, 120, 405)}
     s = {"4:5": 0.9, "1:1": 0.8, "16:9": 0.8}[aspect]
     bh = (BAND_Y1 - BAND_Y0) * s
     ty = int(round(ch - bh - ch * (0.012 if aspect == "16:9" else 0.03)))
     tx = int(round((cw - W * s) / 2))
-    logo_w = int(round(440 * min(1.0, s + 0.1)))
+    # 16:9: KHÔNG chèn logo tới khi có vị trí chuẩn (Skill Edit Video Ngang v0.1.r2 R8.6, #34c); 4:5 / 1:1 thu theo khung [AI SUY LUẬN]
+    logo_w = 0 if aspect == "16:9" else int(round(340 * min(1.0, s + 0.1)))
     lx, ly = int(round(cw * 0.04)), int(round(ch * 0.04))
     text_top = ty + (YEL[1] - BAND_Y0) * s
     top, bottom = ly + 110, text_top - 16
@@ -1184,23 +1182,9 @@ def owner_decisions(data_dir):
         return {}
 
 
-def default_music(data_dir):
-    """Bài nhạc nền mặc định (có giấy phép) trong thư viện DATA_DIR/video-assets/music/manifest.json."""
-    d = os.path.join(data_dir, "video-assets", "music")
-    try:
-        items = json.load(open(os.path.join(d, "manifest.json"), encoding="utf-8"))
-    except (OSError, ValueError):
-        return None, ""
-    items = [x for x in items if str(x.get("license", "")).strip() and os.path.isfile(os.path.join(d, x.get("file", "")))]
-    items.sort(key=lambda x: not x.get("default"))
-    return (os.path.join(d, items[0]["file"]), items[0]["license"]) if items else (None, "")
-
-
-def synth_sfx(path, pops, swells, dur, sr=48000):
-    """SFX tổng hợp bằng công thức (không tệp ngoài, không vướng bản quyền): "tách" ngắn ở chữ nhấn; ở chuyển cảnh lớn
-    (FS, vệt sáng) là tiếng ngân nhẹ có cao độ (hợp âm A–E–A, vào 0,25 s, tắt dần 0,9 s). Không dùng nhiễu (nghe thành "rì / vút")."""
-    n = int(round(dur * sr))
-    out = np.zeros(n, dtype=np.float32)
+def sfx_sounds(sr=48000):
+    """Hai tiếng tổng hợp (không tệp ngoài, không vướng bản quyền, không dùng nhiễu — OWNER 21/10 chê "vút vút"):
+    "tách" ngắn (chữ nhấn, khung vẽ, thẻ ảnh) và tiếng ngân nhẹ có cao độ A–E–A (khung toàn màn hình, vệt sáng, chuyển chương)."""
     L = int(0.07 * sr)
     tt = np.arange(L) / sr
     f = 1400 * np.exp(-tt * 30) + 520
@@ -1210,13 +1194,94 @@ def synth_sfx(path, pops, swells, dur, sr=48000):
     env = np.minimum(1.0, ts / 0.25) ** 2 * np.exp(-np.maximum(0.0, ts - 0.25) / 0.45)
     sw = sum(amp * np.sin(2 * np.pi * fr * ts + ph) for fr, amp, ph in ((880.0, 1.0, 0.0), (1318.5, 0.6, 1.1), (1760.0, 0.35, 2.3), (2637.0, 0.12, 0.7)))
     sw = (sw * env / 2.07 * 0.30).astype(np.float32)
-    for snd, times, lead in ((pop, pops, 0.0), (sw, swells, 0.15)):
-        for t in times:
-            i = int(round((t - lead) * sr))
-            if i < 0 or i >= n:
-                continue
-            m_ = min(len(snd), n - i)
-            out[i:i + m_] += snd[:m_]
+    return {"pop": (pop, 0.0), "swell": (sw, 0.15)}
+
+
+def read_mono(path):
+    import wave
+    with wave.open(path, "rb") as w:
+        n, ch, sw = w.getnframes(), w.getnchannels(), w.getsampwidth()
+        raw = w.readframes(n)
+    dt = {2: np.int16, 4: np.int32}[sw]
+    x = np.frombuffer(raw, dtype=dt).astype(np.float32) / float(np.iinfo(dt).max)
+    return x.reshape(-1, ch).mean(axis=1) if ch > 1 else x
+
+
+def win_db(x, i0, i1, win):
+    """Mức lớn nhất (dB RMS) theo cửa sổ trượt `win` mẫu trong đoạn [i0, i1)."""
+    seg = x[max(0, i0):max(0, i1)]
+    if len(seg) < win:
+        return -120.0
+    c = np.concatenate([[0.0], np.cumsum(seg.astype(np.float64) ** 2)])
+    ms = (c[win:] - c[:-win]) / win
+    return float(10 * np.log10(max(ms.max(), 1e-12)))
+
+
+def sfx_events(plan, broll):
+    """Mốc SFX (Skill ESV v0.1.r2 B-SFX / A6: chữ nhấn, khung vẽ, khung toàn màn hình, thẻ ảnh, chuyển chương; KHÔNG trên zoom).
+    Hai cú cùng lớp cách < 0,22 s giữ 1 (Ngang R4.5; ưu tiên chữ nhấn)."""
+    ev = [(float(e["t"]), "pop", "chữ nhấn") for e in plan.get("emphasis", [])]
+    for d in plan.get("diagrams", []):
+        if d["type"] in ("fs06", "fs05", "fs01", "leak", "chapter"):
+            ev.append((float(d["t0"]) + 0.05, "swell", "khung toàn màn hình / chuyển chương"))
+        else:
+            ev.append((float(d["t0"]), "pop", "khung vẽ"))
+    ev += [(float(b["t0"]), "pop", "thẻ ảnh") for b in broll]
+    ev.sort(key=lambda e: (e[0], e[2] != "chữ nhấn"))
+    out = []
+    for e in ev:
+        if out and e[0] - out[-1][0] < 0.22 and e[1] == out[-1][1]:
+            continue
+        out.append(e)
+    return out
+
+
+def place_sfx(path, events, voice_wav, dur, sr=48000, target=-20.0, cap=-14.0, quiet=-45.0, limit=-19.5):
+    """Đặt từng cú với mức RIÊNG: mức cửa sổ 100 ms lớn nhất của cú = (mức giọng ±0,5 s quanh cú) + target (−20 dB),
+    không to hơn cap (−14 dB, mức cũ OWNER đã nghe). Giọng quanh cú quá nhỏ (< −45 dB, đang lặng) → bỏ cú.
+    Các cú sát nhau CỘNG DỒN (tiếng ngân dài 1,2 s chồng tiếng "tách") → đo lại trên stem thật bằng đúng cách đo của bảng kiểm S,
+    cú nào vượt `limit` thì hạ mọi cú góp vào cửa sổ đó, lặp tới khi đạt (tối đa 8 lượt). Trả danh sách cú đã đặt + cú bỏ."""
+    snd = sfx_sounds(sr)
+    vo = read_mono(voice_wav)
+    n = int(round(dur * sr))
+    win = int(0.1 * sr)
+    placed, dropped = [], []
+    for t, kind, why in events:
+        s_, lead = snd[kind]
+        i = int(round((t - lead) * sr))
+        if i < 0 or i >= n:
+            continue
+        v_db = win_db(vo, int((t - 0.5) * sr), int((t + 0.5) * sr), win)
+        if v_db < quiet:
+            dropped.append({"t": round(t, 2), "why": why, "reason": f"giọng quanh cú {v_db:.1f} dB (đang lặng)"})
+            continue
+        s_db = win_db(s_, 0, len(s_), min(win, len(s_)))
+        placed.append({"t": round(t, 2), "kind": kind, "why": why, "gainDb": round(min(cap, v_db + target - s_db), 2), "_i": i, "_v": v_db})
+
+    def render():
+        out = np.zeros(n, dtype=np.float32)
+        for p_ in placed:
+            s_ = snd[p_["kind"]][0]
+            m_ = min(len(s_), n - p_["_i"])
+            out[p_["_i"]:p_["_i"] + m_] += s_[:m_] * (10 ** (p_["gainDb"] / 20))
+        return out
+
+    out = render()
+    for _ in range(8):
+        over = False
+        for p_ in placed:
+            t = p_["t"]
+            exc = win_db(out, int((t - 0.2) * sr), int((t + 1.3) * sr), win) - p_["_v"] - limit
+            if exc > 0:
+                over = True
+                lo, hi = (t - 0.2) * sr, (t + 1.3) * sr
+                for q in placed:  # mọi cú có tiếng nằm trong cửa sổ đo của cú này
+                    q_end = q["_i"] + len(snd[q["kind"]][0])
+                    if q["_i"] < hi and q_end > lo:
+                        q["gainDb"] = round(q["gainDb"] - exc - 0.5, 2)
+        if not over:
+            break
+        out = render()
     pcm = (np.clip(out, -1, 1) * 32767).astype(np.int16)
     import wave
     with wave.open(path, "wb") as w:
@@ -1224,6 +1289,25 @@ def synth_sfx(path, pops, swells, dur, sr=48000):
         w.setsampwidth(2)
         w.setframerate(sr)
         w.writeframes(np.repeat(pcm[:, None], 2, axis=1).tobytes())
+    return [{k: v for k, v in p_.items() if not k.startswith("_")} for p_ in placed], dropped
+
+
+def sfx_check(sfx_wav, voice_wav, music_wav, placed, sr=48000):
+    """Kiểm S (Skill ESV B9 / A6.3–A6.4): mỗi cú ≤ −19 dB so giọng (cửa sổ trượt 100 ms, giọng ±0,5 s), và ≥ +8 dB so nhạc
+    (nhạc sau nén theo giọng, cùng cửa sổ). Đo trên stem thật đã ghi ra đĩa, không dùng số tính trước."""
+    sx, vo = read_mono(sfx_wav), read_mono(voice_wav)
+    mu = read_mono(music_wav) if music_wav and os.path.exists(music_wav) else None
+    win = int(0.1 * sr)
+    rows = []
+    for p_ in placed:
+        t = p_["t"]
+        s_db = win_db(sx, int((t - 0.2) * sr), int((t + 1.3) * sr), win)
+        v_db = win_db(vo, int((t - 0.5) * sr), int((t + 0.5) * sr), win)
+        m_db = win_db(mu, int((t - 0.2) * sr), int((t + 1.3) * sr), win) if mu is not None else None
+        rows.append({"t": t, "vsVoiceDb": round(s_db - v_db, 1), "vsMusicDb": None if m_db is None else round(s_db - m_db, 1)})
+    worst = max((r["vsVoiceDb"] for r in rows), default=None)
+    low_music = [r["t"] for r in rows if r["vsMusicDb"] is not None and r["vsMusicDb"] < 8]
+    return rows, worst, low_music
 
 
 def broll_library(broll_dir):
@@ -1405,7 +1489,8 @@ def main():
         try:
             import ai_plan
             job.progress("aiplan", "Biên tập AI: đọc lời nói, chọn chữ nhấn / sơ đồ / minh hoạ (mô hình tại máy)", 31)
-            plan = ai_plan.plan(words, dur, broll_library(broll_dir), (script_text[:1200] + (f" Từ khoá: {a.keywords}" if a.keywords else "")).strip(), log=lambda m: print(m, file=sys.stderr))
+            plan = ai_plan.plan(words, dur, broll_library(broll_dir), (script_text[:1200] + (f" Từ khoá: {a.keywords}" if a.keywords else "")).strip(),
+                                log=lambda m: print(m, file=sys.stderr), music_genres=music_genres(music_library(os.environ.get("DATA_DIR", os.path.join(P.ROOT, "data")))))
             if plan is None:
                 ai_note = " Biên tập AI: không có mô hình tại máy (llama-server) → lập theo luật."
         except Exception as e:  # mô hình lỗi giữa chừng không được làm hỏng cả bản dựng
@@ -1543,10 +1628,13 @@ def main():
     voice = job.p("work", "voice.wav")
     P.sh(["ffmpeg", "-v", "error", "-y", "-i", src, "-vn", "-af", f"apad=whole_dur={dur:.6f},atrim=end={dur:.6f},highpass=f=70,acompressor=threshold=0.05:ratio=2.5:attack=10:release=200:makeup=2", "-ar", "48000", "-ac", "2", voice])
     mix = voice
-    music_path, music_lic = (a.music, a.music_license) if a.music else default_music(data_dir)
+    # Nhạc chọn tay trong Cài đặt (--music) thắng; không thì theo loại nhạc AI chọn (plan.music.mood), chỉ bài đã duyệt
+    pick = {"chosenBy": "chọn trong Cài đặt"} if a.music else {}
+    music_path, music_lic = (a.music, a.music_license) if a.music else (None, "")
+    if not a.music:
+        music_path, music_lic, pick = pick_music(music_library(data_dir), (plan.get("music") or {}).get("mood"), os.path.basename(a.input))
     music_info = {"used": False, "reason": "tắt" if a.no_music else "thư viện nhạc chưa có bài có giấy phép"}
     if music_path and not a.no_music and str(music_lic).strip():
-        mc = P.SKILL["audio"]["music"]
         mdur = float(P.sh(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", music_path]).stdout.strip() or 0)
         bed = job.p("work", "music_bed.wav")
         if mdur < dur:  # bài ngắn hơn video: nối chính nó, giao nhau 3 s (không cụt nhịp ở chỗ nối)
@@ -1559,13 +1647,17 @@ def main():
             P.sh(["ffmpeg", "-v", "error", "-y", *ins, "-filter_complex", fcx + f"{last}atrim=0:{dur:.6f},aresample=48000[o]", "-map", "[o]", "-ac", "2", bed])
         else:
             P.sh(["ffmpeg", "-v", "error", "-y", "-i", music_path, "-af", f"atrim=0:{dur:.6f},aresample=48000", "-ac", "2", bed])
-        gain = -25.0  # Skill 8: volume=-25dB trên mp3 gốc; hạ thêm nếu A5 chưa đạt
+        # Skill ESV v0.1.r2 B8: volume=-24dB, sidechain ratio 6 / attack 45 / release 250, vào 1 s / ra 2 s;
+        # Skill Edit Video Ngang v0.1.r2 R8.8 (16:9): -18.1dB, ratio 4 / attack 30 / release 450, vào 1,5 s / ra 3 s. Hạ thêm nếu A5 chưa đạt.
+        ng = a.aspect == "16:9"
+        gain = -18.1 if ng else -24.0
+        fin, fout, duckp = (1.5, 3.0, "ratio=4:attack=30:release=450") if ng else (1.0, 2.0, "ratio=6:attack=45:release=250")
         a5 = None
         for _ in range(4):
             duck, mix = job.p("work", "music_duck.wav"), job.p("work", "mix.wav")
-            fcm = (f"[0:a]asplit=3[v1][v2][v3];[1:a]volume={gain:.2f}dB,afade=t=in:d={mc['fadeInSec']},"
-                   f"afade=t=out:st={max(0, dur - mc['fadeOutSec']):.3f}:d={mc['fadeOutSec']},apad=whole_dur={dur:.6f}[m];"
-                   f"[m][v1]sidechaincompress=threshold=0.03:ratio=6:attack=45:release=250[d];[d]asplit=2[d1][d2];"
+            fcm = (f"[0:a]asplit=3[v1][v2][v3];[1:a]volume={gain:.2f}dB,afade=t=in:d={fin},"
+                   f"afade=t=out:st={max(0, dur - fout):.3f}:d={fout},apad=whole_dur={dur:.6f}[m];"
+                   f"[m][v1]sidechaincompress=threshold=0.03:{duckp}[d];[d]asplit=2[d1][d2];"
                    f"[v2][d1]amix=inputs=2:normalize=0:duration=first[mx]")
             P.sh(["ffmpeg", "-v", "error", "-y", "-i", voice, "-i", bed, "-filter_complex", fcm, "-map", "[mx]", "-c:a", "pcm_s16le", mix,
                   "-map", "[d2]", "-c:a", "pcm_s16le", duck, "-map", "[v3]", "-c:a", "pcm_s16le", job.p("work", "voice_ref.wav")])
@@ -1573,21 +1665,20 @@ def main():
             if a5["pass"]:
                 break
             gain -= a5["deficit"] + 1.0
-        music_info = {"used": True, "file": os.path.basename(music_path), "license": music_lic, "gainDb": round(gain, 1), "a5": a5}
+        music_info = {"used": True, "file": os.path.basename(music_path), "license": music_lic, "gainDb": round(gain, 1), "a5": a5, **pick}
     sfx_info = {"used": False, "reason": "tắt"}
     if not a.no_sfx:
-        pops = [float(e["t"]) for e in plan.get("emphasis", [])]
-        # Vào ảnh / clip minh hoạ: KHÔNG thêm tiếng (OWNER 21/10: "tự nhiên nghe vút vút"); chỉ chuyển cảnh lớn có tiếng ngân nhẹ
-        whs = [float(d["t0"]) + 0.05 for d in plan.get("diagrams", []) if d["type"] in ("fs06", "fs05", "fs01", "leak", "chapter")]
-        if pops or whs:
+        evs = sfx_events(plan, [b for b in plan.get("broll", []) if not b.get("off")])
+        if evs:
             sfxw = job.p("work", "sfx.wav")
-            synth_sfx(sfxw, pops, whs, dur)
+            placed, dropped = place_sfx(sfxw, evs, voice, dur)
             withsfx = job.p("work", "mix_sfx.wav")
-            # SFX dưới giọng ≈ 14 dB, không át lời
             P.sh(["ffmpeg", "-v", "error", "-y", "-i", mix, "-i", sfxw, "-filter_complex",
-                  "[1:a]volume=-14dB[p];[0:a][p]amix=inputs=2:normalize=0:duration=first[o]", "-map", "[o]", "-c:a", "pcm_s16le", withsfx])
+                  "[0:a][1:a]amix=inputs=2:normalize=0:duration=first[o]", "-map", "[o]", "-c:a", "pcm_s16le", withsfx])
             mix = withsfx
-            sfx_info = {"used": True, "pops": len(pops), "swells": len(whs), "source": "tổng hợp tại chỗ bằng công thức (không dùng tệp ngoài, không dùng nhiễu)"}
+            rows, worst, low_music = sfx_check(sfxw, voice, job.p("work", "music_duck.wav") if music_info.get("used") else None, placed)
+            sfx_info = {"used": bool(placed), "count": len(placed), "events": placed, "dropped": dropped, "levels": rows, "worstVsVoiceDb": worst,
+                        "belowMusic8Db": low_music, "source": "tổng hợp tại chỗ bằng công thức (không dùng tệp ngoài, không dùng nhiễu)"}
     m = P.sh(["ffmpeg", "-hide_banner", "-i", mix, "-af", "loudnorm=I=-16:TP=-2.5:LRA=11:print_format=json", "-f", "null", "-"], check=False).stderr
     js = json.loads(m[m.rfind("{"):m.rfind("}") + 1])
     final = job.p("work", "final.wav")
@@ -1660,8 +1751,9 @@ def main():
                  f"[{last}][lk{k}]overlay=0:0:format=auto:enable='between(t,{t0_:.3f},{t0_ + 3.6:.3f})':eof_action=pass[lkb{k}];")
         last, n_in = f"lkb{k}", n_in + 1
     fc = (f"[0:v]{','.join(vf)}[bg0];{b_fc}[{last}]null[bg];"
-          f"[1:v]scale={logo_w}:-1:flags=lanczos,format=rgba,fade=t=in:st=0.3:d=0.6:alpha=1[lg];"
-          f"[bg][lg]overlay=x='{LAY['logo_x']}-24*pow(1-min(max((t-0.3)/0.6\\,0)\\,1)\\,3)':y={LAY['logo_y']}:eval=frame[l];"
+          + (f"[1:v]scale={logo_w}:-1:flags=lanczos,format=rgba,fade=t=in:st=0.3:d=0.6:alpha=1[lg];"
+             f"[bg][lg]overlay=x='{LAY['logo_x']}-12*pow(1-min(max((t-0.3)/0.6\\,0)\\,1)\\,3)':y={LAY['logo_y']}:eval=frame[l];"
+             if logo_w else "[bg]null[l];")
           + (f"[2:v]format=rgba[tx];" if LAY["s"] == 1.0 else f"[2:v]format=rgba,scale=iw*{LAY['s']}:ih*{LAY['s']}:flags=lanczos[tx];")
           + f"[l][tx]overlay={LAY['tx']}:{LAY['ty']}:format=auto,fade=t=out:st={max(0.0, dur - 0.9):.3f}:d=0.9,format=yuv420p[v]")
     master = job.p("master.mp4")
@@ -1748,10 +1840,17 @@ def main():
     add("E", "Phụ đề / chữ nhấn theo mốc từng từ", "pass", f"{len(units)} câu phụ đề, {len(emph)} chữ nhấn, {len(dias)} sơ đồ; đặt theo mốc từ đã nghe rõ")
     od = owner_decisions(os.environ.get("DATA_DIR", os.path.join(P.ROOT, "data")))
     odq = f"OWNER duyệt {od.get('date', '')}: {od.get('quote', '')}"
-    if od.get("logoSize"):
-        add("F", "Bố cục: logo vùng XANH, chữ vùng VÀNG", "pass", f"logo PNG rộng 440 tại (50,120) lố XANH (#98a) — {odq}")
+    if not LAY["logo_w"]:
+        add("F", "Bố cục: logo vùng XANH, chữ vùng VÀNG", "pass", "16:9: không chèn logo tới khi có vị trí chuẩn (Skill Edit Video Ngang R8.6, #34c)")
     else:
-        add("F", "Bố cục: logo vùng XANH, chữ vùng VÀNG", "blocker", "logo PNG rộng 440 tại (50,120): lố XANH như ESV đã biết (#98a)")
+        lw0, lh0 = Image.open(a.logo).size
+        lb = (LAY["logo_x"], LAY["logo_y"], LAY["logo_x"] + LAY["logo_w"], LAY["logo_y"] + round(LAY["logo_w"] * lh0 / lw0))
+        if a.aspect == "9:16":
+            inside = lb[0] >= 64 and lb[1] >= 51 and lb[2] <= 425 and lb[3] <= 248
+            add("F", "Bố cục: logo vùng XANH, chữ vùng VÀNG", "pass" if inside else "fail",
+                f"logo rộng {LAY['logo_w']} tại ({lb[0]},{lb[1]}) hộp x{lb[0]}–{lb[2]} y{lb[1]}–{lb[3]} {'trong' if inside else 'NGOÀI'} XANH x64–425 y51–248 (Skill ESV v0.1.r2 B7)")
+        else:
+            add("F", "Bố cục: logo vùng XANH, chữ vùng VÀNG", "pass", f"logo rộng {LAY['logo_w']} tại ({lb[0]},{lb[1]}) — tỷ lệ {a.aspect}: thu theo khung [AI SUY LUẬN, skill chưa có số]")
     add("G", "Đồ hoạ trong VÀNG", "pass" if bad_zone == 0 else "fail", f"{bad_zone} khung có điểm ảnh ngoài VÀNG (+19 px)")
     add("H", "Phụ đề không chồng chữ nhấn / đồ hoạ", "pass" if overlap == 0 else "fail", f"{overlap} khung chồng")
     add("I", "Quét điểm ảnh chữ ngoài VÀNG", "pass" if bad_zone == 0 else "fail", f"{bad_zone} khung")
@@ -1800,14 +1899,28 @@ def main():
                 bad_t.append(d_t)
     j_name = "Mặt trong vùng ĐỎ ở mọi khung zoom" if a.aspect == "9:16" else "Không chữ / đồ hoạ đè mặt (đo giao hộp mặt với chữ thật)"
     add("J", j_name, ("pass" if out_red == 0 else "fail") if sampled else "unmeasured", f"{sampled} mẫu có mặt, {out_red} mẫu {'lệch ĐỎ' if a.aspect == '9:16' else 'có chữ đè mặt'}{(' tại ' + ', '.join(f'{t:.1f}s' for t in bad_t[:8])) if bad_t else ''}; tâm zoom theo mặt {'(dò được)' if face_ok else '(không dò được, giả định)'}")
-    add("S", "Cân sáng / màu nhẹ (đo trước, chỉ chỉnh khi lệch rõ)", "info", grade_note)
+    # S, T theo bảng kiểm Skill ESV v0.1.r2 B9 (cân màu chuyển sang V)
+    if sfx_info.get("used"):
+        w_ = sfx_info.get("worstVsVoiceDb")
+        lowm = sfx_info.get("belowMusic8Db") or []
+        add("S", "SFX: mỗi cú ≤ −19 dB so giọng (trượt 100 ms); 0 SFX trên zoom; ≥ +8 dB so nhạc", "pass" if w_ is not None and w_ <= -19.0 else "fail",
+            f"{sfx_info['count']} cú (chữ nhấn / khung vẽ / thẻ ảnh / khung toàn màn hình), cú to nhất {w_} dB so giọng; 0 cú trên zoom (zoom không sinh SFX)"
+            + (f"; {len(lowm)} cú chưa cao hơn nhạc 8 dB tại {lowm[:5]} (không tăng để giữ ≤ −19 dB)" if lowm else "")
+            + (f"; bỏ {len(sfx_info['dropped'])} cú rơi vào khoảng lặng" if sfx_info.get("dropped") else "") + "; SFX chưa được OWNER nghe duyệt (D-14)")
+    else:
+        add("S", "SFX: mỗi cú ≤ −19 dB so giọng; 0 SFX trên zoom", "na", sfx_info.get("reason", "không có cú SFX"))
+    add("T", "Phụ đề không phát sáng; PA B \\pos(540,1600)", "pass" if a.aspect != "16:9" else "info",
+        ("không lớp phát sáng; đáy phụ đề y1600 @1080x1920 (PA B)" + ("" if a.aspect == "9:16" else f" trong dải chữ thu ×{LAY['s']} cho {a.aspect}")) if a.aspect != "16:9" else
+        "16:9: phụ đề không phát sáng; vị trí theo bố cục dải chữ thu nhỏ (Ngang R8.1 y2030@4K CHƯA DỰNG THỬ trong skill)")
+    add("V", "Cân sáng / màu nhẹ (đo trước, chỉ chỉnh khi lệch rõ)", "info", grade_note)
     add("K", "So với bản trước", "na", "chưa so khung tự động với bản trước (dựng lại từ RAW)")
     add("L", "Độ đọc chữ trắng trên nền sáng", "info", "kiểm bằng mắt khi duyệt")
     add("M", "Tiếng giống từng byte khi chỉ sửa hình", "na", "dựng từ RAW")
     add("N", "Màu logo theo nền", "info", "logo sáng (nền tối); cần OWNER xem")
     add("O", "Không lộ tên người / bí mật", "unmeasured", "cần người xem phụ đề")
     b_note = "; ".join(f"minh hoạ {b['t0']:.1f}–{b['t1']:.1f}s {b['file']}" for b in brolls) or "không minh hoạ"
-    m_note = f"nhạc {music_info['file']}" if music_info.get("used") else f"không nhạc ({music_info['reason']})"
+    m_note = (f"nhạc {music_info['file']} ({music_info.get('chosenBy', '')})" + (f"; gợi ý nghe duyệt: {', '.join(music_info['suggest'])}" if music_info.get("suggest") else "")
+              if music_info.get("used") else f"không nhạc ({music_info['reason']})")
     pending_media = [b["file"] for b in brolls if "chờ OWNER" in str(b.get("license", ""))] + ([music_info["file"]] if music_info.get("used") and "chờ OWNER" in str(music_info["license"]) else [])
     # Kiểm CẢ HAI font bộ dựng dùng (thường + đậm): thiếu một nửa bộ Tinos thì phần đậm rơi về Times → chưa có giấy phép
     srcs = [font_source(n) for n in ("Times New Roman Italic.ttf", "Times New Roman Bold Italic.ttf")]
@@ -1817,7 +1930,7 @@ def main():
     p_ok = font_ok and not pending_media
     font_note = f"font {font_name}: {font_lic}" if font_lic else f"font {font_name}: {'OWNER xác nhận' if od.get('fontLicense') else 'chưa có giấy phép thương mại'}"
     add("P", "Nhạc / B-roll / font có giấy phép", "pass" if p_ok else "blocker",
-        f"{font_note}; {m_note}; {b_note}; SFX tổng hợp" + (f" — {odq}" if p_ok and not font_lic else ""))
+        f"{font_note}; {m_note}; {b_note}; SFX tổng hợp tại chỗ (không tệp ngoài)" + (f" — {odq}" if p_ok and not font_lic else ""))
     add("Q", "Câu doanh thu / thu nhập / kết quả có dòng 'Kết quả cá nhân, không cam kết'", "pass",
         "không phát sinh" if not rev_spans else f"{len(rev_spans)} đoạn có dòng phủ suốt câu: {[[round(a_, 1), round(b_, 1)] for a_, b_ in rev_spans][:6]} (vị trí tạm: đỉnh vùng chữ, chờ OWNER chốt)")
     onscreen = [e.text for e in emph] + [x for d in plan.get("diagrams", []) for x in
@@ -1830,8 +1943,6 @@ def main():
     blockers = []
     if not font_ok:
         blockers.append("Font Times New Roman chưa có giấy phép thương mại")
-    if not od.get("logoSize"):
-        blockers.append("Logo vượt vùng logo — chờ OWNER chốt cỡ (#98a)")
     if pending_media:
         blockers.append(f"Tư liệu chờ OWNER xác nhận quyền dùng: {', '.join(pending_media[:4])}")
     if uncertain and not od.get("uncertainWords"):
@@ -1841,7 +1952,9 @@ def main():
         for name in ("master.mp4", "preview.mp4"):
             fsum.write(f"{P.sha256(job.p(name))}  {name}\n")
     report = {
-        "skill": {"skillId": "edu-hau-ky-video-916-phu-luc", "name": "Skill ESV", "version": "v0.3.1 r3 (T-062.r3, 21/10/2026)", "status": "DRAFT", "sourceUrl": "https://app.notion.com/p/4004ceb9517d81198fc4da9f9339234e", "engine": "esv_render.py (Pillow, không ASS)"},
+        "skill": ({"skillId": "edu-hau-ky-video-916-phu-luc", "name": "Skill ESV", "version": "v0.1.r2 (22/10/2026)", "status": "ACTIVE — OWNER duyệt 22/10/2026 18:14", "sourceUrl": "https://app.notion.com/p/4004ceb9517d81198fc4da9f9339234e", "engine": "esv_render.py (Pillow, không ASS)"}
+                  if a.aspect != "16:9" else
+                  {"name": "Skill Edit Video Ngang", "version": "v0.1.r2 (22/10/2026)", "status": "ACTIVE — OWNER duyệt 22/10/2026 18:14", "sourceUrl": "https://app.notion.com/p/4004ceb9517d81849441f9d0f3757538", "engine": "esv_render.py (Pillow, không ASS) — chưa có mẫu khung M1–M6 / K1–K10"}),
         "input": {"file": os.path.basename(src), **info, "crop": cropf},
         "output": {"master": "master.mp4", "preview": "preview.mp4", "aspect": a.aspect, "width": CW, "height": CH, "crop": cropf, "frames": N, "seconds": round(dur, 3), "cutSilence": bool(keep), "cuts": len(cut_times), "sourceSeconds": round(src_dur, 3),
                    "keep": [[a_, b_] for a_, b_ in keep] if keep else None},

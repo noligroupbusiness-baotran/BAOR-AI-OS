@@ -13,6 +13,7 @@ import { AiBudgetPanel, IntegrationsPanel, SystemLogPanel } from "@/components/s
 import { FaqPanel } from "@/components/settings/faq-panel";
 import { AlertsPanel, AppLogoPanel, BrandPanel, MusicPanel } from "@/components/settings/brand-panels";
 import { AutoEditPanel } from "@/components/settings/auto-edit-panel";
+import { MusicLibraryPanel } from "@/components/settings/music-library-panel";
 
 export const metadata = { title: "Cài đặt – BAOR AI OS" };
 
@@ -111,6 +112,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 
       <MusicPanel />
       <AutoEditPanel />
+      <MusicLibraryPanel />
       <AiBudgetPanel />
       <AlertsPanel />
       <SystemLogPanel />

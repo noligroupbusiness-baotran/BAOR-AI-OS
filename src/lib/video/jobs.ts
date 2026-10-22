@@ -34,7 +34,7 @@ const worker = (g.__baorVideoWorker ??= { running: null, recovered: false });
 
 /** Tên skill đang dùng để dựng (hiện trên giao diện / ghi chú). */
 export function engineLabel(): string {
-  return getSetting("video.engine") === "legacy" ? `${SKILL.name} ${SKILL.version}` : "Skill ESV v0.3.1 bản r3 (Notion 02 SKILL, 21/10/2026)";
+  return getSetting("video.engine") === "legacy" ? `${SKILL.name} ${SKILL.version}` : "Skill ESV v0.1.r2 (9:16) + Skill Edit Video Ngang v0.1.r2 (16:9) — Notion 02 SKILL, ACTIVE, OWNER duyệt 22/10/2026";
 }
 
 export function dataDir(): string {
@@ -130,7 +130,7 @@ export function activeJobCount(): number {
 export interface EditSettings {
   keywords: string;
   model: string;
-  /** "" = bài mặc định trong thư viện nhạc (DATA_DIR/video-assets/music), "none" = không nhạc, còn lại = id tệp tải lên. */
+  /** "" = tự chọn theo loại nhạc AI chọn, chỉ bài OWNER đã duyệt (DATA_DIR/video-assets/music; esv_render.pick_music), "none" = không nhạc, còn lại = id tệp tải lên. */
   musicUploadId: string;
   /** #78c: SFX tổng hợp (tách ở chữ nhấn, vút khi vào minh hoạ). OWNER duyệt dùng 21/10/2026 → mặc định bật. */
   sfx: boolean;

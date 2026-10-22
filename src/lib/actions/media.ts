@@ -131,6 +131,18 @@ export async function saveAutoEdit(fd: FormData) {
   done("/settings#auto-edit", "Đã lưu cấu hình dựng video tự động");
 }
 
+/** OWNER nghe thử rồi duyệt / bỏ duyệt bài nhạc nạp từ kho tư liệu. Chỉ quyền quản trị (OWNER): "ĐỦ-HỒ-SƠ" của kho ≠ OWNER duyệt. */
+export async function setLibraryMusicApproval(fd: FormData) {
+  const actor = await requirePermission("admin", "/settings#music-library");
+  const { approveMusic, unapproveMusic } = await import("@/lib/video/music-library");
+  const file = str(fd, "file");
+  const approve = str(fd, "approve") === "1";
+  const r = approve ? approveMusic(file, actor.email) : unapproveMusic(file);
+  if (!r.ok) return fail("/settings#music-library", r.error);
+  logActivity("human", `${actor.name} ${approve ? "duyệt dùng" : "bỏ duyệt"} nhạc nền “${file}”.`, "settings");
+  done("/settings#music-library", approve ? `Đã duyệt “${file}”: bộ dựng được tự chọn bài này theo nội dung video.` : `Đã bỏ duyệt “${file}”.`);
+}
+
 export async function runAutoEditNow() {
   await requirePermission("manager", "/settings#auto-edit");
   const { ingestInbox, pendingInbox } = await import("@/lib/video/auto-edit");

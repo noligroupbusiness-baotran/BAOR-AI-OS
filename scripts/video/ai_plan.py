@@ -227,6 +227,25 @@ Chấm TỪNG mục (theo số n) thang 1–5:
 Video dạy kỹ năng cần nhiều điểm nhấn: đừng hạ điểm chỉ vì ý đơn giản nếu nó đúng là thuật ngữ của bài."""
 
 
+MUSIC = """Chọn MỘT loại nhạc nền hợp nhất với video (nhạc nhỏ dưới giọng nói, không át lời). Dựa vào chủ đề và giọng điệu bài nói.
+Trả về đúng mã loại trong danh sách; why = 1 câu ngắn."""
+
+
+def pick_music_mood(genres, topic, log=print):
+    """genres: {mã loại: [tâm trạng / mục đích]} lấy từ thư viện nhạc. Trả {"mood", "why"} hoặc None (lỗi / mô hình trả lạ)."""
+    if not genres or not topic.strip():
+        return None
+    schema = {"type": "object", "properties": {"mood": {"type": "string", "enum": sorted(genres)}, "why": {"type": "string"}}, "required": ["mood", "why"]}
+    menu = "\n".join(f"- {g}: {', '.join(v)}" for g, v in sorted(genres.items()))
+    try:
+        out = llm([{"role": "system", "content": MUSIC}, {"role": "user", "content": f"Chủ đề / tóm tắt video: {topic[:900]}\n\nCác loại nhạc:\n{menu}"}], schema, max_tokens=200)
+    except Exception as ex:
+        log(f"Chọn loại nhạc lỗi, bỏ qua: {str(ex)[:120]}")
+        return None
+    mood = out.get("mood") if isinstance(out, dict) else None
+    return {"mood": mood, "why": str(out.get("why", ""))[:200]} if mood in genres else None
+
+
 def sent_block(sents):
     return "\n".join(f"[{s['id']}] ({s['t0']:.1f}s) {s['text']}" for s in sents)
 
@@ -272,7 +291,7 @@ def pick_broll(lib, sents, by_id, diagrams, dur, rejected):
     return broll
 
 
-def plan(words, dur, library=None, content_hint="", log=print):
+def plan(words, dur, library=None, content_hint="", log=print, music_genres=None):
     """Trả kế hoạch dựng (mốc theo video gốc) hoặc None khi không có mô hình."""
     if not available():
         log("Không có mô hình tại máy (llama-server) → bỏ biên tập AI")
@@ -483,6 +502,9 @@ def plan(words, dur, library=None, content_hint="", log=print):
     except Exception as ex:  # bước ảnh lỗi → không có ảnh, kế hoạch chữ / sơ đồ vẫn giữ
         broll = []
         rejected.append({"kind": "broll", "reason": f"bước chọn ảnh lỗi, bỏ qua: {str(ex)[:120]}"})
+    # 4) Loại nhạc nền theo nội dung (bộ dựng chọn bài cụ thể trong loại đó, chỉ bài OWNER đã nghe duyệt)
+    topics = " ".join(str(a.get("topic", "")) for a in analyses if isinstance(a, dict))
+    music = pick_music_mood(music_genres or {}, (topics + " " + " ".join(summaries)).strip(), log)
     label = model_label()
     digest = hashlib.sha256(json.dumps([w["text"] for w in words], ensure_ascii=False).encode()).hexdigest()[:12]
     return {
@@ -491,6 +513,7 @@ def plan(words, dur, library=None, content_hint="", log=print):
         "emphasis": emphasis,
         "diagrams": diagrams,
         "broll": broll,
+        **({"music": music} if music else {}),
         "ai": {"model": label, "endpoint": ENDPOINT, "wordsDigest": digest, "seconds": round(time.time() - t_start, 1),
                "analysis": analyses, "proposed": {"emphasis": len(raw_emph), "diagrams": len(raw_dias)}, "kept": {"emphasis": len(emphasis), "diagrams": len(diagrams), "broll": len(broll)},
                "rejected": rejected[:300]},
@@ -584,6 +607,23 @@ def self_test():
         if bool(pn["emphasis"]) != ok_want:
             bad += 1
             print(f"SAI phủ định: “{sent_txt}” → {[e['text'] for e in pn['emphasis']]}")
+    # loại nhạc: chỉ nhận mã có trong thư viện; mô hình trả lạ / lỗi → không có mục music (bộ dựng dùng bài mặc định)
+    genres = {"upbeat": ["sôi động"], "acoustic": ["ấm áp"]}
+    for reply, want in (({"mood": "acoustic", "why": "đội nhóm"}, "acoustic"), ({"mood": "rock", "why": ""}, None), (TimeoutError("hết giờ"), None)):
+        def fm(messages, schema, _r=reply, **kw):
+            if "mood" in schema.get("properties", {}):
+                if isinstance(_r, Exception):
+                    raise _r
+                return _r
+            return {"summary": "đi chơi cùng đồng đội", "emphasis": [], "diagrams": []} if schema is PLAN_SCHEMA else {}
+        g["llm"], g["available"] = fm, (lambda timeout=3: True)
+        try:
+            pm = plan(w2, 40.0, [], log=lambda m: None, music_genres=genres)
+        finally:
+            g["llm"], g["available"] = real_llm, real_av
+        if (pm.get("music") or {}).get("mood") != want:
+            bad += 1
+            print(f"SAI loại nhạc: mô hình trả {reply!r} → {pm.get('music')}")
     print(f"ai_plan tự kiểm: {'đạt' if not bad else f'{bad} lỗi'}")
     return bad == 0
 
