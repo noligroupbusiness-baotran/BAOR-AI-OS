@@ -586,13 +586,69 @@ def fs_background(kind):
     return Image.fromarray(img.clip(0, 255).astype(np.uint8)).convert("RGBA")
 
 
+GRADE = []  # bộ lọc cân sáng / màu đo được cho video này (measure_grade), dùng chung cho mọi lần đọc khung nguồn
+
+
+def measure_grade(src, info, face=None, n=10):
+    """Cân sáng / màu NHẸ cho video có người nói — ĐO TRƯỚC, chỉ chỉnh khi lệch rõ, GIỮ màu da:
+    - sáng: đo trên VÙNG MẶT (nền tối là chủ ý dựng cảnh, không tính); mặt < 0,35 → nâng gamma (≤ ×1,15), > 0,70 → hạ (≥ ×0,92)
+    - màu: KHÔNG kéo "thế giới xám" (làm lạnh da, mất tông ấm có chủ ý); chỉ sửa ám SAI rõ: ám xanh lá (G > R và G > B quá 6 %)
+      hoặc ám lạnh (B > R quá 6 %), mỗi kênh tối đa ±4 %. Tông ấm (R > G > B) giữ nguyên.
+    Trả (bộ lọc ffmpeg, mô tả cho bảng kiểm)."""
+    W, H = info["width"], info["height"]
+    if face:
+        side = int(min(W, H) * 0.22) // 2 * 2
+        x = int(min(max(face[0] - side / 2, 0), W - side))
+        y = int(min(max(face[1] - side / 2, 0), H - side))
+        region = f"crop={side}:{side}:{x}:{y}"
+    else:  # không dò được mặt: đo ô giữa khung
+        region = f"crop=iw/3:ih/3:iw/3:ih/4"
+    ys, rgb_ = [], []
+    for k in range(n):
+        t = info["duration"] * (k + 0.5) / n
+        r = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{t:.2f}", "-i", src, "-frames:v", "1", "-vf", f"{region},scale=96:-2,format=rgb24", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], capture_output=True)
+        if not r.stdout:
+            continue
+        a_ = np.frombuffer(r.stdout, np.uint8).reshape(-1, 3).astype(np.float32) / 255.0
+        mm = a_.mean(axis=0)
+        rgb_.append(mm)
+        ys.append(float(0.2126 * mm[0] + 0.7152 * mm[1] + 0.0722 * mm[2]))
+    if not ys:
+        return [], "không đo được (không đọc được khung)"
+    y = float(np.median(ys))
+    m = np.median(np.array(rgb_), axis=0)
+    filt, did = [], []
+    gamma = 1.0
+    if y < 0.35:
+        gamma = min(1.15, 1.0 + (0.35 - y) * 1.2)
+    elif y > 0.70:
+        gamma = max(0.92, 1.0 - (y - 0.70) * 0.8)
+    if abs(gamma - 1.0) >= 0.02:
+        filt.append(f"eq=gamma={gamma:.3f}")
+        did.append(f"gamma ×{gamma:.2f} (mặt {'tối' if gamma > 1 else 'chói'})")
+    r_, g_, b_ = (float(c) for c in m)
+    gains = None
+    if g_ > r_ * 1.06 and g_ > b_ * 1.06:  # ám xanh lá (đèn huỳnh quang) → hạ G
+        gains = (1.0, max(0.96, (r_ + b_) / 2 / g_), 1.0)
+        why = "ám xanh lá"
+    elif b_ > r_ * 1.06:  # ám lạnh (cân trắng sai) → ấm lại nhẹ
+        k = min(1.04, (b_ / r_) ** 0.5)
+        gains = (k, 1.0, 1 / k)
+        why = "ám lạnh"
+    if gains:
+        filt.append(f"colorchannelmixer=rr={gains[0]:.3f}:gg={gains[1]:.3f}:bb={gains[2]:.3f}")
+        did.append(f"{why}: R×{gains[0]:.2f} G×{gains[1]:.2f} B×{gains[2]:.2f}")
+    note = f"vùng mặt: sáng {y:.2f}, RGB {r_:.2f}/{g_:.2f}/{b_:.2f}; " + ("; ".join(did) if did else "trong ngưỡng, không chỉnh (giữ tông da / tông cảnh)")
+    return filt, note
+
+
 def fs06_clip(src, cropf, t0, d, out, kind="fs06"):
     """FS-06 (Skill 5.4/5.5 b): nền là chính cảnh quay làm mờ mạnh (≈40 px @1080), giảm bão hoà 55 %, tối, vignette;
     TR-PIP: người nói thu về khung góc vuông viền vàng góc trên phải (x615, y120, rộng 405) trong 0,6 s easeInOutQuint,
     phóng ngược ra ở 0,6 s cuối. Nội suy affine dưới điểm ảnh (không làm tròn)."""
     from PIL import ImageEnhance
     n = max(2, int(round(d * FPS)))
-    vf = ",".join(["fps=30"] + ([cropf] if cropf else []) + [f"scale={CW}:{CH}:flags=lanczos", "format=rgb24"])
+    vf = ",".join(["fps=30"] + ([cropf] if cropf else []) + GRADE + [f"scale={CW}:{CH}:flags=lanczos", "format=rgb24"])
     rd = subprocess.Popen(["ffmpeg", "-v", "error", "-ss", f"{t0:.3f}", "-i", src, "-frames:v", str(n), "-vf", vf, "-f", "rawvideo", "-"], stdout=subprocess.PIPE)
     wr = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{CW}x{CH}", "-r", str(FPS), "-i", "-",
                            "-c:v", "libx264", "-preset", "medium", "-crf", "14", "-pix_fmt", "yuv420p", out], stdin=subprocess.PIPE)
@@ -1294,6 +1350,7 @@ def main():
     ap.add_argument("--no-sfx", action="store_true", help="tắt SFX tổng hợp (vút khi vào minh hoạ, tách khi chữ nhấn)")
     ap.add_argument("--corrections", default="", help='sửa chữ nghe sai, mỗi dòng "sai => đúng" (cùng số tiếng)')
     ap.add_argument("--script", default="", help="tệp lời nói của kịch bản đã gắn (Nội dung → Video): gợi ý nghe, sửa chữ, ngữ cảnh biên tập AI")
+    ap.add_argument("--no-grade", action="store_true", help="không cân sáng / màu tự động")
     ap.add_argument("--ai-plan", action="store_true", help="bỏ kế hoạch có sẵn, để biên tập AI tại máy lập lại (scripts/video/ai_plan.py)")
     a = ap.parse_args()
     global CW, CH, LAY
@@ -1383,6 +1440,12 @@ def main():
     fx, fy, face_ok = face_center(src, info)
     cropf, cw, chh, x0, y0 = frame_crop(info, fx, fy, a.aspect, {"x": a.frame_x, "y": a.frame_y, "zoom": a.frame_zoom})
     ax, ay = (fx - x0) / cw, (fy - y0) / chh
+    # Cân sáng / màu nhẹ (S5): đo trên đúng vùng sẽ xuất, chỉ chỉnh khi lệch rõ
+    if a.no_grade:
+        GRADE[:], grade_note = [], "tắt (--no-grade)"
+    else:
+        g_, grade_note = measure_grade(src, info, (fx, fy) if face_ok else None)
+        GRADE[:] = g_
     # tâm zoom: mặt, giới hạn để mặt nằm trong vùng mặt
     ax = min(max(ax, 0.2), 0.8)
     ay = min(max(ay, 0.20), 0.45) if a.aspect == "9:16" else min(max(ay, 0.15), 0.6)
@@ -1550,7 +1613,7 @@ def main():
     q = f"(1-1/{zx})"
     persp = (f"perspective=x0='{Ax:.3f}*{q}':y0='{Ay:.3f}*{q}':x1='{cw}-{cw - Ax:.3f}*{q}':y1='{Ay:.3f}*{q}':"
              f"x2='{Ax:.3f}*{q}':y2='{chh}-{chh - Ay:.3f}*{q}':x3='{cw}-{cw - Ax:.3f}*{q}':y3='{chh}-{chh - Ay:.3f}*{q}':interpolation=cubic:eval=frame")
-    vf = ["fps=30"] + ([cropf] if cropf else []) + ["format=yuv444p", persp, f"scale={CW}:{CH}:flags=lanczos", "unsharp=5:5:0.3", "setsar=1",
+    vf = ["fps=30"] + ([cropf] if cropf else []) + GRADE + ["format=yuv444p", persp, f"scale={CW}:{CH}:flags=lanczos", "unsharp=5:5:0.3", "setsar=1",
            "setparams=range=tv:colorspace=bt709:color_primaries=bt709:color_trc=bt709"]
     logo_w = LAY["logo_w"]
     # B-roll (ESV/SK-MED-03): cắt cảnh toàn khung theo kế hoạch, hiện/tắt mờ 0,2 s; phụ đề, chữ nhấn, logo vẫn nằm trên.
@@ -1695,7 +1758,7 @@ def main():
     # J: dò mặt trên bản chính mỗi 0,5 s
     import cv2
     cas = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
-    out_red, sampled, dets = 0, 0, []
+    out_red, sampled, dets, bad_t = 0, 0, [], []
     for k in range(int(dur * 2)):
         r = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{k / 2:.2f}", "-i", master, "-frames:v", "1", "-vf", f"scale={half(CW)}:{half(CH)}", "-f", "image2pipe", "-vcodec", "png", "-"], capture_output=True)
         if not r.stdout:
@@ -1714,6 +1777,7 @@ def main():
         if a.aspect == "9:16":
             if y * 2 < LAY["red"][0] - 4 or (y + h_) * 2 > LAY["red"][1] + 4:
                 out_red += 1
+                bad_t.append(d_t)
         else:
             # Tỷ lệ khác: đúng luật gốc "không chữ, không đồ hoạ đè mặt" — mặt giao với hộp chữ / đồ hoạ thật của khung đó
             fb = frame_boxes.get(int(round(d_t * FPS / 15)) * 15, [])
@@ -1726,8 +1790,11 @@ def main():
                     if X0 < fx1 - 6 and fx0 + 6 < X1 and Y0 < fy1 - 6 and fy0 + 6 < Y1:
                         hit = True
             out_red += hit
+            if hit:
+                bad_t.append(d_t)
     j_name = "Mặt trong vùng ĐỎ ở mọi khung zoom" if a.aspect == "9:16" else "Không chữ / đồ hoạ đè mặt (đo giao hộp mặt với chữ thật)"
-    add("J", j_name, ("pass" if out_red == 0 else "fail") if sampled else "unmeasured", f"{sampled} mẫu có mặt, {out_red} mẫu {'lệch ĐỎ' if a.aspect == '9:16' else 'có chữ đè mặt'}; tâm zoom theo mặt {'(dò được)' if face_ok else '(không dò được, giả định)'}")
+    add("J", j_name, ("pass" if out_red == 0 else "fail") if sampled else "unmeasured", f"{sampled} mẫu có mặt, {out_red} mẫu {'lệch ĐỎ' if a.aspect == '9:16' else 'có chữ đè mặt'}{(' tại ' + ', '.join(f'{t:.1f}s' for t in bad_t[:8])) if bad_t else ''}; tâm zoom theo mặt {'(dò được)' if face_ok else '(không dò được, giả định)'}")
+    add("S", "Cân sáng / màu nhẹ (đo trước, chỉ chỉnh khi lệch rõ)", "info", grade_note)
     add("K", "So với bản trước", "na", "chưa so khung tự động với bản trước (dựng lại từ RAW)")
     add("L", "Độ đọc chữ trắng trên nền sáng", "info", "kiểm bằng mắt khi duyệt")
     add("M", "Tiếng giống từng byte khi chỉ sửa hình", "na", "dựng từ RAW")

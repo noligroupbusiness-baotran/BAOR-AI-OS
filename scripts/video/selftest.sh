@@ -107,3 +107,20 @@ assert not bad, f"{asp}: bảng kiểm chưa đạt {bad}"
 print(f"SELFTEST {asp} ĐẠT: bản chính {m[0]}x{m[1]}, xem nhanh {p[0]}x{p[1]}")
 P
 done
+
+# Cân sáng / màu nhẹ: cảnh tối ám xanh lá → nâng gamma + hạ G; ám lạnh → ấm lại; cảnh ấm bình thường → KHÔNG chỉnh (giữ tông da)
+ffmpeg -v error -y -f lavfi -i "color=c=0x2a4a2a:s=640x360:d=2" -pix_fmt yuv420p "$W/g_dark_green.mp4"
+ffmpeg -v error -y -f lavfi -i "color=c=0x6a7a9a:s=640x360:d=2" -pix_fmt yuv420p "$W/g_cool.mp4"
+ffmpeg -v error -y -f lavfi -i "color=c=0x9a7060:s=640x360:d=2" -pix_fmt yuv420p "$W/g_warm.mp4"
+python3 - "$HERE" "$W" <<'P'
+import sys; sys.path.insert(0, sys.argv[1]); W = sys.argv[2]
+import esv_render as E, pipeline as P
+def g(f):
+    info = P.probe(f"{W}/{f}")
+    return E.measure_grade(f"{W}/{f}", info, None, n=2)
+f1, n1 = g("g_dark_green.mp4"); f2, n2 = g("g_cool.mp4"); f3, n3 = g("g_warm.mp4")
+assert any(x.startswith("eq=gamma=") for x in f1) and any("gg=0.9" in x for x in f1), f"tối ám xanh lá: {f1} {n1}"
+assert any(x.startswith("colorchannelmixer=rr=1.0") for x in f2), f"ám lạnh: {f2} {n2}"
+assert f3 == [], f"cảnh ấm bình thường không được chỉnh: {f3} {n3}"
+print(f"SELFTEST CÂN MÀU ĐẠT: tối+xanh lá {f1}; lạnh {f2}; ấm giữ nguyên")
+P
