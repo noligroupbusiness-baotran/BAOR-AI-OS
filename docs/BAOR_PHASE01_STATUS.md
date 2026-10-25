@@ -123,7 +123,10 @@ OWNER 25/10/2026 (tối): edit video LẠI ("edit lại đi") — lệnh "ngưng
    bảng kiểm N đo lại trên bản chính; lỗi đo → logo sáng + N unmeasured, không chết lần dựng) — ngưỡng / giữ 2 s do AI chọn, CHỜ OWNER duyệt;
    bản logo tối thương hiệu (baor-dark.png, chữ ánh kim có phần gần trắng) khó đọc trên nền rất sáng — OWNER xem có cần bản tối đặc màu;
    4K (D-04): --quality=4k (crop ≥ 90 % 4K mới xuất 4K; lớp chữ / FS-06 là bản 1080 phóng ×2). Dựng lại "1011(1)" v_mvnu9i50atbkj bản 7:
-   5 chữ nhấn, nhạc kho (chờ OWNER duyệt bài → P chặn đăng), bảng kiểm đạt trừ P.
+   5 chữ nhấn, nhạc kho (chờ OWNER duyệt bài → P chặn đăng), bảng kiểm đạt trừ P. OWNER 25/10 "không có hiệu ứng, animation, vẽ khung":
+   bộ lập kế hoạch AI nay tự đặt FS-06 (khung toàn màn hình, người nói thu vào khung viền vàng) kèm sơ đồ / trích dẫn và vệt sáng trước
+   khung chương (trước đây chỉ kế hoạch làm tay có); cụm mô hình viết diễn giải → hỏi lại chép nguyên văn; "X thì Y" trích vế chính;
+   zoom lấp trống theo khoảng KHÔNG zoom (≥ 6 s từ lúc zoom trước bắt đầu). Bản 9: FS-06 + trích dẫn + 3 zoom + nhạc.
    CÒN: K1–K10 (CHƯA CHỐT — chờ OWNER #134a); giấy phép SFX OWNER CHƯA XÁC MINH;
    mô tả ảnh mới tải lên chưa có (ảnh mới rơi về tên tệp, có đánh dấu).
 3. Nợ đã ghi (không chặn): script_align "Lan"→"Lành" khi kịch bản viết hoa tên khác; negated_before dừng ở "thì" có thể sót

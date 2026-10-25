@@ -1275,9 +1275,11 @@ def fill_zooms(zooms, units, prof, blocked, dur, cut_times=(), every=10.0):
             continue
         prev = [z for z in out if z["t"] <= t]
         nxt = [z for z in out if z["t"] > t]
-        if prev and t - (prev[-1]["out"] + prev[-1]["nout"] / FPS) < max(gap, every):
+        # "every" = khoảng KHÔNG zoom tối đa (tính từ lúc zoom trước BẮT ĐẦU); giãn cách giữa hai zoom vẫn ≥ hồ sơ (OWNER 25/10/2026:
+        # luật cũ đòi ≥ every giây SAU khi zoom trước kết thúc → video 36 s chỉ còn chỗ cho 1 zoom)
+        if prev and (t - prev[-1]["t"] < every or t - (prev[-1]["out"] + prev[-1]["nout"] / FPS) < gap):
             continue
-        if not prev and t < every * 0.5:
+        if not prev and t < 1.5:
             continue
         if nxt and nxt[0]["t"] - end < gap:
             continue

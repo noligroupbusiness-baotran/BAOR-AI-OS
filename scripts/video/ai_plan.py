@@ -224,6 +224,7 @@ BROLL_SCHEMA = {
 CHECK_SCHEMA = {"type": "object", "properties": {"fit": {"type": "boolean"}, "reason": {"type": "string"}}, "required": ["fit", "reason"]}
 
 
+REPAIR_SCHEMA = {"type": "object", "properties": {"phrase": {"type": "string"}}, "required": ["phrase"]}
 JUDGE_SCHEMA = {"type": "object", "properties": {"verdicts": {"type": "array", "items": {"type": "object", "properties": {
     "n": {"type": "integer"}, "score": {"type": "integer", "minimum": 1, "maximum": 5}, "reason": {"type": "string"}}, "required": ["n", "score", "reason"]}}}, "required": ["verdicts"]}
 JUDGE = """Bạn là TRƯỞNG BIÊN TẬP khắt khe duyệt đồ hoạ cho video dạy bán hàng. Mỗi mục là chữ / sơ đồ sẽ hiện trên màn hình, kèm câu nói gốc.
@@ -299,7 +300,7 @@ def pick_broll(lib, sents, by_id, diagrams, dur, rejected, topic=""):
         it = lib[a]
         t0 = round(max(s["t0"], 3.0), 2)
         t1 = round(min(t0 + 2.5, dur - 2.0), 2)
-        if it["file"] in used or t1 - t0 < 1.2 or t0 - last < 6 or any(dd["t0"] - 0.3 <= t0 <= dd["t1"] for dd in diagrams if dd["type"] in ("steps", "compare", "arrow", "mechanism")):
+        if it["file"] in used or t1 - t0 < 1.2 or t0 - last < 6 or any(dd["t0"] - 0.3 <= t1 and t0 <= dd.get("t1", dd["t0"] + 3.6) for dd in diagrams if dd["type"] in ("steps", "compare", "arrow", "mechanism", "quote", "fs06", "leak")):
             rejected.append({"kind": "broll", "file": it["file"], "reason": "trùng ảnh / quá sát minh hoạ trước / trùng sơ đồ / sát đầu-cuối"})
             continue
         # Kiểm có NGỮ CẢNH: câu trước + câu sau + chủ đề video (một câu cụt đứng riêng làm bước kiểm loại cả cặp hợp lý)
@@ -356,6 +357,8 @@ def plan(words, dur, library=None, content_hint="", log=print, music_genres=None
         rejected.append({"kind": "model", "reason": f"mô hình trả {len(bad_e)} chữ nhấn / {len(bad_d)} sơ đồ sai kiểu → bỏ"})
 
     # 2) Kiểm nguyên văn + đặt mốc từ chính lời nói
+    repair_left = [8]  # tối đa 8 lần hỏi lại mô hình mỗi video (mỗi lần ~10–20 s trên máy)
+
     def ground(sid, phrase, maxw=6):
         s_ = by_id.get(sid)
         if not s_:
@@ -371,6 +374,20 @@ def plan(words, dur, library=None, content_hint="", log=print, music_genres=None
                 loc = align(phrase, win, words, maxw)
                 if loc:
                     break
+        if not loc and repair_left[0] > 0:
+            # OWNER 25/10/2026 (video không có khung): mô hình hay viết DIỄN GIẢI thay vì chép lời → hỏi lại một lần với đúng câu nói,
+            # chữ lên màn hình vẫn lấy từ LỜI NÓI qua align (không bao giờ lấy chữ mô hình viết)
+            repair_left[0] -= 1
+            win = {"idx": [j for k in (sid - 1, sid, sid + 1) if k in by_id for j in by_id[k]["idx"]]}
+            text_ = " ".join(words[j]["text"].strip() for j in win["idx"] if not words[j].get("uncertain"))
+            try:
+                got = llm([{"role": "user", "content": f"Lời nói: «{text_}»\nChép NGUYÊN VĂN, LIỀN MẠCH một cụm ≤ {maxw} tiếng có trong lời nói trên, "
+                                                        f"diễn đạt đúng ý: «{phrase}». Không thêm / bớt / đổi chữ. Trả JSON {{\"phrase\": \"...\"}}."}],
+                          REPAIR_SCHEMA, max_tokens=120, timeout=60)
+                ph2 = str(got.get("phrase", "")) if isinstance(got, dict) else ""
+                loc = align(ph2, win, words, maxw) if ph2 else None
+            except Exception:  # noqa: BLE001 — sửa cụm là bước phụ; lỗi thì giữ kết luận "không ghép được"
+                loc = None
         if not loc:
             return None, f"“{phrase}” không ghép được vào lời nói câu {sid} (thiếu từ / quá {maxw} tiếng / nghe chưa chắc)"
         return loc, ""
@@ -409,6 +426,8 @@ def plan(words, dur, library=None, content_hint="", log=print, music_genres=None
     diagrams = []
     for d in raw_dias:
         typ, items = d.get("type"), d.get("items", [])
+        if typ == "chapter" and len(items) > 1:  # tiêu đề chương chỉ cần 1 cụm: lấy cụm đầu thay vì bỏ cả khung
+            items = items[:1]
         need = NEED[typ]
         if not (need[0] <= len(items) <= need[1]):
             rejected.append({"kind": "diagram", "type": typ, "reason": f"{typ} cần {need[0]}–{need[1]} mục, có {len(items)}"})
@@ -538,14 +557,20 @@ def plan(words, dur, library=None, content_hint="", log=print, music_genres=None
                 else:  # câu dài: chỉ cắt ở ranh giới mệnh đề; BỎ nếu phần sau / câu sau có phủ định hoặc lời phản bác
                     cut = next((k for k in range(5, 16) if tnorm(words[rng[k]]["text"]) in CLAUSE
                                 or words[rng[k - 1]]["text"].strip().endswith((",", ".", "?", "!", ";", ":"))), None)
-                    if cut is None or tnorm(words[rng[0]]["text"]) in {"nếu", "khi", "vì", "dù", "mặc", "giả"}:
-                        continue  # vế điều kiện / nguyên nhân đứng riêng ("nếu bạn hứa hẹn…") là ý cụt
-                    rest = " ".join(words[j]["text"] for j in rng[cut:]) + " " + after_
-                    if any(tnorm(w) in NEG for w in rest.split()) or REFUTE_RE.search(norm(rest)):
-                        continue
-                    a0, b0 = rng[0], rng[cut - 1]
-                    if b0 > a0 and tnorm(words[b0]["text"]) in EDGE - TRAIL_KEEP:  # bỏ tối đa MỘT hư từ cuối
-                        b0 -= 1
+                    if cut is not None and tnorm(words[rng[cut]]["text"]) == "thì" and 5 <= len(rng) - cut - 1 <= 14:
+                        # "X thì Y": Y là VẾ CHÍNH (ý chốt) — "bạn làm nghề tư vấn THÌ các bạn bắt buộc phải có kịch bản sale"
+                        a0, b0 = rng[cut + 1], rng[-1]
+                        if negated_before(a0) or REFUTE_RE.search(norm(after_)) or NEG & {tnorm(w) for w in after_.split()[:4]}:
+                            continue
+                    else:
+                        if cut is None or tnorm(words[rng[0]]["text"]) in {"nếu", "khi", "vì", "dù", "mặc", "giả"}:
+                            continue  # vế điều kiện / nguyên nhân đứng riêng ("nếu bạn hứa hẹn…") là ý cụt
+                        rest = " ".join(words[j]["text"] for j in rng[cut:]) + " " + after_
+                        if any(tnorm(w) in NEG for w in rest.split()) or REFUTE_RE.search(norm(rest)):
+                            continue
+                        a0, b0 = rng[0], rng[cut - 1]
+                        if b0 > a0 and tnorm(words[b0]["text"]) in EDGE - TRAIL_KEEP:  # bỏ tối đa MỘT hư từ cuối
+                            b0 -= 1
                 if any(words[j].get("uncertain") for j in range(a0, b0 + 1)):  # như align: không đưa từ nghe chưa chắc lên màn hình
                     continue
                 txt_ = spoken(words, a0, b0)
@@ -557,7 +582,7 @@ def plan(words, dur, library=None, content_hint="", log=print, music_genres=None
                     cands.append({"type": "quote", "t0": t0, "t1": t1, "text": txt_, "why": "dự phòng: ý chính của video (OWNER 25/10/2026 — không để video thiếu đồ hoạ)"})
         hit = lambda q: [e for e in emphasis if q["t0"] - 0.5 <= e["t"] <= q["t1"] + 0.5]  # noqa: E731
         cands = [q for q in cands if not any(q["t0"] - 0.5 <= d["t1"] and d["t0"] <= q["t1"] + 0.5 for d in diagrams)]
-        cands.sort(key=lambda q: len(hit(q)))
+        cands.sort(key=lambda q: (len(hit(q)), len(q["text"].split()) > 12))
         return cands[:3]
 
     def ctx(t):  # lời nói ±4 s quanh mục (câu đã chia có thể gãy; người duyệt cần đủ ngữ cảnh)
@@ -610,7 +635,7 @@ def plan(words, dur, library=None, content_hint="", log=print, music_genres=None
                         score = int(sc.get(n, {}).get("score", 3))
                     except (TypeError, ValueError):
                         score = 0
-                    if score < 3:  # khắt khe hơn mục thường (< 2): đây là mục dự phòng, chỉ giữ khi người chấm thấy đúng ý
+                    if score < 2:  # như mục thường: chỉ bỏ khi bị chấm RÕ hỏng (OWNER 25/10/2026 — video không được trơ)
                         rejected.append({"kind": "diagram", "phrase": q["text"], "reason": f"khung dự phòng bị trưởng biên tập chấm {score}/5: {str(sc.get(n, {}).get('reason', ''))[:120]}"})
                     else:
                         ok_.append(q)
@@ -624,6 +649,23 @@ def plan(words, dur, library=None, content_hint="", log=print, music_genres=None
             for e in inside:
                 rejected.append({"kind": "emphasis", "phrase": e["text"], "reason": "trùng khung trích dẫn dự phòng"})
             emphasis = [e for e in emphasis if e not in inside]
+
+    # 2c) Hiệu ứng khung (không thêm chữ → không rủi ro nghĩa): FS-06 — nền mờ toàn khung, người nói thu vào khung viền vàng —
+    # đi kèm sơ đồ / trích dẫn chính (cách ≥ 45 s); vệt sáng (AN-12) trước mỗi khung chương. OWNER 25/10/2026: "không có vẽ khung".
+    fx = []
+    for d in sorted(diagrams, key=lambda x: x["t0"]):
+        if d["type"] not in ("steps", "compare", "arrow", "mechanism", "quote") or any(d["t0"] - f["t0"] < 45 for f in fx):
+            continue
+        t0 = round(max(0.5, d["t0"] - 0.4), 2)
+        t1 = round(min(dur - 0.8, max(d["t1"], t0 + 4.0), t0 + 8.0), 2)
+        if t1 - t0 >= 3.0:
+            fx.append({"type": "fs06", "t0": t0, "t1": t1, "why": f"khung toàn màn hình cho {d['type']}"})
+    for d in diagrams:
+        if d["type"] == "chapter":
+            t0 = round(max(0.3, d["t0"] - 0.6), 2)
+            if t0 + 3.6 <= dur - 0.5 and not any(f["t0"] - 3.6 < t0 < f.get("t1", f["t0"] + 3.6) for f in fx):
+                fx.append({"type": "leak", "t0": t0, "why": "vệt sáng chuyển chương"})
+    diagrams = sorted(diagrams + fx, key=lambda x: x["t0"])
 
     # 3) Minh hoạ: mô hình chọn theo mô tả thư viện, rồi kiểm riêng từng lựa chọn
     broll = []
@@ -862,6 +904,41 @@ def self_test():
     if any(d["type"] == "quote" for d in px["diagrams"]):
         bad += 1
         print(f"SAI: câu bị câu sau phản bác vẫn lên khung trích dẫn: {px['diagrams']}")
+    # ≥ 2 khung chương → 2 vệt sáng, không vỡ (phản biện 25/10 P1: KeyError 't1' làm rơi về luật tự động — video "không có khung")
+    t2c = ("phần một chúng ta nói về kịch bản sale nha các bạn. " + "nội dung " * 30 + "phần hai chúng ta nói về cách tập luyện mỗi ngày.").split()
+    w2c = [{"text": x, "start": 1.0 + i * 0.5, "end": 1.4 + i * 0.5} for i, x in enumerate(t2c)]
+    s2c = sentences(w2c)
+
+    def f2c(messages, schema, **kw):
+        if schema is ANALYZE_SCHEMA:
+            return {"topic": "", "key_ideas": [], "lists": [], "contrasts": [], "cause_effect": [], "sections": []}
+        if schema is PLAN_SCHEMA:
+            return {"summary": "", "emphasis": [], "diagrams": [{"type": "chapter", "items": [{"sid": s2c[0]["id"], "phrase": "kịch bản sale"}]},
+                                                                {"type": "chapter", "items": [{"sid": s2c[-1]["id"], "phrase": "cách tập luyện"}]}]}
+        return {}
+    g["llm"], g["available"] = f2c, (lambda timeout=3: True)
+    try:
+        p2c = plan(w2c, 1.0 + len(t2c) * 0.5 + 5, [], log=lambda m: None)
+        types2c = [d["type"] for d in p2c["diagrams"]]
+    except Exception as ex:  # noqa: BLE001
+        types2c = [f"lỗi: {ex!r}"]
+    finally:
+        g["llm"], g["available"] = real_llm, real_av
+    if types2c.count("chapter") != 2 or types2c.count("leak") != 2:
+        bad += 1
+        print(f"SAI 2 khung chương: {types2c}")
+    # "X thì Y" (câu dài): trích VẾ CHÍNH sau "thì" (lỗi thật 1011(1) bản 8: khung hiện "bạn làm về nghệ tư vấn")
+    tq = "bạn làm về nghề tư vấn trong sáu tháng đầu thì các bạn bắt buộc phải có kịch bản sale ở bên cạnh mình".split()
+    wt = [{"text": x, "start": 1.0 + i * 0.3, "end": 1.25 + i * 0.3} for i, x in enumerate(tq)]
+    g["llm"], g["available"] = fx, (lambda timeout=3: True)
+    try:
+        pt = plan(wt, 30.0, [], log=lambda m: None)
+    finally:
+        g["llm"], g["available"] = real_llm, real_av
+    gotq = next((d["text"] for d in pt["diagrams"] if d["type"] == "quote"), None)
+    if gotq != "các bạn bắt buộc phải có kịch bản sale ở bên cạnh mình":
+        bad += 1
+        print(f"SAI vế chính sau 'thì': {gotq!r}")
     # trưởng biên tập bỏ sơ đồ cuối cùng (chấm 1/5) → khung dự phòng vẫn có (lỗi thật 1011(1) bản 4: sơ đồ so sánh bị chấm 2/5 → 0 khung)
     def fj(messages, schema, **kw):
         if schema is ANALYZE_SCHEMA:
@@ -876,9 +953,34 @@ def self_test():
         pj = plan(w2, 40.0, [], log=lambda m: None)
     finally:
         g["llm"], g["available"] = real_llm, real_av
-    if [d["type"] for d in pj["diagrams"]] != ["quote"] or not any(r.get("kind") == "diagram" and "1/5" in r.get("reason", "") for r in pj["ai"]["rejected"]):
+    if [d["type"] for d in pj["diagrams"]] != ["fs06", "quote"] or not any(r.get("kind") == "diagram" and "1/5" in r.get("reason", "") for r in pj["ai"]["rejected"]):
         bad += 1
         print(f"SAI: sơ đồ bị chấm bỏ thì phải có khung dự phòng: {pj['diagrams']}")
+    # mô hình viết DIỄN GIẢI → hỏi lại một lần (REPAIR_SCHEMA), chữ vẫn lấy từ lời nói; chương nhiều mục → mục đầu + vệt sáng;
+    # sơ đồ chính → FS-06 kèm theo (OWNER 25/10/2026 "không có hiệu ứng, không có vẽ khung")
+    def fr(messages, schema, **kw):
+        if schema is ANALYZE_SCHEMA:
+            return {"topic": "", "key_ideas": [], "lists": [], "contrasts": [], "cause_effect": [], "sections": []}
+        if schema is PLAN_SCHEMA:
+            return {"summary": "", "emphasis": [], "diagrams": [
+                {"type": "chapter", "items": [{"sid": 2, "phrase": "điểm chung với khách"}, {"sid": 2, "phrase": "x"}]}] if chap_only[0] else [
+                {"type": "arrow", "items": [{"sid": 1, "phrase": "biến cảm xúc thành thân thiết"}, {"sid": 2, "phrase": "điểm chung"}]}]}
+        if schema is REPAIR_SCHEMA:
+            return {"phrase": "tạo ra cảm giác thân tình"}
+        return {}
+    chap_only = [False]
+    g["llm"], g["available"] = fr, (lambda timeout=3: True)
+    try:
+        pr = plan(w2, 40.0, [], log=lambda m: None)
+        chap_only[0] = True
+        pc = plan(w2, 40.0, [], log=lambda m: None)
+    finally:
+        g["llm"], g["available"] = real_llm, real_av
+    types = [d["type"] for d in pr["diagrams"]] + [d["type"] for d in pc["diagrams"]]
+    arrow = next((d for d in pr["diagrams"] if d["type"] == "arrow"), None)
+    if not arrow or arrow["top"]["text"] != "tạo ra cảm giác thân tình" or [d["type"] for d in pc["diagrams"]] != ["leak", "chapter"] or "fs06" not in types:
+        bad += 1
+        print(f"SAI hiệu ứng khung / sửa cụm diễn giải / chương nhiều mục: {types} {arrow}")
     # Đội AI tắt "Cho phép gọi AI" (BAOR_AI_PLAN=off) → không có mô hình, bộ dựng lập theo luật
     os.environ["BAOR_AI_PLAN"] = "off"
     try:
