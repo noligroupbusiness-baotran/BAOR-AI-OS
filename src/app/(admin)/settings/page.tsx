@@ -39,8 +39,8 @@ const sections = [
 
 const input = "mt-1 h-8 w-full rounded-md border border-border-2 bg-surface px-2.5 text-[13px] text-ink outline-none focus-visible:outline-2 focus-visible:outline-jade";
 
-export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ edit?: string; product?: string; person?: string; faq?: string }> }) {
-  const { edit, product, person, faq } = await searchParams;
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ product?: string; person?: string; faq?: string }> }) {
+  const { product, person, faq } = await searchParams;
   const automation = getAutomation();
   const adminEmail = getAdminEmail();
 
@@ -64,7 +64,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       <FaqPanel editing={faq} />
       <PeoplePanel editing={person} />
 
-      <IntegrationsPanel editing={edit} />
+      <IntegrationsPanel />
 
       <Panel id="automation">
         <PanelHeader title="Tự động hóa" sub="Bước có nhãn ‘cần bạn duyệt’ luôn chờ bạn trước khi thực hiện." />

@@ -100,7 +100,7 @@ export function AdsPanel({ edit, link }: { edit?: string; link?: string }) {
                     )}
                     <div className="mt-1 flex flex-wrap items-center gap-1.5">
                       <CampaignTags links={adLinks.get(a.id)} />
-                      <LinkToCampaignForm entityType="ad" entityId={a.id} status={a.status} back="/publishing" links={adLinks.get(a.id)} compact open={link === a.id} />
+                      <LinkToCampaignForm entityType="ad" entityId={a.id} status={a.status} back="/ads" links={adLinks.get(a.id)} compact open={link === a.id} />
                     </div>
                   </Td>
                   <Td right className="num whitespace-nowrap">
@@ -111,7 +111,7 @@ export function AdsPanel({ edit, link }: { edit?: string; link?: string }) {
                         <Button type="submit" variant="primary">Lưu</Button>
                       </form>
                     ) : (
-                      <a href={`/publishing?edit=${a.id}#ads`} className="hover:underline">{formatNumber(a.dailyBudget)} ₫</a>
+                      <a href={`/ads?edit=${a.id}#ads`} className="hover:underline">{formatNumber(a.dailyBudget)} ₫</a>
                     )}
                   </Td>
                   <Td right className="num whitespace-nowrap">

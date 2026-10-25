@@ -16,7 +16,7 @@ test("đăng nhập: sai mật khẩu bị từ chối, đúng thì vào bảng 
 test("các trang chính mở được, không lỗi trình duyệt", async ({ page }) => {
   const errors = trackErrors(page);
   await login(page);
-  for (const p of ["/dashboard", "/content", "/video-studio", "/publishing", "/reports", "/insights", "/settings"]) {
+  for (const p of ["/dashboard", "/insights/research", "/content/hooks", "/content", "/video-studio", "/video-library", "/publishing", "/ads", "/insights/learning", "/reports", "/insights", "/settings"]) {
     const res = await page.goto(p);
     expect(res?.status(), p).toBeLessThan(400);
     await expect(page.locator("h1").first(), p).toBeVisible();
@@ -46,7 +46,7 @@ test("Video Studio: video đã dựng hiện trình phát và bảng biên tập
 
 test("Quảng cáo: hiện reach / CPM / CTR / tần suất từ số liệu Insights", async ({ page }) => {
   await login(page);
-  await page.goto("/publishing#ads");
+  await page.goto("/ads");
   const row = page.getByRole("row", { name: /E2E · Quảng cáo có số liệu/ });
   await expect(row).toContainText("Reach 4.000 · CPM 24.000 ₫ · CTR 1,20% · tần suất 1,25");
 });

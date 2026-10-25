@@ -1,12 +1,10 @@
 import { PageHead, Panel, PanelHeader } from "@/components/ui/card";
-import { Breadcrumb, ModuleGroups } from "@/components/shell/module-page";
 import { Pill } from "@/components/ui/pill";
 import { Button } from "@/components/ui/button";
 import { Tiles, Tile } from "@/components/ui/stat";
 import { Table, Th, Td } from "@/components/ui/table";
 import { platformLabel } from "@/components/ui/platform";
 import { retryPost } from "@/lib/actions/ads";
-import { AdsPanel } from "@/components/publishing/ads-panel";
 import { listAds, listPosts } from "@/lib/queries";
 import { postStatusLabel } from "@/lib/labels";
 import { formatNumber, formatTime, formatDate, cn } from "@/lib/format";
@@ -18,11 +16,11 @@ import { MonthCalendar, monthOf } from "@/components/publishing/month-calendar";
 import { Segment } from "@/components/ui/segment";
 import { VideoPostsPanel } from "@/components/publishing/video-posts-panel";
 
-export const metadata = { title: "Đăng bài & quảng cáo – BAOR AI OS" };
+export const metadata = { title: "Đăng bài – BAOR AI OS" };
 
 
-export default async function PublishingPage({ searchParams }: { searchParams: Promise<{ edit?: string; link?: string; page?: string; view?: string; month?: string }> }) {
-  const { edit, link, page, view: viewParam, month: monthParam } = await searchParams;
+export default async function PublishingPage({ searchParams }: { searchParams: Promise<{ page?: string; view?: string; month?: string }> }) {
+  const { page, view: viewParam, month: monthParam } = await searchParams;
   const view = viewParam === "calendar" ? "calendar" : "list";
   const month = monthOf(monthParam);
   const posts = listPosts();
@@ -49,10 +47,9 @@ export default async function PublishingPage({ searchParams }: { searchParams: P
 
   return (
     <>
-      <Breadcrumb items={[{ label: "Điều hành", href: "/dashboard" }, { label: "Đăng bài & Quảng cáo" }]} />
       <PageHead
-        title="Đăng bài & quảng cáo"
-        sub="Bài đã duyệt tự đăng đúng giờ. Bài tốt được đề xuất chạy ads, nhưng tiền chỉ tiêu khi bạn duyệt."
+        title="Đăng bài"
+        sub="Lịch đăng và bài đã đăng."
       />
 
       <Tiles>
@@ -75,7 +72,7 @@ export default async function PublishingPage({ searchParams }: { searchParams: P
       )}
 
       {view === "list" && <Panel>
-        <PanelHeader title="Lịch đăng" sub="Mới nhất ở trên. Lên lịch bài mới ở mục Nội dung › Đã duyệt." />
+        <PanelHeader title="Lịch đăng" />
         <Table>
           <thead>
             <tr><Th>Giờ</Th><Th>Bài</Th><Th>Kênh</Th><Th right>Trạng thái</Th></tr>
@@ -107,9 +104,6 @@ export default async function PublishingPage({ searchParams }: { searchParams: P
         </Table>
         <Pager page={rowPage.page} pages={rowPage.pages} total={rowPage.total} hrefFor={(p) => `/publishing?page=${p}`} label="bài" />
       </Panel>}
-
-      <AdsPanel edit={edit} link={link} />
-      <ModuleGroups moduleKey="publishing" />
     </>
   );
 }

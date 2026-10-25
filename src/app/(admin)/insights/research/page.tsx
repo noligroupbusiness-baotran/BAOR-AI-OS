@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { Breadcrumb } from "@/components/shell/module-page";
 import { PageHead, Panel, PanelHeader } from "@/components/ui/card";
 import { Pill } from "@/components/ui/pill";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -18,8 +17,7 @@ export default async function ResearchPage({ searchParams }: { searchParams: Pro
   const topics = listTopics();
   return (
     <>
-      <Breadcrumb items={[{ label: "Điều hành", href: "/dashboard" }, { label: "Nghiên cứu" }]} />
-      <PageHead title="Nghiên cứu" sub="Anh đưa chủ đề → hệ thống lấy insight từ bình luận nhóm Facebook, YouTube, Facebook và kiến thức trên social → tạo 10 hook từ insight." />
+      <PageHead title="Chủ đề" sub="Nhập chủ đề → lấy insight → tạo hook." />
 
       <Panel>
         <form action={createTopicAction} className="grid gap-2 p-4 md:grid-cols-[1fr_auto] md:items-end">
@@ -32,7 +30,7 @@ export default async function ResearchPage({ searchParams }: { searchParams: Pro
       </Panel>
 
       <Panel>
-        <PanelHeader title="Chủ đề" sub="Bấm vào chủ đề để thêm bình luận từ nền tảng và xem insight." />
+        <PanelHeader title="Chủ đề của anh" />
         {topics.length === 0 ? (
           <EmptyState title="Chưa có chủ đề" hint="Nhập chủ đề ở trên để bắt đầu." />
         ) : (

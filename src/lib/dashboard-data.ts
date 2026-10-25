@@ -63,7 +63,7 @@ export function getPending(): PendingItem[] {
     if (a.type === "campaign_change") items.push({ id: `ap-${a.id}`, title: a.title, module: "Chiến dịch", moduleHref: `/campaigns/${a.campaignId}`, actor: a.requestedBy, actorType: "human", sentAt: a.requestedAt, priority: "high", kind: "campaign" });
   }
   for (const ad of listAds()) {
-    if (ad.status === "pending_approval") items.push({ id: `ap-${ad.id}`, title: `Duyệt chi ${ad.dailyBudget.toLocaleString("vi-VN")} ₫/ngày cho “${ad.name}”`, module: "Đăng bài & Quảng cáo", moduleHref: "/publishing", actor: "Agent quảng cáo", actorType: "agent", sentAt: ad.startedAt ?? `${dateKey(new Date())}T00:00:00+07:00`, priority: "high", kind: "ad" });
+    if (ad.status === "pending_approval") items.push({ id: `ap-${ad.id}`, title: `Duyệt chi ${ad.dailyBudget.toLocaleString("vi-VN")} ₫/ngày cho “${ad.name}”`, module: "Quảng cáo", moduleHref: "/ads", actor: "Agent quảng cáo", actorType: "agent", sentAt: ad.startedAt ?? `${dateKey(new Date())}T00:00:00+07:00`, priority: "high", kind: "ad" });
   }
   for (const c of listConversations()) {
     if (c.needsHuman) items.push({ id: `ap-${c.id}`, title: `Khách ${c.leadName} đang chờ trả lời`, module: "Khách hàng", moduleHref: `/customers?conv=${c.id}`, actor: "Agent chăm sóc khách", actorType: "agent", sentAt: c.messages[c.messages.length - 1]?.at ?? new Date().toISOString(), priority: "high", kind: "customer" });

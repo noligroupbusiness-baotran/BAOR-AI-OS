@@ -17,11 +17,13 @@ import {
   FlaskConical,
   Sparkles,
   Archive,
+  Route,
+  Target,
 } from "lucide-react";
 
 // Thanh bên xếp theo dây chuyền thương hiệu cá nhân: tri thức → nghiên cứu → kịch bản → video → đăng → đo lường.
 export type MenuGroup = "ops" | "brand" | "business" | "system";
-export const menuGroupLabel: Record<MenuGroup, string> = { ops: "Điều hành", brand: "Dây chuyền thương hiệu", business: "Khách hàng & vận hành", system: "Hệ thống" };
+export const menuGroupLabel: Record<MenuGroup, string> = { ops: "Bắt đầu", brand: "Hành trình marketing", business: "Khác", system: "Hệ thống" };
 export const menuGroupOrder: MenuGroup[] = ["ops", "brand", "business", "system"];
 
 export interface MenuItem {
@@ -36,28 +38,31 @@ export interface MenuItem {
   hotkey?: string;
   /** Phân hệ còn là trang khung: hiện nhãn "đang xây" trên menu. */
   building?: boolean;
+  /** Đường dẫn khác cũng thuộc mục này (vd /content thuộc bước 3). */
+  also?: string[];
 }
 
 export const menu: MenuItem[] = [
-  { key: "dashboard", href: "/dashboard", label: "Điều hành", description: "Dây chuyền thương hiệu, việc anh cần làm, lịch hôm nay, kết quả tháng.", icon: LayoutDashboard, group: "ops", hotkey: "1" },
-  { key: "campaigns", href: "/campaigns", label: "Chiến dịch", description: "Mục tiêu, ngân sách, thời gian và kết quả từng chiến dịch.", icon: Megaphone, group: "ops", hotkey: "8" },
-  { key: "research", href: "/insights/research", label: "Nghiên cứu", description: "Nhiệm vụ nghiên cứu, nguồn đã chấm hạng, phát hiện đã kiểm, brief nội dung.", icon: FlaskConical, group: "brand", hotkey: "3" },
-  { key: "content", href: "/content", label: "Kịch bản & nội dung", description: "Kịch bản từ brief, bài viết, caption, hình ảnh, duyệt nội dung.", icon: FileText, group: "brand", hotkey: "4" },
-  { key: "video-studio", href: "/video-studio", label: "Video Studio", description: "Video gốc, Agent dựng, kiểm tra, phê duyệt, phiên bản theo nền tảng.", icon: Clapperboard, group: "brand", hotkey: "5" },
-  { key: "video-library", href: "/video-library", label: "Kho video ngắn", description: "Tổng kho video sẵn sàng đăng (AI edit đã duyệt + tự edit): chưa đăng, đã đăng, mục xoá.", icon: Archive, group: "brand" },
-  { key: "publishing", href: "/publishing", label: "Đăng bài & Quảng cáo", description: "Lịch nội dung, hàng chờ, đã đăng, tài khoản kết nối, quảng cáo.", icon: CalendarClock, group: "brand", hotkey: "6" },
-  { key: "reports", href: "/reports", label: "Đo lường", description: "Hiệu quả nội dung, video, quảng cáo, lead, chuyển đổi, doanh thu.", icon: BarChart3, group: "brand", hotkey: "7" },
-  { key: "learning", href: "/insights/learning", label: "Học & cải tiến", description: "Phân tích kết quả thật, đề xuất cải tiến nội dung, Second Brain, Skill dựng video, quảng cáo.", icon: Sparkles, group: "brand" },
-  { key: "customers", href: "/customers", label: "Khách hàng", description: "Lead, khách hàng, phân data, chăm sóc, lịch sử tương tác, đơn hàng.", icon: Users, group: "business", hotkey: "9" },
-  { key: "insights", href: "/insights", label: "Insight khách hàng", description: "Chân dung khách hàng, nỗi đau, đối thủ, xu hướng, ngân hàng insight.", icon: Lightbulb, group: "business" },
-  { key: "automation", href: "/automation", label: "Automation", description: "Quy trình tự động, bản nháp, lịch sử chạy, lỗi cần xử lý.", icon: Workflow, group: "business" },
-  { key: "settings", href: "/settings", label: "Cài đặt hệ thống", description: "Sản phẩm, thương hiệu, tài khoản nền tảng, nhân sự, AI Agent, bảo mật.", icon: Settings, group: "system", hotkey: "0" },
+  { key: "dashboard", href: "/dashboard", label: "Hành trình", description: "Hành trình marketing 8 bước: mỗi bước một nút bấm.", icon: Route, group: "ops", hotkey: "1" },
+  { key: "research", href: "/insights/research", label: "1–2 · Chủ đề & insight", description: "Chủ đề → insight từ nhóm Facebook, YouTube, Facebook, social.", icon: FlaskConical, group: "brand", hotkey: "2" },
+  { key: "content", href: "/content/hooks", label: "3 · Hook & kịch bản", description: "10 hook mỗi lần, kịch bản video ngắn.", icon: FileText, group: "brand", hotkey: "3", also: ["/content"] },
+  { key: "video-studio", href: "/video-studio", label: "4 · Quay & edit video", description: "Tải video, AI edit theo skill.", icon: Clapperboard, group: "brand", hotkey: "4" },
+  { key: "video-library", href: "/video-library", label: "5 · Kho video", description: "Chưa đăng, đã đăng, mục xoá.", icon: Archive, group: "brand", hotkey: "5" },
+  { key: "publishing", href: "/publishing", label: "6 · Đăng bài", description: "Lên lịch đăng, fanpage, caption theo skill.", icon: CalendarClock, group: "brand", hotkey: "6" },
+  { key: "ads", href: "/ads", label: "7 · Quảng cáo", description: "Quảng cáo từ video đã đăng, trong ủy quyền ngân sách.", icon: Megaphone, group: "brand", hotkey: "7" },
+  { key: "learning", href: "/insights/learning", label: "8 · Đo lường", description: "Kiểm theo skill, AI đề xuất cải tiến.", icon: Sparkles, group: "brand", hotkey: "8" },
+  { key: "campaigns", href: "/campaigns", label: "Chiến dịch", description: "Mục tiêu, ngân sách, thời gian và kết quả từng chiến dịch.", icon: Target, group: "business" },
+  { key: "customers", href: "/customers", label: "Lead", description: "Lead từ quảng cáo / fanpage, chăm sóc, lịch sử tương tác.", icon: Users, group: "business", hotkey: "9" },
+  { key: "insights", href: "/insights", label: "Insight khách hàng", description: "Chân dung khách hàng, nỗi đau, đối thủ, xu hướng.", icon: Lightbulb, group: "business" },
+  { key: "reports", href: "/reports", label: "Báo cáo", description: "Số liệu nội dung, video, quảng cáo, lead, chi phí AI.", icon: BarChart3, group: "business" },
+  { key: "automation", href: "/automation", label: "Automation", description: "Quy trình tự động, lịch sử chạy, lỗi cần xử lý.", icon: Workflow, group: "business" },
+  { key: "settings", href: "/settings", label: "Cài đặt", description: "Kết nối API, Đội AI, thương hiệu, nhân sự, bảo mật.", icon: Settings, group: "system", hotkey: "0" },
 ];
 
 /** Mục menu khớp đường dẫn dài nhất, để /insights/research không làm sáng cả mục /insights. */
 export function activeMenuItem(pathname: string): MenuItem | undefined {
   return menu
-    .filter((m) => pathname === m.href || pathname.startsWith(m.href + "/"))
+    .filter((m) => [m.href, ...(m.also ?? [])].some((h) => pathname === h || pathname.startsWith(h + "/")))
     .sort((a, b) => b.href.length - a.href.length)[0];
 }
 
@@ -79,11 +84,9 @@ export interface CreateAction {
 }
 
 export const createActions: CreateAction[] = [
-  { key: "research", label: "Tạo nhiệm vụ nghiên cứu", icon: FlaskConical, moduleKey: "research", href: "/insights/research#tao-nhiem-vu" },
-  { key: "campaign", label: "Tạo chiến dịch", icon: Megaphone, moduleKey: "campaigns", href: "/campaigns/new" },
-  { key: "content", label: "Tạo nội dung", icon: FilePlus2, moduleKey: "content", href: "/content?tab=mine&open=new" },
-  { key: "video", label: "Tải video lên", icon: Upload, moduleKey: "video-studio", href: "/video-studio?upload=1" },
-  { key: "schedule", label: "Lên lịch đăng", icon: CalendarClock, moduleKey: "publishing", href: "/content?tab=done" },
-  { key: "customer", label: "Thêm khách hàng", icon: UserPlus, moduleKey: "customers", href: "/customers?tab=leads&add=1" },
-  { key: "automation", label: "Tạo quy tắc Automation", icon: Workflow, moduleKey: "automation", href: "/automation?add=1" },
+  { key: "research", label: "1 · Chủ đề mới", icon: FlaskConical, moduleKey: "research", href: "/insights/research" },
+  { key: "hooks", label: "3 · Tạo 10 hook", icon: FilePlus2, moduleKey: "content", href: "/content/hooks" },
+  { key: "video", label: "4 · Tải video lên", icon: Upload, moduleKey: "video-studio", href: "/video-studio?upload=1" },
+  { key: "schedule", label: "6 · Lên lịch đăng", icon: CalendarClock, moduleKey: "publishing", href: "/video-library" },
+  { key: "customer", label: "Thêm lead", icon: UserPlus, moduleKey: "customers", href: "/customers?tab=leads&add=1" },
 ];

@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { Breadcrumb } from "@/components/shell/module-page";
 import { PageHead, Panel, PanelHeader } from "@/components/ui/card";
 import { Pill } from "@/components/ui/pill";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -27,10 +26,9 @@ export default async function HooksPage({ searchParams }: { searchParams: Promis
 
   return (
     <>
-      <Breadcrumb items={[{ label: "Điều hành", href: "/dashboard" }, { label: "Kịch bản & nội dung", href: "/content" }, { label: "Bảng Hook" }]} />
       <PageHead
         title="Bảng Hook & kịch bản video ngắn"
-        sub={`Mỗi lần AI trả ${HOOK_COUNT} hook kèm dàn ý (< 3 phút), dựa trên phát hiện nghiên cứu đã kiểm, Second Brain và insight đã duyệt. Mỗi hook được kiểm luật ngôn từ theo nền tảng. Chọn hook nào thì tạo kịch bản từ hook đó.`}
+        sub={`${HOOK_COUNT} hook mỗi lần · dưới 3 phút · kiểm luật nền tảng`}
       />
 
       <Panel>

@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { Breadcrumb, ModuleGroups } from "@/components/shell/module-page";
 import { PageHead, Panel, PanelHeader } from "@/components/ui/card";
 import { Pill } from "@/components/ui/pill";
 import { Segment } from "@/components/ui/segment";
@@ -24,7 +23,7 @@ import { comparableVersions, listComments, verifyComments } from "@/lib/video/re
 import { listContent } from "@/lib/queries";
 import { fileUrl } from "@/lib/uploads";
 import { listVideos } from "@/lib/videos/repository";
-import { brollLibrary, editSettings, engineLabel, jobVersions, latestJob, readEditorPlan, readReport } from "@/lib/video/jobs";
+import { brollLibrary, editSettings, jobVersions, latestJob, readEditorPlan, readReport } from "@/lib/video/jobs";
 import { blockersForVideo } from "@/lib/video/approval";
 import { qaLabel, qaTone } from "@/lib/video/job-types";
 import { feedbackLabel, listVideoFeedback, type FeedbackKind } from "@/lib/video/feedback";
@@ -70,10 +69,9 @@ export default async function VideoStudioPage({ searchParams }: { searchParams: 
   return (
     <>
       <AutoRefresh active={busy} />
-      <Breadcrumb items={[{ label: "Điều hành", href: "/dashboard" }, { label: "Video Studio" }]} />
       <PageHead
-        title="Video Studio"
-        sub={`Quay xong, thêm video gốc: hệ thống tự dựng theo ${engineLabel()}, chạy bảng kiểm rồi đưa vào Chờ kiểm tra. Video gốc luôn được giữ. Video chỉ được đăng sau khi OWNER phê duyệt.`}
+        title="Quay & edit video"
+        sub="Tải video quay xong — AI edit theo skill, anh duyệt."
         action={sp.upload === "1" ? undefined : <LinkButton href={withCampaignContext("/video-studio?upload=1", ctx)} variant="primary" size="md">Thêm video gốc</LinkButton>}
       />
 
@@ -99,7 +97,7 @@ export default async function VideoStudioPage({ searchParams }: { searchParams: 
       </div>
 
       <Panel>
-        <PanelHeader title={tabs.find((t) => t.key === tab)?.label ?? "Video"} sub="Mỗi video biết kịch bản gốc, bản dựng, bảng kiểm và lịch sử phản hồi. Bấm tên video để mở chi tiết." />
+        <PanelHeader title={tabs.find((t) => t.key === tab)?.label ?? "Video"} />
         {list.length === 0 ? (
           <EmptyState title={linkedIds ? "Chiến dịch này chưa có video" : "Chưa có video ở mục này"} hint="Quay theo kịch bản đã duyệt rồi bấm “Thêm video gốc”." />
         ) : (
@@ -294,7 +292,6 @@ export default async function VideoStudioPage({ searchParams }: { searchParams: 
           </ul>
         )}
       </Panel>
-      <ModuleGroups moduleKey="video-studio" />
     </>
   );
 }

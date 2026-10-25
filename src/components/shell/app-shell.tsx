@@ -1,5 +1,6 @@
 "use client";
 
+import { JourneyBar } from "./journey-bar";
 import { Suspense, useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "./sidebar";
@@ -122,7 +123,7 @@ export function AppShell({ user, badges, health, notifications, logos, children 
           onOpenAssistant={() => setAssistantOpen(true)}
           onOpenShortcuts={() => setShortcutsOpen(true)}
         />
-        <main className={cn("w-full px-4 pb-12 pt-5 md:px-6", viewOnly ? "mx-auto max-w-[1400px] md:px-10" : "max-w-[1180px]")}>{children}</main>
+        <main className={cn("w-full px-4 pb-12 pt-5 md:px-6", viewOnly ? "mx-auto max-w-[1400px] md:px-10" : "max-w-[1180px]")}><JourneyBar />{children}</main>
       </div>
       <NotificationPanel open={notifOpen} onClose={() => setNotifOpen(false)} items={notifications} readSet={readSet} onRead={(ids) => readStore.set([...new Set([...readSet, ...ids])].slice(-300).join(","))} />
       <AssistantPanel open={assistantOpen} onClose={() => setAssistantOpen(false)} />

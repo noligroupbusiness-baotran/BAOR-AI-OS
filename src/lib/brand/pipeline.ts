@@ -164,7 +164,7 @@ export function getBrandPipeline(): BrandPipeline {
     key: "ads",
     step: 5,
     name: "Quảng cáo",
-    href: "/publishing#ads",
+    href: "/ads",
     state: !metaAds ? "waiting" : as.pending_approval ? "waiting" : as.active ? "working" : "not_started",
     summary: !metaAds ? "Chưa kết nối tài khoản quảng cáo Meta; không có chi tiêu thật." : as.pending_approval ? `${as.pending_approval} quảng cáo chờ duyệt ngân sách.` : `${as.active ?? 0} quảng cáo đang chạy.`,
     lines: [
@@ -175,7 +175,7 @@ export function getBrandPipeline(): BrandPipeline {
     sample: ads.length - realAds.length,
   };
   if (!metaAds) actions.push({ stage: "Quảng cáo", text: "Kết nối Meta Ads và chốt hạn mức ngân sách tháng trước khi chạy quảng cáo (phát sinh chi phí).", href: "/settings#integrations", ceo: true });
-  if (as.pending_approval) actions.push({ stage: "Quảng cáo", text: `Duyệt ngân sách cho ${as.pending_approval} quảng cáo.`, href: "/publishing#ads" });
+  if (as.pending_approval) actions.push({ stage: "Quảng cáo", text: `Duyệt ngân sách cho ${as.pending_approval} quảng cáo.`, href: "/ads" });
 
   // 7. Đo lường & học
   const measuredPosts = db.select({ id: schema.scheduledPosts.id, reach: schema.scheduledPosts.reach, views: schema.scheduledPosts.views }).from(schema.scheduledPosts).all().filter((p) => !samplePosts.has(p.id) && (p.reach != null || p.views != null)).length;

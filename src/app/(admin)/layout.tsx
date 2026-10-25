@@ -22,9 +22,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const badges = {
     "/dashboard": getPending().length,
     "/campaigns": campaignsPending,
-    "/content": counts.ideas + counts.mine,
+    "/content/hooks": counts.ideas + counts.mine,
     "/video-studio": videoPending,
-    "/publishing": counts.ads,
+    "/ads": counts.ads,
     "/customers": counts.convs,
   };
   return (

@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { PageHead, Panel, PanelHeader, Rows } from "@/components/ui/card";
-import { Breadcrumb, ModuleGroups } from "@/components/shell/module-page";
 import { Pill, Score } from "@/components/ui/pill";
 import { Button, LinkButton } from "@/components/ui/button";
 import { Segment } from "@/components/ui/segment";
@@ -76,10 +75,9 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
 
   return (
     <>
-      <Breadcrumb items={[{ label: "Điều hành", href: "/dashboard" }, { label: "Nội dung" }]} />
       <PageHead
-        title="Nội dung"
-        sub="AI đề xuất và viết nháp, bạn là người hoàn thiện. Chỉ bài bạn đã duyệt mới được tự đăng."
+        title="Kịch bản"
+        sub="Kịch bản từ hook — duyệt xong mới quay."
         action={
           <div className="flex flex-wrap gap-2">
             <LinkButton href="/content/hooks" size="md">Bảng Hook (10 hook / lần)</LinkButton>
@@ -350,7 +348,6 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
           <b className="text-violet">AI đề xuất</b> chỉ là gợi ý. Nhận làm để tự viết, hoặc để AI viết nháp rồi bạn sửa và duyệt.
         </p>
       )}
-      <ModuleGroups moduleKey="content" />
     </>
   );
 }

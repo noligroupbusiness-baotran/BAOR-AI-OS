@@ -1,103 +1,89 @@
 import { Panel, PanelHeader, Rows } from "@/components/ui/card";
 import { Pill } from "@/components/ui/pill";
-import { Button, LinkButton } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Field, FormNotice, inputClass } from "@/components/ui/field";
 import { SubmitButton } from "@/components/campaigns/submit-button";
 import { listIntegrationStatus, listRuns, maskedIntegrationConfig } from "@/lib/connectors/config";
 import { connectorFor } from "@/lib/connectors/registry";
-import { connectorCapabilities } from "@/lib/connectors/sync";
-import { checkIntegration, disconnectIntegration, runBackgroundNow, saveAiBudget, saveIntegration } from "@/lib/actions/settings";
+import { disconnectIntegration, runBackgroundNow, saveAiBudget, saveIntegration } from "@/lib/actions/settings";
 import { domainLabel, getAiBudget, laneLabel, listAiCalls, listDecisions } from "@/lib/router";
 import { schedulerState } from "@/lib/scheduler";
 import { getLeadWebhookKey, getMetaVerifyToken, publicBaseUrl } from "@/lib/webhooks";
 import { formatCurrency, formatDateTime, cn } from "@/lib/format";
 
 // Cài đặt › Kết nối: mỗi nền tảng một dòng, trạng thái lấy từ lần kiểm tra thật gần nhất.
-export function IntegrationsPanel({ editing }: { editing?: string }) {
+// Ô chính của từng kết nối (OWNER 25/10/2026: "các link đấu nối thì chỉ cần ô API"); trường khác nằm trong "Thêm".
+const PRIMARY: Record<string, string[]> = {
+  facebook_page: ["pageToken", "pageId"],
+  meta_ads: ["accessToken", "adAccountId"],
+  notion: ["token"],
+  claude: ["apiKey"],
+  instagram: ["igUserId"],
+  tiktok: ["accessToken"],
+  youtube: ["accessToken"],
+  zalo_oa: ["accessToken"],
+  email_provider: ["smtpUrl"],
+  website: ["siteUrl"],
+};
+
+export function IntegrationsPanel() {
   const integrations = listIntegrationStatus();
-  const caps = connectorCapabilities();
   const base = publicBaseUrl();
   return (
     <Panel id="integrations">
-      <PanelHeader title="Kết nối nền tảng" sub="Khóa và token được mã hóa trong CSDL trên máy chủ của bạn, không hiển thị lại. “Đã kết nối” chỉ bật khi kiểm tra thật thành công." />
+      <PanelHeader title="Kết nối API" sub="Dán khoá rồi bấm Lưu — hệ thống tự kiểm tra. Khoá được mã hoá, không hiện lại." />
       <Rows>
         {integrations.map((i) => {
           const connector = connectorFor(i.key);
-          const cap = caps[i.key];
-          const real = cap?.check;
-          const isEditing = editing === i.key;
-          const masked = isEditing ? maskedIntegrationConfig(i.key) : {};
+          const fields = connector?.fields ?? [];
+          const pk = PRIMARY[i.key.startsWith("facebook_page") ? "facebook_page" : i.key] ?? fields.filter((f) => f.secret).map((f) => f.key);
+          const primary = fields.filter((f) => pk.includes(f.key));
+          const more = fields.filter((f) => !pk.includes(f.key));
+          const masked = maskedIntegrationConfig(i.key);
           return (
-            <li key={i.key} id={i.key} className="scroll-mt-20 border-b border-border last:border-b-0">
-              <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-4 py-2.5">
-                <div>{i.connected ? <Pill tone="jade">Đã kết nối</Pill> : i.lastCheckOk === false ? <Pill tone="brick">Lỗi</Pill> : <Pill>Chưa kết nối</Pill>}</div>
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold text-ink">{i.name}</span>
-                    {real ? (
-                      <>
-                        {cap.metrics && <Pill tone="neutral">số liệu</Pill>}
-                        {cap.publish && <Pill tone="neutral">đăng bài</Pill>}
-                        {cap.webhook && <Pill tone="neutral">webhook</Pill>}
-                      </>
-                    ) : (
-                      <Pill tone="amber">adapter chưa xây</Pill>
-                    )}
-                  </div>
-                  <div className="truncate text-[12px] text-ink-2">{i.account ?? i.description}</div>
-                  {(i.lastCheckedAt || i.lastError) && (
-                    <div className={cn("mt-0.5 text-[11.5px]", i.lastCheckOk ? "text-ink-3" : "text-brick")}>
-                      {i.lastCheckedAt ? `Kiểm tra ${formatDateTime(i.lastCheckedAt)}` : ""}
-                      {i.lastSyncAt ? ` · đồng bộ ${formatDateTime(i.lastSyncAt)}` : ""}
-                      {i.lastError ? ` · ${i.lastError}` : ""}
-                    </div>
-                  )}
+            <li key={i.key} id={i.key} className="scroll-mt-20 px-4 py-3">
+              <form action={saveIntegration} className="grid gap-2">
+                <input type="hidden" name="key" value={i.key} />
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-semibold text-ink">{i.name}</span>
+                  {i.connected ? <Pill tone="jade">Đã kết nối{i.account ? ` · ${i.account}` : ""}</Pill> : i.lastCheckOk === false ? <Pill tone="brick">Lỗi</Pill> : <Pill>Chưa kết nối</Pill>}
+                  {!i.connected && i.lastError && <span className="truncate text-[11.5px] text-brick">{i.lastError}</span>}
                 </div>
-                <div className="flex flex-wrap justify-end gap-1.5">
-                  {!isEditing && <LinkButton href={`/settings?edit=${i.key}#${i.key}`} variant={i.connected ? "outline" : "primary"}>{i.connected ? "Sửa" : "Kết nối"}</LinkButton>}
-                  {real && (
-                    <form action={checkIntegration}>
-                      <input type="hidden" name="key" value={i.key} />
-                      <SubmitButton variant="soft" pendingText="Đang kiểm tra…">Kiểm tra</SubmitButton>
-                    </form>
-                  )}
-                  {(i.connected || i.lastCheckedAt) && (
-                    <form action={disconnectIntegration}>
-                      <input type="hidden" name="key" value={i.key} />
-                      <Button variant="ghost" type="submit">Ngắt</Button>
-                    </form>
-                  )}
-                </div>
-              </div>
-              {isEditing && (
-                <form action={saveIntegration} className="grid gap-3 border-t border-border bg-ground px-4 py-3 md:grid-cols-2">
-                  <input type="hidden" name="key" value={i.key} />
-                  <Field label="Tên tài khoản hiển thị" className="md:col-span-2">
-                    <input name="account" defaultValue={i.account ?? ""} className={inputClass} placeholder="VD: Fanpage Mộc Diệp Spa" />
-                  </Field>
-                  {(connector?.fields ?? []).map((f) => (
-                    <Field key={f.key} label={f.label} hint={masked[f.key] ? `Đang có: ${masked[f.key]}. Để trống nếu giữ nguyên.` : f.hint}>
-                      <input name={`cfg.${f.key}`} type={f.secret ? "password" : "text"} defaultValue={f.secret ? "" : masked[f.key] ?? ""} className={inputClass} placeholder={f.hint ?? ""} autoComplete="off" />
-                    </Field>
+                <div className="grid gap-2 md:grid-cols-[1fr_1fr_auto] md:items-center">
+                  {primary.map((f) => (
+                    <input key={f.key} name={`cfg.${f.key}`} type={f.secret ? "password" : "text"} aria-label={f.label} defaultValue={f.secret ? "" : masked[f.key] ?? ""} placeholder={masked[f.key] ? `${f.label}: đã có ${masked[f.key]}` : f.label} className={inputClass} autoComplete={f.secret ? "new-password" : "off"} data-1p-ignore data-lpignore="true" />
                   ))}
-                  {i.key === "facebook_page" && (
-                    <div className="md:col-span-2">
-                      <FormNotice tone="info">
-                        Webhook Messenger: đăng ký trong Meta App › Webhooks với Callback URL <code className="text-ink">{base}/api/webhooks/meta</code> và Verify Token <code className="text-ink">{getMetaVerifyToken()}</code>. Hệ thống xác minh chữ ký bằng App Secret.
-                      </FormNotice>
+                  {primary.length === 1 && <span className="hidden md:block" />}
+                  <SubmitButton pendingText="Đang kiểm tra…">Lưu</SubmitButton>
+                </div>
+                {(more.length > 0 || i.key === "facebook_page" || i.key === "website" || i.connected) && (
+                  <details className="text-[12.5px]">
+                    <summary className="cursor-pointer text-ink-3">Thêm</summary>
+                    <div className="mt-2 grid gap-2 md:grid-cols-2">
+                      <Field label="Tên hiển thị"><input name="account" defaultValue={i.account ?? ""} className={inputClass} /></Field>
+                      {more.map((f) => (
+                        <Field key={f.key} label={f.label} hint={f.hint}>
+                          <input name={`cfg.${f.key}`} type={f.secret ? "password" : "text"} defaultValue={f.secret ? "" : masked[f.key] ?? ""} placeholder={masked[f.key] ? `đã có ${masked[f.key]}` : ""} className={inputClass} autoComplete={f.secret ? "new-password" : "off"} data-1p-ignore data-lpignore="true" />
+                        </Field>
+                      ))}
+                      {i.key === "facebook_page" && (
+                        <div className="md:col-span-2">
+                          <FormNotice tone="info">Webhook Messenger: <code className="text-ink">{base}/api/webhooks/meta</code> · Verify Token <code className="text-ink">{getMetaVerifyToken()}</code></FormNotice>
+                        </div>
+                      )}
+                      {i.key === "website" && (
+                        <div className="md:col-span-2">
+                          <FormNotice tone="info">Lead từ website: POST <code className="text-ink">{base}/api/webhooks/lead</code> · header <code className="text-ink">x-baor-key: {getLeadWebhookKey()}</code></FormNotice>
+                        </div>
+                      )}
                     </div>
-                  )}
-                  {i.key === "website" && (
-                    <div className="md:col-span-2">
-                      <FormNotice tone="info">
-                        Form website gửi lead về: POST <code className="text-ink">{base}/api/webhooks/lead</code>, header <code className="text-ink">x-baor-key: {getLeadWebhookKey()}</code>, body JSON {"{ name, phone, email, message, campaign, goal }"}.
-                      </FormNotice>
-                    </div>
-                  )}
-                  <div className="flex gap-2 md:col-span-2">
-                    <SubmitButton pendingText="Đang lưu và kiểm tra…">Lưu và kiểm tra kết nối</SubmitButton>
-                    <LinkButton href="/settings#integrations" variant="ghost">Hủy</LinkButton>
-                  </div>
+                  </details>
+                )}
+              </form>
+              {(i.connected || i.lastCheckedAt) && (
+                <form action={disconnectIntegration} className="mt-1">
+                  <input type="hidden" name="key" value={i.key} />
+                  <Button variant="ghost" type="submit">Ngắt kết nối</Button>
                 </form>
               )}
             </li>

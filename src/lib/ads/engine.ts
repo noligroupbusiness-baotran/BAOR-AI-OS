@@ -222,7 +222,7 @@ export async function syncAdInsights(): Promise<{ updated: number; errors: strin
   setSetting("ads.insightsError", out.errors.length ? JSON.stringify({ at: nowIso(), errors: out.errors.slice(0, 5) }) : "");
   // Chỉ cảnh báo khi lỗi mới xuất hiện / đổi nội dung (đồng bộ mỗi giờ, không gửi lặp)
   const sameErr = (() => { try { return JSON.stringify((JSON.parse(prevErr || "null") as { errors?: string[] } | null)?.errors) === JSON.stringify(out.errors.slice(0, 5)); } catch { return false; } })();
-  if (out.errors.length && !sameErr) void sendAlert({ level: "warn", title: "Đồng bộ chi phí quảng cáo lỗi", text: out.errors.join("; ").slice(0, 400), href: "/publishing#ads" });
+  if (out.errors.length && !sameErr) void sendAlert({ level: "warn", title: "Đồng bộ chi phí quảng cáo lỗi", text: out.errors.join("; ").slice(0, 400), href: "/ads" });
   return out;
 }
 
@@ -322,6 +322,6 @@ export async function enforceAuthorization(): Promise<{ paused: number; failed: 
     // Dừng hỏng (vd mất kết nối Meta): quảng cáo vẫn tiêu → giữ trong dự chi và dừng tiếp quảng cáo khác.
     if (await stop(a.id, `Tự dừng: dự chi tháng vượt trần ${auth!.monthlyCapVnd.toLocaleString("vi-VN")} ₫`)) running = running.filter((x) => x.id !== a.id);
   }
-  if (out.failed.length) void sendAlert({ level: "error", title: "Không dừng được quảng cáo vượt ủy quyền", text: out.failed.join("; ").slice(0, 500), href: "/publishing#ads" });
+  if (out.failed.length) void sendAlert({ level: "error", title: "Không dừng được quảng cáo vượt ủy quyền", text: out.failed.join("; ").slice(0, 500), href: "/ads" });
   return out;
 }

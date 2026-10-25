@@ -54,8 +54,10 @@ export function entityHref(type: LinkedEntityType, entityId: string, ctx: Partia
       path = "/video-studio";
       break;
     case "publication":
-    case "ad":
       path = "/publishing";
+      break;
+    case "ad":
+      path = "/ads";
       break;
     case "lead":
       path = "/customers?tab=leads";

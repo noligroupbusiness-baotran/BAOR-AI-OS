@@ -1,4 +1,3 @@
-import { Breadcrumb } from "@/components/shell/module-page";
 import { PageHead, Panel, PanelHeader } from "@/components/ui/card";
 import { Pill } from "@/components/ui/pill";
 import { Button } from "@/components/ui/button";
@@ -33,10 +32,9 @@ export default async function LearningPage() {
   const measureOk = roleAllows(measure);
   return (
     <>
-      <Breadcrumb items={[{ label: "Điều hành", href: "/dashboard" }, { label: "Học & cải tiến" }]} />
       <PageHead
-        title="Học & cải tiến"
-        sub="Đọc kết quả thật (bài đã đăng và xác minh, video, quảng cáo, brief), tìm điều lặp lại, đề xuất cải tiến nội dung, Second Brain và Skill dựng video. Mọi đề xuất là giả thuyết cho tới khi OWNER chấp nhận; hệ thống không tự sửa kho tri thức hay skill."
+        title="Đo lường & cải tiến"
+        sub="Kiểm theo skill trước, AI sau. Anh chấp nhận hoặc bỏ qua."
         action={<form action={refreshLearningAction}><Button type="submit" variant="primary" size="md">Phân tích lại</Button></form>}
       />
 

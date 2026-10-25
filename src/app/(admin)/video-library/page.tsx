@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { Breadcrumb } from "@/components/shell/module-page";
 import { PageHead, Panel, PanelHeader } from "@/components/ui/card";
 import { Pill } from "@/components/ui/pill";
 import { Segment } from "@/components/ui/segment";
@@ -29,10 +28,9 @@ export default async function VideoLibraryPage({ searchParams }: { searchParams:
 
   return (
     <>
-      <Breadcrumb items={[{ label: "Điều hành", href: "/dashboard" }, { label: "Video Studio", href: "/video-studio" }, { label: "Tổng kho video ngắn" }]} />
       <PageHead
-        title="Tổng kho video ngắn"
-        sub={`Mọi video sẵn sàng đăng: video AI edit sau khi OWNER phê duyệt và video anh tự edit tải lên. Video đã đăng thật chuyển vào mục xoá; ${purgeEnabled() ? `sau ${hours} giờ hệ thống gỡ tệp video đã đăng để giảm dung lượng (tệp quay gốc, bài đăng, báo cáo, kế hoạch dựng giữ nguyên)` : "tự gỡ tệp đang TẮT"}. Chế độ thử không tính là đã đăng.`}
+        title="Kho video"
+        sub={purgeEnabled() ? `Đã đăng quá ${hours} giờ thì tự gỡ tệp.` : "Tự gỡ tệp đang tắt."}
         action={<LinkButton href="/video-studio?upload=1" variant="primary" size="md">Tải video đã edit</LinkButton>}
       />
 

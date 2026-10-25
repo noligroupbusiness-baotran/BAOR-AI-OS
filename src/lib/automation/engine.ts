@@ -235,7 +235,7 @@ export function runScheduledRules(): { fired: number; errors: number } {
               void import("@/lib/ads/engine").then(({ pauseAd }) => pauseAd(ad.id, "Hệ thống", `Tự tạm dừng bởi quy tắc “${rule.name}”: ${message}`)).then((r) => {
                 if (!r.ok) {
                   logActivity("system", `${rule.name}: CHƯA dừng được ${message} — ${r.error}`, "automation");
-                  void sendAlert({ level: "error", title: `Không dừng được quảng cáo “${ad.name}”`, text: r.error, href: "/publishing#ads" });
+                  void sendAlert({ level: "error", title: `Không dừng được quảng cáo “${ad.name}”`, text: r.error, href: "/ads" });
                 }
               });
             } else {

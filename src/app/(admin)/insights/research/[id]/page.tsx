@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Breadcrumb } from "@/components/shell/module-page";
 import { PageHead, Panel, PanelHeader } from "@/components/ui/card";
 import { Pill } from "@/components/ui/pill";
 import { LinkButton } from "@/components/ui/button";
@@ -35,17 +34,16 @@ export default async function TopicPage({ params }: { params: Promise<{ id: stri
 
   return (
     <>
-      <Breadcrumb items={[{ label: "Điều hành", href: "/dashboard" }, { label: "Nghiên cứu", href: "/insights/research" }, { label: topic }]} />
       <PageHead
         title={topic}
-        sub={`${insights.length} insight. Thêm bình luận từ nền tảng để có thêm insight, rồi tạo 10 hook.`}
+        sub={`${insights.length} insight`}
         action={<LinkButton href={`/content/hooks?research=${id}&topic=${encodeURIComponent(topic)}`} variant="primary" size="md">Tạo 10 hook từ insight</LinkButton>}
       />
 
       <Panel>
         <PanelHeader
           title="Thêm từ nền tảng"
-          sub={`Dán bình luận (mỗi dòng một bình luận, hoặc bảng / JSON có cột nội dung). Tên người, số điện thoại, email, link được bỏ trước khi phân tích.`}
+          sub="Dán bình luận, mỗi dòng một bình luận."
           action={
             can(actor, "admin") ? (
               <form action={toggleResearchAiAction} className="flex shrink-0 items-center gap-2 text-[12.5px]">
@@ -85,7 +83,7 @@ export default async function TopicPage({ params }: { params: Promise<{ id: stri
       </Panel>
 
       <Panel>
-        <PanelHeader title="Insight" sub="Theo luật (đếm câu hỏi, nỗi lo, cụm từ lặp lại) và từ AI Nghiên cứu. Bỏ insight không đúng trước khi tạo hook." />
+        <PanelHeader title="Insight" />
         {insights.length === 0 ? (
           <EmptyState title="Chưa có insight" hint="Dán bình luận ở trên rồi bấm Phân tích." />
         ) : (

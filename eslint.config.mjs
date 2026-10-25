@@ -14,6 +14,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Worktree của các phiên Claude song song (bản sao repo, có .next riêng): không phải mã nguồn của nhánh này.
     ".claude/**",
+    // Báo cáo / trace E2E do Playwright sinh ra (mã đã nén), không phải mã nguồn.
+    "artifacts/**",
   ]),
 ]);
 

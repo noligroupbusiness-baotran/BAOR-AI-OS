@@ -47,7 +47,7 @@ export const moduleGroups: Record<string, ModuleGroup[]> = {
     { name: "Hàng chờ đăng", status: "active", href: "/publishing" },
     { name: "Nội dung đã đăng", status: "active", href: "/publishing" },
     { name: "Tài khoản kết nối", status: "active", href: "/settings" },
-    { name: "Quảng cáo", status: "active", href: "/publishing" },
+    { name: "Quảng cáo", status: "active", href: "/ads" },
     { name: "Lỗi đăng bài", status: "active", href: "/publishing" },
   ],
   customers: [

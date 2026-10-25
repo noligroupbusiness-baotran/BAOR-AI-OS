@@ -68,7 +68,7 @@ export function getNotifications(): NotificationItem[] {
   }
   for (const c of listContent(["review"])) out.push({ id: `ct:${c.id}:review`, group: "approval", type: "Nội dung", text: `Bài “${c.title}” chờ duyệt.`, at: c.createdAt, href: `/content?tab=mine&open=${c.id}` });
   for (const v of listVideos("pending_approval")) out.push({ id: `vd:${v.id}:${v.version}`, group: "approval", type: "Video", text: `Video “${v.title}” (bản ${v.version}) chờ phê duyệt.`, at: v.updatedAt, href: "/video-studio?tab=pending_approval" });
-  for (const a of db.select().from(schema.adCampaigns).where(eq(schema.adCampaigns.status, "pending_approval")).all()) out.push({ id: `ad:${a.id}`, group: "approval", type: "Quảng cáo", text: `Đề xuất chạy “${a.name}”, ${a.dailyBudget.toLocaleString("vi-VN")} ₫/ngày.`, at: a.startedAt ?? new Date().toISOString().slice(0, 10), href: "/publishing" });
+  for (const a of db.select().from(schema.adCampaigns).where(eq(schema.adCampaigns.status, "pending_approval")).all()) out.push({ id: `ad:${a.id}`, group: "approval", type: "Quảng cáo", text: `Đề xuất chạy “${a.name}”, ${a.dailyBudget.toLocaleString("vi-VN")} ₫/ngày.`, at: a.startedAt ?? new Date().toISOString().slice(0, 10), href: "/ads" });
   for (const d of listDecisions(20)) if (d.lane === "ai" && d.needsApproval) out.push({ id: `dc:${d.id}`, group: "approval", type: "AI đề xuất", text: `${d.subject}: ${d.outcome}.`, at: d.at, href: "/settings#syslog" });
 
   for (const p of listPosts()) {
