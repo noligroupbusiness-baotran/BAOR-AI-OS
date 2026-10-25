@@ -7,6 +7,7 @@ import { importKnowledgeSnapshot, type KnowledgeSnapshot } from "@/lib/knowledge
 import { PURPOSE_KINDS, type PurposeKind } from "@/lib/knowledge/types";
 import { buildBriefDeterministic, createContentFromBrief, createResearchTask, runResearchWithAi, saveResearchResult, ResearchResultSchema } from "@/lib/research";
 import { done } from "./common";
+import { SOCIAL_KINDS, parseSocialPaste, socialToResearch, type SocialKind } from "@/lib/research/social";
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 const fail = (path: string, msg: string): never => done(`${path}${path.includes("?") ? "&" : "?"}tone=error`, msg);
@@ -104,4 +105,26 @@ export async function createContentFromBriefAction(fd: FormData) {
   }
   logActivity("human", `${actor.name} tạo kịch bản từ brief nghiên cứu.`, "content");
   done(`/content?tab=mine&open=${contentId}`, "Đã tạo kịch bản từ brief, đang ở mục Đang viết");
+}
+
+// Nghiên cứu theo nền tảng (bước 2.1–2.4): dán bình luận → nhiệm vụ nghiên cứu RIÊNG (không đè nghiên cứu web), phân tích theo luật.
+export async function importSocialAction(fd: FormData) {
+  const actor = await requirePermission("admin", "/insights/research");
+  const back = "/insights/research#nen-tang";
+  const kind = str(fd, "kind") as SocialKind;
+  if (!(kind in SOCIAL_KINDS)) return fail(back, "Chọn nguồn bình luận");
+  const url = str(fd, "url");
+  if (!/^https?:\/\/\S+$/i.test(url)) return fail(back, "Cần link bài / video / nhóm (http…, không có khoảng trắng) làm nguồn");
+  const topic = str(fd, "topic");
+  let comments: string[];
+  try {
+    comments = parseSocialPaste(String(fd.get("paste") ?? ""));
+  } catch (e) {
+    return fail(back, e instanceof Error ? e.message : "Không đọc được dữ liệu dán");
+  }
+  if (comments.length < 3) return fail(back, "Cần ít nhất 3 bình luận (mỗi dòng một bình luận, hoặc CSV / JSON có cột nội dung)");
+  const id = createResearchTask({ question: `${SOCIAL_KINDS[kind]}: ${topic || url}`.slice(0, 500), purposeKind: "audience", purpose: `Insight từ ${SOCIAL_KINDS[kind].toLowerCase()} cho hook / kịch bản (Personal Brand System bước 2)`, by: actor.name });
+  const r = saveResearchResult(id, socialToResearch(kind, url, comments, topic), { runner: "import", by: actor.name });
+  logActivity("human", `${actor.name} nhập ${comments.length} bình luận (${SOCIAL_KINDS[kind]}): ${r.findings} phát hiện, ${r.verified} đạt kiểm.`, "research");
+  done(`/insights/research/${id}`, `Đã phân tích ${comments.length} bình luận: ${r.findings} phát hiện (${r.verified} đạt kiểm)`);
 }

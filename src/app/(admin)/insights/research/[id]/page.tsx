@@ -89,7 +89,7 @@ export default async function ResearchTaskPage({ params, searchParams }: { param
 
       {task.summary && (
         <Panel>
-          <PanelHeader title="Tóm tắt" sub={`${task.runner === "import" ? "Nhập từ phiên Claude" : `AI ${task.model ?? ""}`}${task.finishedAt ? ` · ${formatDateTime(task.finishedAt)}` : ""}${task.searchCount ? ` · ${task.searchCount} lượt tìm` : ""}`} />
+          <PanelHeader title="Tóm tắt" sub={`${task.runner === "import" ? (sources.some((x) => x.sourceType === "social") ? "Nhập bình luận nền tảng (theo luật, không AI)" : "Nhập từ phiên Claude") : `AI ${task.model ?? ""}`}${task.finishedAt ? ` · ${formatDateTime(task.finishedAt)}` : ""}${task.searchCount ? ` · ${task.searchCount} lượt tìm` : ""}`} />
           <p className="whitespace-pre-line px-4 py-3 text-[13px] leading-relaxed text-ink">{task.summary}</p>
         </Panel>
       )}

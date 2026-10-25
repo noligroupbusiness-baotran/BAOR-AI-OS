@@ -74,13 +74,14 @@ Nguồn ủy quyền: chỉ thị OWNER 22/10/2026 "CONTINUE BRAND ENGINE IMPLEM
 "Personal Brand System" (8 bước + nguyên tắc AI) — "làm theo hệ thống này". Mỗi mục đi đủ vòng BUILD (docs/BAOR_OPERATING_MODEL.md §2).
 OWNER 25/10/2026: "ngưng edit video" — KHÔNG xếp hàng / dựng lại video cho tới khi OWNER nói tiếp (llama-server đã tắt).
 1. [ĐANG LÀM] Personal Brand System — các lát KHÔNG cần khoá nền tảng / tiền thật, theo thứ tự:
-   A. Đội AI (nguyên tắc AI): mỗi vị trí 1 AI, công tắc "Cho phép gọi AI", trần riêng / tháng, màn hình chung Báo cáo › Chi phí AI
+   A. XONG 3758af6 — Đội AI (nguyên tắc AI): mỗi vị trí 1 AI, công tắc "Cho phép gọi AI", trần riêng / tháng, màn hình chung Báo cáo › Chi phí AI
       (src/lib/ai-roster.ts, Cài đặt › Đội AI). AI Edit Video (tại máy) ghi sổ ₫0, tắt → dựng theo luật.
-   B. Tổng kho video ngắn (bước 5): video đã duyệt + video tự edit tải lên (4.1, vào kho không qua bộ dựng) tự vào kho; lọc Đã đăng /
-      Chưa đăng; video đã đăng chuyển mục xoá, sau 1 ngày gỡ tệp (chuyển DATA_DIR/removed, không xoá vĩnh viễn ngoài ý OWNER).
-   C. Bảng Hook & kịch bản (bước 3): mỗi lần gọi trả 10 kết quả, dựa insight bước 2 + Second Brain, < 3 phút, luật ngôn từ theo
+   B. XONG 9e4806c — Tổng kho video ngắn (bước 5): video đã duyệt + video tự edit tải lên (4.1, vào kho không qua bộ dựng) tự vào kho; lọc Đã đăng /
+      Chưa đăng; video đã đăng thật chuyển mục xoá, sau 1 ngày gỡ tệp BẢN DỰNG (giữ RAW, bản ghi, báo cáo); không gỡ khi còn bài chờ
+      kênh khác; chỉ áp video đăng sau mốc bật (video.purgeSince). LƯU Ý MERGE: gỡ tệp là vĩnh viễn — OWNER đặt video.purgePosted=0 nếu chưa muốn.
+   C. XONG 042070b — Bảng Hook & kịch bản (bước 3, /content/hooks): mỗi lần gọi trả 10 kết quả, dựa insight bước 2 + Second Brain, < 3 phút, luật ngôn từ theo
       chính sách từng nền tảng (FB / IG / TikTok / YT); có đường nhập tay không cần AI.
-   D. Nghiên cứu nền tảng (bước 2.1–2.4): nhập bình luận nhóm FB / YouTube / FB (dán CSV/JSON) → nguồn + phát hiện; kết nối thật chờ khoá.
+   D. XONG (commit kế) — Nghiên cứu nền tảng (bước 2.1–2.4, /insights/research#nen-tang): nhập bình luận nhóm FB / YouTube / FB (dán CSV/JSON) → nguồn + phát hiện; kết nối thật chờ khoá.
    E. Bài đăng theo skill (6.1) + nhiều fanpage (6.2.1.2) trong dry-run; IG / YT / TikTok: khung kết nối chờ khoá.
    F. Đo lường 8.1 đối chiếu skill Second Brain trước, 8.2 AI Đo lường sau công tắc.
    CHỜ OWNER: khoá Meta / Google / YouTube / TikTok (đăng bài + quảng cáo 7.2–7.5), hồ sơ cá nhân Facebook (6.2.1.1).

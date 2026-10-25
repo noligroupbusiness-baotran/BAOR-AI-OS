@@ -6,7 +6,9 @@ import { LinkButton } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Field, inputClass, textareaClass } from "@/components/ui/field";
 import { SubmitButton } from "@/components/campaigns/submit-button";
-import { createResearchTaskAction } from "@/lib/actions/research";
+import { createResearchTaskAction, importSocialAction } from "@/lib/actions/research";
+import { SOCIAL_KINDS } from "@/lib/research/social";
+import { can, currentActor } from "@/lib/permissions";
 import { listResearchTasks, suggestTopics } from "@/lib/research";
 import { aiConfigured } from "@/lib/ai";
 import { PURPOSE_KINDS, purposeLabel, type PurposeKind } from "@/lib/knowledge/types";
@@ -24,6 +26,7 @@ const statusLabel: Record<string, { label: string; tone: "neutral" | "amber" | "
 
 export default async function ResearchListPage({ searchParams }: { searchParams: Promise<{ content?: string; topic?: string }> }) {
   const sp = await searchParams;
+  const actor = await currentActor();
   const tasks = listResearchTasks();
   const topics = suggestTopics(8);
   const topic = (sp.topic ?? "").slice(0, 200);
@@ -79,6 +82,25 @@ export default async function ResearchListPage({ searchParams }: { searchParams:
           <div className="md:col-span-2"><SubmitButton pendingText="Đang tạo…">Tạo nhiệm vụ</SubmitButton></div>
         </form>
       </Panel>
+
+      {can(actor, "admin") && (
+        <Panel id="nen-tang">
+          <PanelHeader title="Nghiên cứu theo nền tảng — dán bình luận" sub="Nhóm Facebook, bình luận YouTube, bình luận Facebook: dán (mỗi dòng một bình luận, hoặc CSV / JSON có cột nội dung). Phân tích theo luật, không AI: câu hỏi lặp lại, nỗi lo, cụm từ hay gặp. Lọc theo luật tên người (chép tay: cố gắng tốt nhất, có thể sót — nên dán bảng / JSON có cột nội dung), số điện thoại, email, @nhắc tên, link; không lưu bình luận gốc." />
+          <form action={importSocialAction} className="grid gap-2 p-4">
+            <div className="grid gap-2 md:grid-cols-3">
+              <label className="block"><span className="lbl">Nguồn</span>
+                <select name="kind" className={`${inputClass} mt-1`} defaultValue="fb_group">
+                  {Object.entries(SOCIAL_KINDS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </label>
+              <label className="block"><span className="lbl">Link bài / video / nhóm</span><input name="url" required placeholder="https://…" className={`${inputClass} mt-1`} /></label>
+              <label className="block"><span className="lbl">Chủ đề</span><input name="topic" placeholder="vd: gọi điện chăm sóc khách" className={`${inputClass} mt-1`} /></label>
+            </div>
+            <textarea name="paste" rows={6} required className={textareaClass} placeholder={"Mỗi dòng một bình luận…\nhoặc CSV có cột text / comment / message\nhoặc JSON [{\"text\": \"…\"}]"} />
+            <div><SubmitButton pendingText="Đang phân tích…">Phân tích bình luận</SubmitButton></div>
+          </form>
+        </Panel>
+      )}
 
       <Panel>
         <PanelHeader title="Nhiệm vụ nghiên cứu" sub="Không đánh giá bằng số tài liệu thu được; đánh giá bằng phát hiện đạt kiểm và brief dùng được." />
