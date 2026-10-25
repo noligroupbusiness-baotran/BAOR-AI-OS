@@ -137,6 +137,11 @@ export function scheduleVideoPosts(input: { videoId: string; platforms: string[]
   if (!dry && live.length) return { ok: false, error: `Video đã có bài trên ${describeBlockers(live, platforms)} (${live.map((e) => e.status).join(", ")}). Không đăng trùng.` };
   const keys = platforms.map((p) => `${p}:${v.id}`);
   const existing = dry ? [] : db.select().from(schema.scheduledPosts).where(inArray(schema.scheduledPosts.dedupeKey, keys)).all();
+  // Một video một bài mỗi kênh (dedupe_key): bài đã gửi lên trang cũ (OWNER sửa Page ID kênh sau khi đăng) vẫn giữ khoá của kênh.
+  // Chỉ bài lỗi rõ ràng / huỷ chưa có mã nền tảng mới nhả khoá — còn lại báo lỗi, không để CSDL ném lỗi trùng khoá.
+  const holders = existing.filter((x) => x.externalId || (x.status !== "failed" && x.status !== "cancelled"));
+  if (holders.length)
+    return { ok: false, error: `Kênh ${holders.map((x) => `${x.platform} đã có bài video này (${x.status}${x.externalId ? `, mã ${x.externalId}` : ""}${x.targetPageId ? `, trang ${x.targetPageId}` : ""})`).join("; ")}. Mỗi kênh một bài cho một video — không đăng trùng.` };
   const thumb = makeThumbnail(masterPath, v.title, input.by);
   const rows = platforms.map((p) => ({
     id: newId("sp"),
@@ -151,10 +156,12 @@ export function scheduleVideoPosts(input: { videoId: string; platforms: string[]
     thumbnailUploadId: thumb,
     mode: dry ? "dry_run" : "live",
     dedupeKey: dry ? null : `${p}:${v.id}`,
+    // Trang đích lúc lên lịch: chống trùng về sau theo trang này, không theo cấu hình kênh lúc kiểm
+    targetPageId: channelPageId(p),
   }));
   db.transaction((tx) => {
     // Bài lỗi/huỷ cũ nhả khoá chống trùng để bài mới thay thế (lịch sử vẫn giữ).
-    if (!dry) for (const e of existing.filter((x) => !x.externalId)) tx.update(schema.scheduledPosts).set({ dedupeKey: null }).where(eq(schema.scheduledPosts.id, e.id)).run();
+    if (!dry) for (const e of existing) tx.update(schema.scheduledPosts).set({ dedupeKey: null }).where(eq(schema.scheduledPosts.id, e.id)).run();
     tx.insert(schema.scheduledPosts).values(rows).run();
   });
   for (const r of rows) campaignRepo.inheritLinks("video", v.id, "publication", r.id, "scheduled");
@@ -162,15 +169,27 @@ export function scheduleVideoPosts(input: { videoId: string; platforms: string[]
   return { ok: true, created: rows.length, mode: dry ? "dry_run" : "live" };
 }
 
-/** Trang đích thật của một kênh: kênh Facebook đã có Page ID → "fb:<Page ID>" (hai kênh nhập cùng Page ID là MỘT trang);
- *  kênh khác / chưa có Page ID → chính tên kênh. Đọc cấu hình HIỆN TẠI (sửa đúng Page ID thì hết trùng). */
-function pageTarget(platform: string): string {
+/** Page ID HIỆN TẠI của kênh Facebook (null: kênh khác / chưa nhập Page ID). */
+function channelPageId(platform: string): string | null {
   const key = videoChannels().find((c) => c.platform === platform)?.key;
-  const pid = key?.startsWith("facebook_page") ? readIntegrationConfig(key).pageId : "";
+  return (key?.startsWith("facebook_page") && readIntegrationConfig(key).pageId) || null;
+}
+
+/** Trang đích thật của một kênh: kênh Facebook đã có Page ID → "fb:<Page ID>" (hai kênh nhập cùng Page ID là MỘT trang);
+ *  kênh khác / chưa có Page ID → chính tên kênh. Đọc cấu hình HIỆN TẠI — dùng cho kênh SẮP đăng. */
+function pageTarget(platform: string): string {
+  const pid = channelPageId(platform);
   return pid ? `fb:${pid}` : platform;
 }
 
 type PostRow = typeof schema.scheduledPosts.$inferSelect;
+
+/** Trang đích của một bài ĐÃ có. Bài đã gửi lệnh đăng (đang đăng / đã đăng / lỗi): Page ID lưu trong bài lúc đăng — OWNER sửa
+ *  Page ID kênh sau đó không đổi trang bài đã lên. Bài còn chờ: sẽ đăng lên trang kênh đang cấu hình (lúc đăng cập nhật lại).
+ *  Bài cũ chưa lưu Page ID → cấu hình kênh hiện tại như trước. */
+function postTarget(e: PostRow): string {
+  return e.targetPageId && e.status !== "scheduled" ? `fb:${e.targetPageId}` : pageTarget(e.platform);
+}
 
 /** Bài của video trên cùng TRANG với các kênh chọn mà chặn tạo / đăng lại bài mới.
  *  Đăng thật: bài thật còn sống — chưa lỗi / huỷ, hoặc nền tảng ĐÃ nhận video (có externalId), hoặc lỗi MƠ HỒ (có thể đã lên trang;
@@ -179,7 +198,7 @@ type PostRow = typeof schema.scheduledPosts.$inferSelect;
 function samePageBlockers(videoId: string, platforms: string[], dry: boolean, exceptId?: string): PostRow[] {
   const targets = new Set(platforms.map(pageTarget));
   return videoPostsFor(videoId).filter((e) => {
-    if (e.id === exceptId || !targets.has(pageTarget(e.platform))) return false;
+    if (e.id === exceptId || !targets.has(postTarget(e))) return false;
     if (dry) return e.status === "scheduled" || e.status === "publishing";
     return e.mode !== "dry_run" && ((e.status !== "failed" && e.status !== "cancelled") || !!e.externalId || isAmbiguousFailure(e));
   });
@@ -188,8 +207,9 @@ function samePageBlockers(videoId: string, platforms: string[], dry: boolean, ex
 /** "facebook, facebook_page_3 (cùng trang 111 với kênh anh chọn)" — nêu rõ khi bài chặn nằm ở kênh khác cùng Page ID. */
 function describeBlockers(rows: PostRow[], chosen: string[]): string {
   const names = [...new Set(rows.map((e) => e.platform))];
-  const cross = names.filter((n) => !chosen.includes(n));
-  const pages = [...new Set(cross.map(pageTarget).filter((t) => t.startsWith("fb:")).map((t) => t.slice(3)))];
+  // Bài ở kênh khác, hoặc cùng kênh nhưng đã lên trang khác cấu hình hiện tại (OWNER sửa Page ID sau khi đăng)
+  const cross = rows.filter((e) => !chosen.includes(e.platform) || postTarget(e) !== pageTarget(e.platform));
+  const pages = [...new Set(cross.map(postTarget).filter((t) => t.startsWith("fb:")).map((t) => t.slice(3)))];
   return names.join(", ") + (pages.length ? ` (cùng trang ${pages.join(", ")} với kênh anh chọn — kiểm lại Page ID ở Cài đặt › Kết nối nếu nhập nhầm)` : "");
 }
 
@@ -252,7 +272,8 @@ export async function publishDueVideoPosts(): Promise<{ published: number; teste
       continue;
     }
     // Giành quyền đăng nguyên tử: hai lượt chạy song song không cùng đăng một bài.
-    const claim = db.update(schema.scheduledPosts).set({ status: "publishing", attempts: post.attempts + 1 }).where(and(eq(schema.scheduledPosts.id, post.id), eq(schema.scheduledPosts.status, "scheduled"))).run();
+    // Lưu luôn trang thật sắp nhận lệnh đăng (Page ID có thể đã sửa sau lúc lên lịch)
+    const claim = db.update(schema.scheduledPosts).set({ status: "publishing", attempts: post.attempts + 1, targetPageId: channelPageId(post.platform) ?? post.targetPageId }).where(and(eq(schema.scheduledPosts.id, post.id), eq(schema.scheduledPosts.status, "scheduled"))).run();
     if (claim.changes !== 1) continue;
     inFlight.add(post.id);
     const runId = startRun(st.channel.key, "publish_video");

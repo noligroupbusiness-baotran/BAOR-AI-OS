@@ -808,10 +808,20 @@ export function restorePrevPlan(videoId: string, by: string): { ok: true; versio
   if (hadOwn) fs.renameSync(own, stash);
   fs.renameSync(prev, own);
   const label = String(restored.by ?? "").trim();
-  const r = rerenderVideo(videoId, by, undefined, undefined, `Khôi phục kế hoạch trước${label ? ` (${label.slice(0, 80)})` : ""} rồi dựng lại`);
-  if (!r.ok) {
+  const putBack = () => {
     fs.renameSync(own, prev);
     if (hadOwn) fs.renameSync(stash, own);
+  };
+  let r: ReturnType<typeof rerenderVideo>;
+  try {
+    r = rerenderVideo(videoId, by, undefined, undefined, `Khôi phục kế hoạch trước${label ? ` (${label.slice(0, 80)})` : ""} rồi dựng lại`);
+  } catch (e) {
+    // Tệp đã đổi chỗ: dựng lại ném lỗi (ghi việc dựng / CSDL hỏng) thì cũng trả tệp về như cũ
+    putBack();
+    return { ok: false, error: `Không dựng lại được: ${e instanceof Error ? e.message : String(e)}` };
+  }
+  if (!r.ok) {
+    putBack();
     return { ok: false, error: r.error };
   }
   logActivity("human", `${by} khôi phục kế hoạch biên tập trước (${name}) của video ${videoId}, dựng bản ${r.version}.`, "video");

@@ -58,6 +58,26 @@ export function modelCostVnd(model: string, inputTokens: number, outputTokens: n
   return Math.round(((inputTokens * m.usdIn + outputTokens * m.usdOut) / 1_000_000) * vndPerUsd());
 }
 
+/** Mô hình trong bảng giá ứng với id hãng trả về ở response.model: khớp đúng, hoặc bỏ đuôi ngày của bản chụp (-20261001 / -2026-10-01). */
+export function pricedModel(id: string): ModelInfo | undefined {
+  return modelInfo(id) ?? modelInfo(id.replace(/-(\d{8}|\d{4}-\d{2}-\d{2})$/, ""));
+}
+
+/**
+ * Giá MỘT phản hồi theo mô hình hãng THỰC SỰ chạy (response.model — vd fallbacks phía hãng có thể chạy mô hình khác mô hình yêu cầu).
+ * Không có response.model → mô hình yêu cầu. Mô hình thực tế không có trong bảng giá → tính theo giá mô hình yêu cầu và trả ghi chú.
+ * model = id đã chuẩn hoá (bỏ đuôi ngày nếu khớp bảng giá); pricedAs = mô hình có giá được áp (undefined = cả hai đều không có trong bảng,
+ * chỗ gọi dùng giá chung); costVnd = modelCostVnd(pricedAs, …).
+ */
+export function servedCost(requested: string, served: string | null | undefined, inputTokens: number, outputTokens: number): { model: string; pricedAs: string | undefined; costVnd: number | undefined; note?: string } {
+  const ran = served?.trim() || requested;
+  const info = pricedModel(ran);
+  const pricedAs = info?.id ?? (modelInfo(requested) ? requested : undefined);
+  const costVnd = pricedAs ? modelCostVnd(pricedAs, inputTokens, outputTokens) : undefined;
+  if (info || ran === requested) return { model: info?.id ?? requested, pricedAs, costVnd };
+  return { model: ran, pricedAs, costVnd, note: `${ran} chưa có trong bảng giá, tính theo giá ${requested}` };
+}
+
 export function providerKey(p: AiProvider): string {
   return readIntegrationConfig(PROVIDERS[p].integration).apiKey || process.env[PROVIDERS[p].env] || "";
 }

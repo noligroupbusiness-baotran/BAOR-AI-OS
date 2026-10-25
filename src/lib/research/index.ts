@@ -7,8 +7,6 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { getDb, schema } from "@/db";
 import { aiConfigured, gate } from "@/lib/ai";
-import { estimateCostVnd } from "@/lib/router";
-import { modelCostVnd } from "@/lib/ai-providers";
 import { getKnowledgePages, searchKnowledge } from "@/lib/knowledge";
 import { recordContentVersion } from "@/lib/content/versions";
 import { buildShootingScript, maxSecondsFromGoal, scriptQa, type ScriptQa } from "@/lib/content/shooting-script";
@@ -368,10 +366,10 @@ export async function runResearchWithAi(taskId: string, by: string, opts: { appe
     return { ok: false, error: "AI không trả về hồ sơ hợp lệ." };
   }
   const vndPerSearch = 260; // ≈ 10 USD / 1.000 lượt tìm
-  // Chi phí theo giá của đúng mô hình từng bước (bước 1 có thể là Claude, bước 2 là mô hình vị trí) — khớp sổ ai_calls
-  const costOf = (m: string, i: number, o: number) => modelCostVnd(m, i, o) ?? estimateCostVnd(i, o);
-  const cost = costOf(step1.model, r1.usage.input_tokens, r1.usage.output_tokens) + costOf(step2.model, step2.res.usage?.input_tokens ?? 0, step2.res.usage?.output_tokens ?? 0) + r1.searches * vndPerSearch;
-  saveResearchResult(taskId, out, { runner: "ai", allowedUrls: new Set(r1.urls.keys()), model: step1.model === step2.model ? step2.model : `${step1.model} + ${step2.model}`, searchCount: r1.searches, costVnd: cost, by, append: opts.append });
+  // Chi phí = đúng số cổng AI đã ghi sổ ai_calls cho từng bước: giá theo mô hình hãng THỰC SỰ chạy (response.model — bước 1 bật
+  // fallbacks "default" nên có thể khác mô hình yêu cầu; lạ / chưa có trong bảng giá → giá mô hình yêu cầu + ghi chú ở nhãn mô hình).
+  const cost = step1.costVnd + step2.costVnd + r1.searches * vndPerSearch;
+  saveResearchResult(taskId, out, { runner: "ai", allowedUrls: new Set(r1.urls.keys()), model: step1.servedModel === step2.servedModel ? step2.servedModel : `${step1.servedModel} + ${step2.servedModel}`, searchCount: r1.searches, costVnd: cost, by, append: opts.append });
   return { ok: true, summary: out.summary };
 }
 

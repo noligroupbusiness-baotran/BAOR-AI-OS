@@ -36,21 +36,41 @@ def _risky(word, target):
 
 def script_words(text):
     """Lời nói trong kịch bản → danh sách từ (bỏ thẻ nguồn [S1]/[K2], dấu câu)."""
-    text = re.sub(r"\[[SK]\d+\]", " ", text or "")
-    return [w for w in (re.sub(r"^[^\w%]+|[^\w%]+$", "", x) for x in unicodedata.normalize("NFC", text).split()) if w]
+    return script_tokens(text)[0]
 
 
-def _apply(word, target):
-    """Thay chữ, giữ dấu câu cuối. Viết hoa: tên riêng trong kịch bản (viết hoa) giữ hoa; từ máy nghe viết hoa (đầu câu) giữ hoa."""
+def script_tokens(text):
+    """→ (từ, cờ tên riêng): tên riêng = từ viết hoa GIỮA câu (không đứng đầu dòng / sau . ? !) — "chị Lành", "Trà Giang".
+    Từ viết hoa đầu câu ("Hỏi tuổi…") không phải tên riêng."""
+    words, names = [], []
+    for line in unicodedata.normalize("NFC", re.sub(r"\[[SK]\d+\]", " ", text or "")).splitlines():
+        start = True
+        for x in line.split():
+            w = re.sub(r"^[^\w%]+|[^\w%]+$", "", x)
+            if w:
+                words.append(w)
+                names.append(w[:1].isupper() and not start)
+                start = False
+            if x.rstrip()[-1:] in ".?!":
+                start = True
+    return words, names
+
+
+def _apply(word, target, is_name=None):
+    """Thay chữ, giữ dấu câu cuối. Viết hoa: tên riêng trong kịch bản (viết hoa giữa câu) giữ hoa; từ máy nghe viết hoa (đầu câu)
+    giữ hoa; chữ hoa đầu câu của kịch bản không ép vào giữa câu nói."""
     t = word["text"]
     tail = t[len(t.rstrip(",.?!")):]
-    new = target if target[:1].isupper() else (target[:1].upper() + target[1:] if t[:1].isupper() else target)
+    is_name = target[:1].isupper() if is_name is None else is_name
+    # kịch bản viết TOÀN chữ hoa ("CHÀO CHỊ NHA"): hạ cả từ — chỉ hạ chữ đầu sẽ ra "cHÀO" (phản biện 25/10 P2)
+    low = target.lower() if target.isupper() else target[:1].lower() + target[1:]
+    new = target if is_name else (target[:1].upper() + target[1:] if t[:1].isupper() else low)
     return new + tail
 
 
 def correct(words, script_text, low_p=0.6, min_run=3):
     """Sửa `words` tại chỗ theo kịch bản. Trả danh sách {t, from, to, why}."""
-    sw = script_words(script_text)
+    sw, sw_name = script_tokens(script_text)
     if not sw or not words:
         return []
     a = [norm(w["text"]) for w in words]
@@ -62,6 +82,13 @@ def correct(words, script_text, low_p=0.6, min_run=3):
     def strong(k):
         """Khối k là đoạn khớp ĐỦ DÀI (≥ min_run từ) — chỉ những đoạn này mới là bằng chứng lời nói đang theo kịch bản."""
         return 0 <= k < len(ops) and ops[k][0] == "equal" and (ops[k][2] - ops[k][1]) >= min_run
+
+    def name_anchored(n, k, j, size):
+        if strong(n - 1) and strong(n + 1):
+            return True
+        prev_name = k == 0 and n > 0 and ops[n - 1][0] == "equal" and j > 0 and sw_name[j - 1]
+        next_name = k == size - 1 and n + 1 < len(ops) and ops[n + 1][0] == "equal" and j + 1 < len(sw) and sw_name[j + 1]
+        return bool(prev_name or next_name)
 
     for n, (op, i1, i2, j1, j2) in enumerate(ops):
         if op == "equal":
@@ -77,7 +104,7 @@ def correct(words, script_text, low_p=0.6, min_run=3):
                     continue
                 if tnorm(w["text"]) != tnorm(target):  # cùng chữ (bỏ dấu giống hệt), khác dấu → dấu theo kịch bản (cả "khong" → "không")
                     old = w["text"]
-                    w["text"] = _apply(w, target)
+                    w["text"] = _apply(w, target, sw_name[j1 + k])
                     w["uncertain"] = False
                     w["scriptFix"] = True
                     fixes.append({"t": round(w["start"], 2), "from": old, "to": w["text"], "why": "dấu theo kịch bản"})
@@ -105,10 +132,14 @@ def correct(words, script_text, low_p=0.6, min_run=3):
                 # tên riêng máy nghe viết hoa giữa câu mà kịch bản viết thường → không thay ("Lan" ≠ "lành")
                 i = i1 + k
                 mid_sentence = i > 0 and not words[i - 1]["text"].rstrip().endswith((".", "?", "!"))
-                name_clash = mid_sentence and w["text"][:1].isupper() and not target[:1].isupper()
+                name_clash = mid_sentence and w["text"][:1].isupper() and not sw_name[j1 + k]
+                # tên riêng trong kịch bản (hoặc máy nghe ra một tên): "chị Lan" ≠ "chị Lành" chỉ vì 2 từ quanh đó khớp.
+                # Chỉ thay khi khớp dài CẢ HAI PHÍA, hoặc dính phần tên đã khớp ("Trà [Dang]" → "Trà Giang")
+                if (sw_name[j1 + k] or (mid_sentence and w["text"][:1].isupper())) and not name_anchored(n, k, j1 + k, i2 - i1):
+                    continue
                 if close and not name_clash and not _risky(w["text"], target) and (w.get("uncertain") or w.get("p", 1.0) < low_p):
                     old = w["text"]
-                    w["text"] = _apply(w, target)
+                    w["text"] = _apply(w, target, sw_name[j1 + k])
                     w["uncertain"] = False
                     w["scriptFix"] = True
                     fixes.append({"t": round(w["start"], 2), "from": old, "to": w["text"], "why": "nghe chưa chắc, gần giống kịch bản"})
@@ -159,6 +190,10 @@ def self_test():
     w = W(heard, p={2: 0.5})
     correct(w, script)
     bad += w[2]["text"] != "Cô"
+    # 6d) kịch bản viết TOÀN chữ hoa → phụ đề không bị méo hoa / thường ("cHÀO", "hỎI")
+    w = W("chao chị nha hôm nay mình nói về kịch bản")
+    correct(w, "CHÀO CHỊ NHA HÔM NAY MÌNH NÓI VỀ KỊCH BẢN")
+    bad += any(x["text"][1:2].isupper() and not x["text"].isupper() for x in w) or w[0]["text"].lower() != "chào"
     # 6c) đoạn khớp dài: khôi phục dấu cả với từ phủ định ("khong" → "không")
     w = W("mình khong nên vội vàng quá")
     correct(w, "mình không nên vội vàng quá")
@@ -180,6 +215,25 @@ def self_test():
     w = W("dạ chị Lan ơi", unc={2})
     correct(w, "dạ chị lành ơi")
     bad += w[2]["text"] != "Lan"
+    # 7b) kịch bản viết hoa một tên KHÁC: tên chỉ được thay khi ngữ cảnh khớp dài CẢ HAI PHÍA (≥ 3 từ mỗi phía)
+    #     hoặc dính với phần tên đã khớp ("Trà [Dang]" → "Trà Giang", ca 2 / 4b); khớp ngắn / một phía → giữ lời nghe
+    for heard, script in (("dạ chị Lan ơi", "dạ chị Lành ơi"),
+                          ("dạ chị lan ơi", "dạ chị Lành ơi"),
+                          ("hôm nay em gọi cho chị Lan ơi", "hôm nay em gọi cho chị Lành ơi"),
+                          ("hôm nay em gọi cho chị Lan", "hôm nay em gọi cho chị Lành")):
+        w = W(heard, unc={heard.lower().split().index("lan")})
+        correct(w, script)
+        bad += [x["text"] for x in w] != heard.split()
+    w = W("hôm nay em gọi cho chị Lan ơi nhớ nghe máy nha", unc={6})
+    correct(w, "hôm nay em gọi cho chị Lành ơi nhớ nghe máy nha")
+    bad += w[6]["text"] != "Lành"
+    # tên viết hoa đầu dòng / sau dấu câu trong kịch bản là đầu câu, không phải tên riêng → luật thường
+    w = W("chào chị nha hỏi tuổi của khách hàng nha", unc={3})
+    correct(w, "chào chị nha\nHỏi tuổi của khách hàng nha")
+    bad += w[3]["text"] != "hỏi"
+    w = W("chào chị nha hõi tuổi của khách hàng nha", unc={3})
+    correct(w, "chào chị nha\nHỏi tuổi của khách hàng nha")
+    bad += w[3]["text"] != "hỏi"
     # 8) tên riêng viết hoa trong kịch bản giữ hoa khi sửa
     w = W("em là bao nè", unc={2})
     correct(w, "em là Bảo nè")

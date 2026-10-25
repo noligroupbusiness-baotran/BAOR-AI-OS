@@ -120,3 +120,90 @@ test("chế độ thử: lên lịch lại khi bài thử cùng trang còn đang
   // Trang khác hẳn (Fanpage 2 chưa có Page ID) không bị chặn
   assert.equal(schedule("v_dry", "facebook_page_2").ok, true);
 });
+
+test("đăng thật: OWNER sửa Page ID kênh SAU khi đã đăng → chống trùng vẫn theo trang LÚC ĐĂNG (không đăng trùng lên trang cũ)", () => {
+  admin.setSetting("publishing.dryRun", "0");
+  try {
+    seed("v_moved");
+    assert.equal(schedule("v_moved", "facebook").ok, true);
+    const first = pub.videoPostsFor("v_moved")[0];
+    assert.equal(first.targetPageId, "111", "lên lịch: lưu Page ID đích vào bài");
+    // Bài đã lên trang 111
+    db.getDb().update(db.schema.scheduledPosts).set({ status: "published", externalId: "EXT_MOVED", permalink: "https://fb.example/1" }).where(eq(db.schema.scheduledPosts.id, first.id)).run();
+    // Sau đó OWNER đổi Page ID kênh gốc sang 555 — bài cũ vẫn nằm trên trang 111
+    config.writeIntegrationConfig("facebook_page", { pageId: "555", pageToken: "tok-gia-1", appId: "222", userToken: "u-gia-1" });
+    const r = schedule("v_moved", "facebook_page_3");
+    assert.equal(r.ok, false, "Fanpage 3 vẫn là trang 111, nơi video đã lên");
+    assert.match(errOf(r), /trùng/);
+    assert.match(errOf(r), /111/);
+    // Cùng kênh gốc (giờ trang 555): luật một video một bài mỗi kênh vẫn giữ — báo lỗi rõ, không ném lỗi trùng khoá CSDL
+    const same = schedule("v_moved", "facebook");
+    assert.equal(same.ok, false);
+    assert.match(errOf(same), /trùng/);
+    assert.match(errOf(same), /EXT_MOVED/);
+    assert.equal(pub.videoPostsFor("v_moved").length, 1);
+  } finally {
+    config.writeIntegrationConfig("facebook_page", { pageId: "111", pageToken: "tok-gia-1", appId: "222", userToken: "u-gia-1" });
+    admin.setSetting("publishing.dryRun", "1");
+  }
+});
+
+test("đăng thật: bài CÒN CHỜ đi theo Page ID kênh hiện tại (lúc đăng mới gửi) — sửa Page ID trước giờ đăng thì tính trang mới", () => {
+  admin.setSetting("publishing.dryRun", "0");
+  try {
+    seed("v_wait");
+    assert.equal(schedule("v_wait", "facebook").ok, true);
+    config.writeIntegrationConfig("facebook_page", { pageId: "555", pageToken: "tok-gia-1", appId: "222", userToken: "u-gia-1" });
+    // Bài chờ sẽ lên trang 555 → Fanpage 3 (111) là trang khác
+    assert.equal(schedule("v_wait", "facebook_page_3").ok, true);
+    // Fanpage 4 nhập 555 → trùng trang với bài chờ của kênh gốc
+    config.writeIntegrationConfig("facebook_page_4", { pageId: "555", pageToken: "tok-gia-4", appId: "222", userToken: "u-gia-4" });
+    const r = schedule("v_wait", "facebook_page_4");
+    assert.equal(r.ok, false);
+    assert.match(errOf(r), /555/);
+  } finally {
+    config.writeIntegrationConfig("facebook_page_4", {});
+    config.writeIntegrationConfig("facebook_page", { pageId: "111", pageToken: "tok-gia-1", appId: "222", userToken: "u-gia-1" });
+    admin.setSetting("publishing.dryRun", "1");
+  }
+});
+
+test("bài cũ chưa lưu Page ID → dùng cấu hình kênh hiện tại như trước", () => {
+  admin.setSetting("publishing.dryRun", "0");
+  try {
+    seed("v_legacy");
+    assert.equal(schedule("v_legacy", "facebook").ok, true);
+    const first = pub.videoPostsFor("v_legacy")[0];
+    db.getDb().update(db.schema.scheduledPosts).set({ targetPageId: null }).where(eq(db.schema.scheduledPosts.id, first.id)).run();
+    assert.equal(schedule("v_legacy", "facebook_page_3").ok, false, "kênh gốc hiện là 111 = Fanpage 3");
+  } finally {
+    admin.setSetting("publishing.dryRun", "1");
+  }
+});
+
+test("lúc đăng: Page ID đích của bài cập nhật theo cấu hình kênh khi gửi lệnh đăng (fetch giả, không gọi nền tảng)", async () => {
+  const d = db.getDb();
+  admin.setSetting("publishing.dryRun", "0");
+  d.update(db.schema.integrations).set({ connected: true }).where(eq(db.schema.integrations.key, "facebook_page")).run();
+  const real = globalThis.fetch;
+  const calls: string[] = [];
+  try {
+    seed("v_pubnow");
+    assert.equal(pub.scheduleVideoPosts({ videoId: "v_pubnow", platforms: ["facebook"], whenIso: new Date(Date.now() - 60_000).toISOString(), caption: "Bình luận bên dưới", by: "t" }).ok, true);
+    assert.equal(pub.videoPostsFor("v_pubnow")[0].targetPageId, "111");
+    // OWNER sửa Page ID giữa lúc lên lịch và lúc đăng → bài đăng lên trang 666
+    config.writeIntegrationConfig("facebook_page", { pageId: "666", pageToken: "tok-gia-1", appId: "222", userToken: "u-gia-1" });
+    globalThis.fetch = (async (url: string) => {
+      calls.push(String(url));
+      throw new Error("mạng giả: không gọi nền tảng");
+    }) as typeof fetch;
+    await pub.publishDueVideoPosts();
+    assert.ok(calls.length > 0, "đã đi tới bước gửi lệnh đăng");
+    assert.equal(pub.videoPostsFor("v_pubnow")[0].targetPageId, "666", "lúc đăng: lưu trang thật nhận lệnh đăng");
+  } finally {
+    globalThis.fetch = real;
+    d.update(db.schema.integrations).set({ connected: false }).where(eq(db.schema.integrations.key, "facebook_page")).run();
+    config.writeIntegrationConfig("facebook_page", { pageId: "111", pageToken: "tok-gia-1", appId: "222", userToken: "u-gia-1" });
+    admin.setSetting("publishing.dryRun", "1");
+  }
+});
