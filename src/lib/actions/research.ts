@@ -15,27 +15,27 @@ const fail = (path: string, msg: string): never => done(`${path}${path.includes(
 // ---------- Second Brain ----------
 
 export async function syncKnowledgeNow() {
-  const actor = await requirePermission("manager", "/insights/knowledge");
+  const actor = await requirePermission("manager", "/settings#second-brain");
   const r = await syncSecondBrain();
   logActivity("human", `${actor.name} đồng bộ Second Brain từ Notion: ${r.message}`, "research");
-  if (!r.ok) return fail("/insights/knowledge", r.message);
-  done("/insights/knowledge", r.message);
+  if (!r.ok) return fail("/settings#second-brain", r.message);
+  done("/settings#second-brain", r.message);
 }
 
 export async function importKnowledgeSnapshotAction(fd: FormData) {
-  const actor = await requirePermission("admin", "/insights/knowledge");
+  const actor = await requirePermission("admin", "/settings#second-brain");
   let snap: KnowledgeSnapshot;
   try {
     snap = JSON.parse(str(fd, "json")) as KnowledgeSnapshot;
   } catch {
-    return fail("/insights/knowledge", "Ảnh chụp không phải JSON hợp lệ");
+    return fail("/settings#second-brain", "Ảnh chụp không phải JSON hợp lệ");
   }
   try {
     const r = importKnowledgeSnapshot(snap);
     logActivity("human", `${actor.name} nhập ảnh chụp Second Brain (${r.pages} trang, cập nhật ${r.changed}).`, "research");
-    done("/insights/knowledge", `Đã nhập ${r.pages} trang, cập nhật ${r.changed}`);
+    done("/settings#second-brain", `Đã nhập ${r.pages} trang, cập nhật ${r.changed}`);
   } catch (e) {
-    return fail("/insights/knowledge", e instanceof Error ? e.message : "Nhập ảnh chụp lỗi");
+    return fail("/settings#second-brain", e instanceof Error ? e.message : "Nhập ảnh chụp lỗi");
   }
 }
 

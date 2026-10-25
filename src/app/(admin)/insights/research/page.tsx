@@ -38,7 +38,6 @@ export default async function ResearchListPage({ searchParams }: { searchParams:
       <PageHead
         title="Nghiên cứu"
         sub="Mỗi nhiệm vụ trả lời một câu hỏi phục vụ mục tiêu cụ thể. Hệ thống đọc Second Brain trước, tìm nguồn ngoài cho phần còn thiếu, phân loại từng phát hiện và kiểm theo luật trước khi đưa vào brief."
-        action={<LinkButton href="/insights/knowledge" size="md">Second Brain</LinkButton>}
       />
 
       {topics.length > 0 && (

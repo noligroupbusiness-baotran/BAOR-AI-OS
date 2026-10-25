@@ -14,7 +14,6 @@ import {
   FilePlus2,
   Upload,
   UserPlus,
-  BrainCircuit,
   FlaskConical,
   Sparkles,
   Archive,
@@ -42,7 +41,6 @@ export interface MenuItem {
 export const menu: MenuItem[] = [
   { key: "dashboard", href: "/dashboard", label: "Điều hành", description: "Dây chuyền thương hiệu, việc anh cần làm, lịch hôm nay, kết quả tháng.", icon: LayoutDashboard, group: "ops", hotkey: "1" },
   { key: "campaigns", href: "/campaigns", label: "Chiến dịch", description: "Mục tiêu, ngân sách, thời gian và kết quả từng chiến dịch.", icon: Megaphone, group: "ops", hotkey: "8" },
-  { key: "knowledge", href: "/insights/knowledge", label: "Second Brain", description: "Chỉ mục kho tri thức Notion (chỉ đọc), trạng thái trang, tìm kiếm.", icon: BrainCircuit, group: "brand", hotkey: "2" },
   { key: "research", href: "/insights/research", label: "Nghiên cứu", description: "Nhiệm vụ nghiên cứu, nguồn đã chấm hạng, phát hiện đã kiểm, brief nội dung.", icon: FlaskConical, group: "brand", hotkey: "3" },
   { key: "content", href: "/content", label: "Kịch bản & nội dung", description: "Kịch bản từ brief, bài viết, caption, hình ảnh, duyệt nội dung.", icon: FileText, group: "brand", hotkey: "4" },
   { key: "video-studio", href: "/video-studio", label: "Video Studio", description: "Video gốc, Agent dựng, kiểm tra, phê duyệt, phiên bản theo nền tảng.", icon: Clapperboard, group: "brand", hotkey: "5" },

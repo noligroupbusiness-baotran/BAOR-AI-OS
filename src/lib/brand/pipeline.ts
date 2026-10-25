@@ -2,7 +2,6 @@
 // Mỗi chặng chỉ đếm bản ghi thật trong CSDL; bản ghi mẫu (ID nạp ban đầu) được đếm riêng để không lẫn vào kết quả.
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
-import { knowledgeStats } from "@/lib/knowledge";
 import { notionConfigured } from "@/lib/knowledge/sync";
 import { aiConfigured } from "@/lib/ai";
 import { contentItems as seedContent, scheduledPosts as seedPosts } from "@/lib/data/content";
@@ -61,28 +60,10 @@ export function getBrandPipeline(): BrandPipeline {
   const connected = new Set(db.select({ key: schema.integrations.key, connected: schema.integrations.connected }).from(schema.integrations).all().filter((i) => i.connected).map((i) => i.key));
   const actions: OwnerAction[] = [];
 
-  // 1. Second Brain
-  const ks = knowledgeStats();
-  const notion = notionConfigured();
-  const usable = (ks.byStatus.ACTIVE ?? 0) + (ks.byStatus.VERIFIED ?? 0);
-  const brain: Stage = {
-    key: "brain",
-    step: 1,
-    name: "Second Brain",
-    href: "/insights/knowledge",
-    state: ks.total === 0 ? "not_started" : notion ? "done" : "working",
-    summary: ks.total === 0 ? "Chưa có chỉ mục kho tri thức." : notion ? "Đang tự đồng bộ từ Notion (chỉ đọc)." : "Đã có chỉ mục từ ảnh chụp; chưa tự đồng bộ.",
-    lines: [
-      { label: "Trang đã lập chỉ mục", value: ks.total },
-      { label: "Dùng được (ACTIVE/VERIFIED)", value: usable },
-      { label: "Nháp chờ duyệt (DRAFT)", value: ks.byStatus.DRAFT ?? 0 },
-    ],
-    sample: 0,
-  };
-  if (!notion) actions.push({ stage: "Second Brain", text: "Cấp token Notion chỉ đọc để hệ thống tự đồng bộ kho tri thức 6 giờ một lần.", href: "/settings#integrations", ceo: true });
-  if ((ks.byStatus.DRAFT ?? 0) > 0) actions.push({ stage: "Second Brain", text: `Duyệt dần ${ks.byStatus.DRAFT} trang DRAFT trong Notion: nội dung DRAFT chỉ được dùng ở mức "nháp".`, href: "/insights/knowledge" });
+  // Second Brain không hiển thị trong app (OWNER 25/10/2026): hệ thống đọc ngầm; chỉ nhắc OWNER cấp token khi chưa tự đồng bộ.
+  if (!notionConfigured()) actions.push({ stage: "Second Brain", text: "Cấp token Notion chỉ đọc để hệ thống tự đồng bộ kho tri thức 6 giờ một lần.", href: "/settings#integrations", ceo: true });
 
-  // 2. Nghiên cứu → brief
+  // 1. Nghiên cứu → brief
   const tasks = db.select({ id: schema.researchTasks.id, status: schema.researchTasks.status }).from(schema.researchTasks).all();
   const briefs = db.select({ id: schema.contentBriefs.id, taskId: schema.contentBriefs.taskId, status: schema.contentBriefs.status, contentId: schema.contentBriefs.contentId, topic: schema.contentBriefs.topic }).from(schema.contentBriefs).all();
   const ready = briefs.filter((b) => b.status === "ready" || b.status === "used");
@@ -90,7 +71,7 @@ export function getBrandPipeline(): BrandPipeline {
   const ai = aiConfigured();
   const research: Stage = {
     key: "research",
-    step: 2,
+    step: 1,
     name: "Nghiên cứu",
     href: "/insights/research",
     state: tasks.length === 0 ? "not_started" : readyNoContent.length ? "waiting" : ready.length ? "done" : "working",
@@ -112,7 +93,7 @@ export function getBrandPipeline(): BrandPipeline {
   const cs = countBy(realContent, (c) => c.status);
   const script: Stage = {
     key: "content",
-    step: 3,
+    step: 2,
     name: "Kịch bản",
     href: "/content?tab=mine",
     state: realContent.length === 0 ? "not_started" : cs.review ? "waiting" : cs.in_progress ? "working" : "done",
@@ -135,7 +116,7 @@ export function getBrandPipeline(): BrandPipeline {
   const toReview = (vs.review ?? 0) + (vs.pending_approval ?? 0);
   const video: Stage = {
     key: "video",
-    step: 4,
+    step: 3,
     name: "Video",
     href: "/video-studio",
     state: realVideos.length === 0 ? "not_started" : toReview ? "waiting" : vs.editing || vs.needs_changes ? "working" : "done",
@@ -157,7 +138,7 @@ export function getBrandPipeline(): BrandPipeline {
   const publishPlatforms = ["facebook_page", "instagram", "tiktok", "youtube", "zalo_oa"].filter((k) => connected.has(k));
   const publish: Stage = {
     key: "publish",
-    step: 5,
+    step: 4,
     name: "Đăng bài",
     href: "/publishing",
     state: publishPlatforms.length === 0 ? "waiting" : ps.failed ? "waiting" : ps.scheduled ? "working" : realPosts.length ? "done" : "not_started",
@@ -179,7 +160,7 @@ export function getBrandPipeline(): BrandPipeline {
   const metaAds = connected.has("meta_ads");
   const adStage: Stage = {
     key: "ads",
-    step: 6,
+    step: 5,
     name: "Quảng cáo",
     href: "/publishing#ads",
     state: !metaAds ? "waiting" : as.pending_approval ? "waiting" : as.active ? "working" : "not_started",
@@ -200,7 +181,7 @@ export function getBrandPipeline(): BrandPipeline {
   if (waitingProposals) actions.push({ stage: "Đo lường", text: `Xem ${waitingProposals} đề xuất cải tiến (giả thuyết từ số liệu thật): chấp nhận hoặc bỏ qua.`, href: "/insights/learning" });
   const measure: Stage = {
     key: "measure",
-    step: 7,
+    step: 6,
     name: "Đo lường",
     href: waitingProposals ? "/insights/learning" : "/reports",
     state: waitingProposals ? "waiting" : measuredPosts ? "working" : "not_started",
@@ -212,5 +193,5 @@ export function getBrandPipeline(): BrandPipeline {
     sample: posts.length - realPosts.length,
   };
 
-  return { stages: [brain, research, script, video, publish, adStage, measure], actions };
+  return { stages: [research, script, video, publish, adStage, measure], actions };
 }

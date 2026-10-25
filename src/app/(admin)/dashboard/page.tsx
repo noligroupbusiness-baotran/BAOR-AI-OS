@@ -59,7 +59,7 @@ export default function DashboardPage() {
     <>
       <div className="mb-3.5">
         <h1 className="text-[20px] font-bold tracking-[-0.01em] text-ink">Điều hành thương hiệu</h1>
-        <p className="mt-0.5 text-[12.5px] text-ink-2">{weekday}, {formatDate(now.toISOString())} · Second Brain → nghiên cứu → kịch bản → video → đăng → quảng cáo → đo lường</p>
+        <p className="mt-0.5 text-[12.5px] text-ink-2">{weekday}, {formatDate(now.toISOString())} · Chủ đề → nghiên cứu → hook & kịch bản → video → kho video → đăng → quảng cáo → đo lường</p>
       </div>
 
       {/* 1. Bốn chỉ số quan trọng */}
