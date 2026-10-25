@@ -7,19 +7,20 @@ import { SubmitButton } from "@/components/campaigns/submit-button";
 import { platformLabel } from "@/components/ui/platform";
 import { addManualHook, aiGenerateHooks, pickHookAction, rejectHookAction } from "@/lib/actions/hooks";
 import { HOOK_COUNT, HOOK_PLATFORMS, listHooks, type HookRow } from "@/lib/content/hooks";
-import { roleAllows, roleById } from "@/lib/ai-roster";
-import { aiConfiguredFor } from "@/lib/ai";
+import { roleById } from "@/lib/ai-roster";
+import { AI_TEAM_HREF, aiReadiness } from "@/lib/ai";
+import { AiBlocked } from "@/components/ui/ai-blocked";
 import { formatDateTime, cn } from "@/lib/format";
 import type { Platform } from "@/lib/types";
 
 export const metadata = { title: "Bảng Hook & kịch bản – BAOR AI OS" };
 
-const basisLabel = { finding: "Nghiên cứu", knowledge: "Second Brain", insight: "Insight" } as const;
+const basisLabel = { finding: "Nghiên cứu", knowledge: "Kiến thức", insight: "Insight" } as const;
 
 export default async function HooksPage({ searchParams }: { searchParams: Promise<{ topic?: string; all?: string; research?: string }> }) {
   const sp = await searchParams;
   const role = roleById("hooks")!;
-  const allowed = roleAllows(role);
+  const ready = aiReadiness("ideas");
   const hooks = listHooks().filter((h) => sp.all === "1" || h.status !== "rejected");
   const batches = new Map<string, HookRow[]>();
   for (const h of hooks) batches.set(h.batchId, [...(batches.get(h.batchId) ?? []), h]);
@@ -32,13 +33,13 @@ export default async function HooksPage({ searchParams }: { searchParams: Promis
       />
 
       <Panel>
-        <PanelHeader title="AI tạo hook" sub={`${role.name} · ${allowed.ok ? (aiConfiguredFor("ideas").ok ? "được phép gọi AI" : `chưa có khoá ${aiConfiguredFor("ideas").provider} (Cài đặt › Kết nối)`) : allowed.reason}`} action={<Link href="/settings#ai-team" className="text-[12.5px] font-semibold text-accent">Đội AI ›</Link>} />
+        <PanelHeader title="AI tạo hook" sub={role.name} tags={<AiBlocked ready={ready} />} action={<Link href={AI_TEAM_HREF} className="text-[12.5px] font-semibold text-accent">Đội AI ›</Link>} />
         <form action={aiGenerateHooks} className="grid gap-2 p-4 md:grid-cols-[1fr_auto] md:items-end">
           {sp.research && <input type="hidden" name="research" value={sp.research} />}
           <Field label={sp.research ? "Chủ đề (dùng insight của chủ đề nghiên cứu này)" : "Chủ đề marketing (OWNER đề xuất)"}>
             <input name="topic" required minLength={4} defaultValue={sp.topic ?? ""} placeholder="vd: chào hỏi phá băng khi gọi điện cho khách mới" className={inputClass} />
           </Field>
-          <SubmitButton pendingText="AI đang viết 10 hook…">AI tạo {HOOK_COUNT} hook</SubmitButton>
+          <SubmitButton pendingText="AI đang viết 10 hook…" disabled={!ready.ok} title={ready.ok ? undefined : ready.reason}>AI tạo {HOOK_COUNT} hook</SubmitButton>
         </form>
         <details className="border-t border-border px-4 py-3">
           <summary className="cursor-pointer text-[13px] font-semibold text-ink">Thêm hook tay (không dùng AI)</summary>

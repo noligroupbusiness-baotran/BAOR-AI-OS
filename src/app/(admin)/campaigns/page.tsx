@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { AlertTriangle, ClipboardCheck, Megaphone, Wallet } from "lucide-react";
 import { Breadcrumb } from "@/components/shell/module-page";
+import { PageIcon } from "@/components/shell/page-icon";
+import { IconChip } from "@/components/ui/icon-chip";
+import { CountUp } from "@/components/ui/count-up";
 import { Button, LinkButton } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { inputClass } from "@/components/ui/field";
@@ -12,10 +15,12 @@ import type { CampaignFilter, CampaignSort, CampaignStatus } from "@/lib/campaig
 import { timingLabel } from "@/lib/campaigns/results";
 import { formatCurrency, formatDate, cn } from "@/lib/format";
 import { Pager, paginate } from "@/components/ui/pager";
+import { SampleLine, SamplePill } from "@/components/ui/sample";
+import { isSample } from "@/lib/sample";
 
 export const metadata = { title: "Chiến dịch – BAOR AI OS" };
 
-type Search = { q?: string; status?: string; product?: string; owner?: string; month?: string; alerts?: string; sort?: string; page?: string };
+type Search = { q?: string; status?: string; owner?: string; month?: string; alerts?: string; sort?: string; page?: string };
 
 const sortOptions: { value: CampaignSort; label: string }[] = [
   { value: "updated", label: "Mới cập nhật" },
@@ -30,7 +35,6 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
   const filter: CampaignFilter = {
     q: sp.q?.trim() || undefined,
     status: (sp.status && sp.status in campaignStatusLabel ? (sp.status as CampaignStatus) : "") || undefined,
-    product: sp.product || undefined,
     owner: sp.owner || undefined,
     month: sp.month && /^\d{4}-\d{2}$/.test(sp.month) ? sp.month : undefined,
     alerts: sp.alerts === "1" || undefined,
@@ -49,35 +53,40 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
   };
   const people = campaignRepo.people();
 
-  const tiles: { label: string; value: string; hint: string; icon: typeof Megaphone; tone?: "amber" | "brick"; href: string }[] = [
-    { label: "Đang thực hiện", value: String(stats.active), hint: "chiến dịch", icon: Megaphone, href: "/campaigns?status=active" },
-    { label: "Chờ phê duyệt", value: String(stats.pendingApproval), hint: "cần bạn quyết định", icon: ClipboardCheck, tone: stats.pendingApproval ? "amber" : undefined, href: "/campaigns?status=pending_approval" },
-    { label: "Ngân sách tháng này", value: formatCurrency(stats.monthBudget), hint: "chiến dịch chạm tháng " + today.slice(5, 7), icon: Wallet, href: `/campaigns?month=${today.slice(0, 7)}` },
-    { label: "Cảnh báo cần xử lý", value: String(stats.alerts), hint: "tài khoản, ngân sách, hạn", icon: AlertTriangle, tone: stats.alerts ? "brick" : undefined, href: "/campaigns?alerts=1" },
+  const tiles: { label: string; value: string; hint: string; icon: typeof Megaphone; tone?: "amber" | "brick"; href: string; sample?: string }[] = [
+    { label: "Đang thực hiện", value: String(stats.active), hint: "chiến dịch", icon: Megaphone, href: "/campaigns?status=active", sample: stats.activeSample ? `${stats.activeSample} chiến dịch` : undefined },
+    { label: "Chờ phê duyệt", value: String(stats.pendingApproval), hint: "cần bạn quyết định", icon: ClipboardCheck, tone: stats.pendingApproval ? "amber" : undefined, href: "/campaigns?status=pending_approval", sample: stats.pendingApprovalSample ? `${stats.pendingApprovalSample} chiến dịch` : undefined },
+    { label: "Ngân sách tháng này", value: formatCurrency(stats.monthBudget), hint: "chiến dịch chạm tháng " + today.slice(5, 7), icon: Wallet, href: `/campaigns?month=${today.slice(0, 7)}`, sample: stats.monthBudgetSample ? formatCurrency(stats.monthBudgetSample) : undefined },
+    { label: "Cảnh báo cần xử lý", value: String(stats.alerts), hint: "tài khoản, ngân sách, hạn", icon: AlertTriangle, tone: stats.alerts ? "brick" : undefined, href: "/campaigns?alerts=1", sample: stats.alertsSample ? `${stats.alertsSample} cảnh báo` : undefined },
   ];
 
   return (
     <>
-      <Breadcrumb items={[{ label: "Điều hành", href: "/dashboard" }, { label: "Chiến dịch" }]} />
+      <Breadcrumb items={[{ label: "Tổng quan", href: "/dashboard" }, { label: "Chiến dịch" }]} />
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-[20px] font-bold tracking-[-0.01em] text-ink">Chiến dịch</h1>
-          <p className="mt-1 max-w-[64ch] text-ink-2">Đặt mục tiêu và điều phối hoạt động Marketing trên từng kênh.</p>
+          <div className="flex items-start gap-3">
+            <PageIcon className="appear appear--pop mt-px" />
+            <div>
+              <h1 className="appear appear--mask text-[20px] font-bold tracking-[-0.01em] text-ink">Chiến dịch</h1>
+              <p className="appear appear--soft mt-1 max-w-[64ch] text-ink-2 [--d:1]">Đặt mục tiêu và điều phối hoạt động Marketing trên từng kênh.</p>
+            </div>
+          </div>
         </div>
-        <LinkButton href="/campaigns/new" variant="primary" size="md">Tạo chiến dịch</LinkButton>
+        <LinkButton href="/campaigns/new" variant="primary" size="md" className="appear appear--btn [--d:2]">Tạo chiến dịch</LinkButton>
       </div>
 
-      <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+      <div className="stagger grid grid-cols-2 gap-2.5 lg:grid-cols-4">
         {tiles.map((t) => {
-          const Icon = t.icon;
           return (
-            <Link key={t.label} href={t.href} className="card flex items-center justify-between gap-2 px-3.5 py-2.5 transition-colors hover:border-ink-3 hover:bg-ground-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-jade">
+            <Link key={t.label} href={t.href} className="card chip-host appear appear--stat flex items-center justify-between gap-2 px-3.5 py-2.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-jade">
               <div className="min-w-0">
                 <div className="truncate text-[12px] font-medium text-ink-2">{t.label}</div>
-                <div className={cn("num truncate text-[20px] font-bold leading-tight tracking-[-0.02em]", t.tone === "brick" ? "text-brick" : t.tone === "amber" ? "text-amber" : "text-ink")}>{t.value}</div>
+                <div className={cn("num truncate text-[20px] font-bold leading-tight tracking-[-0.02em]", t.tone === "brick" ? "text-brick" : t.tone === "amber" ? "text-amber" : "text-ink")}><CountUp value={t.value} /></div>
                 <div className="truncate text-[11.5px] text-ink-3">{t.hint}</div>
+                {t.sample && <div className="mt-0.5"><SampleLine>{t.sample}</SampleLine></div>}
               </div>
-              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-ground-2 text-ink-2"><Icon size={14} aria-hidden /></span>
+              <IconChip icon={t.icon} tone="emerald" size="sm" />
             </Link>
           );
         })}
@@ -148,9 +157,12 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
                   <div className="flex flex-wrap items-center gap-2">
                     <Link href={`/campaigns/${c.id}`} className="text-[13.5px] font-semibold text-ink hover:underline">{c.name}</Link>
                     <CampaignStatusPill status={c.status} />
+                    {isSample("campaign", c.id) && <SamplePill title="Chiến dịch mẫu (dữ liệu demo): số liệu không phải số thật" />}
                     {c.alerts > 0 && <span className="inline-flex items-center gap-1 text-[11.5px] font-medium text-brick"><AlertTriangle size={12} aria-hidden />{c.alerts} cảnh báo</span>}
-                    {(c.status === "active" || c.status === "approved" || c.status === "paused") && (() => {
+                    {c.status !== "ended" && (() => {
                       const t = timingLabel(c.startDate, c.endDate, today);
+                      // Chưa chạy (nháp / chờ duyệt…) chỉ cần nhãn khi đã quá hạn; đang chạy thì hiện cả "còn N ngày"
+                      if (t.tone !== "brick" && !(c.status === "active" || c.status === "approved" || c.status === "paused")) return null;
                       return <span className={cn("text-[11.5px]", t.tone === "brick" ? "text-brick" : t.tone === "amber" ? "text-amber" : "text-ink-3")}>{t.text}</span>;
                     })()}
                   </div>

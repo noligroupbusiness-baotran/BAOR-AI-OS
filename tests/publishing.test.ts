@@ -239,10 +239,14 @@ test("P2-2: bài lỗi mơ hồ chỉ được đăng lại khi người dựng 
   assert.equal(again.ok, false, "bài lỗi mơ hồ chặn lên lịch mới");
   assert.match((again as { error: string }).error, /mơ hồ/);
   assert.equal(pub.videoPostsFor("v_5xx").length, 1, "không tạo bài thứ hai");
-  const r1 = pub.retryVideoPost(post.id);
+  // Đăng lại bài lỗi mơ hồ: chỉ OWNER (tài khoản quản trị chính), kèm ghi chú đã kiểm tra trang
+  admin.setSetting("admin.email", "owner@baor.test");
+  const owner = { email: "owner@baor.test", name: "OWNER" };
+  assert.match(pub.retryVideoPost(post.id, "Đã mở trang Facebook lúc 10:05, không thấy bài", undefined, { email: "quanly@baor.test" }).error ?? "", /chỉ OWNER/, "quản lý có ghi chú vẫn không đăng lại được");
+  const r1 = pub.retryVideoPost(post.id, undefined, undefined, owner);
   assert.equal(r1.ok, false, "thiếu xác nhận thì không cho đăng lại");
   assert.match(r1.error ?? "", /kiểm tra trang/i);
-  const r2 = pub.retryVideoPost(post.id, "Đã mở trang Facebook lúc 10:05, không thấy bài");
+  const r2 = pub.retryVideoPost(post.id, "Đã mở trang Facebook lúc 10:05, không thấy bài", undefined, owner);
   assert.equal(r2.ok, true);
   assert.equal(pub.videoPostsFor("v_5xx")[0].status, "scheduled");
   // Bài lỗi rõ ràng (không mơ hồ) đăng lại không cần xác nhận

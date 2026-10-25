@@ -11,7 +11,7 @@ export const campaigns: Campaign[] = [
   {
     id: "cp_mocdiep_t10",
     name: "Thu hút khách mới cho Mộc Diệp Spa",
-    description: "Dùng gội dưỡng sinh 39.000 đồng làm sản phẩm đầu vào để khách trải nghiệm, thu lead bằng Facebook Ads, chăm sóc qua Zalo OA rồi bán thêm thẻ thành viên.",
+    description: "Dùng gội dưỡng sinh 39.000 đồng làm ưu đãi trải nghiệm, thu lead bằng Facebook Ads, chăm sóc qua Zalo OA.",
     objective: "Có 300 khách đăng ký trải nghiệm gội dưỡng sinh",
     targetMetric: "khách đăng ký",
     targetValue: 300,
@@ -55,12 +55,12 @@ export const campaigns: Campaign[] = [
   {
     id: "cp_noli_chamsoc",
     name: "Chăm sóc khách hàng cũ Noli Sales",
-    description: "Nhắc mua lại và ưu đãi thành viên cho khách đã mua trong 12 tháng qua, chủ yếu qua Zalo OA và email.",
-    objective: "Đưa 400 khách cũ quay lại mua trong quý 4",
-    targetMetric: "khách mua lại",
+    description: "Giữ tương tác với khách cũ 12 tháng qua bằng nội dung hữu ích qua Zalo OA và email.",
+    objective: "Có 400 khách cũ tương tác lại trong quý 4",
+    targetMetric: "khách tương tác lại",
     targetValue: 400,
     productIds: ["pr_noli_care"],
-    audience: "Khách đã mua trong 12 tháng qua",
+    audience: "Khách cũ 12 tháng qua",
     location: "Toàn quốc",
     startDate: "2026-10-01",
     endDate: "2026-12-31",
@@ -77,8 +77,8 @@ export const campaigns: Campaign[] = [
   {
     id: "cp_sale99",
     name: "Sale 9.9 BAOR Skincare",
-    description: "Tuần khuyến mãi 9.9: đẩy combo 3 bước cho khách đã tương tác với fanpage.",
-    objective: "Bán 500 combo 3 bước trong tuần Sale 9.9",
+    description: "Tuần 9.9: giới thiệu routine 3 bước tới khách đã tương tác với fanpage, thu lead inbox.",
+    objective: "Thu 500 lead quan tâm routine 3 bước trong tuần 9.9",
     targetMetric: "lead",
     targetValue: 500,
     productIds: ["pr_combo3", "pr_serum"],
@@ -121,8 +121,8 @@ export const channelGoals: ChannelGoal[] = [
   goal({ id: "g_rec_web", campaignId: "cp_noli_tuyendung_hcm", channel: "website_seo", accountId: "website", executionType: "lead_gen", objective: "Trang tuyển dụng đạt 80 form ứng tuyển", primaryMetric: "forms", targetValue: 80, budget: 2000000, ownerId: "u_lam", status: "planned", startDate: "2026-09-15", endDate: "2026-10-15", createdAt: "2026-09-09T14:10:00+07:00", updatedAt: "2026-09-09T14:10:00+07:00" }),
   // Chăm sóc khách hàng cũ Noli Sales
   goal({ id: "g_care_zalo", campaignId: "cp_noli_chamsoc", channel: "zalo_oa", accountId: "zalo_oa", executionType: "nurture", objective: "Nhắn 1.200 khách cũ qua Zalo OA", primaryMetric: "contacts", targetValue: 1200, budget: 3000000, ownerId: "u_vy", status: "planned", startDate: "2026-10-01", endDate: "2026-12-31", createdAt: "2026-09-04T10:00:00+07:00", updatedAt: "2026-09-08T09:00:00+07:00" }),
-  goal({ id: "g_care_email", campaignId: "cp_noli_chamsoc", channel: "email", accountId: "email_provider", executionType: "nurture", objective: "Chuỗi 4 email nhắc mua lại, tỷ lệ mở 30%", primaryMetric: "open_rate", targetValue: 30, budget: 1000000, ownerId: "u_vy", status: "planned", startDate: "2026-10-01", endDate: "2026-12-31", createdAt: "2026-09-04T10:00:00+07:00", updatedAt: "2026-09-08T09:00:00+07:00" }),
-  goal({ id: "g_care_page", campaignId: "cp_noli_chamsoc", channel: "facebook_page", accountId: "facebook_page", executionType: "nurture", objective: "8 bài ưu đãi thành viên trên fanpage", primaryMetric: "posts", targetValue: 8, budget: 1000000, ownerId: "u_khoa", status: "planned", startDate: "2026-10-01", endDate: "2026-12-31", createdAt: "2026-09-04T10:00:00+07:00", updatedAt: "2026-09-08T09:00:00+07:00" }),
+  goal({ id: "g_care_email", campaignId: "cp_noli_chamsoc", channel: "email", accountId: "email_provider", executionType: "nurture", objective: "Chuỗi 4 email chăm sóc, tỷ lệ mở 30%", primaryMetric: "open_rate", targetValue: 30, budget: 1000000, ownerId: "u_vy", status: "planned", startDate: "2026-10-01", endDate: "2026-12-31", createdAt: "2026-09-04T10:00:00+07:00", updatedAt: "2026-09-08T09:00:00+07:00" }),
+  goal({ id: "g_care_page", campaignId: "cp_noli_chamsoc", channel: "facebook_page", accountId: "facebook_page", executionType: "nurture", objective: "8 bài chăm sóc khách cũ trên fanpage", primaryMetric: "posts", targetValue: 8, budget: 1000000, ownerId: "u_khoa", status: "planned", startDate: "2026-10-01", endDate: "2026-12-31", createdAt: "2026-09-04T10:00:00+07:00", updatedAt: "2026-09-08T09:00:00+07:00" }),
   // Sale 9.9
   goal({ id: "g_s99_fbads", campaignId: "cp_sale99", channel: "facebook_ads", accountId: "meta_ads", executionType: "paid", objective: "Đẩy bài routine 3 bước, thu 300 lead inbox", primaryMetric: "leads", targetValue: 300, currentValue: 95, budget: 8000000, spent: 1420000, ownerId: "u_han", status: "done", startDate: "2026-09-01", endDate: "2026-09-09", createdAt: "2026-08-25T09:00:00+07:00", updatedAt: "2026-09-10T06:00:00+07:00" }),
   goal({ id: "g_s99_page", campaignId: "cp_sale99", channel: "facebook_page", accountId: "facebook_page", executionType: "organic", objective: "6 bài, 120.000 lượt tiếp cận", primaryMetric: "reach", targetValue: 120000, currentValue: 40500, budget: 1000000, spent: 1000000, ownerId: "u_khoa", status: "done", startDate: "2026-09-01", endDate: "2026-09-09", createdAt: "2026-08-25T09:00:00+07:00", updatedAt: "2026-09-10T06:00:00+07:00" }),

@@ -7,7 +7,6 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { and, desc, eq, inArray, isNotNull, lte } from "drizzle-orm";
 import { getDb, schema } from "@/db";
-import { getSetting } from "@/lib/admin";
 import { logActivity } from "@/lib/activity";
 import { sendAlert } from "@/lib/alerts";
 import { campaignRepo } from "@/lib/campaigns/repository";
@@ -17,6 +16,11 @@ import { CAPTION_LIMITS } from "@/lib/content/formats";
 import { buildCaption, captionDraft } from "./caption";
 import { getUpload, uploadPath, uploadsDir } from "@/lib/uploads";
 import { latestJob } from "@/lib/video/jobs";
+import { getAutomation } from "@/lib/queries";
+import { isAdminEmail } from "@/lib/admin";
+import { AMBIGUOUS_MARK, SAMPLE_NOTE, VERIFY_GIVE_UP_PREFIX, ambiguousRetryBlock, previousExternalId, inFlight, isAmbiguousFailure, isDryRun, isSamplePost, needsPageCheck, parseRescheduleWhen, recoverStuckPublishing, sweepOverduePosts } from "./guards";
+
+export { AMBIGUOUS_MARK, isAmbiguousFailure, isDryRun } from "./guards";
 
 export interface VideoChannel {
   platform: string;
@@ -51,15 +55,9 @@ export function captionLimitFor(platform: string) {
 
 const MAX_ATTEMPTS = 3;
 const VERIFY_GIVE_UP_MS = 24 * 60 * 60 * 1000;
-const g = globalThis as unknown as { __baorPublishing?: Set<string> };
-const inFlight = (g.__baorPublishing ??= new Set<string>());
 
 const nowIso = () => new Date().toISOString();
 const newId = (p: string) => `${p}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
-
-export function isDryRun(): boolean {
-  return getSetting("publishing.dryRun") !== "0";
-}
 
 export function channelStatus(platform: string): { channel?: VideoChannel; connected: boolean; canPublish: boolean; reason: string } {
   const channel = videoChannels().find((c) => c.platform === platform);
@@ -162,6 +160,8 @@ export function scheduleVideoPosts(input: { videoId: string; platforms: string[]
   db.transaction((tx) => {
     // Bài lỗi/huỷ cũ nhả khoá chống trùng để bài mới thay thế (lịch sử vẫn giữ).
     if (!dry) for (const e of existing) tx.update(schema.scheduledPosts).set({ dedupeKey: null }).where(eq(schema.scheduledPosts.id, e.id)).run();
+    // Bài quá hạn cũ cùng video + cùng trang đã được thay bằng bài mới → huỷ (không còn treo "cần xếp lại")
+    for (const e of overdueOnSamePage(videoPostsFor(v.id), platforms)) tx.update(schema.scheduledPosts).set({ status: "cancelled", dedupeKey: null, error: "Đã thay bằng bài lên lịch mới." }).where(eq(schema.scheduledPosts.id, e.id)).run();
     tx.insert(schema.scheduledPosts).values(rows).run();
   });
   for (const r of rows) campaignRepo.inheritLinks("video", v.id, "publication", r.id, "scheduled");
@@ -170,7 +170,7 @@ export function scheduleVideoPosts(input: { videoId: string; platforms: string[]
 }
 
 /** Page ID HIỆN TẠI của kênh Facebook (null: kênh khác / chưa nhập Page ID). */
-function channelPageId(platform: string): string | null {
+export function channelPageId(platform: string): string | null {
   const key = videoChannels().find((c) => c.platform === platform)?.key;
   return (key?.startsWith("facebook_page") && readIntegrationConfig(key).pageId) || null;
 }
@@ -196,16 +196,28 @@ function postTarget(e: PostRow): string {
  *  chỉ đăng lại qua "Thử lại" kèm ghi chú đã kiểm tra trang). Bài thử không bao giờ lên trang nên không chặn.
  *  Chế độ thử: bài (thử hoặc thật) còn đang chờ — lên lịch lại là tạo bài thứ hai; muốn đổi giờ / caption thì huỷ bài chờ trước. */
 function samePageBlockers(videoId: string, platforms: string[], dry: boolean, exceptId?: string): PostRow[] {
+  return pageBlockersAmong(videoPostsFor(videoId), platforms, dry, exceptId);
+}
+
+/** Luật chống trùng theo trang, dùng chung cho bài video (cùng video) và bài chữ (cùng nội dung): xem samePageBlockers.
+ *  Bài quá hạn (chưa từng gửi lệnh đăng) không chặn — đó chính là bài cần xếp lại. */
+export function pageBlockersAmong(rows: PostRow[], platforms: string[], dry: boolean, exceptId?: string): PostRow[] {
   const targets = new Set(platforms.map(pageTarget));
-  return videoPostsFor(videoId).filter((e) => {
+  return rows.filter((e) => {
     if (e.id === exceptId || !targets.has(postTarget(e))) return false;
     if (dry) return e.status === "scheduled" || e.status === "publishing";
-    return e.mode !== "dry_run" && ((e.status !== "failed" && e.status !== "cancelled") || !!e.externalId || isAmbiguousFailure(e));
+    return e.mode !== "dry_run" && ((e.status !== "failed" && e.status !== "cancelled" && e.status !== "overdue") || !!e.externalId || isAmbiguousFailure(e));
   });
 }
 
+/** Bài quá hạn (chưa từng gửi lệnh đăng) trên cùng trang với các kênh chọn — bị thay khi lên lịch bài mới. */
+export function overdueOnSamePage(rows: PostRow[], platforms: string[]): PostRow[] {
+  const targets = new Set(platforms.map(pageTarget));
+  return rows.filter((e) => e.status === "overdue" && targets.has(postTarget(e)));
+}
+
 /** "facebook, facebook_page_3 (cùng trang 111 với kênh anh chọn)" — nêu rõ khi bài chặn nằm ở kênh khác cùng Page ID. */
-function describeBlockers(rows: PostRow[], chosen: string[]): string {
+export function describeBlockers(rows: PostRow[], chosen: string[]): string {
   const names = [...new Set(rows.map((e) => e.platform))];
   // Bài ở kênh khác, hoặc cùng kênh nhưng đã lên trang khác cấu hình hiện tại (OWNER sửa Page ID sau khi đăng)
   const cross = rows.filter((e) => !chosen.includes(e.platform) || postTarget(e) !== pageTarget(e.platform));
@@ -225,12 +237,12 @@ function videoFile(videoId: string): { path: string; name: string; size: number 
 export async function publishDueVideoPosts(): Promise<{ published: number; tested: number; failed: number; skipped: number }> {
   const db = getDb();
   const out = { published: 0, tested: 0, failed: 0, skipped: 0 };
-  // Máy chủ khởi động lại giữa lúc đăng: không tự đăng lại (có thể đã lên), đánh lỗi để người kiểm tra.
-  for (const p of db.select().from(schema.scheduledPosts).where(eq(schema.scheduledPosts.status, "publishing")).all()) {
-    if (p.videoId && !inFlight.has(p.id)) {
-      db.update(schema.scheduledPosts).set({ status: "failed", error: `${AMBIGUOUS_MARK} Máy chủ dừng giữa lúc đăng. Kiểm tra trang trước khi thử lại để tránh đăng trùng.` }).where(eq(schema.scheduledPosts.id, p.id)).run();
-    }
-  }
+  // Máy chủ khởi động lại giữa lúc đăng: không tự đăng lại (có thể đã lên), đánh lỗi để người kiểm tra (bài chữ lẫn video).
+  recoverStuckPublishing();
+  // Bài quá giờ hẹn quá lâu (vd lên lịch từ tháng trước, vừa nối Facebook) → "Quá hạn, cần xếp lại", không tự đăng.
+  sweepOverduePosts();
+  // Công tắc Cài đặt › Tự động "Tự động đăng bài đã duyệt" áp cho cả bài video (như bài chữ).
+  if (getAutomation().auto_publish === false) return out;
   const due = db
     .select()
     .from(schema.scheduledPosts)
@@ -238,6 +250,11 @@ export async function publishDueVideoPosts(): Promise<{ published: number; teste
     .all()
     .filter((p) => p.videoId);
   for (const post of due) {
+    if (isSamplePost(post)) {
+      if (post.error !== SAMPLE_NOTE) db.update(schema.scheduledPosts).set({ error: SAMPLE_NOTE }).where(eq(schema.scheduledPosts.id, post.id)).run();
+      out.skipped++;
+      continue;
+    }
     const video = db.select().from(schema.videos).where(eq(schema.videos.id, post.videoId!)).get();
     if (!video || video.status !== "approved") {
       db.update(schema.scheduledPosts).set({ status: "failed", error: "Video không còn ở trạng thái đã duyệt. Không đăng." }).where(eq(schema.scheduledPosts.id, post.id)).run();
@@ -313,8 +330,10 @@ export async function verifyPublishingPosts(): Promise<{ verified: number; pendi
   for (const p of db.select().from(schema.scheduledPosts).where(eq(schema.scheduledPosts.status, "verifying")).all()) {
     const st = channelStatus(p.platform);
     const connector = st.channel ? connectorFor(st.channel.key) : undefined;
-    if (!connector?.verifyPost || !p.externalId) continue;
-    const r = await connector.verifyPost(connectorContext(st.channel!.key), p.externalId);
+    // Bài video đọc lại video; bài chữ đọc lại bài trên trang (trường khác nhau trên Graph API)
+    const verify = p.videoId ? connector?.verifyPost : connector?.verifyFeedPost;
+    if (!verify || !p.externalId) continue;
+    const r = await verify(connectorContext(st.channel!.key), p.externalId);
     if (r.ok && r.permalink) {
       const at = nowIso();
       db.update(schema.scheduledPosts).set({ status: "published", permalink: r.permalink, verifiedAt: at, publishedAt: r.publishedAt ?? p.publishedAt ?? at, error: null }).where(eq(schema.scheduledPosts.id, p.id)).run();
@@ -323,7 +342,7 @@ export async function verifyPublishingPosts(): Promise<{ verified: number; pendi
       logActivity("system", `Đã đăng và xác minh “${p.title}” trên ${p.platform}: ${r.permalink}`, "publishing");
       out.verified++;
     } else if (p.publishedAt && Date.now() - Date.parse(p.publishedAt) > VERIFY_GIVE_UP_MS) {
-      db.update(schema.scheduledPosts).set({ status: "failed", error: `Không xác minh được sau 24 giờ: ${r.message}. Kiểm tra trang (mã ${p.externalId}).` }).where(eq(schema.scheduledPosts.id, p.id)).run();
+      db.update(schema.scheduledPosts).set({ status: "failed", error: `${VERIFY_GIVE_UP_PREFIX}: ${r.message}. Kiểm tra trang (mã ${p.externalId}).` }).where(eq(schema.scheduledPosts.id, p.id)).run();
     } else {
       db.update(schema.scheduledPosts).set({ error: r.message }).where(eq(schema.scheduledPosts.id, p.id)).run();
       out.pending++;
@@ -353,35 +372,90 @@ export async function syncVideoPostMetrics(): Promise<{ updated: number; errors:
   return out;
 }
 
-/** Đánh dấu lỗi mơ hồ (lệnh đăng đã gửi, không rõ bài đã lên chưa): đăng lại phải có xác nhận đã kiểm tra trang. */
-export const AMBIGUOUS_MARK = "[CẦN KIỂM TRA TRANG]";
-
-export function isAmbiguousFailure(p: { status: string; error: string | null }): boolean {
-  return p.status === "failed" && (p.error ?? "").startsWith(AMBIGUOUS_MARK);
-}
-
-export function retryVideoPost(postId: string, checkedNote?: string): { ok: boolean; error?: string } {
+/** Thử lại bài video lỗi, hoặc "Xếp lại" bài quá hạn (bắt buộc chọn giờ mới — không đăng ngay). */
+export function retryVideoPost(postId: string, checkedNote?: string, whenIso?: string, by?: { email: string; name?: string }): { ok: boolean; error?: string } {
   const db = getDb();
   const p = db.select().from(schema.scheduledPosts).where(eq(schema.scheduledPosts.id, postId)).get();
   if (!p?.videoId) return { ok: false, error: "Không tìm thấy bài video" };
-  if (p.status !== "failed") return { ok: false, error: "Chỉ thử lại bài lỗi" };
+  if (p.status !== "failed" && p.status !== "overdue") return { ok: false, error: "Chỉ thử lại bài lỗi hoặc xếp lại bài quá hạn" };
+  if (isSamplePost(p)) return { ok: false, error: SAMPLE_NOTE };
   if (p.externalId) return { ok: false, error: `Nền tảng đã nhận video (mã ${p.externalId}). Kiểm tra trang, không đăng lại để tránh trùng.` };
-  if (isAmbiguousFailure(p) && (checkedNote ?? "").trim().length < 10) {
-    return { ok: false, error: "Lần trước lệnh đăng đã gửi nhưng không rõ kết quả: kiểm tra trang trước, rồi ghi xác nhận (vd 'Đã mở trang lúc 10:05, không thấy bài')." };
+  const amb = ambiguousRetryBlock(p, checkedNote, by);
+  if (amb) return { ok: false, error: amb };
+  let at = nowIso();
+  if (p.status === "overdue") {
+    const w = parseRescheduleWhen(whenIso);
+    if (!w.ok) return { ok: false, error: w.error };
+    at = w.iso;
+    const video = db.select({ status: schema.videos.status }).from(schema.videos).where(eq(schema.videos.id, p.videoId)).get();
+    if (video?.status !== "approved") return { ok: false, error: "Video không còn ở trạng thái đã duyệt." };
   }
   // Bài lỗi cũ đã có bài thay thế (cùng trang, kể cả kênh khác cùng Page ID): đăng lại bài cũ là đăng trùng
   const twins = samePageBlockers(p.videoId, [p.platform], p.mode === "dry_run", p.id);
   if (twins.length) return { ok: false, error: `Video đã có bài trên ${describeBlockers(twins, [p.platform])} (${twins.map((e) => e.status).join(", ")}). Không đăng trùng — dùng bài đó, hoặc huỷ bài đó rồi thử lại.` };
-  db.update(schema.scheduledPosts).set({ status: "scheduled", scheduledFor: nowIso(), error: null }).where(eq(schema.scheduledPosts.id, postId)).run();
+  // Bài quá hạn đã nhả khoá chống trùng: bài thật lấy lại khoá của kênh nếu còn trống
+  let dedupeKey = p.dedupeKey;
+  if (p.mode !== "dry_run" && !dedupeKey) {
+    const k = `${p.platform}:${p.videoId}`;
+    if (!db.select({ id: schema.scheduledPosts.id }).from(schema.scheduledPosts).where(eq(schema.scheduledPosts.dedupeKey, k)).get()) dedupeKey = k;
+  }
+  // Mã bài cũ (OWNER kiểm "Không thấy bài") giữ trong ghi chú + nhật ký: còn tra / xoá bài thứ nhất nếu nhìn nhầm
+  const oldId = previousExternalId(p);
+  db.update(schema.scheduledPosts).set({ status: "scheduled", scheduledFor: at, error: oldId ? `Đăng lại sau kiểm trang — mã bài cũ ${oldId}.` : null, dedupeKey }).where(eq(schema.scheduledPosts.id, postId)).run();
+  if (oldId || isAmbiguousFailure(p)) logActivity("human", `${by?.name ?? by?.email ?? "Người dùng"} đăng lại bài lỗi “${p.title}” trên ${p.platform}${oldId ? ` (mã bài cũ ${oldId})` : ""}${checkedNote?.trim() ? `; đã kiểm trang: ${checkedNote.trim().slice(0, 120)}` : ""}.`, "publishing");
+  campaignRepo.syncEntityStatus("publication", postId, "scheduled");
   return { ok: true };
 }
 
-export function cancelVideoPost(postId: string): { ok: boolean; error?: string } {
+/** Huỷ bài chờ đăng / quá hạn / lỗi rõ ràng (chưa từng lên nền tảng). Bài có mã nền tảng hoặc lỗi mơ hồ: kiểm trang trước. */
+export function cancelVideoPost(postId: string, by?: { email: string; name?: string }): { ok: boolean; error?: string } {
   const db = getDb();
   const p = db.select().from(schema.scheduledPosts).where(eq(schema.scheduledPosts.id, postId)).get();
   if (!p?.videoId) return { ok: false, error: "Không tìm thấy bài video" };
-  if (p.status !== "scheduled") return { ok: false, error: "Chỉ huỷ được bài đang chờ đăng" };
-  db.update(schema.scheduledPosts).set({ status: "cancelled", dedupeKey: null }).where(eq(schema.scheduledPosts.id, postId)).run();
+  return cancelPostRow(p, by);
+}
+
+/** Luật huỷ chung cho bài video và bài chữ. */
+export function cancelPostRow(p: PostRow, by?: { email: string; name?: string }): { ok: boolean; error?: string } {
+  // Lỗi mơ hồ CHƯA có mã bài: huỷ được (huỷ không đăng gì) — ghi nhật ký vì bài có thể đã lên trang
+  const cancellable = p.status === "scheduled" || p.status === "overdue" || (p.status === "failed" && !p.externalId && (!needsPageCheck(p) || isAmbiguousFailure(p)));
+  if (!cancellable) return { ok: false, error: needsPageCheck(p) ? "Bài có thể đã lên trang: dùng “Đã kiểm trang” trước." : "Chỉ huỷ được bài chờ đăng, quá hạn hoặc lỗi chưa lên trang" };
+  const r = getDb()
+    .update(schema.scheduledPosts)
+    .set({ status: "cancelled", dedupeKey: null })
+    .where(and(eq(schema.scheduledPosts.id, p.id), eq(schema.scheduledPosts.status, p.status)))
+    .run();
+  if (!r.changes) return { ok: false, error: "Bài vừa đổi trạng thái, tải lại trang" };
+  campaignRepo.syncEntityStatus("publication", p.id, "cancelled");
+  if (isAmbiguousFailure(p)) logActivity("human", `${by?.name ?? by?.email ?? "Người dùng"} huỷ bài lỗi mơ hồ “${p.title}” trên ${p.platform} (lệnh đăng đã gửi, bài có thể đã lên trang — kiểm trang nếu cần).`, "publishing");
+  return { ok: true };
+}
+
+/** OWNER mở trang kiểm bài lỗi "có thể đã lên" (có mã bài / [CẦN KIỂM TRA TRANG] / xác minh quá 24 giờ).
+ *  found = true → "Đã đăng" (OWNER xác nhận, ghi verifiedAt). found = false → bỏ dấu mơ hồ / mã cũ để Thử lại hoặc Huỷ được. Chỉ OWNER. */
+export function confirmPageChecked(postId: string, by: { email: string; name?: string }, found: boolean): { ok: boolean; error?: string } {
+  if (!isAdminEmail(by.email)) return { ok: false, error: "Chỉ OWNER (tài khoản quản trị chính) xác nhận kết quả kiểm trang." };
+  const db = getDb();
+  const p = db.select().from(schema.scheduledPosts).where(eq(schema.scheduledPosts.id, postId)).get();
+  if (!p) return { ok: false, error: "Không tìm thấy bài" };
+  if (!needsPageCheck(p)) return { ok: false, error: "Bài này không cần kiểm trang" };
+  const at = nowIso();
+  const who = by.name ?? by.email;
+  if (found) {
+    db.update(schema.scheduledPosts)
+      .set({ status: "published", verifiedAt: at, publishedAt: p.publishedAt ?? at, error: `OWNER xác nhận trên trang (${who}, ${at.slice(0, 16).replace("T", " ")} UTC).` })
+      .where(and(eq(schema.scheduledPosts.id, p.id), eq(schema.scheduledPosts.status, "failed")))
+      .run();
+    campaignRepo.syncEntityStatus("publication", p.id, "published");
+    if (p.contentId) db.update(schema.contentItems).set({ status: "published" }).where(eq(schema.contentItems.id, p.contentId)).run();
+  } else {
+    db.update(schema.scheduledPosts)
+      .set({ externalId: null, error: `OWNER đã kiểm trang (${who}): không thấy bài${p.externalId ? ` (mã cũ ${p.externalId})` : ""}. Thử lại hoặc huỷ được.` })
+      .where(and(eq(schema.scheduledPosts.id, p.id), eq(schema.scheduledPosts.status, "failed")))
+      .run();
+  }
+  const code = previousExternalId(p);
+  logActivity("human", `${who} kiểm trang bài “${p.title}” trên ${p.platform}: ${found ? "có bài → Đã đăng" : "không thấy bài"}${code ? ` (mã bài ${code})` : ""}.`, "publishing");
   return { ok: true };
 }
 

@@ -26,7 +26,7 @@ export const scheduledPosts = sqliteTable("scheduled_posts", {
   title: text("title").notNull(),
   platform: text("platform").notNull(),
   scheduledFor: text("scheduled_for").notNull(),
-  status: text("status").notNull(), // scheduled | publishing | verifying | published | failed | dry_run
+  status: text("status").notNull(), // scheduled | publishing | verifying | published | failed | dry_run | cancelled | overdue (quá hạn, không tự đăng)
   reach: integer("reach"),
   engagement: integer("engagement"),
   error: text("error"),

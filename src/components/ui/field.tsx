@@ -17,6 +17,16 @@ export function Field({ label, hint, required, className, children }: { label: s
   );
 }
 
+// Ô số kèm đơn vị (₫, ₫ / USD…) đặt gọn bên phải ô nhập; ô bên trong cần chừa lề phải (pr-…).
+export function WithUnit({ unit, children }: { unit: string; children: React.ReactNode }) {
+  return (
+    <div className="relative">
+      {children}
+      <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[12px] text-ink-3">{unit}</span>
+    </div>
+  );
+}
+
 // Thông báo trong biểu mẫu: cảnh báo (amber) hoặc lỗi (brick).
 export function FormNotice({ tone, children }: { tone: "warn" | "error" | "info"; children: React.ReactNode }) {
   const cls = tone === "error" ? "border-brick/40 bg-brick-soft text-brick" : tone === "warn" ? "border-amber/40 bg-amber-soft text-amber" : "border-border bg-ground-2 text-ink-2";

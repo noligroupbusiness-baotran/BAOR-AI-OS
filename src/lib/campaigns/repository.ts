@@ -10,6 +10,7 @@ import { contentStatusLabel, leadStageLabel, postStatusLabel, adStatusLabel } fr
 import type { AdStatus, ContentStatus, LeadStage, PostStatus } from "@/lib/types";
 import { campaignAlerts, campaignProgress, overlapsMonth } from "./results";
 import { campaignStatusOrder } from "./labels";
+import { isSample } from "@/lib/sample";
 import type {
   ApprovalStatus,
   Campaign,
@@ -216,7 +217,6 @@ class SqliteCampaignRepository implements CampaignRepository {
     const q = filter.q ? normalize(filter.q.trim()) : "";
     return rows
       .filter((c) => (filter.status ? c.status === filter.status : true))
-      .filter((c) => (filter.product ? c.productIds.includes(filter.product) : true))
       .filter((c) => (filter.owner ? c.ownerId === filter.owner : true))
       .filter((c) => (filter.month ? overlapsMonth(c.startDate, c.endDate, filter.month) : true))
       .filter((c) => (q ? normalize(`${c.name} ${c.objective}`).includes(q) : true))
@@ -284,11 +284,21 @@ class SqliteCampaignRepository implements CampaignRepository {
   stats(today: string): CampaignStats {
     const all = this.list();
     const month = today.slice(0, 7);
+    const inMonth = all.filter((c) => c.status !== "draft" && c.status !== "ended" && overlapsMonth(c.startDate, c.endDate, month));
+    const sum = (list: typeof all) => list.reduce((n, c) => n + c.totalBudget, 0);
+    // Số chính = chiến dịch thật; chiến dịch mẫu (dữ liệu demo) đếm riêng
+    const real = all.filter((c) => !isSample("campaign", c.id));
+    const sample = all.filter((c) => isSample("campaign", c.id));
+    const count = (list: typeof all, st: CampaignStatus) => list.filter((c) => c.status === st).length;
     return {
-      active: all.filter((c) => c.status === "active").length,
-      pendingApproval: all.filter((c) => c.status === "pending_approval").length,
-      monthBudget: all.filter((c) => c.status !== "draft" && c.status !== "ended" && overlapsMonth(c.startDate, c.endDate, month)).reduce((n, c) => n + c.totalBudget, 0),
-      alerts: all.reduce((n, c) => n + c.alerts, 0),
+      active: count(real, "active"),
+      activeSample: count(sample, "active"),
+      pendingApproval: count(real, "pending_approval"),
+      pendingApprovalSample: count(sample, "pending_approval"),
+      monthBudget: sum(inMonth.filter((c) => !isSample("campaign", c.id))),
+      monthBudgetSample: sum(inMonth.filter((c) => isSample("campaign", c.id))),
+      alerts: real.reduce((n, c) => n + c.alerts, 0),
+      alertsSample: sample.reduce((n, c) => n + c.alerts, 0),
     };
   }
 

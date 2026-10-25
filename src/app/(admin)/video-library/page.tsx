@@ -13,6 +13,7 @@ import { EmptyThumb, GridSizeToggle, VideoThumb } from "@/components/video/quick
 import { ScheduleDialog } from "@/components/video/schedule-dialog";
 import { deleteVideoAction } from "@/lib/actions/videos";
 import { aiCaptionAction } from "@/lib/actions/publishing";
+import { aiReadiness, type AiReadiness } from "@/lib/ai";
 import { SubmitButton } from "@/components/campaigns/submit-button";
 import { AutoRefresh } from "@/components/video/auto-refresh";
 import { captionDraft, postTitle } from "@/lib/publishing/caption";
@@ -25,6 +26,9 @@ import { can, currentActor } from "@/lib/permissions";
 import { videoPostsFor } from "@/lib/publishing/video";
 import { formatDateTime } from "@/lib/format";
 import type { Platform } from "@/lib/types";
+import { CampaignFilterChip } from "@/components/campaigns/campaign-filter-chip";
+import { readCampaignContext, withCampaignContext } from "@/lib/campaigns/context";
+import { campaignFilterFor, keepInCampaign } from "@/lib/campaigns/filter";
 
 export const metadata = { title: "Tổng kho video ngắn – BAOR AI OS" };
 
@@ -48,11 +52,14 @@ const mmss = (s: number) => {
 // Xoá (OWNER 25/10: "phải cho phép xoá video ở phần kho video"): dùng lại deleteVideoAction (chuyển vào data/removed, khôi phục được).
 // Điều kiện ở videoDeleteBlock (dùng chung với bộ xoá): người có quyền phê duyệt; còn bài lên lịch → huỷ lịch trước; đã đăng thật → không xoá.
 
-export default async function VideoLibraryPage({ searchParams }: { searchParams: Promise<{ tab?: string; schedule?: string; focus?: string }> }) {
+export default async function VideoLibraryPage({ searchParams }: { searchParams: Promise<{ tab?: string; schedule?: string; focus?: string; campaign?: string; goal?: string }> }) {
   const sp = await searchParams;
+  // Mở từ chiến dịch (?campaign=&goal=): chỉ hiện video đã gắn chiến dịch đó.
+  const ctx = readCampaignContext(sp);
+  const filter = campaignFilterFor(ctx, "video");
   const status = new Map(listVideos().map((v) => [v.id, v]));
   const canDelete = can(await currentActor(), "manager");
-  const rows = libraryRows().map((r) => {
+  const rows = keepInCampaign(libraryRows(), filter).map((r) => {
     const posts = videoPostsFor(r.id);
     const pending = posts.filter((p) => PENDING.has(p.status)).sort((a, b) => a.scheduledFor.localeCompare(b.scheduledFor));
     const tab: Tab = r.state !== "unposted" ? "posted" : pending.length ? "scheduled" : "unposted";
@@ -61,10 +68,12 @@ export default async function VideoLibraryPage({ searchParams }: { searchParams:
   const tab: Tab = sp.tab === "purged" ? "posted" : tabs.some((t) => t.key === sp.tab) ? (sp.tab as Tab) : "unposted";
   const list = rows.filter((x) => x.tab === tab);
   const count = (k: Tab) => rows.filter((x) => x.tab === k).length;
-  const here = `/video-library?tab=${tab}`;
+  const here = withCampaignContext(`/video-library?tab=${tab}`, ctx);
   const scheduling = sp.schedule ? rows.find((x) => x.r.id === sp.schedule) : undefined;
   // AI đang viết bài đăng cho video vừa duyệt → tự làm mới để hiện bản nháp khi xong
   const writing = rows.some((x) => postDraftPending(x.r.id));
+  // "Viết lại bằng AI" chỉ bấm được khi AI Viết bài đăng gọi được (công tắc, khoá hãng, trần)
+  const aiReady = aiReadiness("caption");
 
   return (
     <>
@@ -73,42 +82,43 @@ export default async function VideoLibraryPage({ searchParams }: { searchParams:
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0 max-w-full overflow-x-auto [&_a]:shrink-0 [&_a]:whitespace-nowrap">
-          <Segment basePath="/video-library" active={tab} items={tabs.map((t) => ({ key: t.key, label: `${t.label} · ${count(t.key)}` }))} />
+          <Segment basePath={withCampaignContext("/video-library", ctx)} active={tab} items={tabs.map((t) => ({ key: t.key, label: `${t.label} · ${count(t.key)}` }))} />
         </div>
         <div className="flex items-center gap-2">
           {list.length > 0 && <GridSizeToggle target="video-grid" />}
           <LinkButton href="/publishing#video-posts" variant="ghost">Đăng bài ›</LinkButton>
         </div>
       </div>
+      <CampaignFilterChip filter={filter} missing={!!ctx.campaignId && !filter} clearHref={`/video-library?tab=${tab}`} />
       {tab === "posted" && <p className="m-0 mt-2 text-[11.5px] text-ink-3">{purgeEnabled() ? `Đã đăng quá ${purgeAfterHours()} giờ thì tự gỡ tệp video (giữ bài, báo cáo).` : "Tự gỡ tệp đang tắt."}</p>}
 
       {list.length === 0 ? (
         <div className="card mt-3.5">
           <EmptyState
-            title={tab === "unposted" ? "Kho chưa có video chờ đăng" : tab === "scheduled" ? "Chưa có video nào đã lên lịch" : "Chưa có video đã đăng"}
-            hint={tab === "unposted" ? "Duyệt video ở bước 4 · Quay & edit video là video vào đây." : undefined}
+            title={filter ? "Chiến dịch chưa có video ở mục này" : tab === "unposted" ? "Kho chưa có video chờ đăng" : tab === "scheduled" ? "Chưa có video nào đã lên lịch" : "Chưa có video đã đăng"}
+            hint={tab === "unposted" ? "Duyệt video ở bước 3 · Quay & edit video là video vào đây." : undefined}
             action={tab === "unposted" ? <LinkButton href="/video-studio" variant="soft">Tới Quay & edit video</LinkButton> : undefined}
           />
         </div>
       ) : (
-        <ul id="video-grid" data-size="large" className="m-0 mt-3.5 grid list-none gap-3.5 p-0 sm:grid-cols-2 2xl:grid-cols-3 data-[size=small]:grid-cols-2 data-[size=small]:gap-2.5 sm:data-[size=small]:grid-cols-3 lg:data-[size=small]:grid-cols-4 2xl:data-[size=small]:grid-cols-5">
+        <ul id="video-grid" data-size="large" className="stagger appear-kids m-0 mt-3.5 grid list-none gap-3.5 p-0 sm:grid-cols-2 2xl:grid-cols-3 data-[size=small]:grid-cols-2 data-[size=small]:gap-2.5 sm:data-[size=small]:grid-cols-3 lg:data-[size=small]:grid-cols-4 2xl:data-[size=small]:grid-cols-5">
           {list.map(({ r, pending }) => (
-            <LibraryCard key={r.id} r={r} pending={pending} here={here} known={status.has(r.id)} canDelete={canDelete} focus={sp.focus === r.id} />
+            <LibraryCard key={r.id} r={r} pending={pending} here={here} known={status.has(r.id)} canDelete={canDelete} focus={sp.focus === r.id} aiReady={aiReady} />
           ))}
         </ul>
       )}
 
       {scheduling && (
-        <ScheduleDialog title={`Lên lịch đăng · ${scheduling.r.title}`} closeHref={`/video-library?tab=${scheduling.tab}`}>
+        <ScheduleDialog title={`Lên lịch đăng · ${scheduling.r.title}`} closeHref={withCampaignContext(`/video-library?tab=${scheduling.tab}`, ctx)}>
           {/* Lỗi / AI viết caption quay lại đúng khung này; lên lịch xong sang bước 6 · Đăng bài */}
-          <VideoScheduleForm videoId={scheduling.r.id} back={`/video-library?tab=${scheduling.tab}&schedule=${encodeURIComponent(scheduling.r.id)}`} />
+          <VideoScheduleForm videoId={scheduling.r.id} back={withCampaignContext(`/video-library?tab=${scheduling.tab}&schedule=${encodeURIComponent(scheduling.r.id)}`, ctx)} />
         </ScheduleDialog>
       )}
     </>
   );
 }
 
-function LibraryCard({ r, pending, here, known, canDelete, focus }: { r: LibraryRow; pending: ReturnType<typeof videoPostsFor>; here: string; known: boolean; canDelete: boolean; focus: boolean }) {
+function LibraryCard({ r, pending, here, known, canDelete, focus, aiReady }: { r: LibraryRow; pending: ReturnType<typeof videoPostsFor>; here: string; known: boolean; canDelete: boolean; focus: boolean; aiReady: AiReadiness }) {
   const jv = latestJob(r.id);
   const report = jv?.job.status === "done" ? jv.report : null;
   const purged = !!r.filesPurgedAt;
@@ -169,7 +179,10 @@ function LibraryCard({ r, pending, here, known, canDelete, focus }: { r: Library
           {primary ?? <span />}
           <ActionMenu>
             <LinkButton href={`${studio}&rename=1`} variant="ghost" className="justify-start">Đổi tên</LinkButton>
-            {r.state === "unposted" && (
+            {r.state === "unposted" && !aiReady.ok && (
+              <Button type="button" variant="ghost" disabled title={aiReady.reason} aria-label={`Viết lại bằng AI — ${aiReady.label}`} className="justify-start">Viết lại bằng AI · {aiReady.label}</Button>
+            )}
+            {r.state === "unposted" && aiReady.ok && (
               <form action={aiCaptionAction} className="contents">
                 <input type="hidden" name="id" value={r.id} />
                 <input type="hidden" name="back" value={`${here}#v-${r.id}`} />

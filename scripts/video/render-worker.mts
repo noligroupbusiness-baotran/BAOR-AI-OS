@@ -138,7 +138,6 @@ async function main() {
   let cfg = await waitConfig();
   let { base, name, dataDir } = cfg;
   let headers = { authorization: `Bearer ${cfg.key}`, "x-baor-worker": name };
-  const q = (s: Spec) => `videoId=${encodeURIComponent(s.videoId)}&version=${s.version}`;
   log(`Máy dựng “${name}” → ${base} · tư liệu: ${path.join(dataDir, "video-assets")}`);
 
   for (;;) {
@@ -161,82 +160,131 @@ async function main() {
       await sleep(20_000);
       continue;
     }
-    log(`Nhận dựng “${spec.title}” bản ${spec.version} (${spec.aspect})`);
-    const work = fs.mkdtempSync(path.join(os.tmpdir(), `baor-render-${spec.videoId}-v${spec.version}-`));
-    let stopped = false;
-    let stopBeat = () => {};
+    await runOne(spec, { base, headers, dataDir });
+  }
+}
+
+export interface RunCtx {
+  base: string;
+  headers: Record<string, string>;
+  dataDir: string;
+  /** Thay fetch khi kiểm thử. */
+  fetchImpl?: typeof fetch;
+  /** Chu kỳ nhịp tim (mặc định 15 giây; máy chủ coi mất kết nối sau 15 phút không có nhịp tim — jobs.ts REMOTE_STALE_MS). */
+  beatMs?: number;
+}
+
+/**
+ * Dựng MỘT việc đã nhận. Nhịp tim bật NGAY khi nhận việc (kiểm toán 26/10: trước đây chỉ bật sau khi tải xong video gốc → tệp gốc lớn /
+ * mạng chậm quá 15 phút thì máy chủ tưởng máy dựng mất kết nối và giao việc cho máy khác) và chạy suốt lúc tải nguồn, dựng, gửi kết quả.
+ * Máy chủ báo dừng (409) lúc nào cũng huỷ: đang tải thì ngắt tải, đang dựng thì dừng bộ dựng.
+ */
+export async function runOne(spec: Spec, ctx: RunCtx): Promise<"done" | "stopped" | "failed"> {
+  const { base, headers, dataDir } = ctx;
+  const f = ctx.fetchImpl ?? fetch;
+  const q = `videoId=${encodeURIComponent(spec.videoId)}&version=${spec.version}`;
+  log(`Nhận dựng “${spec.title}” bản ${spec.version} (${spec.aspect})`);
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), `baor-render-${spec.videoId}-v${spec.version}-`));
+  let stopped = false;
+  let phase = "Đang tải video gốc";
+  let child: ReturnType<typeof spawn> | null = null;
+  const abort = new AbortController();
+  const beatOnce = async () => {
+    let progress: unknown = { step: "download", label: phase, pct: 0 };
     try {
-      // 1. Video gốc
-      const ext = (path.extname(spec.sourceName) || ".mp4").toLowerCase().replace(/[^.a-z0-9]/g, "");
-      const src = path.join(work, `source${ext}`);
-      const res = await fetch(`${base}/api/render-worker/source?${q(spec)}`, { headers });
-      if (!res.ok || !res.body) throw new Error(`Không tải được video gốc (${res.status})`);
-      const out = fs.createWriteStream(src);
-      const reader = res.body.getReader();
+      progress = JSON.parse(fs.readFileSync(path.join(work, "progress.json"), "utf8"));
+    } catch {}
+    try {
+      const r = await f(`${base}/api/render-worker/heartbeat?${q}`, { method: "POST", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify({ progress }) });
+      if (r.status === 409 && !stopped) {
+        stopped = true;
+        log("Máy chủ báo dừng — huỷ bản đang dựng.");
+        abort.abort();
+        if (child?.pid) {
+          try {
+            process.kill(-child.pid, "SIGTERM");
+          } catch {}
+        }
+      }
+    } catch {}
+  };
+  void beatOnce();
+  const beat = setInterval(() => void beatOnce(), ctx.beatMs ?? 15_000);
+  try {
+    // 1. Video gốc
+    const ext = (path.extname(spec.sourceName) || ".mp4").toLowerCase().replace(/[^.a-z0-9]/g, "");
+    const src = path.join(work, `source${ext}`);
+    const res = await f(`${base}/api/render-worker/source?${q}`, { headers, signal: abort.signal });
+    if (!res.ok || !res.body) throw new Error(`Không tải được video gốc (${res.status})`);
+    const out = fs.createWriteStream(src);
+    const reader = res.body.getReader();
+    try {
       for (;;) {
+        if (stopped) throw new Error("Máy chủ đã dừng job");
         const { done, value } = await reader.read();
         if (done) break;
         if (!out.write(value)) await new Promise<void>((r) => out.once("drain", () => r()));
       }
-      await new Promise<void>((r) => out.end(() => r()));
-      // 2. Đầu vào phụ
-      const files: { script?: string; plan?: string; words?: string; music?: string } = {};
-      if (spec.music && !spec.noMusic) {
-        const mr = await fetch(`${base}/api/render-worker/music?${q(spec)}`, { headers });
-        if (mr.ok) {
-          files.music = path.join(work, `input-music${(path.extname(spec.music.name) || ".mp3").toLowerCase().replace(/[^.a-z0-9]/g, "")}`);
-          fs.writeFileSync(files.music, Buffer.from(await mr.arrayBuffer()));
-        }
-      }
-      if (spec.script) fs.writeFileSync((files.script = path.join(work, "input-script.txt")), spec.script);
-      if (spec.plan) fs.writeFileSync((files.plan = path.join(work, "input-plan.json")), JSON.stringify(spec.plan));
-      if (spec.words) fs.writeFileSync((files.words = path.join(work, "input-words.json")), JSON.stringify(spec.words));
-      // 3. Dựng tại máy
-      const child = spawn(process.env.PYTHON_BIN || "python3", buildArgs(spec, { src, work, ...files }), {
-        stdio: ["ignore", "inherit", "pipe"],
-        detached: true,
-        env: { ...process.env, DATA_DIR: dataDir, ...(spec.allowAi ? {} : { BAOR_AI_PLAN: "off" }) },
-      });
-      let err = "";
-      child.stderr.on("data", (b: Buffer) => {
-        err = (err + b.toString()).slice(-4000);
-      });
-      const beat = setInterval(async () => {
-        let progress: unknown = null;
-        try {
-          progress = JSON.parse(fs.readFileSync(path.join(work, "progress.json"), "utf8"));
-        } catch {}
-        try {
-          const r = await fetch(`${base}/api/render-worker/heartbeat?${q(spec!)}`, { method: "POST", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify({ progress }) });
-          if (r.status === 409 && !stopped) {
-            stopped = true;
-            log("Máy chủ báo dừng — huỷ bản đang dựng.");
-            if (child.pid) process.kill(-child.pid, "SIGTERM");
-          }
-        } catch {}
-      }, 15_000);
-      const code: number = await new Promise((r) => child.on("close", (c) => r(c ?? 1)));
-      // Nhịp tim tiếp tục trong lúc gửi kết quả (tệp lớn mất nhiều phút) — dừng ở finally
-      stopBeat = () => clearInterval(beat);
-      if (stopped) continue;
-      if (code !== 0) throw new Error((err.split("\n").reverse().find((l) => l.startsWith("LỖI:")) ?? err.split("\n").filter(Boolean).pop() ?? `mã thoát ${code}`).replace(/^LỖI:\s*/, ""));
-      // 4. Gửi kết quả
-      for (const f of resultFiles(work)) {
-        const fp = path.join(work, f);
-        const r = await fetch(`${base}/api/render-worker/file?${q(spec)}&name=${encodeURIComponent(f)}`, { method: "PUT", headers: { ...headers, "x-content-sha256": await sha256File(fp) }, body: await fs.openAsBlob(fp) });
-        if (r.status === 409) throw new Error("Máy chủ đã dừng / thu hồi job");
-        if (!r.ok) throw new Error(`Gửi ${f} lỗi (${r.status})`);
-      }
-      const done = await fetch(`${base}/api/render-worker/complete?${q(spec)}`, { method: "POST", headers });
-      log(done.ok ? `Xong “${spec.title}” bản ${spec.version} → Chờ kiểm tra` : `Máy chủ không nhận kết quả (${done.status}): ${await done.text()}`);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      log(`Lỗi dựng “${spec.title}”: ${msg}`);
-      await fetch(`${base}/api/render-worker/fail?${q(spec)}`, { method: "POST", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify({ error: msg }) }).catch(() => {});
     } finally {
-      stopBeat();
-      fs.rmSync(work, { recursive: true, force: true });
+      await new Promise<void>((r) => out.end(() => r()));
     }
+    if (stopped) return "stopped";
+    // 2. Đầu vào phụ
+    phase = "Đang chuẩn bị dựng";
+    const files: { script?: string; plan?: string; words?: string; music?: string } = {};
+    if (spec.music && !spec.noMusic) {
+      const mr = await f(`${base}/api/render-worker/music?${q}`, { headers, signal: abort.signal });
+      if (mr.ok) {
+        files.music = path.join(work, `input-music${(path.extname(spec.music.name) || ".mp3").toLowerCase().replace(/[^.a-z0-9]/g, "")}`);
+        fs.writeFileSync(files.music, Buffer.from(await mr.arrayBuffer()));
+      }
+    }
+    if (spec.script) fs.writeFileSync((files.script = path.join(work, "input-script.txt")), spec.script);
+    if (spec.plan) fs.writeFileSync((files.plan = path.join(work, "input-plan.json")), JSON.stringify(spec.plan));
+    if (spec.words) fs.writeFileSync((files.words = path.join(work, "input-words.json")), JSON.stringify(spec.words));
+    if (stopped) return "stopped";
+    // 3. Dựng tại máy
+    phase = "Đang dựng";
+    const proc = spawn(process.env.PYTHON_BIN || "python3", buildArgs(spec, { src, work, ...files }), {
+      stdio: ["ignore", "inherit", "pipe"],
+      detached: true,
+      env: { ...process.env, DATA_DIR: dataDir, ...(spec.allowAi ? {} : { BAOR_AI_PLAN: "off" }) },
+    });
+    child = proc;
+    let err = "";
+    proc.stderr?.on("data", (b: Buffer) => {
+      err = (err + b.toString()).slice(-4000);
+    });
+    const code: number = await new Promise((r) => {
+      proc.on("error", (e) => {
+        err += `\nLỖI: Không chạy được bộ dựng: ${e.message}`;
+        r(1);
+      });
+      proc.on("close", (c) => r(c ?? 1));
+    });
+    child = null;
+    if (stopped) return "stopped";
+    if (code !== 0) throw new Error((err.split("\n").reverse().find((l) => l.startsWith("LỖI:")) ?? err.split("\n").filter(Boolean).pop() ?? `mã thoát ${code}`).replace(/^LỖI:\s*/, ""));
+    // 4. Gửi kết quả (nhịp tim vẫn chạy: tệp lớn mất nhiều phút)
+    phase = "Đang gửi bản dựng";
+    for (const name of resultFiles(work)) {
+      const fp = path.join(work, name);
+      const r = await f(`${base}/api/render-worker/file?${q}&name=${encodeURIComponent(name)}`, { method: "PUT", headers: { ...headers, "x-content-sha256": await sha256File(fp) }, body: await fs.openAsBlob(fp) });
+      if (r.status === 409) throw new Error("Máy chủ đã dừng / thu hồi job");
+      if (!r.ok) throw new Error(`Gửi ${name} lỗi (${r.status})`);
+    }
+    const done = await f(`${base}/api/render-worker/complete?${q}`, { method: "POST", headers });
+    log(done.ok ? `Xong “${spec.title}” bản ${spec.version} → Chờ kiểm tra` : `Máy chủ không nhận kết quả (${done.status}): ${await done.text()}`);
+    return done.ok ? "done" : "failed";
+  } catch (e) {
+    if (stopped) return "stopped";
+    const msg = e instanceof Error ? e.message : String(e);
+    log(`Lỗi dựng “${spec.title}”: ${msg}`);
+    await f(`${base}/api/render-worker/fail?${q}`, { method: "POST", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify({ error: msg }) }).catch(() => {});
+    return "failed";
+  } finally {
+    clearInterval(beat);
+    fs.rmSync(work, { recursive: true, force: true });
   }
 }
 

@@ -7,8 +7,9 @@ import { getDb, schema } from "@/db";
 import { done, logActivity, nowIso } from "./common";
 import { setSetting } from "@/lib/admin";
 import { campaignRepo } from "@/lib/campaigns/repository";
-import { requirePermission } from "@/lib/permissions";
-import { revokeAuthorization, saveAuthorization, vnDate } from "@/lib/ads/authorization";
+import { isOwner, requirePermission } from "@/lib/permissions";
+import { retryTextPost } from "@/lib/publishing/text";
+import { revokeAuthorization, saveAuthorizationAs, vnDate } from "@/lib/ads/authorization";
 import { activateAd, changeDailyBudget, createDraftFromPost, parseAudience, pauseAd, proposeFromVideoPosts, pushDraftToMeta } from "@/lib/ads/engine";
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
@@ -88,6 +89,8 @@ export async function proposeAdsAction() {
 /** OWNER đặt ủy quyền ngân sách: trần ngày, trần tháng, hạn, tài khoản quảng cáo, có cho AI tự tăng trong trần không. */
 export async function saveAdAuthorization(fd: FormData) {
   const actor = await requirePermission("admin", "/ads");
+  // Chỉ OWNER (tài khoản quản trị chính, không phải nhân sự được cấp quyền Quản trị) đặt ủy quyền chi tiền (§7).
+  if (!isOwner(actor)) return fail("Chỉ OWNER (tài khoản quản trị chính) đặt được ủy quyền ngân sách.");
   const validUntil = str(fd, "validUntil");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(validUntil) || validUntil < vnDate()) return fail("Hạn ủy quyền phải là ngày từ hôm nay trở đi");
   const monthly = num(fd, "monthlyCap");
@@ -95,7 +98,8 @@ export async function saveAdAuthorization(fd: FormData) {
   if (!(monthly > 0 && daily > 0 && daily <= monthly)) return fail("Trần ngày và trần tháng phải lớn hơn 0, trần ngày không vượt trần tháng");
   const adAccountId = str(fd, "adAccountId");
   if (adAccountId && !adAccountId.startsWith("act_")) return fail("Tài khoản quảng cáo phải có dạng act_…");
-  saveAuthorization({ monthlyCapVnd: monthly, dailyCapVnd: daily, validUntil, adAccountId, autoPauseCplAbove: num(fd, "autoPauseCplAbove") || 60000, allowAutoScale: fd.get("allowAutoScale") === "1", authorizedBy: actor.name, authorizedAt: nowIso(), note: str(fd, "note").slice(0, 300) });
+  const saved = saveAuthorizationAs(actor, { monthlyCapVnd: monthly, dailyCapVnd: daily, validUntil, adAccountId, autoPauseCplAbove: num(fd, "autoPauseCplAbove") || 60000, allowAutoScale: fd.get("allowAutoScale") === "1", authorizedBy: actor.name, authorizedAt: nowIso(), note: str(fd, "note").slice(0, 300) });
+  if (!saved.ok) return fail(saved.error);
   setSetting("ads.autoPauseCplAbove", String(num(fd, "autoPauseCplAbove") || 60000));
   logActivity("human", `${actor.name} ủy quyền ngân sách quảng cáo: ${daily.toLocaleString("vi-VN")} ₫/ngày, ${monthly.toLocaleString("vi-VN")} ₫/tháng, tới ${validUntil}${fd.get("allowAutoScale") === "1" ? ", cho AI tự tăng trong trần" : ""}.`, "ads");
   done("/ads", "Đã lưu ủy quyền ngân sách");
@@ -117,13 +121,11 @@ export async function revokeAdAuthorization() {
 }
 
 export async function retryPost(fd: FormData) {
-  await requirePermission("manager", "/publishing");
-  const id = str(fd, "id");
-  const post = getDb().select().from(schema.scheduledPosts).where(eq(schema.scheduledPosts.id, id)).get();
-  if (!post) return done("/publishing?tone=error", "Không tìm thấy bài");
-  // Bài video có luật thử lại riêng (không đăng lại khi nền tảng đã nhận video): đi qua src/lib/publishing/video.ts.
-  if (post.videoId) return done("/publishing?tone=error", "Bài video: dùng nút Thử lại ở mục Bài video.");
-  if (post.status !== "failed") return done("/publishing?tone=error", "Chỉ thử lại bài lỗi.");
-  getDb().update(schema.scheduledPosts).set({ status: "scheduled", error: null }).where(eq(schema.scheduledPosts.id, id)).run();
+  const actor = await requirePermission("manager", "/publishing");
+  // Bài lỗi mơ hồ (lệnh đăng đã gửi, có thể đã lên trang) chỉ đăng lại khi có ghi chú đã kiểm tra trang; nền tảng đã nhận bài thì không.
+  const w = str(fd, "when"); // datetime-local (giờ VN) — bắt buộc khi xếp lại bài quá hạn
+  const at = w ? new Date(`${w.length === 16 ? `${w}:00` : w}+07:00`) : null;
+  const r = retryTextPost(str(fd, "id"), str(fd, "checkedNote") || str(fd, "note"), at ? (Number.isNaN(at.getTime()) ? "x" : at.toISOString()) : undefined, actor);
+  if (!r.ok) return done("/publishing?tone=error", r.error ?? "Không đăng lại được");
   done("/publishing", "Đã xếp đăng lại");
 }

@@ -13,6 +13,18 @@ import { createPausedDraft, fetchDailyInsights, fetchReachTotal, setDailyBudget,
 
 const nowIso = () => new Date().toISOString();
 const newId = (p: string) => `${p}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+/** Thời gian chờ tối thiểu giữa hai lần TỰ tăng ngân sách một quảng cáo (AI trong ủy quyền): Meta cần thời gian học lại sau mỗi lần
+ *  đổi, và "Chạy ngay" / khởi động lại không được làm ngân sách tăng dồn nhiều nấc trong một ngày. Mọi lần TĂNG (kể cả OWNER tăng tay)
+ *  đều tính mốc; giảm / tạm dừng không bị chờ. */
+export const AUTO_SCALE_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+const lastIncreaseKey = (adId: string) => `ads.lastBudgetIncreaseAt.${adId}`;
+
+/** Còn trong thời gian chờ sau lần tăng ngân sách gần nhất? */
+export function autoScaleCoolingDown(adId: string, now = Date.now()): boolean {
+  const last = Date.parse(getSetting(lastIncreaseKey(adId)) ?? "");
+  return Number.isFinite(last) && now - last < AUTO_SCALE_COOLDOWN_MS;
+}
+
 export const DEFAULT_AUDIENCE: Audience = { countries: ["VN"], ageMin: 22, ageMax: 45, genders: [] };
 
 export function parseAudience(s: string | null): Audience {
@@ -176,6 +188,7 @@ export async function changeDailyBudget(adId: string, vnd: number, by: string): 
     }
   }
   db.update(schema.adCampaigns).set({ dailyBudget: Math.round(vnd) }).where(eq(schema.adCampaigns.id, adId)).run();
+  if (vnd > ad.dailyBudget) setSetting(lastIncreaseKey(adId), nowIso());
   logActivity(by.startsWith("AI") ? "ai" : "human", `${by} đổi ngân sách “${ad.name}” từ ${ad.dailyBudget.toLocaleString("vi-VN")} thành ${Math.round(vnd).toLocaleString("vi-VN")} ₫/ngày.`, "ads");
   return { ok: true, message: "Đã đổi ngân sách" };
 }
@@ -275,7 +288,8 @@ export async function autoOptimize(): Promise<{ paused: number; scaled: number }
       continue;
     }
     const scale = s.find((x) => x.kind === "scale");
-    if (scale?.budget && auth?.allowAutoScale && authorizationStatus(auth).active) {
+    // Tự tăng: OWNER cho phép, ủy quyền còn hiệu lực, và đã qua thời gian chờ kể từ lần tăng trước
+    if (scale?.budget && auth?.allowAutoScale && authorizationStatus(auth).active && !autoScaleCoolingDown(ad.id)) {
       if ((await changeDailyBudget(ad.id, scale.budget, "AI (trong ủy quyền)")).ok) out.scaled++;
     }
   }

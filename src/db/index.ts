@@ -4,7 +4,7 @@ import Database from "better-sqlite3";
 import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import * as schema from "./schema";
-import { seedCampaignsIfEmpty, seedCatalogIfEmpty, seedIfEmpty } from "./seed";
+import { refreshSampleCopy, seedCampaignsIfEmpty, seedCatalogIfEmpty, seedIfEmpty } from "./seed";
 
 // Kết nối SQLite dùng chung cho cả ứng dụng. Tệp DB nằm trong DATA_DIR (mặc định ./data),
 // trên Docker là volume /app/data nên dữ liệu không mất khi cập nhật.
@@ -31,6 +31,12 @@ export function getDb(): Db {
     seedIfEmpty(db);
     seedCampaignsIfEmpty(db);
     seedCatalogIfEmpty(db);
+  }
+  // Bản ghi mẫu nạp trước 25/10 còn chữ bán hàng → đổi sang chữ marketing hiện hành (chỉ ô còn nguyên chữ cũ).
+  try {
+    refreshSampleCopy(sqlite);
+  } catch (e) {
+    console.error("[db] refreshSampleCopy:", e);
   }
 
   globalForDb.__baorDb = db;

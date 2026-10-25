@@ -4,7 +4,7 @@
 export default function GlobalError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   return (
     <html lang="vi">
-      <body style={{ margin: 0, minHeight: "100vh", display: "grid", placeItems: "center", background: "#121713", color: "#e8ebe8", fontFamily: "system-ui, sans-serif" }}>
+      <body style={{ margin: 0, minHeight: "100vh", display: "grid", placeItems: "center", background: "#0f1a14", color: "#f3f5f3", fontFamily: "system-ui, sans-serif" }}>
         <div style={{ maxWidth: 420, padding: 24, borderRadius: 12, border: "1px solid #283029", background: "#1a1f1b", textAlign: "center" }}>
           <div style={{ fontSize: 15, fontWeight: 700 }}>Hệ thống gặp lỗi</div>
           <p style={{ fontSize: 13, color: "#aab2ab", margin: "8px 0 16px" }}>

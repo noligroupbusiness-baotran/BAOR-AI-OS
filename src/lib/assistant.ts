@@ -9,6 +9,7 @@ import { getHealth } from "@/lib/shell-data";
 import { listDecisions, recordDecision } from "@/lib/router";
 import { listLeads } from "@/lib/queries";
 import { formatCurrency, formatNumber, dateKey } from "@/lib/format";
+import { isSample, splitSample } from "@/lib/sample";
 
 const normalize = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").toLowerCase();
 
@@ -25,7 +26,7 @@ export function systemSnapshot(): string {
   const camps = campaignRepo.list().filter((c) => c.status !== "draft").map((c) => {
     const goals = campaignRepo.goals(c.id);
     const r = campaignRepo.result(c.id);
-    return `- ${c.name} [${campaignStatusLabel[c.status].label}] ${c.startDate}→${c.endDate}, ngân sách ${formatCurrency(c.totalBudget)}, tiến độ ${campaignProgress(c, goals, r ?? null)}%; kênh: ${goals.map((g) => `${channelLabel(g.channel)} ${goalProgress(g)}% (${formatNumber(g.currentValue)}/${formatNumber(g.targetValue)})`).join(", ") || "chưa có"}; lead ${r?.leads ?? 0}, chi ${formatCurrency(r?.spent ?? 0)}`;
+    return `- ${c.name}${isSample("campaign", c.id) ? " [MẪU — số liệu demo, không phải số thật]" : ""} [${campaignStatusLabel[c.status].label}] ${c.startDate}→${c.endDate}, ngân sách ${formatCurrency(c.totalBudget)}, tiến độ ${campaignProgress(c, goals, r ?? null)}%; kênh: ${goals.map((g) => `${channelLabel(g.channel)} ${goalProgress(g)}% (${formatNumber(g.currentValue)}/${formatNumber(g.targetValue)})`).join(", ") || "chưa có"}; lead ${r?.leads ?? 0}, chi ${formatCurrency(r?.spent ?? 0)}`;
   });
   const h = getHealth();
   const sched = getTodaySchedule(6);
@@ -46,9 +47,9 @@ export function answerByRule(question: string): AssistantAnswer | null {
 
   if (has("cần duyệt", "chờ duyệt", "phê duyệt", "việc cần xử lý", "hôm nay có gì")) {
     const items = getPending();
-    if (items.length === 0) return { text: "Hiện không có việc nào chờ anh xử lý.", lane: "rule", sources: ["Điều hành › Chờ tôi xử lý"] };
+    if (items.length === 0) return { text: "Hiện không có việc nào chờ anh xử lý.", lane: "rule", sources: ["Tổng quan › Việc cần làm"] };
     const top = items.slice(0, 8).map((p, i) => `${i + 1}. ${p.title} · ${p.module} · ${p.waited}`).join("\n");
-    return { text: `Có ${items.length} việc đang chờ. Ưu tiên cao trước:\n${top}${items.length > 8 ? `\n… và ${items.length - 8} việc nữa ở Điều hành.` : ""}`, lane: "rule", sources: ["Điều hành › Chờ tôi xử lý"] };
+    return { text: `Có ${items.length} việc đang chờ. Ưu tiên cao trước:\n${top}${items.length > 8 ? `\n… và ${items.length - 8} việc nữa ở Tổng quan.` : ""}`, lane: "rule", sources: ["Tổng quan › Việc cần làm"] };
   }
 
   if (has("chậm", "trễ tiến độ", "không đạt", "kém")) {
@@ -71,15 +72,16 @@ export function answerByRule(question: string): AssistantAnswer | null {
     const h = getHealth();
     const st = getSystemStatus(getOverview().pendingApproval);
     const issues = [...new Set([...h.issues, ...st.issues])];
-    return { text: issues.length ? `Tình trạng: ${h.summary}.\nĐang có ${issues.length} vấn đề:\n${issues.map((x) => `- ${x}`).join("\n")}` : `Không có lỗi. ${h.summary}.`, lane: "rule", sources: ["Cài đặt › Nhật ký hệ thống", "Điều hành › Tình trạng hệ thống"] };
+    return { text: issues.length ? `Tình trạng: ${h.summary}.\nĐang có ${issues.length} vấn đề:\n${issues.map((x) => `- ${x}`).join("\n")}` : `Không có lỗi. ${h.summary}.`, lane: "rule", sources: ["Cài đặt › Nhật ký hệ thống", "Tổng quan › Tình trạng hệ thống"] };
   }
 
   if (has("lead mới", "khách mới", "bao nhiêu lead")) {
     const today = dateKey(new Date());
-    const leads = listLeads();
+    // Chỉ đếm lead thật; lead mẫu (dữ liệu demo) nói riêng
+    const { real: leads, sample } = splitSample("lead", listLeads());
     const todayLeads = leads.filter((l) => dateKey(l.lastMessageAt) === today);
     const need = leads.filter((l) => l.stage === "new" || l.stage === "contacted").length;
-    return { text: `Hôm nay có ${todayLeads.length} lead mới${todayLeads.length ? `: ${todayLeads.slice(0, 5).map((l) => `${l.name}${l.phone ? ` (${l.phone})` : ""}`).join(", ")}` : ""}. Tổng ${leads.length} lead, ${need} đang cần chăm sóc.`, lane: "rule", sources: ["Khách hàng › Lead"] };
+    return { text: `Hôm nay có ${todayLeads.length} lead mới${todayLeads.length ? `: ${todayLeads.slice(0, 5).map((l) => `${l.name}${l.phone ? ` (${l.phone})` : ""}`).join(", ")}` : ""}. Tổng ${leads.length} lead, ${need} đang cần chăm sóc.${sample.length ? ` (Ngoài ra ${sample.length} lead mẫu, không tính.)` : ""}`, lane: "rule", sources: ["Lead"] };
   }
 
 
@@ -87,7 +89,7 @@ export function answerByRule(question: string): AssistantAnswer | null {
     const rows = campaignRepo.list().filter((c) => c.status !== "draft").map((c) => {
       const goals = campaignRepo.goals(c.id);
       const r = campaignRepo.result(c.id);
-      return `- ${c.name}: ${campaignStatusLabel[c.status].label}, tiến độ ${campaignProgress(c, goals, r ?? null)}%, ${r?.leads ?? 0} lead`;
+      return `- ${c.name}${isSample("campaign", c.id) ? " (mẫu)" : ""}: ${campaignStatusLabel[c.status].label}, tiến độ ${campaignProgress(c, goals, r ?? null)}%, ${r?.leads ?? 0} lead`;
     });
     return { text: rows.length ? `Các chiến dịch:\n${rows.join("\n")}` : "Chưa có chiến dịch nào ngoài bản nháp.", lane: "rule", sources: ["Chiến dịch"] };
   }

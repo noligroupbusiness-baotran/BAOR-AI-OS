@@ -28,6 +28,29 @@ export function aiConfiguredFor(purpose: string): { ok: boolean; provider: strin
   return { ok: providerConfigured(p), provider: PROVIDERS[p].label };
 }
 
+export type AiReadiness = { ok: true } | { ok: false; label: string; reason: string; href: string };
+export const AI_TEAM_HREF = "/settings?tab=ai#ai-team";
+
+/**
+ * Nút AI hiện ĐÚNG trạng thái (kiểm toán 26/10: vị trí đặt ChatGPT nhưng chỉ có khoá Claude → nút vẫn bấm được rồi hỏng):
+ * cùng thứ tự kiểm như gate() — công tắc / trần riêng của vị trí → khoá hãng của mô hình vị trí → trần chung. Không gọi được thì trả
+ * nhãn ngắn ("Thiếu khoá ChatGPT", "AI đang tắt", "Chạm trần AI") + lý do + đường tới Cài đặt › Đội AI để trang vô hiệu nút.
+ * alsoProvider: bước cần thêm một hãng (Nghiên cứu web: bước tìm nguồn luôn chạy Claude).
+ */
+export function aiReadiness(purpose: string, opts: { alsoProvider?: AiProvider } = {}): AiReadiness {
+  const role = roleForPurpose(purpose);
+  const allowed = roleAllows(role);
+  if (!allowed.ok) return { ok: false, label: allowed.value && !allowed.value.enabled ? "AI đang tắt" : "Chạm trần AI", reason: allowed.reason, href: AI_TEAM_HREF };
+  const model = allowed.value?.model ?? role.defaultModel;
+  const need: AiProvider[] = [modelInfo(model)?.provider ?? "anthropic", ...(opts.alsoProvider ? [opts.alsoProvider] : [])];
+  for (const p of need) {
+    if (!providerConfigured(p)) return { ok: false, label: `Thiếu khoá ${PROVIDERS[p].label}`, reason: `${role.name} cần khoá ${PROVIDERS[p].label} (${modelInfo(model)?.label ?? model}). Nhập khoá ở Cài đặt › Kết nối hoặc đổi mô hình ở Cài đặt › Đội AI.`, href: AI_TEAM_HREF };
+  }
+  const budget = aiBudgetAllows();
+  if (!budget.ok) return { ok: false, label: "Chạm trần AI", reason: budget.reason, href: AI_TEAM_HREF };
+  return { ok: true };
+}
+
 // Cổng AI: mọi lần gọi mô hình đi qua đây để (1) kiểm tra công tắc "Cho phép gọi AI" + trần riêng của vị trí (Đội AI),
 // (2) kiểm tra trần ngân sách chung, (3) ghi sổ chi phí theo vị trí và giá của đúng mô hình, (4) ghi quyết định vào bộ định tuyến với
 // nhãn "AI đề xuất, cần người duyệt". Mô hình (và hãng) do vị trí quyết định (Cài đặt › Đội AI), truyền vào call.

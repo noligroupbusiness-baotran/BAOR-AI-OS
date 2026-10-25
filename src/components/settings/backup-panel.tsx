@@ -1,3 +1,4 @@
+import { DatabaseBackup } from "lucide-react";
 import { Panel, PanelHeader } from "@/components/ui/card";
 import { Pill } from "@/components/ui/pill";
 import { Button } from "@/components/ui/button";
@@ -26,7 +27,9 @@ export function BackupPanel() {
     <Panel id="backup">
       <PanelHeader
         title="Sao lưu dữ liệu"
-        sub={`Tự sao lưu mỗi ${s.intervalMinutes} phút. Bản gần nhất: ${s.lastBackupAt ? formatDateTime(s.lastBackupAt) : "chưa có"}.`}
+        sub={`Bản gần nhất: ${s.lastBackupAt ? formatDateTime(s.lastBackupAt) : "chưa có"}`}
+        icon={DatabaseBackup}
+        tone="slate"
         action={
           <form action={backupNow}>
             <Button type="submit" variant="primary">Sao lưu ngay</Button>
@@ -44,7 +47,7 @@ export function BackupPanel() {
       </div>
       {s.lastError && <div className="border-t border-border bg-brick/5 px-4 py-2 text-[12px] text-brick">Lỗi: {s.lastError}</div>}
       <div className="border-t border-border px-4 py-3">
-        <MoreOptions label="Chi tiết và tải bản sao lưu">
+        <MoreOptions label="Chi tiết · tải về">
           <div className="grid gap-1 text-[12px] text-ink-2">
             <div>Giữ {s.keep} bản gần nhất và mỗi ngày 1 bản trong {s.keepDays} ngày; dữ liệu không đổi thì bỏ qua.{s.nextRunAt ? ` Lần tiếp theo: ${formatDateTime(s.nextRunAt)}.` : ""}</div>
             <div className="truncate" title={s.dir}>Thư mục: {s.dir}</div>

@@ -11,12 +11,12 @@ const num = (fd: FormData, k: string) => Number(String(fd.get(k) ?? "").replace(
 const fail = (path: string, msg: string): never => done(`${path}${path.includes("?") ? "&" : "?"}tone=error`, msg);
 
 export async function saveRuleAction(fd: FormData) {
-  await requirePermission("manager", "/automation");
+  await requirePermission("manager", "/settings?tab=tu-dong#rules");
   const id = str(fd, "id") || undefined;
   const name = str(fd, "name");
   const trigger = str(fd, "trigger") as Trigger;
   const action = str(fd, "action") as Action;
-  const back = id ? `/automation?edit=${id}` : "/automation?add=1";
+  const back = id ? `/settings?tab=tu-dong&edit=${id}#rules` : "/settings?tab=tu-dong&add=1#rules";
   if (!name) return fail(back, "Cần đặt tên quy tắc");
   if (!(trigger in triggerLabel)) return fail(back, "Điều kiện kích hoạt không hợp lệ");
   if (!(action in actionLabel) || actionLabel[action].legacy) return fail(back, "Hành động không hợp lệ");
@@ -49,29 +49,29 @@ export async function saveRuleAction(fd: FormData) {
   const requiresApproval = actionLabel[action].spends ? true : str(fd, "requiresApproval") === "1";
   const rule = saveRule({ id, name, description: str(fd, "description"), trigger, condition, action, params, priority: num(fd, "priority") || 100, requiresApproval, campaignId: str(fd, "campaignId") || null });
   logActivity("human", `${id ? "Sửa" : "Tạo"} quy tắc Automation “${rule.name}”.`, "automation");
-  done(`/automation`, id ? "Đã lưu quy tắc" : "Đã tạo quy tắc ở trạng thái bản nháp. Bật khi sẵn sàng.");
+  done("/settings?tab=tu-dong#rules", id ? "Đã lưu quy tắc" : "Đã tạo quy tắc ở trạng thái bản nháp. Bật khi sẵn sàng.");
 }
 
 export async function setRuleStatusAction(fd: FormData) {
-  await requirePermission("manager", "/automation");
+  await requirePermission("manager", "/settings?tab=tu-dong#rules");
   const id = str(fd, "id");
   const status = str(fd, "status") as RuleStatus;
   const rule = getRule(id);
-  if (!rule) return fail("/automation", "Không tìm thấy quy tắc");
-  if (!["active", "paused", "draft"].includes(status)) return fail("/automation", "Trạng thái không hợp lệ");
+  if (!rule) return fail("/settings?tab=tu-dong#rules", "Không tìm thấy quy tắc");
+  if (!["active", "paused", "draft"].includes(status)) return fail("/settings?tab=tu-dong#rules", "Trạng thái không hợp lệ");
   setRuleStatus(id, status);
   logActivity("human", `${status === "active" ? "Bật" : status === "paused" ? "Tạm dừng" : "Chuyển về nháp"} quy tắc “${rule.name}”.`, "automation");
-  done("/automation", status === "active" ? `Đã bật “${rule.name}”` : status === "paused" ? `Đã tạm dừng “${rule.name}”` : "Đã chuyển về bản nháp");
+  done("/settings?tab=tu-dong#rules", status === "active" ? `Đã bật “${rule.name}”` : status === "paused" ? `Đã tạm dừng “${rule.name}”` : "Đã chuyển về bản nháp");
 }
 
 export async function deleteRuleAction(fd: FormData) {
-  await requirePermission("admin", "/automation");
+  await requirePermission("admin", "/settings?tab=tu-dong#rules");
   const id = str(fd, "id");
   const rule = getRule(id);
-  if (!rule) return fail("/automation", "Không tìm thấy quy tắc");
+  if (!rule) return fail("/settings?tab=tu-dong#rules", "Không tìm thấy quy tắc");
   deleteRule(id);
   logActivity("human", `Xóa quy tắc “${rule.name}”.`, "automation");
-  done("/automation", "Đã xóa quy tắc và lịch sử chạy của nó");
+  done("/settings?tab=tu-dong#rules", "Đã xóa quy tắc và lịch sử chạy của nó");
 }
 
 // ---------- Kho câu trả lời chuẩn ----------

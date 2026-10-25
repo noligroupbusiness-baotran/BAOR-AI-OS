@@ -34,51 +34,51 @@ export async function saveBrandIdentity(fd: FormData) {
 const APP_LOGO_KEYS = { light: "ui.logoLightUploadId", dark: "ui.logoDarkUploadId" } as const;
 
 export async function saveAppLogo(fd: FormData) {
-  const actor = await requirePermission("manager", "/settings#app-logo");
+  const actor = await requirePermission("manager", "/assets#app-logo");
   let saved = 0;
   for (const variant of ["light", "dark"] as const) {
     const file = fd.get(variant === "light" ? "logoLight" : "logoDark");
     if (!(file instanceof File) || file.size === 0) continue;
     const r = await saveUpload("logo", file, actor.email, { use: "app", variant });
-    if (!r.ok) return fail("/settings#app-logo", `Logo nền ${variant === "light" ? "sáng" : "tối"}: ${r.error}`);
+    if (!r.ok) return fail("/assets#app-logo", `Logo nền ${variant === "light" ? "sáng" : "tối"}: ${r.error}`);
     const old = getSetting(APP_LOGO_KEYS[variant]);
     if (old) deleteUpload(old);
     setSetting(APP_LOGO_KEYS[variant], r.upload.id);
     saved++;
   }
-  if (!saved) return fail("/settings#app-logo", "Chưa chọn tệp logo nào.");
+  if (!saved) return fail("/assets#app-logo", "Chưa chọn tệp logo nào.");
   logActivity("human", `${actor.name} cập nhật logo giao diện quản trị.`, "settings");
-  done("/settings#app-logo", "Đã lưu logo. Góc trái sẽ hiện logo mới.");
+  done("/assets#app-logo", "Đã lưu logo. Góc trái sẽ hiện logo mới.");
 }
 
 export async function removeAppLogo(fd: FormData) {
-  await requirePermission("manager", "/settings#app-logo");
+  await requirePermission("manager", "/assets#app-logo");
   const key = APP_LOGO_KEYS[str(fd, "variant") === "dark" ? "dark" : "light"];
   const old = getSetting(key);
   if (old) deleteUpload(old);
   setSetting(key, "");
-  done("/settings#app-logo", "Đã gỡ logo");
+  done("/assets#app-logo", "Đã gỡ logo");
 }
 
 // ---------- Kho nhạc ----------
 
 export async function uploadMusic(fd: FormData) {
-  const actor = await requirePermission("manager", "/settings#music");
+  const actor = await requirePermission("manager", "/assets#music");
   const file = fd.get("file");
-  if (!(file instanceof File)) return fail("/settings#music", "Chưa chọn tệp nhạc");
+  if (!(file instanceof File)) return fail("/assets#music", "Chưa chọn tệp nhạc");
   const r = await saveUpload("music", file, actor.email, { mood: str(fd, "mood") || "chung", title: str(fd, "title") || file.name, license: str(fd, "license") });
-  if (!r.ok) return fail("/settings#music", r.error);
+  if (!r.ok) return fail("/assets#music", r.error);
   logActivity("human", `Thêm nhạc nền “${r.upload.meta.title}” (${r.upload.meta.mood}).`, "settings");
-  done("/settings#music", "Đã thêm nhạc vào kho. Agent Edit Video chỉ dùng nhạc trong kho này.");
+  done("/assets#music", "Đã thêm nhạc vào kho. Agent Edit Video chỉ dùng nhạc trong kho này.");
 }
 
 export async function deleteMusic(fd: FormData) {
-  await requirePermission("manager", "/settings#music");
+  await requirePermission("manager", "/assets#music");
   const id = str(fd, "id");
   const u = getUpload(id);
-  if (!u || u.kind !== "music") return fail("/settings#music", "Không tìm thấy bản nhạc");
+  if (!u || u.kind !== "music") return fail("/assets#music", "Không tìm thấy bản nhạc");
   deleteUpload(id);
-  done("/settings#music", "Đã xóa bản nhạc");
+  done("/assets#music", "Đã xóa bản nhạc");
 }
 
 // ---------- Cảnh báo ra ngoài ----------
@@ -101,15 +101,15 @@ export async function testAlert() {
 
 // Xóa tệp bất kỳ (ảnh/video) khi không còn dùng.
 export async function deleteUploadAction(fd: FormData) {
-  await requirePermission("manager", "/settings#music");
+  await requirePermission("manager", "/assets#music");
   const id = str(fd, "id");
   const u = getUpload(id);
-  if (!u) return fail("/settings#music", "Không tìm thấy tệp");
+  if (!u) return fail("/assets#music", "Không tìm thấy tệp");
   if (u.kind === "video") {
     getDb().update(schema.videos).set({ uploadId: null }).where(eq(schema.videos.uploadId, id)).run();
   }
   deleteUpload(id);
-  done("/settings#music", "Đã xóa tệp");
+  done("/assets#music", "Đã xóa tệp");
 }
 
 // ---------- Dựng video tự động (Agent Edit Video theo Skill Edit video Vlog trên Second Brain) ----------
@@ -133,14 +133,14 @@ export async function saveAutoEdit(fd: FormData) {
 
 /** OWNER nghe thử rồi duyệt / bỏ duyệt bài nhạc nạp từ kho tư liệu. Chỉ quyền quản trị (OWNER): "ĐỦ-HỒ-SƠ" của kho ≠ OWNER duyệt. */
 export async function setLibraryMusicApproval(fd: FormData) {
-  const actor = await requirePermission("admin", "/settings#music-library");
+  const actor = await requirePermission("admin", "/assets#music-library");
   const { approveMusic, unapproveMusic } = await import("@/lib/video/music-library");
   const file = str(fd, "file");
   const approve = str(fd, "approve") === "1";
   const r = approve ? approveMusic(file, actor.email) : unapproveMusic(file);
-  if (!r.ok) return fail("/settings#music-library", r.error);
+  if (!r.ok) return fail("/assets#music-library", r.error);
   logActivity("human", `${actor.name} ${approve ? "duyệt dùng" : "bỏ duyệt"} nhạc nền “${file}”.`, "settings");
-  done("/settings#music-library", approve ? `Đã duyệt “${file}”: bộ dựng được tự chọn bài này theo nội dung video.` : `Đã bỏ duyệt “${file}”.`);
+  done("/assets#music-library", approve ? `Đã duyệt “${file}”: bộ dựng được tự chọn bài này theo nội dung video.` : `Đã bỏ duyệt “${file}”.`);
 }
 
 export async function runAutoEditNow() {
@@ -155,10 +155,10 @@ export async function runAutoEditNow() {
 
 // Cài đặt › Video › Thả tư liệu vào máy: nhận ngay (máy dựng cũng tự nhận mỗi 5 phút)
 export async function importDropNow() {
-  await requirePermission("manager", "/settings#tha-vao");
+  await requirePermission("manager", "/assets#tha-vao");
   const { importDrop } = await import("@/lib/video/drop-import");
   const { dataDir } = await import("@/lib/video/jobs");
   const r = importDrop(dataDir());
-  if (!r.imported.length) return fail("/settings#tha-vao", r.waiting.length ? `Chưa nhận tệp nào: ${r.waiting.length} tệp đang chờ (xem lý do bên dưới).` : "Thư mục thả đang trống.");
-  done("/settings#tha-vao", `Đã nhận ${r.imported.length} tệp vào thư viện${r.waiting.length ? ` · ${r.waiting.length} tệp còn chờ` : ""}.`);
+  if (!r.imported.length) return fail("/assets#tha-vao", r.waiting.length ? `Chưa nhận tệp nào: ${r.waiting.length} tệp đang chờ (xem lý do bên dưới).` : "Thư mục thả đang trống.");
+  done("/assets#tha-vao", `Đã nhận ${r.imported.length} tệp vào thư viện${r.waiting.length ? ` · ${r.waiting.length} tệp còn chờ` : ""}.`);
 }

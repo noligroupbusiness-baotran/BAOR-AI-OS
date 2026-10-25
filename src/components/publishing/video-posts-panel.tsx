@@ -4,15 +4,17 @@ import { Panel, PanelHeader } from "@/components/ui/card";
 import { Pill } from "@/components/ui/pill";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ConfirmAction } from "@/components/campaigns/confirm-action";
-import { cancelVideoPostAction, retryVideoPostAction, setDryRunAction } from "@/lib/actions/publishing";
+import { setDryRunAction } from "@/lib/actions/publishing";
+import { PostActions, postErrorShort } from "@/components/publishing/post-actions";
 import { createAdDraftAction } from "@/lib/actions/ads";
 import Link from "next/link";
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { Button, LinkButton } from "@/components/ui/button";
 import { latestJob } from "@/lib/video/jobs";
-import { videoChannels, channelStatus, isAmbiguousFailure, isDryRun, listVideoPosts } from "@/lib/publishing/video";
+import { videoChannels, channelStatus, isDryRun, listVideoPosts } from "@/lib/publishing/video";
 import { postStatusLabel } from "@/lib/labels";
+import { postInCampaign } from "@/lib/campaigns/filter";
 import { fileUrl } from "@/lib/uploads";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import type { PostStatus } from "@/lib/types";
@@ -30,8 +32,9 @@ function previewOf(videoId: string | null): string | null {
   return v?.uploadId && !v.purged ? fileUrl(v.uploadId) : null;
 }
 
-export function VideoPostsPanel({ focus }: { focus?: string }) {
-  const posts = listVideoPosts();
+/** campaignIds: đang lọc theo chiến dịch (?campaign=&goal=) → chỉ bài đã gắn chiến dịch hoặc bài của video đã gắn chiến dịch. */
+export function VideoPostsPanel({ focus, owner = false, campaignIds = null }: { focus?: string; owner?: boolean; campaignIds?: Set<string> | null }) {
+  const posts = listVideoPosts().filter((p) => postInCampaign(p, campaignIds));
   const dry = isDryRun();
   return (
     <Panel id="video-posts">
@@ -44,7 +47,7 @@ export function VideoPostsPanel({ focus }: { focus?: string }) {
             fields={{ on: dry ? "0" : "1" }}
             label={dry ? "Đang ở chế độ thử" : "Đang đăng thật"}
             title={dry ? "Tắt chế độ thử?" : "Bật chế độ thử?"}
-            message={dry ? "Bài mới lên lịch sẽ ĐĂNG THẬT lên kênh đã kết nối. Chỉ OWNER quyết định việc này." : "Bài mới lên lịch sẽ không đăng thật."}
+            message={dry ? (owner ? "Bài mới lên lịch sẽ ĐĂNG THẬT lên kênh đã kết nối." : "Chỉ OWNER tắt được chế độ thử.") : "Bài mới lên lịch sẽ không đăng thật."}
             confirmLabel={dry ? "Tắt chế độ thử" : "Bật chế độ thử"}
             variant={dry ? "soft" : "outline"}
           />
@@ -57,7 +60,7 @@ export function VideoPostsPanel({ focus }: { focus?: string }) {
         })}
       </div>
       {posts.length === 0 ? (
-        <EmptyState title="Chưa có bài video" hint="Lên lịch từ Kho video." action={<LinkButton href="/video-library" variant="soft">Tới Kho video</LinkButton>} />
+        <EmptyState title={campaignIds ? "Chiến dịch chưa có bài video" : "Chưa có bài video"} hint="Lên lịch từ Kho video." action={<LinkButton href="/video-library" variant="soft">Tới Kho video</LinkButton>} />
       ) : (
         <ul className="m-0 list-none p-0">
           {posts.map((p) => {
@@ -90,7 +93,7 @@ export function VideoPostsPanel({ focus }: { focus?: string }) {
                     {p.permalink && <a href={p.permalink} target="_blank" rel="noreferrer" className="font-medium text-jade hover:underline">Xem bài trên {platformLabel(p.platform as Platform)} ›</a>}
                     {kho && <Link href={kho} className="font-medium text-ink-2 hover:text-ink hover:underline">‹ Video trong Kho</Link>}
                   </div>
-                  {p.error && <div className="text-[12px] text-ink-2">{p.error}</div>}
+                  {p.error && <div title={p.error} className="text-[12px] text-ink-2">{postErrorShort(p)}</div>}
                   {p.status === "published" && p.mode === "live" && p.verifiedAt && (
                     <details className="mt-1 text-[12px]">
                       <summary className="cursor-pointer text-jade">Tạo nháp quảng cáo từ bài này</summary>
@@ -106,12 +109,7 @@ export function VideoPostsPanel({ focus }: { focus?: string }) {
                   )}
                 </div>
                 <div className="col-span-2 flex gap-1.5 md:col-span-1">
-                  {p.status === "failed" && !p.externalId && (isAmbiguousFailure(p) ? (
-                    <ConfirmAction action={retryVideoPostAction} fields={{ id: p.id }} label="Thử lại" title="Lần trước không rõ đã đăng chưa" message="Lệnh đăng đã gửi nhưng nền tảng không trả kết quả rõ ràng: bài CÓ THỂ đã lên. Mở trang kiểm tra trước; chỉ đăng lại khi chắc chắn chưa có bài." confirmLabel="Đã kiểm tra, đăng lại" variant="soft" withNote={{ label: "Xác nhận đã kiểm tra trang", required: true, minLength: 10, placeholder: "VD: Đã mở trang lúc 10:05, không thấy bài" }} />
-                  ) : (
-                    <ConfirmAction action={retryVideoPostAction} fields={{ id: p.id }} label="Thử lại" title="Thử đăng lại?" message="Kiểm tra trang trước: nếu bài đã lên thì đừng thử lại để tránh đăng trùng. Bài sẽ được đăng ở lượt chạy tới." confirmLabel="Thử lại" variant="soft" />
-                  ))}
-                  {p.status === "scheduled" && <ConfirmAction action={cancelVideoPostAction} fields={{ id: p.id }} label="Huỷ" title="Huỷ bài chờ đăng?" message="Bài không được đăng; có thể lên lịch lại sau." confirmLabel="Huỷ bài" danger />}
+                  <PostActions post={p} owner={owner} />
                 </div>
               </li>
             );

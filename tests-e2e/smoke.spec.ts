@@ -48,6 +48,8 @@ test("Video Studio: video đã dựng hiện trình phát và bảng biên tập
 test("Quảng cáo: hiện reach / CPM / CTR / tần suất từ số liệu Insights", async ({ page }) => {
   await login(page);
   await page.goto("/ads");
-  const row = page.getByRole("row", { name: /E2E · Quảng cáo có số liệu/ });
+  // Trang Quảng cáo làm gọn (26/10): tên quảng cáo nằm trong <details> (bấm để mở rộng) nên không còn là tên truy cập của hàng —
+  // tìm hàng theo chữ chứa bên trong; điều kiện kiểm (dòng Reach / CPM / CTR / tần suất) giữ nguyên
+  const row = page.getByRole("row").filter({ hasText: "E2E · Quảng cáo có số liệu" });
   await expect(row).toContainText("Reach 4.000 · CPM 24.000 ₫ · CTR 1,20% · tần suất 1,25");
 });

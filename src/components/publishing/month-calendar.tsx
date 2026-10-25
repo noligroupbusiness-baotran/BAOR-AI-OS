@@ -18,7 +18,7 @@ const TZ = "Asia/Ho_Chi_Minh";
 const ymd = (d: Date) => new Intl.DateTimeFormat("sv-SE", { timeZone: TZ }).format(d);
 const hm = (iso: string) => new Intl.DateTimeFormat("vi-VN", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso));
 
-const dot: Record<PostStatus, string> = { scheduled: "bg-sky", publishing: "bg-amber", verifying: "bg-amber", published: "bg-jade", failed: "bg-brick", dry_run: "bg-violet", cancelled: "bg-ink-3" };
+const dot: Record<PostStatus, string> = { scheduled: "bg-sky", publishing: "bg-amber", verifying: "bg-amber", published: "bg-jade", failed: "bg-brick", dry_run: "bg-violet", cancelled: "bg-ink-3", overdue: "bg-amber" };
 
 export function monthOf(value: string | undefined, now = new Date()): string {
   return value && /^\d{4}-\d{2}$/.test(value) ? value : ymd(now).slice(0, 7);

@@ -57,6 +57,7 @@ const RISKY: [RegExp, string][] = [
 ];
 for (const f of tracked) {
   if (!/^src\/.*\.(ts|tsx)$/.test(f)) continue;
+  if (!fs.existsSync(f)) continue; // tệp đã xoá trên cây nhưng chưa commit (git ls-files vẫn liệt kê): không còn mã để rà
   const text = fs.readFileSync(f, "utf8");
   for (const [re, label] of RISKY) {
     const m = re.exec(text);

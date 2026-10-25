@@ -147,5 +147,11 @@ test("Nghiên cứu bước 1 (fallbacks) chạy bằng mô hình khác → chi 
   assert.equal(task.costVnd, want, "bước 1 tính giá Sonnet (mô hình thực chạy), không phải Opus");
   assert.match(task.model ?? "", /^claude-sonnet-5-5 \(yêu cầu claude-opus-5-5\) \+ claude-opus-5-5$/);
   const ledger = router.listAiCalls(5).filter((c) => c.purpose === "research");
-  assert.equal(ledger.reduce((a, c) => a + c.costVnd, 0) + 2 * 260, want, "chi phí nhiệm vụ khớp sổ ai_calls");
+  // Kiểm toán 26/10: phí web_search (2 lượt × 260 ₫) GHI VÀO sổ ai_calls (tính trần ngày / tháng / vị trí), không chỉ cộng vào nhiệm vụ
+  assert.equal(ledger.reduce((a, c) => a + c.costVnd, 0), want, "chi phí nhiệm vụ = đúng tổng sổ ai_calls (gồm phí web_search)");
+  assert.ok(ledger.some((c) => c.role === "research" && c.costVnd === 2 * 260 && /web_search/.test(c.model)), "dòng sổ riêng cho phí web_search");
+  assert.equal(router.getAiBudget().spentTodayVnd, want, "trần ngày tính cả phí web_search");
+  // Dòng phí web_search có chi phí nhưng KHÔNG phải một lần gọi mô hình (phản biện P3): 2 lần gọi, không phải 3
+  assert.equal(router.getAiBudget().callsToday, 2);
+  assert.equal(roster.roleSpendThisMonth().find((x) => x.role.id === "research")!.calls, 2);
 });

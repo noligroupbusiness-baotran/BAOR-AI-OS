@@ -25,7 +25,7 @@ export function Toast() {
 
   if (!msg) return null;
   return (
-    <div role={isError ? "alert" : "status"} className={`fixed bottom-5 left-1/2 z-50 max-w-[calc(100vw-32px)] -translate-x-1/2 rounded-full border px-4 py-2 text-[13px] font-medium text-white shadow-lg ${isError ? "border-brick bg-brick" : "border-jade-2 bg-jade"}`}>
+    <div role={isError ? "alert" : "status"} className={`fixed bottom-5 left-1/2 z-50 max-w-[calc(100vw-32px)] -translate-x-1/2 rounded-full border px-4 py-2 text-[13px] font-medium shadow-lg ${isError ? "border-brick bg-brick text-[var(--on-brick)]" : "border-jade-2 bg-jade text-white"}`}>
       {msg}
     </div>
   );

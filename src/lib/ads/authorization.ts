@@ -2,7 +2,7 @@
 // dù ai bấm. Tạm dừng và giảm ngân sách luôn được phép. AI chỉ tự tăng ngân sách khi OWNER bật allowAutoScale, và vẫn trong trần.
 import { and, eq, gte, lte } from "drizzle-orm";
 import { getDb, schema } from "@/db";
-import { getSetting, setSetting } from "@/lib/admin";
+import { getSetting, isAdminEmail, setSetting } from "@/lib/admin";
 import { readIntegrationConfig } from "@/lib/connectors/config";
 import { adCampaigns as seedAds } from "@/lib/data/ads";
 import { linkedRows } from "@/lib/data/campaigns";
@@ -39,6 +39,13 @@ export function getAuthorization(): AdAuthorization | null {
 
 export function saveAuthorization(a: AdAuthorization) {
   setSetting(KEY, JSON.stringify(a));
+}
+
+/** Đặt ủy quyền từ giao diện: CHỈ OWNER (tài khoản quản trị chính) — nhân sự quyền Quản trị không đặt được (§7: không tự đặt ủy quyền). */
+export function saveAuthorizationAs(actor: { email: string }, a: AdAuthorization): { ok: true } | { ok: false; error: string } {
+  if (!isAdminEmail(actor.email)) return { ok: false, error: "Chỉ OWNER (tài khoản quản trị chính) đặt được ủy quyền ngân sách." };
+  saveAuthorization(a);
+  return { ok: true };
 }
 
 export function revokeAuthorization() {

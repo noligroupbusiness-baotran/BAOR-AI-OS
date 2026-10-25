@@ -10,8 +10,10 @@ import { addSourceAction, deleteInsightAction, toggleResearchAiAction, webResear
 import { getResearchTask } from "@/lib/research";
 import { SOCIAL_KINDS } from "@/lib/research/social";
 import { topicInsights } from "@/lib/research/topic";
-import { roleAllows, roleById, roleSettings } from "@/lib/ai-roster";
-import { aiConfiguredFor } from "@/lib/ai";
+import { roleById, roleSettings } from "@/lib/ai-roster";
+import { aiReadiness } from "@/lib/ai";
+import { AiBlocked } from "@/components/ui/ai-blocked";
+import { SwitchSubmit } from "@/components/ui/switch";
 import { currentActor, can } from "@/lib/permissions";
 
 export const metadata = { title: "Chủ đề nghiên cứu – BAOR AI OS" };
@@ -26,9 +28,10 @@ export default async function TopicPage({ params }: { params: Promise<{ id: stri
   const insights = topicInsights(id);
   const role = roleById("research")!;
   const enabled = roleSettings(role).enabled;
-  const ai = roleAllows(role);
-  const key = aiConfiguredFor("research");
-  const aiReady = ai.ok && key.ok;
+  // Trạng thái thật của nút AI: công tắc + khoá hãng của mô hình vị trí (+ Claude cho bước tìm web) + trần
+  const ready = aiReadiness("research");
+  const webReady = aiReadiness("research", { alsoProvider: "anthropic" });
+  const aiReady = ready.ok;
   const back = `/insights/research/${id}`;
   const groups = new Map<string, typeof insights>();
   for (const i of insights) groups.set(i.source, [...(groups.get(i.source) ?? []), i]);
@@ -48,10 +51,11 @@ export default async function TopicPage({ params }: { params: Promise<{ id: stri
           action={
             can(actor, "admin") ? (
               <form action={toggleResearchAiAction} className="flex shrink-0 items-center gap-2 text-[12.5px]">
+                {/* Công tắc: gạt là đổi sang trạng thái kia (trước đây nút ghi trạng thái hiện tại nhưng bấm lại tắt) */}
                 <input type="hidden" name="on" value={enabled ? "0" : "1"} />
                 <input type="hidden" name="back" value={back} />
-                <span className="whitespace-nowrap text-ink-2">Cho phép gọi AI:</span>
-                <SubmitButton variant={enabled ? "soft" : "ghost"}>{enabled ? "Bật" : "Tắt"}</SubmitButton>
+                <span className="whitespace-nowrap text-ink-2">AI Nghiên cứu</span>
+                <SwitchSubmit on={enabled} label={enabled ? "AI Nghiên cứu đang bật — gạt để tắt" : "AI Nghiên cứu đang tắt — gạt để bật"} />
               </form>
             ) : undefined
           }
@@ -68,18 +72,18 @@ export default async function TopicPage({ params }: { params: Promise<{ id: stri
           <div className="flex flex-wrap items-center gap-3">
             <SubmitButton pendingText={aiReady ? "Đang phân tích (có AI)…" : "Đang phân tích…"}>Phân tích</SubmitButton>
             {aiReady ? (
-              <label className="flex items-center gap-1.5 text-[12.5px] text-ink"><input type="checkbox" name="ai" defaultChecked /> AI Nghiên cứu phân tích thêm (tính phí AI)</label>
+              <label className="flex items-center gap-1.5 text-[12.5px] text-ink"><input type="checkbox" name="ai" defaultChecked /> AI phân tích thêm (tính phí)</label>
             ) : (
-              <span className="text-[12px] text-ink-3">Phân tích theo luật (AI {enabled ? (key.ok ? ai.reason : `chưa có khoá ${key.provider}`) : "đang tắt"})</span>
+              <span className="flex items-center gap-2 text-[12px] text-ink-3">Theo luật <AiBlocked ready={ready} /></span>
             )}
           </div>
         </form>
         <div className="flex flex-wrap items-center gap-3 border-t border-border px-4 py-3">
           <form action={webResearchAction}>
             <input type="hidden" name="id" value={id} />
-            <SubmitButton variant="soft" pendingText="AI đang tìm…" disabled={!aiReady}>AI tìm kiến thức trên mạng</SubmitButton>
+            <SubmitButton variant="soft" pendingText="AI đang tìm…" disabled={!webReady.ok} title={webReady.ok ? "AI tìm kiến thức trên web, dẫn nguồn" : webReady.reason}>AI tìm kiến thức trên mạng</SubmitButton>
           </form>
-          <span className="text-[12px] text-ink-3">Kiến thức trên social / web (2.4): AI tìm và dẫn nguồn{aiReady ? "" : " — cần bật AI"}.</span>
+          <AiBlocked ready={webReady} />
         </div>
       </Panel>
 

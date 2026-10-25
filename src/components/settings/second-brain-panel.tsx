@@ -1,4 +1,6 @@
+import { Brain } from "lucide-react";
 import { Panel, PanelHeader } from "@/components/ui/card";
+import { Pill } from "@/components/ui/pill";
 import { SubmitButton } from "@/components/campaigns/submit-button";
 import { textareaClass } from "@/components/ui/field";
 import { knowledgeStats } from "@/lib/knowledge";
@@ -18,12 +20,16 @@ export async function SecondBrainPanel() {
     <Panel id="second-brain">
       <PanelHeader
         title="Second Brain (Notion)"
-        sub={`${s.lastSyncedAt ? `Đồng bộ lúc ${formatDateTime(s.lastSyncedAt)}` : "Chưa đồng bộ"} · ${usable}/${s.total} trang dùng được. ${token ? "Tự đồng bộ 6 giờ một lần." : "Chưa tự đồng bộ — cần token Notion ở Kết nối."}`}
+        sub={`${s.lastSyncedAt ? `Đồng bộ ${formatDateTime(s.lastSyncedAt)}` : "Chưa đồng bộ"} · ${usable}/${s.total} trang`}
+        icon={Brain}
+        tone="violet"
+        tags={token ? <Pill tone="jade">Tự đồng bộ 6 giờ</Pill> : <Pill tone="amber">Cần token Notion</Pill>}
+        info={token ? "Tự đồng bộ 6 giờ một lần. Bấm Đồng bộ ngay khi vừa sửa skill trên Notion." : "Chưa tự đồng bộ — cần token Notion ở Kết nối."}
         action={can(actor, "manager") && token ? <form action={syncKnowledgeNow}><SubmitButton pendingText="Đang đọc Notion…">Đồng bộ ngay</SubmitButton></form> : undefined}
       />
       {can(actor, "admin") && !token && (
         <details className="px-4 py-3">
-          <summary className="cursor-pointer text-[12.5px] text-ink-2">Nhập ảnh chụp chỉ mục (JSON) khi chưa có token</summary>
+          <summary className="cursor-pointer text-[12.5px] text-ink-2">Nhập ảnh chụp chỉ mục (JSON)</summary>
           <form action={importKnowledgeSnapshotAction} className="mt-2 grid gap-2">
             <textarea name="json" rows={5} className={textareaClass} placeholder='{"takenAt": "...", "takenBy": "...", "pages": [...]}' />
             <div><SubmitButton pendingText="Đang nhập…">Nhập ảnh chụp</SubmitButton></div>

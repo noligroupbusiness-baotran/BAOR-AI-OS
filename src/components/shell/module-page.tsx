@@ -23,10 +23,10 @@ export function Breadcrumb({ items }: { items: { label: string; href?: string }[
 // Danh sách nhóm chức năng của một phân hệ, kèm trạng thái. Dùng ở cả trang khung và trang đã có nghiệp vụ.
 export function ModuleGroups({ moduleKey, title = "Nhóm chức năng" }: { moduleKey: string; title?: string }) {
   const groups = moduleGroups[moduleKey] ?? [];
-  const active = groups.filter((g) => g.status === "active").length;
+  // Không câu mô tả kiểu "Cả N nhóm đã có màn hình làm việc" (chữ dev, kiểm toán 26/10): trạng thái từng nhóm đã có nhãn riêng.
   return (
     <Panel>
-      <PanelHeader title={title} sub={active === groups.length ? `Cả ${groups.length} nhóm đã có màn hình làm việc.` : `${active}/${groups.length} nhóm đã có màn hình làm việc. Phần còn lại sẽ triển khai ở giai đoạn sau.`} />
+      <PanelHeader title={title} />
       {groups.length === 0 ? (
         <EmptyState title="Chưa xác định nhóm chức năng" />
       ) : (
@@ -52,7 +52,7 @@ export function ModulePage({ moduleKey, action }: { moduleKey: string; action?: 
   if (!m) return <EmptyState title="Không tìm thấy phân hệ" />;
   return (
     <>
-      <Breadcrumb items={[{ label: "Điều hành", href: "/dashboard" }, { label: m.label }]} />
+      <Breadcrumb items={[{ label: "Tổng quan", href: "/dashboard" }, { label: m.label }]} />
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">

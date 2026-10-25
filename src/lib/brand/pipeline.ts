@@ -7,6 +7,8 @@ import { aiConfigured } from "@/lib/ai";
 import { contentItems as seedContent, scheduledPosts as seedPosts } from "@/lib/data/content";
 import { adCampaigns as seedAds } from "@/lib/data/ads";
 import { videos as seedVideos } from "@/lib/data/videos";
+import { listVideos } from "@/lib/videos/repository";
+import { videosAwaitingOwner, videosRenderFailed, videosRendering } from "@/lib/attention";
 import { linkedRows } from "@/lib/data/campaigns";
 
 export type StageState = "done" | "working" | "waiting" | "not_started";
@@ -112,19 +114,25 @@ export function getBrandPipeline(): BrandPipeline {
 
   // 4. Ghi hình & dựng video
   const sampleVideos = ids(seedVideos);
-  const videos = db.select({ id: schema.videos.id, status: schema.videos.status }).from(schema.videos).all();
+  // Cùng định nghĩa với badge Video Studio và Việc cần làm (src/lib/attention.ts): chờ duyệt = video thật CÓ tệp ở Chờ kiểm tra /
+  // Chờ phê duyệt; đang dựng = có bản dựng đang chạy / chờ dựng / chờ chọn khung (video "editing" có bản lỗi KHÔNG tính là đang dựng).
+  const allVideos = listVideos();
+  const videos = allVideos.map((v) => ({ id: v.id, status: v.status }));
   const realVideos = videos.filter((v) => !sampleVideos.has(v.id));
   const vs = countBy(realVideos, (v) => v.status);
-  const toReview = (vs.review ?? 0) + (vs.pending_approval ?? 0);
+  const toReview = videosAwaitingOwner(allVideos).length;
+  const working = videosRendering(allVideos).length + (vs.needs_changes ?? 0);
+  // Dựng lỗi / đã dừng thật: video thật "editing" có bản dựng mới nhất ở trạng thái lỗi (video chưa có job / tệp không tính)
+  const renderFailed = videosRenderFailed(allVideos).length;
   const video: Stage = {
     key: "video",
     step: 3,
     name: "Video",
     href: "/video-studio",
-    state: realVideos.length === 0 ? "not_started" : toReview ? "waiting" : vs.editing || vs.needs_changes ? "working" : "done",
-    summary: realVideos.length === 0 ? "Chưa có video thật trong Video Studio. Bộ dựng tự động đang được anh chỉnh." : toReview ? `${toReview} video chờ anh xem và duyệt.` : "Đang dựng hoặc sửa video.",
+    state: realVideos.length === 0 ? "not_started" : toReview ? "waiting" : working ? "working" : renderFailed > 0 ? "waiting" : "done",
+    summary: realVideos.length === 0 ? "Chưa có video thật trong Video Studio. Bộ dựng tự động đang được anh chỉnh." : toReview ? `${toReview} video chờ anh xem và duyệt.` : working ? "Đang dựng hoặc sửa video." : renderFailed > 0 ? `${renderFailed} video dựng lỗi / đã dừng — mở Video Studio để dựng lại.` : "Không có video tồn.",
     lines: [
-      { label: "Đang dựng / sửa", value: (vs.editing ?? 0) + (vs.needs_changes ?? 0) },
+      { label: "Đang dựng / sửa", value: working },
       { label: "Chờ duyệt", value: toReview },
       { label: "Đã duyệt", value: vs.approved ?? 0 },
     ],

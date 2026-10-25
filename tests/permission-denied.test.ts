@@ -29,7 +29,9 @@ test("từ chối quyền ở Cài đặt: ?toast + tone=error trước #neo, k�
   assert.equal(u.searchParams.get("tone"), "error");
   assert.match(u.searchParams.get("toast") ?? "", /Cần quyền .+ Bạn đang là /);
 
-  assert.equal(parse(permissions.deniedPath("/settings#music-library", "admin", "staff")).searchParams.get("tab"), "video");
+  // 26/10: Thư viện nhạc nền chuyển sang trang Tư liệu (/assets) — mục còn ở nhóm Video: Nơi dựng video
+  assert.equal(parse(permissions.deniedPath("/settings#render-worker", "admin", "staff")).searchParams.get("tab"), "video");
+  assert.equal(parse(permissions.deniedPath("/assets#music-library", "admin", "staff")).searchParams.get("tab"), null, "trang Tư liệu không có nhóm");
   assert.equal(parse(permissions.deniedPath("/settings#ai-team", "admin", "staff")).searchParams.get("tab"), "ai");
   assert.equal(parse(permissions.deniedPath("/settings#sample", "admin", "staff")).searchParams.get("tab"), "he-thong");
 });

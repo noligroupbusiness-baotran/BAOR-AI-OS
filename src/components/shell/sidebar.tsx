@@ -8,6 +8,7 @@ import { cn } from "@/lib/format";
 import type { Health } from "@/lib/shell-types";
 import type { ShellUser } from "./app-shell";
 import { BrandMark, type BrandLogos } from "./brand-mark";
+import { IconChip } from "@/components/ui/icon-chip";
 
 interface Props {
   collapsed: boolean;
@@ -38,7 +39,6 @@ export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile
           )}
           {menu.filter((m) => m.group === g).map((m) => {
         const active = m.key === activeKey;
-        const Icon = m.icon;
         const badge = badges[m.href];
         return (
           <Link
@@ -50,16 +50,17 @@ export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile
             data-tip={collapsed ? m.label : undefined}
             title={m.hotkey ? `${m.label} (Alt+${m.hotkey})` : undefined}
             className={cn(
-              "group relative flex h-9 items-center gap-2.5 rounded-md px-2.5 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-jade",
-              active ? "bg-jade-soft/70 font-semibold text-jade-ink" : "text-ink-2 hover:bg-surface hover:text-ink",
+              "group relative flex h-9 items-center gap-2.5 rounded-lg border border-transparent px-2 text-[13px] font-medium transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-jade",
+              `tone-${m.tone}`,
+              active ? "nav-active font-semibold" : "text-ink-2 hover:bg-surface hover:text-ink",
               collapsed && "justify-center px-0",
             )}
           >
-            {active && <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-jade" aria-hidden />}
-            <Icon size={17} strokeWidth={active ? 2.25 : 1.75} className={cn("shrink-0 transition-colors", active ? "text-jade" : "text-ink-3 group-hover:text-ink-2")} aria-hidden />
+            {active && <span className="absolute -left-px top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-[var(--chip)]" aria-hidden />}
+            <IconChip icon={m.icon} size="xs" quiet={!active} />
             {!collapsed && <span className="flex-1 truncate">{m.label}</span>}
             {!collapsed && m.building && <span className="rounded-full border border-border-2 px-1.5 text-[10px] font-medium text-ink-3">đang xây</span>}
-            {!collapsed && badge ? <span className={cn("num inline-flex h-[18px] min-w-[20px] items-center justify-center rounded-full px-1.5 text-[11px] font-semibold", active ? "bg-jade/15 text-jade-ink" : "bg-amber-soft text-amber")}>{badge}</span> : null}
+            {!collapsed && badge ? <span className={cn("num inline-flex h-[18px] min-w-[20px] items-center justify-center rounded-full px-1.5 text-[11px] font-semibold", active ? "badge-metal" : "bg-amber-soft text-amber")}>{badge}</span> : null}
             {collapsed && badge ? <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-amber" aria-hidden /> : null}
           </Link>
         );
@@ -70,7 +71,7 @@ export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile
   );
 
   const brand = (
-    <Link href="/dashboard" className="min-w-0 flex-1" aria-label="BAOR AI OS, về Điều hành">
+    <Link href="/dashboard" className="min-w-0 flex-1" aria-label="BAOR AI OS, về Tổng quan">
       <BrandMark logos={logos} collapsed={collapsed} />
     </Link>
   );

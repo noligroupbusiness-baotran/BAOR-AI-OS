@@ -1,5 +1,9 @@
 // CP06: phân tích thuần (không CSDL, không AI). Mỗi kết luận kèm cỡ mẫu; dưới ngưỡng thì "chưa đủ dữ liệu", không kết luận.
 // Mọi kết luận là GIẢ THUYẾT cho tới khi OWNER chấp nhận: hệ thống không biến quan sát thành sự thật.
+import { displayStepOf } from "@/config/journey";
+
+/** Bước hiển thị (1–7) của Đo lường cho chữ người dùng đọc — mã nội bộ sơ đồ là 8.1 / 8.2 (src/config/journey.ts). */
+export const MEASURE_STEP = displayStepOf("8.1");
 
 export interface ProposalDraft {
   key: string;
@@ -242,11 +246,32 @@ export function skillProposals(posts: PublishedPost[], skillLabel: string): Prop
       key: `skill:${key}`,
       target: "content",
       title: `Bài đã đăng lệch skill: ${issueK}`,
-      detail: `${ps.length}/${posts.length} bài đã đăng ${issue}. Kiểm theo ${skillLabel} (bước 8.1 — luật, không AI). Đề xuất: sửa caption mẫu / kịch bản cho các bài sau.${rBad != null && rOk != null ? ` Tương tác TB: bài lệch ${rBad}% · bài đạt ${rOk}% (giả thuyết, chưa phải kết luận).` : ""}`,
+      detail: `${ps.length}/${posts.length} bài đã đăng ${issue}. Kiểm theo ${skillLabel} (bước ${MEASURE_STEP} — luật, không AI). Đề xuất: sửa caption mẫu / kịch bản cho các bài sau.${rBad != null && rOk != null ? ` Tương tác TB: bài lệch ${rBad}% · bài đạt ${rOk}% (giả thuyết, chưa phải kết luận).` : ""}`,
       evidence: ps.slice(0, 8).map((p) => `${p.platform}: “${p.title.slice(0, 80)}”`),
       sampleSize: posts.length,
       confidence: posts.length >= 10 ? "medium" : "low",
     });
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Đề xuất còn mở (kiểm toán 26/10): ẩn đề xuất CHỜ OWNER đã cũ — phân tích hiện tại không còn sinh ra nó (số liệu đã đổi, hoặc lỗi
+// đã được OWNER quyết: bản dựng mới không còn lỗi), hoặc nó trỏ tới video không còn tồn tại (đã xoá). Đề xuất OWNER đã quyết giữ nguyên
+// trong lịch sử. Đề xuất AI ("ai:") không do phân tích luật sinh ra nên chỉ xét thực thể.
+export interface StoredProposal {
+  key: string;
+  status: string;
+  evidence: string[];
+}
+
+const VIDEO_REF = /^(v_[a-z0-9]+):/i;
+
+export function openProposals<T extends StoredProposal>(stored: T[], liveKeys: Set<string>, videoExists: (id: string) => boolean): T[] {
+  return stored.filter((p) => {
+    if (p.status !== "proposed") return true;
+    if (!p.key.startsWith("ai:") && !liveKeys.has(p.key)) return false;
+    const vids = p.evidence.map((e) => VIDEO_REF.exec(e)?.[1]).filter((x): x is string => !!x);
+    return vids.every(videoExists);
+  });
 }

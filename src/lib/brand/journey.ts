@@ -5,6 +5,7 @@ import { JOURNEY, type JourneyStep } from "@/config/journey";
 import { listTopics } from "@/lib/research/topic";
 import { libraryRows } from "@/lib/videos/library";
 import { getBrandPipeline, type StageState } from "./pipeline";
+import { hooksAwaiting } from "@/lib/attention";
 
 export interface JourneyCard extends JourneyStep {
   value: number;
@@ -21,7 +22,7 @@ export function journeyCards(): JourneyCard[] {
   const topics = listTopics();
   const insights = topics.reduce((n, t) => n + t.insights, 0);
   const noInsight = topics.find((t) => t.insights === 0);
-  const hooksNew = db.select({ id: schema.hookIdeas.id }).from(schema.hookIdeas).where(eq(schema.hookIdeas.status, "new")).all().length;
+  const hooksNew = hooksAwaiting(); // cùng nguồn với badge "Hook & kịch bản" và trang /content/hooks
   const scripts = db.select({ id: schema.contentItems.id }).from(schema.contentItems).where(and(eq(schema.contentItems.format, "script"), inArray(schema.contentItems.status, ["in_progress", "review"]))).all().length;
   const lib = libraryRows();
   const unposted = lib.filter((r) => r.state === "unposted").length;

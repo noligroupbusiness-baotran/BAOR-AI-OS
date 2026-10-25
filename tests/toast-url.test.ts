@@ -15,7 +15,10 @@ test("toast đặt trước #neo, giữ tham số cũ", () => {
 });
 
 test("Cài đặt chia nhóm: lưu xong vẫn ở đúng nhóm (redirect /settings#neo kèm ?tab=)", () => {
-  assert.equal(withToast("/settings#music-library", "x"), "/settings?toast=x&tab=video#music-library");
+  // 26/10: Thư viện nhạc nền chuyển sang trang Tư liệu (/assets); nhóm Video còn Nơi dựng video
+  assert.equal(withToast("/settings#render-worker", "x"), "/settings?toast=x&tab=video#render-worker");
+  assert.equal(withToast("/assets#music-library", "x"), "/assets?toast=x#music-library", "Tư liệu: không thêm ?tab=");
+  assert.equal(withToast("/settings?tab=tu-dong#rules", "x"), "/settings?tab=tu-dong&toast=x#rules", "Quy tắc tự động (gộp từ /automation)");
   assert.equal(withToast("/settings#people", "x"), "/settings?toast=x&tab=he-thong#people");
   assert.equal(withToast("/settings#ai-team?tone=error", "x"), "/settings?tone=error&toast=x&tab=ai#ai-team");
   assert.equal(withToast("/settings?tab=video#music", "x"), "/settings?tab=video&toast=x#music", "đã có tab thì giữ");

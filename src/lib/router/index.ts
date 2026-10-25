@@ -5,6 +5,7 @@
 import { desc, gte, sql } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { getSetting } from "@/lib/admin";
+import { dateKey } from "@/lib/format";
 
 export type Lane = "rule" | "ai" | "human";
 export type Domain = "ads" | "reply" | "content" | "research" | "publish" | "sync" | "campaign";
@@ -109,12 +110,28 @@ export function estimateCostVnd(inputTokens: number, outputTokens: number): numb
   return Math.round((inputTokens / 1000) * inRate + (outputTokens / 1000) * outRate);
 }
 
+/** Số lần gọi mô hình: bỏ dòng phí web_search (Nghiên cứu ghi riêng phí công cụ — có chi phí nhưng không phải một lần gọi). */
+export const WEB_SEARCH_MODEL_PREFIX = "web_search";
+export const CALL_COUNT = sql<number>`count(case when ${schema.aiCalls.model} not like ${WEB_SEARCH_MODEL_PREFIX + "%"} then 1 end)`;
+
+// "Hôm nay" / "tháng này" của chi phí AI và trần ngày / tháng theo GIỜ VIỆT NAM (như mọi màn khác — dateKey), không theo ngày UTC:
+// 00:00–07:00 giờ VN trước đây bị tính vào hôm qua. Cột ai_calls.at là ISO UTC → so với mốc 00:00 giờ VN đổi ra UTC.
+const VN_OFFSET = "+07:00";
+/** Mốc 00:00 hôm nay (giờ VN) dạng ISO UTC. */
+export function vnDayStartIso(now: Date = new Date()): string {
+  return new Date(`${dateKey(now)}T00:00:00${VN_OFFSET}`).toISOString();
+}
+/** Mốc 00:00 ngày 1 tháng này (giờ VN) dạng ISO UTC. */
+export function vnMonthStartIso(now: Date = new Date()): string {
+  return new Date(`${dateKey(now).slice(0, 7)}-01T00:00:00${VN_OFFSET}`).toISOString();
+}
+
+// Định nghĩa thống nhất (ngày, tháng, theo vị trí): số lần gọi = MỌI lần gọi đã ghi sổ (thành công + lỗi); chi phí = tổng cost_vnd
+// trong sổ (lần lỗi vẫn có thể tốn tiền nếu hãng đã trả lời; phí web_search của Nghiên cứu cũng ghi sổ).
 export function getAiBudget(): AiBudget {
   const db = getDb();
-  const today = new Date().toISOString().slice(0, 10);
-  const month = today.slice(0, 7);
-  const [d] = db.select({ n: sql<number>`count(*)`, c: sql<number>`coalesce(sum(cost_vnd),0)` }).from(schema.aiCalls).where(gte(schema.aiCalls.at, today)).all();
-  const [m] = db.select({ c: sql<number>`coalesce(sum(cost_vnd),0)` }).from(schema.aiCalls).where(gte(schema.aiCalls.at, `${month}-01`)).all();
+  const [d] = db.select({ n: CALL_COUNT, c: sql<number>`coalesce(sum(cost_vnd),0)` }).from(schema.aiCalls).where(gte(schema.aiCalls.at, vnDayStartIso())).all();
+  const [m] = db.select({ c: sql<number>`coalesce(sum(cost_vnd),0)` }).from(schema.aiCalls).where(gte(schema.aiCalls.at, vnMonthStartIso())).all();
   return {
     dailyCapVnd: Number(getSetting("ai.dailyCapVnd") ?? 200000),
     monthlyCapVnd: Number(getSetting("ai.monthlyCapVnd") ?? 3000000),

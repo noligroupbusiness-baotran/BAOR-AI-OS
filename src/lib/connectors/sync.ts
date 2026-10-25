@@ -1,10 +1,10 @@
 // Các việc chạy nền qua lớp connector: kiểm tra kết nối, đồng bộ số liệu về mục tiêu kênh,
 // đăng bài đến giờ, tự dừng quảng cáo theo luật CPL. Mọi lần chạy đều ghi sync_runs.
-import { and, eq, inArray, lte } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { channelDef } from "@/config/channels";
 import { campaignRepo } from "@/lib/campaigns/repository";
-import { getAdGuardrails, getAutomation } from "@/lib/queries";
+import { getAdGuardrails } from "@/lib/queries";
 import { applyRule, recordDecision } from "@/lib/router";
 import { logActivity } from "@/lib/activity";
 import { sendAlert } from "@/lib/alerts";
@@ -77,59 +77,9 @@ export async function syncChannelMetrics(): Promise<{ updated: number; errors: s
 }
 
 // ---------- Đăng bài đến giờ ----------
-
-export async function publishDuePosts(): Promise<{ published: number; failed: number; skipped: number }> {
-  const db = getDb();
-  const automation = getAutomation();
-  const out = { published: 0, failed: 0, skipped: 0 };
-  if (automation.auto_publish === false) return out;
-  const due = db
-    .select()
-    .from(schema.scheduledPosts)
-    .where(and(eq(schema.scheduledPosts.status, "scheduled"), lte(schema.scheduledPosts.scheduledFor, nowIso())))
-    .all()
-    // Bài video do src/lib/publishing/video.ts đăng (tải tệp, xác minh, chống trùng).
-    .filter((p) => !p.videoId);
-  for (const post of due) {
-    const content = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, post.contentId)).get();
-    // Luật: chỉ đăng nội dung đã duyệt / đã lên lịch, và phải có kết nối.
-    const gate = applyRule({ domain: "publish", subject: `Đăng “${post.title}” lên ${post.platform}`, entityType: "publication", entityId: post.id }, () => {
-      if (!content || !["approved", "scheduled", "published"].includes(content.status)) return { ok: false, reason: "Nội dung chưa được phê duyệt." };
-      const key = post.platform === "facebook" ? "facebook_page" : post.platform === "instagram" ? "instagram" : post.platform;
-      const c = connectorFor(key);
-      if (!c?.publish) return { ok: false, reason: `Chưa có connector đăng bài cho ${post.platform}.` };
-      const integration = db.select().from(schema.integrations).where(eq(schema.integrations.key, key)).get();
-      if (!integration?.connected) return { ok: false, reason: `Tài khoản ${integration?.name ?? key} chưa kết nối.` };
-      return { ok: true, value: key, reason: "Đủ điều kiện đăng." };
-    });
-    if (!gate.ok || !gate.value) {
-      // Không có kết nối thì giữ nguyên "chờ đăng" và ghi lý do, không đánh dấu lỗi để khỏi spam.
-      out.skipped++;
-      db.update(schema.scheduledPosts).set({ error: gate.reason }).where(eq(schema.scheduledPosts.id, post.id)).run();
-      continue;
-    }
-    const key = gate.value;
-    const connector = connectorFor(key)!;
-    const runId = startRun(key, "publish");
-    db.update(schema.scheduledPosts).set({ status: "publishing" }).where(eq(schema.scheduledPosts.id, post.id)).run();
-    const res = await connector.publish!(connectorContext(key), { postId: post.id, contentId: post.contentId, title: post.title, message: content?.draft || `${post.title}\n\n${content?.hook ?? ""}`.trim(), platform: post.platform });
-    if (res.ok) {
-      db.update(schema.scheduledPosts).set({ status: "published", error: null }).where(eq(schema.scheduledPosts.id, post.id)).run();
-      db.update(schema.contentItems).set({ status: "published" }).where(eq(schema.contentItems.id, post.contentId)).run();
-      campaignRepo.syncEntityStatus("publication", post.id, "published");
-      logActivity("system", `Đã đăng “${post.title}” lên ${post.platform}.`, "publishing");
-      finishRun(runId, true, res.message, 1);
-      out.published++;
-    } else {
-      db.update(schema.scheduledPosts).set({ status: "failed", error: res.message }).where(eq(schema.scheduledPosts.id, post.id)).run();
-      logActivity("system", `Đăng “${post.title}” thất bại: ${res.message}`, "publishing");
-      finishRun(runId, false, res.message);
-      out.failed++;
-      void sendAlert({ level: "error", title: `Đăng bài lỗi: ${post.title}`, text: res.message, href: "/publishing" });
-    }
-  }
-  return out;
-}
+// Bài chữ đi qua cùng cổng với bài video (chế độ thử, chống trùng theo trang, giành quyền nguyên tử, xác minh, quá hạn, bài mẫu):
+// src/lib/publishing/text.ts.
+export { publishDueTextPosts as publishDuePosts } from "@/lib/publishing/text";
 
 // ---------- Luật CPL: tự tạm dừng quảng cáo ----------
 

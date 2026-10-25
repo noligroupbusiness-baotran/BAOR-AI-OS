@@ -8,7 +8,7 @@ import { logActivity } from "@/lib/activity";
 import { isSampleAd } from "@/lib/ads/authorization";
 import { videos as seedVideos } from "@/lib/data/videos";
 import { jobVersions, readReport } from "@/lib/video/jobs";
-import { adProposals, contentProposals, feedbackPatterns, knowledgeProposals, skillProposals, topicPerformance, videoQaPatterns, type PostRow, type ProposalDraft, type PublishedPost, type QaReport } from "./analyze";
+import { adProposals, contentProposals, feedbackPatterns, knowledgeProposals, openProposals, skillProposals, topicPerformance, videoQaPatterns, type PostRow, type ProposalDraft, type PublishedPost, type QaReport } from "./analyze";
 import { captionIssues, captionSkill, scriptTextFor } from "@/lib/publishing/caption";
 
 const SAMPLE_VIDEOS = new Set(seedVideos.map((v) => v.id));
@@ -121,6 +121,16 @@ export function listProposals() {
     .orderBy(desc(schema.improvementProposals.updatedAt))
     .all()
     .map((p) => ({ ...p, evidence: arr(p.evidence) }));
+}
+
+/**
+ * Đề xuất để hiện cho OWNER: ẩn đề xuất chờ duyệt đã cũ (phân tích hiện tại không còn sinh ra — vd lỗi font đã được OWNER duyệt nên
+ * bản dựng mới không còn báo) hoặc trỏ video đã xoá. liveKeys = khoá của analyzeAll() vừa chạy (truyền vào để trang không phân tích 2 lần).
+ */
+export function listOpenProposals(liveKeys?: Set<string>) {
+  const keys = liveKeys ?? new Set(analyzeAll().proposals.map((p) => p.key));
+  const videos = new Set(getDb().select({ id: schema.videos.id }).from(schema.videos).all().map((v) => v.id));
+  return openProposals(listProposals(), keys, (id) => videos.has(id));
 }
 
 export function decideProposal(id: string, decision: "accepted" | "rejected", by: string, note: string): boolean {

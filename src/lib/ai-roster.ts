@@ -1,7 +1,7 @@
 import { and, desc, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { getSetting, setSetting } from "@/lib/admin";
-import type { RuleResult } from "@/lib/router";
+import { CALL_COUNT, vnMonthStartIso, type RuleResult } from "@/lib/router";
 import { MODEL_IDS } from "@/lib/ai-providers";
 
 // Đội AI theo Personal Brand System (sơ đồ OWNER 25/10/2026): việc LOGIC chạy theo quy trình (không AI); việc PHI LOGIC mới gọi AI,
@@ -23,7 +23,7 @@ export interface AiRole {
 
 export const AI_ROLES: AiRole[] = [
   { id: "research", name: "AI Nghiên cứu", step: "2", job: "Nghiên cứu chủ đề, lấy insight từ các nền tảng", defaultModel: "claude-opus-5-5" },
-  { id: "hooks", name: "AI Hook & Ý tưởng", step: "3", job: "Gợi ý hook / ý tưởng video ngắn từ insight và Second Brain", defaultModel: "claude-opus-5-5" },
+  { id: "hooks", name: "AI Hook & Ý tưởng", step: "3", job: "Gợi ý hook / ý tưởng video ngắn từ insight và kiến thức", defaultModel: "claude-opus-5-5" },
   { id: "script", name: "AI Kịch bản", step: "3", job: "Viết nháp kịch bản video ngắn (< 3 phút)", defaultModel: "claude-opus-5-5" },
   { id: "video_edit", name: "AI Edit Video", step: "4.2", job: "Biên tập video theo Skill ESV / Edit Video Ngang", defaultModel: "qwen2.5-32b (tại máy)", local: true },
   { id: "caption", name: "AI Viết bài đăng", step: "6.1", job: "Viết nội dung bài đăng theo hook / video", defaultModel: "claude-sonnet-5-5" },
@@ -76,8 +76,9 @@ export function saveRoleSettings(id: AiRoleId, s: Partial<RoleSettings>): void {
   if (s.monthlyCapVnd !== undefined) setSetting(`ai.role.${id}.monthlyCapVnd`, String(Math.max(0, Math.round(s.monthlyCapVnd) || 0)));
 }
 
+// Tháng theo giờ Việt Nam (cùng mốc với trần tháng chung ở router.getAiBudget)
 function monthStart(): string {
-  return `${new Date().toISOString().slice(0, 7)}-01`;
+  return vnMonthStartIso();
 }
 
 // Luật trước khi gọi AI của một vị trí: công tắc "Cho phép gọi AI" + trần riêng của vị trí (trần chung kiểm ở router).
@@ -108,14 +109,16 @@ export interface RoleSpend {
 // Màn hình báo cáo chung: chi phí tháng này theo từng AI ([Tên AI] – chi phí mỗi lần gọi).
 export function roleSpendThisMonth(): RoleSpend[] {
   const rows = getDb()
-    .select({ role: schema.aiCalls.role, purpose: schema.aiCalls.purpose, ok: schema.aiCalls.ok, n: sql<number>`count(*)`, c: sql<number>`coalesce(sum(cost_vnd),0)`, last: sql<string>`max(at)` })
+    .select({ role: schema.aiCalls.role, purpose: schema.aiCalls.purpose, ok: schema.aiCalls.ok, n: CALL_COUNT, c: sql<number>`coalesce(sum(cost_vnd),0)`, last: sql<string>`max(at)` })
     .from(schema.aiCalls)
     .where(gte(schema.aiCalls.at, monthStart()))
     .groupBy(schema.aiCalls.role, schema.aiCalls.purpose, schema.aiCalls.ok)
     .all();
   return AI_ROLES.map((role) => {
     const mine = rows.filter((r) => (r.role ?? roleForPurpose(r.purpose).id) === role.id);
-    const calls = mine.filter((r) => r.ok).reduce((a, r) => a + r.n, 0);
+    // calls = MỌI lần gọi (thành công + lỗi), cùng định nghĩa với "lần gọi hôm nay" (router.getAiBudget) — trước đây chỉ đếm thành công
+    // nên "tháng" có thể nhỏ hơn "hôm nay". failed = phần lỗi trong số đó; chi phí = tổng sổ; avgVnd = chi phí / mọi lần gọi.
+    const calls = mine.reduce((a, r) => a + r.n, 0);
     const costVnd = mine.reduce((a, r) => a + r.c, 0);
     const last = mine.map((r) => r.last).sort().at(-1) ?? null;
     return { role, settings: roleSettings(role), calls, failed: mine.filter((r) => !r.ok).reduce((a, r) => a + r.n, 0), costVnd, avgVnd: calls ? Math.round(costVnd / calls) : 0, lastAt: last };

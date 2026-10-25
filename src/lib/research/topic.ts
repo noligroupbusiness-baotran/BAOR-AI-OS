@@ -7,7 +7,7 @@ import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { desc, eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { gate } from "@/lib/ai";
-import { createResearchTask, saveResearchResult } from "./index";
+import { createResearchTask, recoverStaleResearch, saveResearchResult } from "./index";
 import { SOCIAL_KINDS, parseSocialPaste, socialToResearch, type SocialKind } from "./social";
 
 export const TOPIC_PURPOSE = "Insight cho hook & kịch bản video ngắn (Personal Brand System bước 2)";
@@ -45,6 +45,8 @@ const json = <T>(s: string, d: T): T => {
 };
 
 export function listTopics(): TopicRow[] {
+  // Nhiệm vụ "đang chạy" bị bỏ dở (máy chủ dừng giữa chừng) → báo lỗi thay vì quay mãi
+  recoverStaleResearch();
   const db = getDb();
   const tasks = db.select().from(schema.researchTasks).orderBy(desc(schema.researchTasks.createdAt)).all();
   if (!tasks.length) return [];

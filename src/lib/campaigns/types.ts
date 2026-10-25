@@ -151,7 +151,6 @@ export type CampaignSort = "updated" | "status" | "ending" | "budget" | "progres
 export interface CampaignFilter {
   q?: string;
   status?: CampaignStatus | "";
-  product?: string;
   owner?: string;
   month?: string; // YYYY-MM
   /** Chỉ lấy chiến dịch đang có cảnh báo. */
@@ -200,8 +199,15 @@ export interface NewCampaignInput {
 }
 
 export interface CampaignStats {
+  /** Số chính chỉ đếm chiến dịch thật; *Sample = phần chiến dịch mẫu (hiện riêng, nhãn "Mẫu"). */
   active: number;
+  activeSample: number;
   pendingApproval: number;
+  pendingApprovalSample: number;
+  /** Ngân sách tháng của chiến dịch thật (không gồm chiến dịch mẫu). */
   monthBudget: number;
+  /** Phần ngân sách tháng của chiến dịch MẪU (hiện riêng, nhãn "Mẫu"). */
+  monthBudgetSample: number;
   alerts: number;
+  alertsSample: number;
 }

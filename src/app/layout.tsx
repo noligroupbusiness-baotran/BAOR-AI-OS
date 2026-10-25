@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { ThemeScript } from "@/components/shell/theme-script";
+import { AppearFallback } from "@/components/shell/appear-fallback";
 
 export const metadata: Metadata = {
   title: "BAOR AI OS",
@@ -19,7 +20,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap"
         />
       </head>
-      <body className="min-h-full">{children}</body>
+      <body className="min-h-full">
+        {children}
+        <AppearFallback />
+      </body>
     </html>
   );
 }

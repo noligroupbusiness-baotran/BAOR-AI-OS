@@ -114,6 +114,24 @@ OWNER 25/10/2026 (tối): edit video LẠI ("edit lại đi") — lệnh "ngưng
       (kể cả Mixkit) để bản dựng có nhạc, giấy phép giữ nguyên văn → bảng kiểm P CHẶN ĐĂNG tới khi OWNER nghe duyệt bài (§7).
       Cũng xong (commit kế): chống trùng bài cùng Page ID (kể cả lên lịch 2 lần riêng / thử lại / dry-run), từ chối quyền ở Cài đặt mở đúng
       nhóm + hiện thông báo (toast trước #neo), sổ chi phí AI ghi đúng token khi parse lỗi sau khi hãng đã tính tiền (tính vào trần).
+   P. XONG (commit kế, OWNER 25–26/10) — Giao diện + kiểm toán logic:
+      - Theme: nền sáng ngà #f5f2ea và nền tối xanh rừng #0f1a14 (lấy từ màn đăng nhập gốc), icon chip màu theo nhóm, nút xanh ngọc,
+        hiệu ứng vào trang (tắt khi giảm chuyển động), video nền màn đăng nhập kèm nút bật / tắt nhỏ. Giữ font gốc. Luật "Giao diện ít chữ,
+        nút bấm" ghi vào §7 chuẩn vận hành + CLAUDE.md.
+      - Hành trình 7 bước. Menu "Khác" = Chiến dịch · Lead · Tư liệu (/assets mới). Insight → tab bước 1, Báo cáo → tab "Số liệu" bước 7,
+        Automation → Cài đặt › Tự động. Liên kết cũ chuyển hướng đúng. Cài đặt và Quảng cáo làm gọn.
+      - Sửa cuộn: html / body overflow-x: clip, thay hidden (menu trái / thanh trên sticky từng trôi theo trang, có cả trên production).
+      - Kiểm toán logic 26/10 (2 kiểm toán độc lập + 5 vòng phản biện):
+        - Bài chữ nay qua cổng chế độ thử / chống trùng / đọc lại. Bài quá hạn > 6 h thành "Quá hạn" (huỷ / xếp lại có chọn giờ);
+          bài mẫu không bao giờ đăng. Khoá chạy nền chống chồng.
+        - Cổng OWNER: nhân sự không thể mang email OWNER (lỗ hổng cũ). Ủy quyền ngân sách, tắt chế độ thử, xác nhận kiểm trang chỉ OWNER.
+        - Số đếm một nguồn (src/lib/attention.ts): lỗi dựng cũ tự đóng; Dừng không phải lỗi; giờ VN cho trần AI;
+          nhịp tim máy dựng ngay khi nhận việc; nghiên cứu kẹt tự thu hồi.
+        - Số liệu mẫu có nhãn "Mẫu", tách khỏi số thật. Dọn chữ bán hàng còn sót.
+        - refreshSampleCopy chỉ đổi chữ HIỂN THỊ của bản ghi mẫu còn nguyên chữ cũ, không bao giờ đổi trường mang hành vi
+          (FAQ / luật tự động).
+      - SAU KHI TRIỂN KHAI: OWNER bấm "Đăng xuất mọi thiết bị" một lần (phiên cấp cho bản ghi nhân sự trùng email OWNER trước đây
+        không phân biệt được với phiên OWNER).
    CHỜ OWNER: khoá Meta / Google / YouTube / TikTok (đăng bài + quảng cáo 7.2–7.5), hồ sơ cá nhân Facebook (6.2.1.1).
 2. Skill ESV + Skill Edit Video Ngang v0.1.r2 — XONG phần Phần chung A (4255aca, ff638df): nhạc A5 (chưa có bài đạt → KHÔNG nhạc),
    SFX OWNER theo vai trò, cắt lặng A11.4 (+ bảo vệ khoảng có từ), xem trước 720p, số A13, ảnh theo mô tả nội dung A4.1.

@@ -21,7 +21,7 @@ export function reportCsv(tab: ReportCsvTab, f: ReportFilter): { name: string; c
         name: `bao-cao-chien-dich-${suffix}.csv`,
         csv: table(
           ["Chiến dịch", "Trạng thái", "Mục tiêu", "Chỉ tiêu", "Đạt", "Tiến độ %", "Lead", "Chi phí", "Ngân sách", "CPL", "Nguồn số"],
-          rows.map((r) => [r.name, campaignStatusLabel[r.status].label, r.objective, r.targetValue ?? "", r.achieved, r.progress, r.leads, r.spent, r.budget, r.cpl ?? "", r.source]),
+          rows.map((r) => [r.name, campaignStatusLabel[r.status].label, r.objective, r.targetValue ?? "", r.achieved, r.progress, r.leads, r.spent, r.budget, r.cpl ?? "", r.sample ? "mẫu" : r.source]),
         ),
       };
     }
@@ -41,11 +41,11 @@ export function reportCsv(tab: ReportCsvTab, f: ReportFilter): { name: string; c
         ...s.byPlatform.map((x) => ["Kênh", x.platform, x.n]),
         ...s.byCampaign.map((x) => ["Chiến dịch", x.campaign, x.n, x.won]),
       ];
-      return { name: `bao-cao-lead-${suffix}.csv`, csv: table(["Nhóm", "Giá trị", "Số lead", "Chốt (giai đoạn won)"], rows) };
+      return { name: `bao-cao-lead-${suffix}.csv`, csv: table(["Nhóm", "Giá trị", "Số lead", "Đã chuyển đổi"], rows) };
     }
     case "costs": {
       const s = costSummary(f);
-      return { name: `bao-cao-chi-phi-${suffix}.csv`, csv: table(["Chiến dịch", "Ngân sách", "Đã chi", "Lead", "CPL"], s.byCampaign.map((x) => [x.name, x.budget, x.spent, x.leads, x.cpl ?? ""])) };
+      return { name: `bao-cao-chi-phi-${suffix}.csv`, csv: table(["Chiến dịch", "Ngân sách", "Đã chi", "Lead", "CPL", "Nguồn số"], s.byCampaign.map((x) => [x.name, x.budget, x.spent, x.leads, x.cpl ?? "", x.sample ? "mẫu" : "thật"])) };
     }
   }
 }

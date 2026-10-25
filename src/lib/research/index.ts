@@ -7,6 +7,8 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { getDb, schema } from "@/db";
 import { aiConfigured, gate } from "@/lib/ai";
+import { getSetting, setSetting } from "@/lib/admin";
+import { recordAiCall, WEB_SEARCH_MODEL_PREFIX } from "@/lib/router";
 import { getKnowledgePages, searchKnowledge } from "@/lib/knowledge";
 import { recordContentVersion } from "@/lib/content/versions";
 import { buildShootingScript, maxSecondsFromGoal, scriptQa, type ScriptQa } from "@/lib/content/shooting-script";
@@ -90,7 +92,39 @@ export function createResearchTask(input: { question: string; purposeKind: Purpo
   return id;
 }
 
+// ---------------------------------------------------------------- nhiệm vụ đang chạy: mốc bắt đầu + thu hồi khi kẹt
+
+/** Quá thời gian này mà vẫn "running" (máy chủ khởi động lại / tiến trình chết giữa chừng) → coi là lỗi, cho chạy lại. */
+export const RESEARCH_STALE_MS = Number(process.env.BAOR_RESEARCH_STALE_MIN ?? 20) * 60_000;
+/** Phí công cụ web_search (≈ 10 USD / 1.000 lượt) — ghi vào sổ ai_calls để tính trần ngày / tháng / vị trí. */
+export const VND_PER_SEARCH = 260;
+const startedKey = (id: string) => `research.startedAt.${id}`;
+// Nhiệm vụ đang chạy TRONG tiến trình này (không bao giờ bị coi là kẹt khi còn ở đây)
+const inFlight = ((globalThis as unknown as { __baorResearchRunning?: Set<string> }).__baorResearchRunning ??= new Set());
+export const STALE_RESEARCH_ERROR = "Lần chạy trước bị gián đoạn (máy chủ khởi động lại hoặc quá thời gian) — bấm chạy lại.";
+
+/** "running" mà không còn chạy trong tiến trình này và không có mốc bắt đầu (bản ghi cũ) / mốc quá RESEARCH_STALE_MS. */
+function isStaleRunning(t: { id: string; status: string }, now = Date.now()): boolean {
+  if (t.status !== "running" || inFlight.has(t.id)) return false;
+  const at = Date.parse(getSetting(startedKey(t.id)) ?? "");
+  return !Number.isFinite(at) || now - at > RESEARCH_STALE_MS;
+}
+
+/** Đánh dấu lỗi các nhiệm vụ kẹt "running" (gọi khi đọc danh sách / mở nhiệm vụ / trước khi chạy). Trả số nhiệm vụ đã thu hồi. */
+export function recoverStaleResearch(now = Date.now()): number {
+  const db = getDb();
+  let n = 0;
+  for (const t of db.select({ id: schema.researchTasks.id, status: schema.researchTasks.status }).from(schema.researchTasks).where(eq(schema.researchTasks.status, "running")).all()) {
+    if (!isStaleRunning(t, now)) continue;
+    db.update(schema.researchTasks).set({ status: "error", error: STALE_RESEARCH_ERROR }).where(eq(schema.researchTasks.id, t.id)).run();
+    setSetting(startedKey(t.id), "");
+    n++;
+  }
+  return n;
+}
+
 export function listResearchTasks() {
+  recoverStaleResearch();
   const db = getDb();
   const tasks = db.select().from(schema.researchTasks).orderBy(desc(schema.researchTasks.createdAt)).all();
   const ids = tasks.map((t) => t.id);
@@ -102,6 +136,7 @@ export function listResearchTasks() {
 }
 
 export function getResearchTask(id: string) {
+  recoverStaleResearch();
   const db = getDb();
   const task = db.select().from(schema.researchTasks).where(eq(schema.researchTasks.id, id)).get();
   if (!task) return null;
@@ -294,10 +329,31 @@ type RunOut = { usage: { input_tokens: number; output_tokens: number }; text: st
 export async function runResearchWithAi(taskId: string, by: string, opts: { append?: boolean } = {}): Promise<{ ok: true; summary: string } | { ok: false; error: string }> {
   if (!aiConfigured()) return { ok: false, error: "Chưa có khóa Claude API. Vào Cài đặt › Kết nối › Claude API để nhập khóa." };
   const db = getDb();
+  recoverStaleResearch();
   const task = db.select().from(schema.researchTasks).where(eq(schema.researchTasks.id, taskId)).get();
   if (!task) return { ok: false, error: "Không tìm thấy nhiệm vụ" };
   if (task.status === "running") return { ok: false, error: "Nhiệm vụ đang chạy" };
   db.update(schema.researchTasks).set({ status: "running", error: null }).where(eq(schema.researchTasks.id, taskId)).run();
+  setSetting(startedKey(taskId), nowIso());
+  inFlight.add(taskId);
+  // try/finally: lỗi bất ngờ (ném ra ngoài cổng AI, lưu kết quả lỗi…) không để nhiệm vụ kẹt "running"
+  try {
+    return await runResearchSteps(taskId, task, by, opts);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    db.update(schema.researchTasks).set({ status: "error", error: msg.slice(0, 500) }).where(eq(schema.researchTasks.id, taskId)).run();
+    return { ok: false, error: msg };
+  } finally {
+    inFlight.delete(taskId);
+    setSetting(startedKey(taskId), "");
+    // Đường nào cũng phải rời "running": thành công → saveResearchResult đặt "done"; các nhánh lỗi đặt "error"
+    const now = db.select({ status: schema.researchTasks.status }).from(schema.researchTasks).where(eq(schema.researchTasks.id, taskId)).get();
+    if (now?.status === "running") db.update(schema.researchTasks).set({ status: "error", error: "Lần chạy kết thúc mà không lưu được kết quả — bấm chạy lại." }).where(eq(schema.researchTasks.id, taskId)).run();
+  }
+}
+
+async function runResearchSteps(taskId: string, task: typeof schema.researchTasks.$inferSelect, by: string, opts: { append?: boolean }): Promise<{ ok: true; summary: string } | { ok: false; error: string }> {
+  const db = getDb();
   const kc = knowledgeContext(task.question);
   const maxSearches = 8;
 
@@ -338,6 +394,9 @@ export async function runResearchWithAi(taskId: string, by: string, opts: { appe
     return step1;
   }
   const r1 = step1.res;
+  // Phí web_search đã phát sinh ở bước 1 (kể cả khi bước sau lỗi) → ghi sổ ai_calls để tính vào trần ngày / tháng / vị trí
+  const searchCostVnd = r1.searches * VND_PER_SEARCH;
+  if (r1.searches > 0) recordAiCall({ purpose: "research", role: "research", model: `${WEB_SEARCH_MODEL_PREFIX} × ${r1.searches}`, inputTokens: 0, outputTokens: 0, ok: true, costVnd: searchCostVnd });
   if (r1.urls.size === 0) {
     db.update(schema.researchTasks).set({ status: "error", error: "Không tìm được nguồn ngoài nào." }).where(eq(schema.researchTasks.id, taskId)).run();
     return { ok: false, error: "Không tìm được nguồn ngoài nào." };
@@ -365,10 +424,9 @@ export async function runResearchWithAi(taskId: string, by: string, opts: { appe
     db.update(schema.researchTasks).set({ status: "error", error: "AI không trả về hồ sơ hợp lệ." }).where(eq(schema.researchTasks.id, taskId)).run();
     return { ok: false, error: "AI không trả về hồ sơ hợp lệ." };
   }
-  const vndPerSearch = 260; // ≈ 10 USD / 1.000 lượt tìm
-  // Chi phí = đúng số cổng AI đã ghi sổ ai_calls cho từng bước: giá theo mô hình hãng THỰC SỰ chạy (response.model — bước 1 bật
-  // fallbacks "default" nên có thể khác mô hình yêu cầu; lạ / chưa có trong bảng giá → giá mô hình yêu cầu + ghi chú ở nhãn mô hình).
-  const cost = step1.costVnd + step2.costVnd + r1.searches * vndPerSearch;
+  // Chi phí = đúng số đã ghi sổ ai_calls: hai bước qua cổng AI (giá theo mô hình hãng THỰC SỰ chạy — bước 1 bật fallbacks "default"
+  // nên có thể khác mô hình yêu cầu) + phí web_search ghi riêng ở trên.
+  const cost = step1.costVnd + step2.costVnd + searchCostVnd;
   saveResearchResult(taskId, out, { runner: "ai", allowedUrls: new Set(r1.urls.keys()), model: step1.servedModel === step2.servedModel ? step2.servedModel : `${step1.servedModel} + ${step2.servedModel}`, searchCount: r1.searches, costVnd: cost, by, append: opts.append });
   return { ok: true, summary: out.summary };
 }
