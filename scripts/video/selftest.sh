@@ -125,6 +125,43 @@ print(f"SELFTEST {asp} ĐẠT: bản chính {m[0]}x{m[1]}, xem nhanh {p[0]}x{p[1
 P
 done
 
+# Cắt lặng (Phần chung A11.4 + phản biện P2-1): lặng thật > 0,60 s rút còn 0,30 s; nguồn nói liền không khoảng nghỉ không được mất
+# câu nói nhỏ; khoảng có từ đã nghe được không bao giờ bị cắt.
+python3 - "$HERE" "$W" <<'P'
+import sys, wave
+import numpy as np
+sys.path.insert(0, sys.argv[1])
+import esv_render as E
+W, sr = sys.argv[2], 16000
+rng = np.random.default_rng(1)
+def voice(sec, db):  # "giọng" tổng hợp: nhiễu điều biên theo nhịp âm tiết, không có khoảng nghỉ
+    t = np.arange(int(sec * sr)) / sr
+    return rng.standard_normal(len(t)).astype(np.float32) * 0.1 * (0.75 + 0.25 * np.sin(2 * np.pi * 4 * t)) * 10 ** (db / 20)
+def cuts(name, parts, words=None):
+    x = np.concatenate(parts) + rng.standard_normal(sum(map(len, parts))).astype(np.float32) * 10 ** (-60 / 20)
+    p = f"{W}/ks_{name}.wav"
+    w = wave.open(p, "wb"); w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr); w.writeframes((np.clip(x, -1, 1) * 32767).astype(np.int16).tobytes()); w.close()
+    dur = len(x) / sr
+    keep, out, a0 = E.keep_segments(p, dur, words=words), [], 0.0
+    for k0, k1 in keep:
+        if k0 > a0 + 1e-3:
+            out.append((round(a0, 2), round(k0, 2)))
+        a0 = k1
+    if a0 < dur - 0.05:
+        out.append((round(a0, 2), round(dur, 2)))
+    return out
+z = lambda s: np.zeros(int(s * sr), np.float32)
+c = cuts("pause", [voice(4, 0), z(1.5), voice(4, 0)])
+assert len(c) == 1 and abs((1.5 - (c[0][1] - c[0][0])) - 0.30) < 0.08, f"lặng 1,5 s phải rút còn ~0,30 s: {c}"
+assert not cuts("short", [voice(4, 0), z(0.5), voice(4, 0)]), "lặng 0,5 s (< 0,60 s) không được cắt"
+c = cuts("soft15", [voice(5, 0), voice(3, -15), voice(5, 0)])
+assert not c, f"nói liền, câu nhỏ hơn 15 dB không được cắt: {c}"
+words = [{"start": 5.0 + 0.4 * i, "end": 5.0 + 0.4 * i + 0.35} for i in range(8)]
+c = cuts("soft30w", [voice(5, 0), voice(3.2, -30), voice(5, 0)], words)
+assert not any(a < 8.2 and b > 5.0 for a, b in c), f"khoảng có từ đã nghe không được cắt: {c}"
+print(f"SELFTEST CẮT LẶNG ĐẠT: rút lặng 1,5 s → 0,30 s; giữ câu nhỏ −15 dB; giữ khoảng có từ ở −30 dB")
+P
+
 # 16:9 — Skill Edit Video Ngang v0.1.r2: ảnh chỉ trong THẺ cạnh người nói (M1–M6), không B-roll toàn khung; chữ, thẻ, bóng trong title-safe 5 %
 python3 "$HERE/ngang.py" --self-test
 DUR=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$W/speech.aiff")  # $D bị vòng lặp 4:5 / 1:1 dùng lại làm thư mục
@@ -155,6 +192,8 @@ r = json.load(open(f"{d}/report.json"))
 qa = {q["id"]: q["status"] for q in r["qa"]}
 m = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0", f"{d}/master.mp4"], capture_output=True, text=True).stdout.strip()
 assert m == "1920,1080", m
+pv = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0", f"{d}/preview.mp4"], capture_output=True, text=True).stdout.strip()
+assert pv == "1280,720", f"16:9: bản xem trước phải 720p (Phần chung A3.4): {pv}"
 bad = [k for k in "ABCDEFGHQRT" if qa.get(k) not in ("pass", "info")]
 assert not bad, f"16:9: bảng kiểm chưa đạt {bad}: {[q for q in r['qa'] if q['id'] in bad]}"
 ev = r["broll"]["events"]

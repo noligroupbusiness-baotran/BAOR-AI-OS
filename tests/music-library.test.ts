@@ -18,15 +18,15 @@ const dir = path.join(tmp, "video-assets", "music");
 const PY = process.env.PYTHON_BIN || "python3";
 const VIDEO = path.join(process.cwd(), "scripts", "video");
 
-const PENDING_LIC = "Mixkit Stock Music Free License (Mixkit 963) — kho tư liệu NHAC-NEN-SFX: ĐỦ-HỒ-SƠ (đội kiểm hồ sơ giấy phép; Content ID thật chưa biết) — chờ OWNER nghe duyệt";
+const PENDING_LIC = "Pixabay Content License (Pixabay 963) — kho tư liệu NHAC-NEN-SFX: ĐỦ-HỒ-SƠ (đội kiểm hồ sơ giấy phép; Content ID thật chưa biết) — chờ OWNER nghe duyệt";
 
 function seed() {
   fs.rmSync(dir, { recursive: true, force: true });
   fs.mkdirSync(dir, { recursive: true });
   const items = [
     { file: "mac-dinh.mp3", genre: "lofi-chill", mood: ["lofi"], license: "Pixabay Content License — CEO duyệt", default: true },
-    { file: "acoustic_a_mixkit963.mp3", genre: "acoustic", mood: ["ấm áp"], license: PENDING_LIC, catalogStatus: "ĐỦ-HỒ-SƠ" },
-    { file: "acoustic_b_mixkit839.mp3", genre: "acoustic", mood: ["ấm áp"], license: PENDING_LIC.replace("963", "839"), catalogStatus: "ĐỦ-HỒ-SƠ" },
+    { file: "acoustic_a_pixabay963.mp3", genre: "acoustic", mood: ["ấm áp"], license: PENDING_LIC, catalogStatus: "ĐỦ-HỒ-SƠ" },
+    { file: "acoustic_b_pixabay839.mp3", genre: "acoustic", mood: ["ấm áp"], license: PENDING_LIC.replace("963", "839"), catalogStatus: "ĐỦ-HỒ-SƠ" },
     { file: "upbeat_bi-loai.mp3", genre: "upbeat", license: PENDING_LIC, catalogStatus: "ĐỦ-HỒ-SƠ", exclude: true },
     { file: "thieu-tep.mp3", genre: "upbeat", license: PENDING_LIC, catalogStatus: "ĐỦ-HỒ-SƠ" },
     { file: "nghi-ai.mp3", genre: "upbeat", license: PENDING_LIC, catalogStatus: "NGHI-AI" },
@@ -58,29 +58,29 @@ test("library_sync: chỉ nạp bài ĐỦ-HỒ-SƠ đúng sha256, chặn tên t
 test("thư viện nhạc: bỏ bài bị loại / thiếu tệp; bộ dựng KHÔNG tự chọn bài chưa duyệt, chỉ gợi ý", () => {
   seed();
   const lib = ml.musicLibrary();
-  assert.deepEqual(lib.map((t) => t.file), ["mac-dinh.mp3", "acoustic_a_mixkit963.mp3", "acoustic_b_mixkit839.mp3", "nghi-ai.mp3"]);
+  assert.deepEqual(lib.map((t) => t.file), ["mac-dinh.mp3", "acoustic_a_pixabay963.mp3", "acoustic_b_pixabay839.mp3", "nghi-ai.mp3"]);
   assert.deepEqual(lib.map((t) => t.approved), [true, false, false, false]);
   const p = pyPick("acoustic");
   assert.equal(p.file, "mac-dinh.mp3", "loại 'acoustic' chưa có bài duyệt → bài mặc định");
   assert.match(p.info.chosenBy ?? "", /chưa có bài OWNER duyệt/);
-  assert.deepEqual(p.info.suggest, ["acoustic_a_mixkit963.mp3", "acoustic_b_mixkit839.mp3"]);
+  assert.deepEqual(p.info.suggest, ["acoustic_a_pixabay963.mp3", "acoustic_b_pixabay839.mp3"]);
   assert.ok(p.genres.acoustic, "AI được biết có loại acoustic để chọn");
 });
 
 test("OWNER duyệt → bộ dựng tự chọn bài hợp loại, cố định theo video; bỏ duyệt → quay về mặc định, giấy phép kho trả nguyên văn", () => {
   seed();
-  assert.deepEqual(ml.approveMusic("acoustic_b_mixkit839.mp3", "owner@baor.test", new Date("2026-10-22T10:00:00+07:00")), { ok: true });
-  const t = ml.musicLibrary().find((x) => x.file === "acoustic_b_mixkit839.mp3")!;
+  assert.deepEqual(ml.approveMusic("acoustic_b_pixabay839.mp3", "owner@baor.test", new Date("2026-10-22T10:00:00+07:00")), { ok: true });
+  const t = ml.musicLibrary().find((x) => x.file === "acoustic_b_pixabay839.mp3")!;
   assert.equal(t.approved, true);
   assert.equal(t.approvedBy, "owner@baor.test");
   assert.match(t.license, /OWNER nghe duyệt 22\/10\/2026 \(owner@baor\.test\)/);
   const p = pyPick("acoustic");
-  assert.equal(p.file, "acoustic_b_mixkit839.mp3");
+  assert.equal(p.file, "acoustic_b_pixabay839.mp3");
   assert.doesNotMatch(p.license, /chờ OWNER/, "bài được chọn không bị bảng kiểm P chặn");
   assert.equal(pyPick("acoustic").file, pyPick("acoustic").file, "dựng lại cùng video không đổi nhạc");
   assert.equal(pyPick(null).file, "mac-dinh.mp3", "không có loại nhạc (kế hoạch người lập) → bài mặc định");
-  assert.deepEqual(ml.unapproveMusic("acoustic_b_mixkit839.mp3"), { ok: true });
-  const back = ml.musicLibrary().find((x) => x.file === "acoustic_b_mixkit839.mp3")!;
+  assert.deepEqual(ml.unapproveMusic("acoustic_b_pixabay839.mp3"), { ok: true });
+  const back = ml.musicLibrary().find((x) => x.file === "acoustic_b_pixabay839.mp3")!;
   assert.equal(back.license, PENDING_LIC.replace("963", "839"));
   assert.equal(pyPick("acoustic").file, "mac-dinh.mp3");
 });
@@ -92,31 +92,29 @@ test("duyệt chỉ cho bài kho ĐỦ-HỒ-SƠ đang chờ; không bỏ duyệt
   assert.equal(ml.approveMusic("mac-dinh.mp3", "owner@baor.test").ok, false, "không ở trạng thái chờ");
   assert.equal(ml.approveMusic("khong-co.mp3", "owner@baor.test").ok, false);
   assert.equal(ml.unapproveMusic("mac-dinh.mp3").ok, false, "bài CEO duyệt trước đây không bị bỏ duyệt bằng nút");
-  assert.ok(ml.musicFilePath("acoustic_a_mixkit963.mp3"));
+  assert.ok(ml.musicFilePath("acoustic_a_pixabay963.mp3"));
   assert.equal(ml.musicFilePath("../music/manifest.json"), null);
   assert.equal(ml.musicFilePath("manifest.json"), null);
   assert.equal(ml.musicFilePath("thieu-tep.mp3"), null);
 });
 
-test("Skill v0.1.r2 (A5): bài LOẠI 552792 / 241274 không bao giờ được dùng; chưa có bài duyệt → bài kho ĐỦ-HỒ-SƠ hợp loại, CHẶN ĐĂNG", () => {
+test("Phần chung A5.2 / CK-11: 552792 / 241274 / 136824 và MỌI bài Mixkit không bao giờ được dùng; chưa có bài đạt → bản KHÔNG nhạc", () => {
   seed();
   const mf = path.join(dir, "manifest.json");
   const items = JSON.parse(fs.readFileSync(mf, "utf8")) as Record<string, unknown>[];
-  // bài mặc định cũ là Pixabay 552792 (đã LOẠI) + một bài 241274 kho vẫn ghi ĐỦ-HỒ-SƠ
+  // bài mặc định cũ là Pixabay 552792 (đã LOẠI) + 241274 / 136824 kho vẫn ghi ĐỦ-HỒ-SƠ + một bài Mixkit ĐÃ được duyệt tay
   items[0] = { ...items[0], file: "pixabay-552792-chillhop.mp3" };
   items.push({ file: "acoustic_x_pixabay241274.mp3", genre: "acoustic", license: PENDING_LIC, catalogStatus: "ĐỦ-HỒ-SƠ" });
-  for (const f of ["pixabay-552792-chillhop.mp3", "acoustic_x_pixabay241274.mp3"]) fs.writeFileSync(path.join(dir, f), "ID3");
+  items.push({ file: "cinematic_y_pixabay136824.mp3", genre: "cinematic", license: PENDING_LIC, catalogStatus: "ĐỦ-HỒ-SƠ" });
+  items.push({ file: "acoustic_z_mixkit655.mp3", genre: "acoustic", license: "Mixkit Stock Music Free License — OWNER nghe duyệt 22/10/2026", catalogStatus: "ĐỦ-HỒ-SƠ", source: "https://mixkit.co/x" });
+  for (const f of ["pixabay-552792-chillhop.mp3", "acoustic_x_pixabay241274.mp3", "cinematic_y_pixabay136824.mp3", "acoustic_z_mixkit655.mp3"]) fs.writeFileSync(path.join(dir, f), "ID3");
   fs.writeFileSync(mf, JSON.stringify(items));
-  assert.ok(!ml.musicLibrary().some((t) => /552792|241274/.test(t.file)), "app không liệt kê bài LOẠI");
+  assert.ok(!ml.musicLibrary().some((t) => /552792|241274|136824|mixkit/.test(t.file)), "app không liệt kê bài không dùng");
   assert.equal(ml.approveMusic("acoustic_x_pixabay241274.mp3", "owner@baor.test").ok, false, "không duyệt được bài LOẠI");
-  for (const seedName of ["a.mp4", "b.mp4", "c.mp4", "d.mp4", "e.mp4"]) {
+  assert.equal(ml.approveMusic("cinematic_y_pixabay136824.mp3", "owner@baor.test").ok, false, "136824 chưa tra → không duyệt được");
+  for (const seedName of ["a.mp4", "b.mp4", "c.mp4"]) {
     const p = pyPick("acoustic", seedName);
-    assert.ok(p.file && !/552792|241274/.test(p.file), `không dùng bài LOẠI: ${p.file}`);
-    assert.match(p.file!, /^acoustic_[ab]_mixkit/, "bài kho ĐỦ-HỒ-SƠ hợp loại");
-    assert.match(p.license, /chờ OWNER nghe duyệt/, "giấy phép còn chờ → bảng kiểm P chặn đăng");
-    assert.match(p.info.chosenBy ?? "", /CHẶN ĐĂNG/);
+    assert.equal(p.file, null, `không trộn bài chưa đạt / bị loại: ${p.file}`);
+    assert.match((p.info as { reason?: string }).reason ?? "", /KHÔNG nhạc/);
   }
-  const any = pyPick("upbeat");
-  assert.ok(any.file !== "nghi-ai.mp3" && any.file !== "upbeat_bi-loai.mp3", `không dùng bài NGHI-AI / bị loại: ${any.file}`);
 });
-

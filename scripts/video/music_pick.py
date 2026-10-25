@@ -8,14 +8,17 @@ import json
 import os
 
 MUSIC_PENDING = "chờ OWNER"
-# Bài đã LOẠI theo luật A5 (QĐ-CEO 1010; Skill ESV v0.1.r2 B0 #10, "Lỗi cấm"; Skill Edit Video Ngang R8.8): không bao giờ dùng,
-# kể cả khi manifest còn ghi giấy phép hay "default". So theo mã bài Pixabay trong tên tệp / nguồn.
-BANNED_IDS = ("552792", "241274")
+# Phần chung (A) A5.2 / A15 / CK-11 (QĐ-CEO 1010): KHÔNG dùng — Pixabay 552792, 241274 (LOẠI), 136824 (chưa tra bên thứ ba
+# đăng lại → chưa được dùng), và MỌI bài Mixkit. Không bao giờ dùng, kể cả khi manifest còn ghi giấy phép / "default" / OWNER duyệt.
+BANNED_IDS = ("552792", "241274", "136824")
+BANNED_SOURCES = ("mixkit",)
+A5_NO_MUSIC = ("chưa có bài đạt luật A5 (giấy phép thương mại rõ, không nhãn AI, đã tra YouTube không thấy bên thứ ba đăng lại; "
+               "không Mixkit, không 552792 / 241274 / 136824) → bản KHÔNG nhạc theo Phần chung A5.2")
 
 
 def banned(x):
-    hay = f"{x.get('file', '')} {x.get('source', '')}"
-    return next((i for i in BANNED_IDS if i in hay), None)
+    hay = f"{x.get('file', '')} {x.get('source', '')} {x.get('license', '')}".lower()
+    return next((i for i in BANNED_IDS if i in hay), None) or next((s for s in BANNED_SOURCES if s in hay), None)
 
 
 def music_library(data_dir):
@@ -63,13 +66,8 @@ def pick_music(lib, mood=None, seed=""):
     if dflt:
         why = "bài mặc định" + (f" (loại '{mood}' chưa có bài OWNER duyệt)" if mood else "")
         return dflt[0]["path"], dflt[0]["license"], {**info, "chosenBy": why}
-    cand = [x for x in pend if fit(x)] or pend
-    if cand:
-        c = _by_seed(cand, seed)
-        why = (f"chưa có bài OWNER duyệt — dùng bài kho ĐỦ-HỒ-SƠ {'hợp loại ' + repr(mood) if fit(c) else 'gần nhất'} để nghe thử; "
-               "CHẶN ĐĂNG tới khi OWNER duyệt bài này")
-        return c["path"], c["license"], {**info, "chosenBy": why, "pendingOwner": True}
+    # Không còn dự phòng "bài chờ duyệt": A5.2 — chưa có bài đạt thì giao bản KHÔNG nhạc, ghi rõ (không trộn bài chưa đạt)
     if ok:
         c = sorted(ok, key=lambda x: x["file"])[0]
         return c["path"], c["license"], {**info, "chosenBy": "bài đã duyệt duy nhất còn lại"}
-    return None, "", info
+    return None, "", {**info, "reason": A5_NO_MUSIC}

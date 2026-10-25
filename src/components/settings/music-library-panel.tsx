@@ -30,7 +30,7 @@ export async function MusicLibraryPanel() {
     <Panel id="music-library">
       <PanelHeader
         title="Thư viện nhạc nền"
-        sub={`Nạp từ kho tư liệu (chỉ bài kho ghi ĐỦ-HỒ-SƠ, đúng sha256). Biên tập AI chọn loại nhạc hợp nội dung; bộ dựng ưu tiên bài anh đã nghe duyệt. Chưa có bài duyệt thì dùng một bài kho hợp loại để anh nghe thử ngay trong video, và bảng kiểm P chặn đăng tới khi anh duyệt bài đó. Bài 552792 và 241274 đã bị LOẠI theo luật A5. ${sfxCount()} SFX có giấy phép đã nạp (chưa dùng: bộ dựng vẫn dùng SFX tổng hợp OWNER đã duyệt).`}
+        sub={`Nạp từ kho tư liệu (chỉ bài kho ghi ĐỦ-HỒ-SƠ, đúng sha256). Biên tập AI chọn loại nhạc hợp nội dung; bộ dựng chỉ dùng bài anh đã nghe duyệt VÀ đạt luật A5 của Phần chung (giấy phép rõ, không nhãn AI, đã tra YouTube không thấy bên thứ ba đăng lại). Không Mixkit; 552792, 241274, 136824 không dùng. Chưa có bài đạt → video dựng KHÔNG nhạc (A5.2). ${sfxCount()} SFX có giấy phép đã nạp từ kho. Hiệu ứng âm thanh khi dựng: bộ SFX anh gửi theo vai trò của Kho hiệu ứng âm thanh (whoosh chỉ 16:9), mức ≤ −19 dB dưới giọng (A6.3); thiếu vai trò nào thì dùng âm tổng hợp.`}
         action={<Pill tone={approved > 1 ? "jade" : "amber"}>{approved}/{tracks.length} bài đã duyệt</Pill>}
       />
       {tracks.length === 0 ? (

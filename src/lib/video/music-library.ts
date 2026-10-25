@@ -8,9 +8,14 @@ import { dataDir } from "./jobs";
 // bài đã bỏ dấu đó, và bảng kiểm P chặn đăng nếu bài chưa duyệt vẫn được dùng. Chỉ OWNER (quyền quản trị) duyệt / bỏ duyệt.
 
 export const MUSIC_PENDING = "chờ OWNER nghe duyệt";
-/** Bài LOẠI theo luật A5 (QĐ-CEO 1010; Skill ESV / Skill Edit Video Ngang v0.1.r2) — cùng danh sách với music_pick.BANNED_IDS. */
-export const BANNED_IDS = ["552792", "241274"];
-const isBanned = (x: Raw) => BANNED_IDS.some((id) => `${String(x.file ?? "")} ${String(x.source ?? "")}`.includes(id));
+/** Không dùng theo Phần chung A5.2 / CK-11 (QĐ-CEO 1010): 552792, 241274 (LOẠI), 136824 (chưa tra bên thứ ba đăng lại) và mọi bài
+ *  Mixkit — cùng danh sách với music_pick.BANNED_IDS / BANNED_SOURCES. */
+export const BANNED_IDS = ["552792", "241274", "136824"];
+export const BANNED_SOURCES = ["mixkit"];
+const isBanned = (x: Raw) => {
+  const hay = `${String(x.file ?? "")} ${String(x.source ?? "")} ${String(x.license ?? "")}`.toLowerCase();
+  return BANNED_IDS.some((id) => hay.includes(id)) || BANNED_SOURCES.some((src) => hay.includes(src));
+};
 
 export interface MusicTrack {
   file: string;

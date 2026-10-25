@@ -37,7 +37,7 @@ GENRE_MOOD = {
     "acoustic": ["ấm áp", "đời thường", "vlog", "đội nhóm"],
 }
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from music_pick import BANNED_IDS  # noqa: E402  (bài LOẠI theo luật A5 — một danh sách dùng chung với bộ dựng)
+from music_pick import BANNED_IDS, BANNED_SOURCES  # noqa: E402  (bài LOẠI theo luật A5 — một danh sách dùng chung với bộ dựng)
 UA = "Mozilla/5.0 (BAOR library_sync; files listed in the licence catalogue)"
 
 
@@ -168,9 +168,10 @@ def sync(rows, data_dir, dry_run=False, fetch=download, log=print):
             report["skipped"].append({"file": name, "reason": f"trạng thái kho {status or 'trống'} → không dùng"})
             revoked[name] = (status or "trống", f"kho tư liệu ghi {status or 'trống'} → không dùng (thu hồi khi đồng bộ)")
             continue
-        if any(i in name or i in (r.get("link_trang") or "") for i in BANNED_IDS):
-            report["skipped"].append({"file": name, "reason": "bài LOẠI theo luật A5 (QĐ-CEO 1010) → không dùng"})
-            revoked[name] = ("LOẠI (A5)", "bài LOẠI theo luật A5 (QĐ-CEO 1010; Skill ESV / Ngang v0.1.r2) → không dùng")
+        hay = f"{name} {r.get('link_trang') or ''} {r.get('nguon') or ''}".lower()
+        if any(i in hay for i in BANNED_IDS) or any(src in hay for src in BANNED_SOURCES):
+            report["skipped"].append({"file": name, "reason": "không dùng theo Phần chung A5.2 (QĐ-CEO 1010: 552792 / 241274 / 136824 / Mixkit)"})
+            revoked[name] = ("LOẠI (A5)", "không dùng theo Phần chung A5.2 / CK-11 (QĐ-CEO 1010: Mixkit, 552792, 241274, 136824)")
             continue
         if not safe_name(name) or not re.fullmatch(r"[0-9a-fA-F]{64}", r.get("sha256") or "") or not (r.get("link_tai") or "").startswith("https://"):
             report["skipped"].append({"file": name, "reason": "dòng danh mục thiếu / sai tên tệp, sha256 hoặc link tải https"})
@@ -232,25 +233,27 @@ def self_test():
         open(dest, "wb").write(data)
         return None
 
-    base = {"nguon": "Mixkit", "id": "1", "giay_phep": "Mixkit Stock Music Free License — https://mixkit.co/license/", "do_dai": "2:12", "ghi_cong": "Không bắt buộc"}
+    base = {"nguon": "Pixabay", "id": "1", "giay_phep": "Pixabay Content License — https://pixabay.com/service/license-summary/", "do_dai": "2:12", "ghi_cong": "Không bắt buộc"}
     rows = [
-        {**base, "ten_tep": "upbeat_a_mixkit1.mp3", "the_loai": "upbeat", "trang_thai": "ĐỦ-HỒ-SƠ", "sha256": sha, "link_tai": "https://x/a.mp3"},
+        {**base, "ten_tep": "upbeat_a_pixabay1.mp3", "the_loai": "upbeat", "trang_thai": "ĐỦ-HỒ-SƠ", "sha256": sha, "link_tai": "https://x/a.mp3"},
         {**base, "ten_tep": "lofi_b_pixabay2.mp3", "the_loai": "lofi-chill", "trang_thai": "NGHI-AI", "sha256": sha, "link_tai": "https://x/b.mp3"},
         {**base, "ten_tep": "lofi_c_pixabay3.mp3", "the_loai": "lofi-chill", "trang_thai": "CHỈ-NỘI-BỘ", "sha256": sha, "link_tai": "https://x/c.mp3"},
-        {**base, "ten_tep": "cinematic_d_mixkit4.mp3", "the_loai": "cinematic", "trang_thai": "ĐỦ-HỒ-SƠ", "sha256": sha, "link_tai": "https://x/trao.mp3"},
+        {**base, "ten_tep": "cinematic_d_pixabay4.mp3", "the_loai": "cinematic", "trang_thai": "ĐỦ-HỒ-SƠ", "sha256": sha, "link_tai": "https://x/trao.mp3"},
         {**base, "ten_tep": "../../evil.mp3", "the_loai": "upbeat", "trang_thai": "ĐỦ-HỒ-SƠ", "sha256": sha, "link_tai": "https://x/e.mp3"},
-        {**base, "ten_tep": "pop_e_mixkit5.wav", "the_loai": "SFX/pop", "trang_thai": "ĐỦ-HỒ-SƠ", "sha256": sha, "link_tai": "https://x/p.wav", "do_dai": "0.48 s", "duong_dan": "SFX/pop/pop_e_mixkit5.wav"},
+        {**base, "ten_tep": "upbeat_m_mixkit9.mp3", "the_loai": "upbeat", "trang_thai": "ĐỦ-HỒ-SƠ", "sha256": sha, "link_tai": "https://x/m.mp3", "nguon": "Mixkit"},
+        {**base, "ten_tep": "pop_e_pixabay5.wav", "the_loai": "SFX/pop", "trang_thai": "ĐỦ-HỒ-SƠ", "sha256": sha, "link_tai": "https://x/p.wav", "do_dai": "0.48 s", "duong_dan": "SFX/pop/pop_e_pixabay5.wav"},
     ]
     with tempfile.TemporaryDirectory() as tmp:
         rep = sync(rows, tmp, fetch=fake, log=lambda *_: None)
         mus = json.load(open(os.path.join(tmp, "video-assets", "music", "manifest.json"), encoding="utf-8"))
         sfx = json.load(open(os.path.join(tmp, "video-assets", "sfx", "manifest.json"), encoding="utf-8"))
-        check([m["file"] for m in mus] == ["upbeat_a_mixkit1.mp3"], f"chỉ nạp nhạc ĐỦ-HỒ-SƠ đúng sha: {[m['file'] for m in mus]}")
+        check([m["file"] for m in mus] == ["upbeat_a_pixabay1.mp3"], f"chỉ nạp nhạc ĐỦ-HỒ-SƠ đúng sha: {[m['file'] for m in mus]}")
         check(PENDING in mus[0]["license"] and mus[0]["genre"] == "upbeat" and mus[0]["durationSec"] == 132, f"mục nhạc: {mus[0]}")
-        check([s["file"] for s in sfx] == ["pop_e_mixkit5.wav"] and sfx[0]["kind"] == "pop" and sfx[0]["durationSec"] == 0.48, f"SFX: {sfx}")
-        check(not os.path.exists(os.path.join(tmp, "video-assets", "music", "cinematic_d_mixkit4.mp3")), "tệp sha lệch không được nằm trong thư viện")
+        check([s["file"] for s in sfx] == ["pop_e_pixabay5.wav"] and sfx[0]["kind"] == "pop" and sfx[0]["durationSec"] == 0.48, f"SFX: {sfx}")
+        check(not os.path.exists(os.path.join(tmp, "video-assets", "music", "cinematic_d_pixabay4.mp3")), "tệp sha lệch không được nằm trong thư viện")
         check(not os.path.exists(os.path.join(tmp, "evil.mp3")) and not os.path.exists(os.path.join(tmp, "video-assets", "evil.mp3")), "tên ../ bị chặn")
-        check(len(rep["skipped"]) == 3 and len(rep["failed"]) == 1, f"báo cáo: {rep}")
+        check(len(rep["skipped"]) == 4 and len(rep["failed"]) == 1, f"báo cáo (Mixkit bị loại theo A5.2): {rep}")
+        check(not any(m["file"] == "upbeat_m_mixkit9.mp3" for m in mus), "Mixkit không được nạp (A5.2)")
         # OWNER duyệt bài rồi chạy lại: giữ duyệt + license đã duyệt, không tải lại
         mus[0]["ownerApproved"] = {"at": "2026-10-22", "by": "owner@baor.test"}
         mus[0]["license"] = "Mixkit … — OWNER nghe duyệt 22/10/2026"
@@ -269,23 +272,23 @@ def self_test():
             return None if hashlib.sha256(new_bytes).hexdigest() == want else "sha256 lệch"
         rows_b = [dict(rows[0], sha256=sha2, link_tai="https://x/a2.mp3")] + rows[1:]
         sync(rows_b, tmp, fetch=fake2, log=lambda *_: None)
-        m3 = {m["file"]: m for m in json.load(open(os.path.join(tmp, "video-assets", "music", "manifest.json"), encoding="utf-8"))}["upbeat_a_mixkit1.mp3"]
+        m3 = {m["file"]: m for m in json.load(open(os.path.join(tmp, "video-assets", "music", "manifest.json"), encoding="utf-8"))}["upbeat_a_pixabay1.mp3"]
         check(not m3.get("ownerApproved") and PENDING in m3["license"] and m3["sha256"] == sha2, f"đổi tệp phải bỏ duyệt: {m3}")
         # Phản biện P1-a: OWNER duyệt lại, rồi kho đổi bài sang NGHI-AI → bị loại + bỏ duyệt; kho ghi ĐỦ-HỒ-SƠ lại → gỡ loại, vẫn chờ duyệt
         mus4 = json.load(open(os.path.join(tmp, "video-assets", "music", "manifest.json"), encoding="utf-8"))
         for m in mus4:
-            if m["file"] == "upbeat_a_mixkit1.mp3":
+            if m["file"] == "upbeat_a_pixabay1.mp3":
                 m["catalogLicense"], m["license"], m["ownerApproved"] = m["license"], "… OWNER nghe duyệt 22/10/2026", {"by": "owner@baor.test"}
         json.dump(mus4, open(os.path.join(tmp, "video-assets", "music", "manifest.json"), "w", encoding="utf-8"))
         sync([dict(rows_b[0], trang_thai="NGHI-AI")] + rows_b[1:], tmp, fetch=fake2, log=lambda *_: None)
-        m5 = {m["file"]: m for m in json.load(open(os.path.join(tmp, "video-assets", "music", "manifest.json"), encoding="utf-8"))}["upbeat_a_mixkit1.mp3"]
+        m5 = {m["file"]: m for m in json.load(open(os.path.join(tmp, "video-assets", "music", "manifest.json"), encoding="utf-8"))}["upbeat_a_pixabay1.mp3"]
         check(m5.get("exclude") and m5["catalogStatus"] == "NGHI-AI" and not m5.get("ownerApproved") and PENDING in m5["license"], f"kho thu hồi phải loại + bỏ duyệt: {m5}")
         sync(rows_b, tmp, fetch=fake2, log=lambda *_: None)
-        m6 = {m["file"]: m for m in json.load(open(os.path.join(tmp, "video-assets", "music", "manifest.json"), encoding="utf-8"))}["upbeat_a_mixkit1.mp3"]
+        m6 = {m["file"]: m for m in json.load(open(os.path.join(tmp, "video-assets", "music", "manifest.json"), encoding="utf-8"))}["upbeat_a_pixabay1.mp3"]
         check(not m6.get("exclude") and m6["catalogStatus"] == OK_STATUS and PENDING in m6["license"], f"kho ghi ĐỦ-HỒ-SƠ lại → gỡ loại do kho, vẫn chờ duyệt: {m6}")
         # xoá dòng khỏi danh mục → loại
         sync(rows_b[1:], tmp, fetch=fake2, log=lambda *_: None)
-        m7 = {m["file"]: m for m in json.load(open(os.path.join(tmp, "video-assets", "music", "manifest.json"), encoding="utf-8"))}["upbeat_a_mixkit1.mp3"]
+        m7 = {m["file"]: m for m in json.load(open(os.path.join(tmp, "video-assets", "music", "manifest.json"), encoding="utf-8"))}["upbeat_a_pixabay1.mp3"]
         check(m7.get("exclude") and m7["catalogStatus"] == "không còn trong danh mục", f"xoá dòng khỏi danh mục phải loại: {m7}")
         # OWNER loại tay → kho vẫn ĐỦ-HỒ-SƠ không được gỡ loại tay
         sfx_m = json.load(open(os.path.join(tmp, "video-assets", "sfx", "manifest.json"), encoding="utf-8"))

@@ -256,12 +256,27 @@ def sent_block_idx(sents, words):
 
 
 # ---------------------------------------------------------------- lập kế hoạch
+def asset_text(x):
+    """Nội dung ảnh cho mô hình: mô tả do người / MASTER xem ảnh thật ghi (Skill Phần chung A4.1 — chọn theo nội dung nhìn thấy,
+    không theo tên tệp). Ảnh chưa có mô tả mới rơi về tên tệp + từ khoá (đánh dấu rõ là chưa xem ảnh)."""
+    if str(x.get("desc", "")).strip():
+        flag = " [CÓ SẢN PHẨM — chỉ hợp khi lời nói nhắc tới sản phẩm (A4.4)]" if x.get("product") else ""
+        return f"{x['desc'].strip()}{flag} — từ khoá: {', '.join(x.get('keywords', []))}"
+    name = os.path.splitext(os.path.basename(x["file"]))[0].replace("_", " ").replace("-", " ")
+    return f"(chưa có mô tả ảnh — chỉ tên tệp) {name} — từ khoá: {', '.join(x.get('keywords', []))} — {x.get('source', '')[-60:]}"
+
+
+def usable_asset(x):
+    """Ảnh được phép đưa cho mô hình chọn: có giấy phép và không bị loại."""
+    return bool(str(x.get("license", "")).strip()) and not x.get("exclude")
+
+
 def pick_broll(lib, sents, by_id, diagrams, dur, rejected):
     """Minh hoạ: mô hình chọn ảnh theo mô tả thư viện (chỉ ảnh / clip có giấy phép), rồi KIỂM RIÊNG từng lựa chọn."""
     broll = []
     if not lib:
         return broll
-    catalog = "\n".join(f"#{i}: {os.path.splitext(os.path.basename(x['file']))[0].replace('_', ' ').replace('-', ' ')} — {', '.join(x.get('keywords', []))} — {x.get('source', '')[-60:]}" for i, x in enumerate(lib))
+    catalog = "\n".join(f"#{i}: {asset_text(x)}" for i, x in enumerate(lib))
     user = (f"Thư viện ảnh / clip minh hoạ (chỉ được chọn số trong danh sách):\n{catalog}\n\nLời nói:\n{sent_block(sents)}\n\n"
             "Chọn tối đa 6 chỗ mà một ảnh trong thư viện minh hoạ ĐÚNG NGHĨA câu nói (đúng đối tượng / bối cảnh được nói tới). "
             "Không chọn nếu chỉ trùng chữ mà khác nghĩa. Không chọn câu trong 3 giây đầu.")
@@ -279,7 +294,7 @@ def pick_broll(lib, sents, by_id, diagrams, dur, rejected):
             rejected.append({"kind": "broll", "file": it["file"], "reason": "trùng ảnh / quá sát minh hoạ trước / trùng sơ đồ / sát đầu-cuối"})
             continue
         chk = llm([{"role": "system", "content": "Trả lời khắt khe, tiếng Việt."},
-                   {"role": "user", "content": f"Câu nói: “{s['text']}”\nẢnh: {os.path.basename(it['file'])} — từ khoá: {', '.join(it.get('keywords', []))} — nguồn: {it.get('source', '')}\n"
+                   {"role": "user", "content": f"Câu nói: “{s['text']}”\nẢnh: {asset_text(it)}\n"
                                                "Ảnh này có minh hoạ ĐÚNG NGHĨA câu nói không (không chỉ trùng chữ)? Ví dụ: câu về 'mời ly cà phê gặp khách' thì ảnh tiệc liên hoan là KHÔNG hợp."}],
                   CHECK_SCHEMA, max_tokens=200)
         if not chk.get("fit"):
@@ -347,6 +362,22 @@ def plan(words, dur, library=None, content_hint="", log=print, music_genres=None
             return None, f"“{phrase}” không ghép được vào lời nói câu {sid} (thiếu từ / quá {maxw} tiếng / nghe chưa chắc)"
         return loc, ""
 
+    # Số viết bằng chữ số, đơn vị tiền / lượng, hoặc đọc bằng chữ ("hai trăm", "năm mươi", "gấp đôi"); theo ranh giới từ để
+    # "tỉnh", "tỉ mỉ" không bị coi là số. Không bắt "một / hai / năm" đứng riêng (quá thường gặp, "năm" còn là năm tháng).
+    NUM_RE = re.compile(r"\d|%|(?<!\w)(?:triệu|tỷ|tỉ(?! mỉ)|nghìn|ngàn|vạn|trăm|mươi|mười|phần trăm|gấp đôi|gấp ba|gấp \w+ lần)(?!\w)")
+
+    def norm(t):
+        return " ".join(re.sub(r"[^\w%]+", " ", unicodedata.normalize("NFC", str(t)).lower()).split())
+    hint_n = norm(content_hint)
+
+    def number_ok(phrase):
+        """Skill ESV A13 / Ngang R8.10: số trên màn hình chỉ khi có trong kịch bản OWNER đã duyệt (content_hint chứa kịch bản đã
+        duyệt). Không có → không đưa lên chữ nhấn / sơ đồ (vd "200 TRIỆU" làm bảng kiểm R chặn đăng)."""
+        low = norm(phrase)
+        if not NUM_RE.search(low):
+            return True
+        return bool(hint_n) and f" {low} " in f" {hint_n} "
+
     def negated_before(j0):
         """Từ phủ định đứng trước cụm trong CÙNG MỆNH ĐỀ (nhìn lại ≤ 6 từ, dừng ở dấu câu hoặc từ nối "mà / nhưng / rồi /
         thì / còn") → tách cụm ra sẽ ĐẢO nghĩa: "không được phép hứa hẹn…", "đừng bao giờ hứa hẹn…"."""
@@ -373,6 +404,9 @@ def plan(words, dur, library=None, content_hint="", log=print, music_genres=None
                 break
             if negated_before(loc[0]):
                 bad = f"“{spoken(words, *loc)}” đứng sau từ phủ định — tách ra sẽ sai nghĩa"
+                break
+            if not number_ok(spoken(words, *loc)):
+                bad = f"“{spoken(words, *loc)}” có số / tiền chưa có trong kịch bản đã duyệt (Skill A13, R8.10)"
                 break
             locs.append(loc)
         if not bad and typ == "quote" and len(spoken(words, *locs[0]).split()) < 5:
@@ -431,6 +465,9 @@ def plan(words, dur, library=None, content_hint="", log=print, music_genres=None
         e["phrase"] = phrase
         if negated_before(loc[0]):
             rejected.append({"kind": "emphasis", "phrase": phrase, "reason": "đứng sau từ phủ định — tách ra sẽ sai nghĩa"})
+            continue
+        if not number_ok(phrase):
+            rejected.append({"kind": "emphasis", "phrase": phrase, "reason": "có số / tiền chưa có trong kịch bản đã duyệt (Skill A13, R8.10)"})
             continue
         toks_ = [tnorm(x) for x in phrase.split()]
         if len(toks_) == 1 and not toks_[0].isdigit():
@@ -496,7 +533,7 @@ def plan(words, dur, library=None, content_hint="", log=print, music_genres=None
 
     # 3) Minh hoạ: mô hình chọn theo mô tả thư viện, rồi kiểm riêng từng lựa chọn
     broll = []
-    lib = [x for x in (library or []) if str(x.get("license", "")).strip() and not x.get("exclude")]
+    lib = [x for x in (library or []) if usable_asset(x)]
     try:
         broll = pick_broll(lib, sents, by_id, diagrams, dur, rejected)
     except Exception as ex:  # bước ảnh lỗi → không có ảnh, kế hoạch chữ / sơ đồ vẫn giữ
@@ -607,6 +644,36 @@ def self_test():
         if bool(pn["emphasis"]) != ok_want:
             bad += 1
             print(f"SAI phủ định: “{sent_txt}” → {[e['text'] for e in pn['emphasis']]}")
+    # số / tiền trên màn hình: chỉ khi kịch bản đã duyệt có đúng con số đó (Skill A13, Ngang R8.10)
+    wnum = [{"text": x, "start": 5.0 + i * 0.5, "end": 5.0 + i * 0.5 + 0.4} for i, x in enumerate("tạo ra doanh thu mỗi tháng là 200 triệu đồng".split())]
+
+    def fnum(messages, schema, **kw):
+        return {"summary": "", "emphasis": [{"sid": 1, "phrase": "200 triệu", "why": ""}], "diagrams": []} if schema is PLAN_SCHEMA else {}
+    for hint, want in (("", False), ("Kịch bản đã duyệt: doanh thu mỗi tháng là 200 Triệu. đồng", True)):
+        g["llm"], g["available"] = fnum, (lambda timeout=3: True)
+        try:
+            pn = plan(wnum, 30.0, [], hint, log=lambda m: None)
+        finally:
+            g["llm"], g["available"] = real_llm, real_av
+        if bool(pn["emphasis"]) != want:
+            bad += 1
+            print(f"SAI số trên màn hình (kịch bản: {bool(hint)}): {[e['text'] for e in pn['emphasis']]}")
+    # số đọc bằng chữ bị chặn khi kịch bản không có; "tỉnh" / "tỉ mỉ" không phải số (phản biện P2-2)
+    for sent_txt, phrase, want in (("chúng ta có hai trăm khách hàng mới", "hai trăm khách hàng", False),
+                                   ("đội mình làm việc rất tỉ mỉ với khách", "rất tỉ mỉ", True),
+                                   ("khách ở tỉnh xa vẫn được chăm sóc", "tỉnh xa", True)):
+        wn = [{"text": x, "start": 5.0 + i * 0.5, "end": 5.0 + i * 0.5 + 0.4} for i, x in enumerate(sent_txt.split())]
+
+        def fk2(messages, schema, _p=phrase, **kw):
+            return {"summary": "", "emphasis": [{"sid": 1, "phrase": _p, "why": ""}], "diagrams": []} if schema is PLAN_SCHEMA else {}
+        g["llm"], g["available"] = fk2, (lambda timeout=3: True)
+        try:
+            pn = plan(wn, 30.0, [], log=lambda m: None)
+        finally:
+            g["llm"], g["available"] = real_llm, real_av
+        if bool(pn["emphasis"]) != want:
+            bad += 1
+            print(f"SAI nhận số: “{phrase}” → {[e['text'] for e in pn['emphasis']]}")
     # loại nhạc: chỉ nhận mã có trong thư viện; mô hình trả lạ / lỗi → không có mục music (bộ dựng dùng bài mặc định)
     genres = {"upbeat": ["sôi động"], "acoustic": ["ấm áp"]}
     for reply, want in (({"mood": "acoustic", "why": "đội nhóm"}, "acoustic"), ({"mood": "rock", "why": ""}, None), (TimeoutError("hết giờ"), None)):
@@ -624,6 +691,25 @@ def self_test():
         if (pm.get("music") or {}).get("mood") != want:
             bad += 1
             print(f"SAI loại nhạc: mô hình trả {reply!r} → {pm.get('music')}")
+    # ảnh: mô hình chọn theo mô tả nội dung đã xem (A4.1), không theo tên tệp; ảnh bị loại không lọt vào danh mục
+    seen = []
+
+    def fb(messages, schema, **kw):
+        if schema is BROLL_SCHEMA:
+            seen.append(messages[-1]["content"])
+            return {"picks": []}
+        return {"summary": "", "emphasis": [], "diagrams": []} if schema is PLAN_SCHEMA else {}
+    libb = [{"file": "anh/IMG_0042.jpg", "keywords": ["x"], "license": "OWNER", "desc": "Hai bạn nữ đeo tai nghe tư vấn khách"},
+            {"file": "anh/IMG_0043.jpg", "keywords": ["y"], "license": "OWNER", "desc": "Gối sofa", "exclude": True}]
+    g["llm"], g["available"] = fb, (lambda timeout=3: True)
+    try:
+        plan(w2, 40.0, libb, log=lambda m: None)
+    finally:
+        g["llm"], g["available"] = real_llm, real_av
+    cat = seen[0] if seen else ""
+    if "đeo tai nghe tư vấn" not in cat or "IMG_0042" in cat or "Gối sofa" in cat:
+        bad += 1
+        print(f"SAI danh mục ảnh (phải theo mô tả, bỏ ảnh loại): {cat[:200]!r}")
     print(f"ai_plan tự kiểm: {'đạt' if not bad else f'{bad} lỗi'}")
     return bad == 0
 

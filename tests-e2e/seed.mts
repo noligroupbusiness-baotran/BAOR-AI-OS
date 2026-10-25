@@ -70,13 +70,13 @@ db.insert(schema.adCampaigns).values({ id: "ad_e2e_metrics", name: "E2E · Quả
 // Âm tự tạo bằng ffmpeg (không tài sản ngoài).
 const musicDir = path.join(dataDir, "video-assets", "music");
 fs.mkdirSync(musicDir, { recursive: true });
-for (const f of ["e2e-mac-dinh.mp3", "acoustic_e2e-cho-duyet_mixkit1.mp3"]) {
+for (const f of ["e2e-mac-dinh.mp3", "acoustic_e2e-cho-duyet_pixabay1.mp3"]) {
   const r = spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=330:duration=6", "-c:a", "libmp3lame", path.join(musicDir, f)], { encoding: "utf8" });
   if (r.status !== 0) throw new Error(`ffmpeg lỗi: ${r.stderr}`);
 }
 fs.writeFileSync(path.join(musicDir, "manifest.json"), JSON.stringify([
   { file: "e2e-mac-dinh.mp3", title: "E2E mặc định", genre: "lofi-chill", license: "Tự tạo bằng ffmpeg (E2E)", default: true },
-  { file: "acoustic_e2e-cho-duyet_mixkit1.mp3", title: "E2E Acoustic chờ duyệt", author: "Mixkit", genre: "acoustic", durationSec: 6, catalogStatus: "ĐỦ-HỒ-SƠ",
-    license: "Mixkit Stock Music Free License (Mixkit 1) — kho tư liệu NHAC-NEN-SFX: ĐỦ-HỒ-SƠ (đội kiểm hồ sơ giấy phép; Content ID thật chưa biết) — chờ OWNER nghe duyệt" },
+  { file: "acoustic_e2e-cho-duyet_pixabay1.mp3", title: "E2E Acoustic chờ duyệt", author: "Pixabay", genre: "acoustic", durationSec: 6, catalogStatus: "ĐỦ-HỒ-SƠ",
+    license: "Pixabay Content License (Pixabay 1) — kho tư liệu NHAC-NEN-SFX: ĐỦ-HỒ-SƠ (đội kiểm hồ sơ giấy phép; Content ID thật chưa biết) — chờ OWNER nghe duyệt" },
 ]));
 console.log(`E2E seed: ${VID} (v1, v2) trong ${dataDir}`);

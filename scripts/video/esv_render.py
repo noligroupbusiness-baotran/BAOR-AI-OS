@@ -813,23 +813,44 @@ def frame_crop(info, fx, fy, aspect, fr):
     return f"crop={cw}:{chh}:{x0}:{y0}", cw, chh, x0, y0
 
 
-def keep_segments(src, dur, thr=-42.0, min_sil=0.28, pad=0.09):
-    """Skill ESV 10.5 (cắt lặng khi được giao): silencedetect −42 dB ≥ 0,28 s, chừa 90 ms mỗi bên, làm tròn lưới 1/30 s."""
-    err = P.sh(["ffmpeg", "-hide_banner", "-i", src, "-vn", "-af", f"silencedetect=noise={thr}dB:d={min_sil}", "-f", "null", "-"]).stderr
-    sil, st = [], None
-    for line in err.splitlines():
-        m1 = re.search(r"silence_start: ([\d.]+)", line)
-        m2 = re.search(r"silence_end: ([\d.]+)", line)
-        if m1:
-            st = float(m1.group(1))
-        elif m2 and st is not None:
-            sil.append((st, float(m2.group(1))))
-            st = None
-    if st is not None:
-        sil.append((st, dur))
+def keep_segments(src, dur, min_sil=0.60, keep_after=0.12, keep_before=0.18, above_floor=10.0, words=None):
+    """Cắt lặng theo ngưỡng ĐÃ DUYỆT (Phần chung A11.4, QĐ-CEO 0815 #140; thay cho −42 dB / 0,28 s / 90 ms cũ — A16.3):
+    lặng = nền ồn (phân vị 10 % mức RMS 50 ms) + 10 dB; chỉ "lặng quá dài" > 0,60 s mới rút, còn 0,30 s (giữ 0,12 s sau âm cuối +
+    0,18 s trước âm đầu) — giữ hơi thở và từ đệm, lặng 0,6–0,8 s có hơi thở vẫn đạt. Bám lưới khung 1/30 s."""
+    sr = 16000
+    r = subprocess.run(["ffmpeg", "-v", "error", "-i", src, "-vn", "-ac", "1", "-ar", str(sr), "-f", "s16le", "-"], capture_output=True)
+    x = np.frombuffer(r.stdout, np.int16).astype(np.float32) / 32768.0
+    hop = int(0.05 * sr)
+    n = len(x) // hop
+    if n < 4:
+        return [(0.0, dur)]
+    rms = np.sqrt((x[:n * hop].reshape(n, hop) ** 2).mean(axis=1) + 1e-12)
+    db = 20 * np.log10(rms)
+    # Chặn trên: nguồn gần như không có khoảng nghỉ (đã cắt sẵn) thì p10 rơi vào chính giọng nói → câu nói nhỏ bị coi là lặng
+    # (phản biện P2-1). Ngưỡng không được vượt trung vị − 20 dB; nguồn có khoảng nghỉ thật vẫn theo nền ồn + 10 dB của A11.4.
+    thr = min(float(np.percentile(db, 10)) + above_floor, float(np.median(db)) - 20.0)
+    quiet = db < thr
+    # Từ đã nghe được (whisper) không bao giờ là lặng — câu nói rất nhỏ vẫn giữ. Mỗi từ chỉ giữ tối đa 0,8 s từ lúc bắt đầu:
+    # whisper hay kéo mốc kết thúc của từ cuối câu qua cả khoảng lặng sau nó.
+    for w in words or []:
+        w0 = float(w.get("start", 0))
+        w1 = min(float(w.get("end", w0)), w0 + 0.8)
+        quiet[max(0, int(w0 / 0.05)):max(0, int(math.ceil(w1 / 0.05)))] = False
+    sil, k = [], 0
+    while k < n:
+        if quiet[k]:
+            j = k
+            while j < n and quiet[j]:
+                j += 1
+            s0, s1 = k * 0.05, min(dur, j * 0.05)
+            if s1 - s0 > min_sil:
+                sil.append((s0, s1))
+            k = j
+        else:
+            k += 1
     keep, a0 = [], 0.0
     for s0, s1 in sil:
-        c0, c1 = s0 + pad, s1 - pad
+        c0, c1 = s0 + keep_after, s1 - keep_before
         if c1 - c0 < 1 / FPS:
             continue
         if c0 > a0:
@@ -837,9 +858,8 @@ def keep_segments(src, dur, thr=-42.0, min_sil=0.28, pad=0.09):
         a0 = c1
     if a0 < dur:
         keep.append((a0, dur))
-    g = lambda x: round(x * FPS) / FPS
-    keep = [(g(a), g(b)) for a, b in keep if g(b) - g(a) >= 2 / FPS]
-    return keep
+    g = lambda v: round(v * FPS) / FPS  # noqa: E731
+    return [(g(a_), g(b_)) for a_, b_ in keep if g(b_) - g(a_) >= 2 / FPS]
 
 
 def make_cut(src, keep, out, work):
@@ -1198,7 +1218,7 @@ def owner_decisions(data_dir):
         return {}
 
 
-def sfx_sounds(sr=48000):
+def sfx_sounds(sr=48000, aspect="9:16"):
     """Hai tiếng tổng hợp (không tệp ngoài, không vướng bản quyền, không dùng nhiễu — OWNER 21/10 chê "vút vút"):
     "tách" ngắn (chữ nhấn, khung vẽ, thẻ ảnh) và tiếng ngân nhẹ có cao độ A–E–A (khung toàn màn hình, vệt sáng, chuyển chương)."""
     L = int(0.07 * sr)
@@ -1210,7 +1230,40 @@ def sfx_sounds(sr=48000):
     env = np.minimum(1.0, ts / 0.25) ** 2 * np.exp(-np.maximum(0.0, ts - 0.25) / 0.45)
     sw = sum(amp * np.sin(2 * np.pi * fr * ts + ph) for fr, amp, ph in ((880.0, 1.0, 0.0), (1318.5, 0.6, 1.1), (1760.0, 0.35, 2.3), (2637.0, 0.12, 0.7)))
     sw = (sw * env / 2.07 * 0.30).astype(np.float32)
-    return {"pop": (pop, 0.0), "swell": (sw, 0.15)}
+    snd = {"pop": (pop, 0.0), "swell": (sw, 0.15)}
+    snd.update(owner_sfx(sr, aspect))
+    return snd
+
+
+# Độ dài tối đa (s) mỗi vai trò khi dùng tiếng thật (cắt + tắt dần 0,15 s) và độ sớm (tiếng bắt đầu trước hình) — [AI SUY LUẬN]
+SFX_ROLE_LEN = {"emp_fade": 1.0, "emp_shine": 1.4, "diagram": 0.7, "diagram_pop": 0.6, "chapter": 1.8, "chapter_hit": 1.2, "fs_in": 1.4,
+                "fs_out": 1.2, "card": 1.0, "M1": 1.0, "M2": 0.7, "M4": 1.0, "M5": 0.7, "M6": 0.7, "m3_open": 1.4, "m3_close": 1.2, "m3_tile": 0.6}
+SFX_ROLE_LEAD = {"emp_fade": 0.08, "fs_in": 0.2, "m3_open": 0.2, "card": 0.1, "M1": 0.1, "M2": 0.05, "M5": 0.05}
+SFX_FALLBACK = {"chapter": "swell", "chapter_hit": None, "fs_in": "swell", "fs_out": None, "m3_open": "swell", "m3_close": "swell", "leak": "swell"}
+
+
+def owner_sfx(sr=48000, aspect="9:16"):
+    """Tiếng SFX OWNER cung cấp (trang Notion "Kho hiệu ứng âm thanh", Phần chung A6.6) theo VAI TRÒ và khung: nhóm whoosh chỉ
+    16:9 (9:16 CHƯA CHỐT → tiếng nhóm khác). Danh mục DATA_DIR/video-assets/sfx-owner/manifest.json. Thiếu tệp → bỏ vai trò (dùng
+    tiếng tổng hợp). Trả {vai trò: (mẫu mono float32, độ sớm s)}."""
+    d = os.path.join(os.environ.get("DATA_DIR", os.path.join(P.ROOT, "data")), "video-assets", "sfx-owner")
+    try:
+        man = json.load(open(os.path.join(d, "manifest.json"), encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    key = "16:9" if aspect == "16:9" else "9:16"
+    out = {}
+    for role, files in (man.get("roles") or {}).items():
+        f = files.get(key)
+        if not f or not os.path.isfile(os.path.join(d, f)):
+            continue
+        L = SFX_ROLE_LEN.get(role, 1.0)
+        r = subprocess.run(["ffmpeg", "-v", "error", "-i", os.path.join(d, f), "-t", f"{L:.2f}", "-af", f"afade=t=out:st={max(0.0, L - 0.15):.2f}:d=0.15",
+                            "-ac", "1", "-ar", str(sr), "-f", "f32le", "-"], capture_output=True)
+        x = np.frombuffer(r.stdout, np.float32)
+        if len(x):
+            out[role] = (x.copy(), SFX_ROLE_LEAD.get(role, 0.0))
+    return out
 
 
 def read_mono(path):
@@ -1234,35 +1287,48 @@ def win_db(x, i0, i1, win):
 
 
 def sfx_events(plan, broll):
-    """Mốc SFX (Skill ESV v0.1.r2 B-SFX / A6: chữ nhấn, khung vẽ, khung toàn màn hình, thẻ ảnh, chuyển chương; KHÔNG trên zoom).
-    Hai cú cùng lớp cách < 0,22 s giữ 1 (Ngang R4.5; ưu tiên chữ nhấn)."""
-    ev = [(float(e["t"]), "pop", "chữ nhấn") for e in plan.get("emphasis", [])]
+    """Mốc + VAI TRÒ SFX (Phần chung A6.1 / A6.6, Skill ESV B-SFX, Ngang R4): chữ nhấn fade/blur → emp_fade, shine → emp_shine;
+    khung vẽ → diagram (tiếng bút); khung toàn màn hình vào / ra → fs_in / fs_out; chuyển chương / vệt sáng → chapter (+ chapter_hit);
+    thẻ ảnh → theo mẫu (M1…M6, m3_tile) hoặc card. KHÔNG trên zoom (A6.2). Hai cú cùng vai trò cách < 0,22 s giữ 1 (Ngang R4.5)."""
+    ev = [(float(e["t"]), "emp_shine" if e.get("style") == "shine" else "emp_fade", "chữ nhấn") for e in plan.get("emphasis", [])]
     for d in plan.get("diagrams", []):
-        if d["type"] in ("fs06", "fs05", "fs01", "leak", "chapter"):
-            ev.append((float(d["t0"]) + 0.05, "swell", "khung toàn màn hình / chuyển chương"))
+        t0 = float(d["t0"])
+        if d["type"] in ("fs06", "fs05", "fs01"):
+            ev.append((t0 + 0.05, "fs_in", "khung toàn màn hình vào"))
+            if d.get("t1") is not None:
+                ev.append((float(d["t1"]) - 0.6, "fs_out", "khung toàn màn hình ra"))
+        elif d["type"] in ("leak", "chapter"):
+            ev.append((t0 + 0.05, "chapter", "chuyển chương / vệt sáng"))
+            if d["type"] == "chapter":
+                ev.append((t0 + 0.55, "chapter_hit", "chuyển chương"))
         else:
-            ev.append((float(d["t0"]), "pop", "khung vẽ"))
-    ev += [(float(b["t0"]), "pop", "thẻ ảnh") for b in broll]
+            ev.append((t0, "diagram", "khung vẽ"))
+    ev += [(float(b["t0"]), b.get("template") or "card", "thẻ ảnh") for b in broll]
     ev.sort(key=lambda e: (e[0], e[2] != "chữ nhấn"))
     out = []
     for e in ev:
-        if out and e[0] - out[-1][0] < 0.22 and e[1] == out[-1][1]:
+        if out and any(e[0] - o[0] < 0.22 and e[1] == o[1] for o in out[-3:]):
             continue
         out.append(e)
     return out
 
 
-def place_sfx(path, events, voice_wav, dur, sr=48000, target=-20.0, cap=-14.0, quiet=-45.0, limit=-19.5):
-    """Đặt từng cú với mức RIÊNG: mức cửa sổ 100 ms lớn nhất của cú = (mức giọng ±0,5 s quanh cú) + target (−20 dB),
-    không to hơn cap (−14 dB, mức cũ OWNER đã nghe). Giọng quanh cú quá nhỏ (< −45 dB, đang lặng) → bỏ cú.
+def place_sfx(path, events, voice_wav, dur, sr=48000, target=-21.0, cap=0.0, quiet=-45.0, limit=-19.6, aspect="9:16"):
+    """Đặt từng cú với mức RIÊNG (Phần chung A6.3: đích −21 dB so giọng, chốt −19,6 dB, trần −19 dB): mức cửa sổ 100 ms lớn nhất
+    của cú = (mức giọng ±0,5 s quanh cú) + target; không khuếch đại tệp gốc (cap 0 dB). Giọng quanh cú < −45 dB (lặng) → bỏ cú.
     Các cú sát nhau CỘNG DỒN (tiếng ngân dài 1,2 s chồng tiếng "tách") → đo lại trên stem thật bằng đúng cách đo của bảng kiểm S,
     cú nào vượt `limit` thì hạ mọi cú góp vào cửa sổ đó, lặp tới khi đạt (tối đa 8 lượt). Trả danh sách cú đã đặt + cú bỏ."""
-    snd = sfx_sounds(sr)
+    snd = sfx_sounds(sr, aspect)
     vo = read_mono(voice_wav)
     n = int(round(dur * sr))
     win = int(0.1 * sr)
     placed, dropped = [], []
     for t, kind, why in events:
+        if kind not in snd:  # thiếu tệp tiếng thật cho vai trò → tiếng tổng hợp tương ứng (hoặc bỏ nếu vai trò không cần)
+            fb = SFX_FALLBACK.get(kind, "pop")
+            if not fb:
+                continue
+            kind = fb
         s_, lead = snd[kind]
         i = int(round((t - lead) * sr))
         if i < 0 or i >= n:
@@ -1717,7 +1783,7 @@ def main():
     cut_times, keep, src_dur = [], None, dur
     if a.cut_silence:
         job.progress("cut", "Cắt khoảng lặng", 32)
-        keep = keep_segments(src, dur)
+        keep = keep_segments(src, dur, words=words)
         cut_src = job.p("work", "cut.mov")
         N = make_cut(src, keep, cut_src, job.p("work"))
         mp, cut_times = time_map(keep)
@@ -1895,7 +1961,7 @@ def main():
     music_path, music_lic = (a.music, a.music_license) if a.music else (None, "")
     if not a.music:
         music_path, music_lic, pick = pick_music(music_library(data_dir), (plan.get("music") or {}).get("mood"), os.path.basename(a.input))
-    music_info = {"used": False, "reason": "tắt" if a.no_music else "thư viện nhạc chưa có bài có giấy phép"}
+    music_info = {"used": False, "reason": "tắt" if a.no_music else pick.get("reason", "thư viện nhạc chưa có bài có giấy phép"), **({k: v for k, v in pick.items() if k == "suggest"})}
     if music_path and not a.no_music and str(music_lic).strip():
         mdur = float(P.sh(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", music_path]).stdout.strip() or 0)
         bed = job.p("work", "music_bed.wav")
@@ -1935,21 +2001,26 @@ def main():
             shown_d = {round(d.t0, 3) for d in dias if d.t1 > d.t0}
             p_sfx = {**plan, "emphasis": [e for e in plan.get("emphasis", []) if round(float(e["t"]), 3) in shown_e],
                      "diagrams": [d for d in plan.get("diagrams", []) if d["type"] not in ("compare", "arrow", "steps", "mechanism", "process", "chapter", "quote") or round(float(d["t0"]), 3) in shown_d]}
-            evs = sfx_events(p_sfx, [{"t0": c.t0} for c in cards] + ([{"t0": max(x["t"], m3["t0"] + 0.75 * 0.9)} for x in m3["tiles"]] if m3 else []))
-            if m3:  # mở / đóng split: tiếng ngân nhẹ như chuyển cảnh lớn (R3.3.9 — tiếng trượt tự tạo; giữ tiếng tổng hợp OWNER đã nghe)
-                evs = sorted(evs + [(m3["t0"] + 0.05, "swell", "M3 mở"), (m3["t1"] - 1.0, "swell", "M3 đóng")], key=lambda e: e[0])
+            evs = sfx_events(p_sfx, [{"t0": c.t0, "template": c.kind} for c in cards]
+                             + ([{"t0": max(x["t"], m3["t0"] + 0.75 * 0.9), "template": "m3_tile"} for x in m3["tiles"]] if m3 else []))
+            if m3:  # mở / đóng split (R3.3.9): tiếng thu người vào khung / ra lại toàn khung (Kho âm thanh: Whoosh 04 / 15)
+                evs = sorted(evs + [(m3["t0"] + 0.05, "m3_open", "M3 mở"), (m3["t1"] - 1.0, "m3_close", "M3 đóng")], key=lambda e: e[0])
         else:
             evs = sfx_events(plan, [b for b in plan.get("broll", []) if not b.get("off")])
         if evs:
             sfxw = job.p("work", "sfx.wav")
-            placed, dropped = place_sfx(sfxw, evs, voice, dur)
+            placed, dropped = place_sfx(sfxw, evs, voice, dur, aspect=a.aspect)
+            owner_roles = set(owner_sfx(48000, a.aspect))
             withsfx = job.p("work", "mix_sfx.wav")
             P.sh(["ffmpeg", "-v", "error", "-y", "-i", mix, "-i", sfxw, "-filter_complex",
                   "[0:a][1:a]amix=inputs=2:normalize=0:duration=first[o]", "-map", "[o]", "-c:a", "pcm_s16le", withsfx])
             mix = withsfx
             rows, worst, low_music = sfx_check(sfxw, voice, job.p("work", "music_duck.wav") if music_info.get("used") else None, placed)
             sfx_info = {"used": bool(placed), "count": len(placed), "events": placed, "dropped": dropped, "levels": rows, "worstVsVoiceDb": worst,
-                        "belowMusic8Db": low_music, "source": "tổng hợp tại chỗ bằng công thức (không dùng tệp ngoài, không dùng nhiễu)"}
+                        "belowMusic8Db": low_music,
+                        "source": (f"tiếng OWNER theo vai trò (Kho hiệu ứng âm thanh, giấy phép CHƯA XÁC MINH — Phần chung A0.2): "
+                                   f"{sum(1 for p_ in placed if p_['kind'] in owner_roles)}/{len(placed)} cú; còn lại tổng hợp tại chỗ")
+                        if owner_roles else "tổng hợp tại chỗ bằng công thức (không dùng tệp ngoài, không dùng nhiễu)"}
     m = P.sh(["ffmpeg", "-hide_banner", "-i", mix, "-af", "loudnorm=I=-16:TP=-2.5:LRA=11:print_format=json", "-f", "null", "-"], check=False).stderr
     js = json.loads(m[m.rfind("{"):m.rfind("}") + 1])
     final = job.p("work", "final.wav")
@@ -2045,10 +2116,12 @@ def main():
         P.sh(["ffmpeg", "-v", "error", "-y", "-i", master, "-i", final, "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", tmpm])
         os.replace(tmpm, master)
 
-    job.progress("preview", "Bản xem nhanh 540p, ảnh mốc", 88)
+    # Bản xem nhẹ (Phần chung A3.4): 9:16 → 540×960 CRF 26 AAC 96k; 16:9 → 720p (Ngang R1.14); tỷ lệ khác: nửa cỡ (chiều chẵn)
+    PW, PH = (1280, 720) if a.aspect == "16:9" else (half(CW), half(CH))
+    job.progress("preview", f"Bản xem nhanh {PW}x{PH}, ảnh mốc", 88)
     preview = job.p("preview.mp4")
-    P.sh(["ffmpeg", "-v", "error", "-y", "-i", master, "-vf", f"scale={half(CW)}:{half(CH)}:flags=lanczos", "-c:v", "libx264", "-profile:v", "main", "-level", "3.1", "-preset", "slow", "-crf", "26",
-          "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-af", "aresample=192000,alimiter=limit=0.66:attack=1:release=60:level=false,aresample=48000", "-movflags", "+faststart", preview])
+    P.sh(["ffmpeg", "-v", "error", "-y", "-i", master, "-vf", f"scale={PW}:{PH}:flags=lanczos", "-c:v", "libx264", "-profile:v", "main", "-level", "3.1" if PH <= 960 else "4.0", "-preset", "slow", "-crf", "26" if a.aspect != "16:9" else "23",
+          "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k", "-af", "aresample=192000,alimiter=limit=0.66:attack=1:release=60:level=false,aresample=48000", "-movflags", "+faststart", preview])
     # AAC có thể đẩy đỉnh vượt vài dB ở vài chỗ (đã gặp: 0,0 dBTP dù bộ chặn ra −3,6): đo lại, vượt thì nén lại riêng tiếng với ngưỡng thấp hơn
     lim = 0.66
     for _ in range(3):
@@ -2057,7 +2130,7 @@ def main():
             break
         lim *= 0.8
         tmp_prev = job.p("work", "preview_fix.mp4")
-        P.sh(["ffmpeg", "-v", "error", "-y", "-i", preview, "-i", master, "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-b:a", "128k",
+        P.sh(["ffmpeg", "-v", "error", "-y", "-i", preview, "-i", master, "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-b:a", "96k",
               "-af", f"aresample=192000,alimiter=limit={lim:.3f}:attack=1:release=60:level=false,aresample=48000", "-movflags", "+faststart", tmp_prev])
         os.replace(tmp_prev, preview)
     snapd = job.p("snapshots")
@@ -2198,7 +2271,7 @@ def main():
     add("J", j_name, ("pass" if out_red == 0 else "fail") if sampled else "unmeasured", f"{sampled} mẫu có mặt, {out_red} mẫu {'lệch ĐỎ' if a.aspect == '9:16' else 'có chữ đè mặt'}{(' tại ' + ', '.join(f'{t:.1f}s' for t in bad_t[:8])) if bad_t else ''}; tâm zoom theo mặt {'(dò được)' if face_ok else '(không dò được, giả định)'}")
     # S, T theo bảng kiểm Skill ESV v0.1.r2 B9 (cân màu chuyển sang V)
     if sfx_info.get("used"):
-        w_ = sfx_info.get("worstVsVoiceDb")
+        w_ = sfx_info.get("worstVsVoiceDb")  # Phần chung A6.3: trần −19 dB (đích −21, chốt −19,6)
         lowm = sfx_info.get("belowMusic8Db") or []
         add("S", "SFX: mỗi cú ≤ −19 dB so giọng (trượt 100 ms); 0 SFX trên zoom; ≥ +8 dB so nhạc", "pass" if w_ is not None and w_ <= -19.0 else "fail",
             f"{sfx_info['count']} cú (chữ nhấn / khung vẽ / thẻ ảnh / khung toàn màn hình), cú to nhất {w_} dB so giọng; 0 cú trên zoom (zoom không sinh SFX)"
@@ -2227,7 +2300,7 @@ def main():
     p_ok = font_ok and not pending_media
     font_note = f"font {font_name}: {font_lic}" if font_lic else f"font {font_name}: {'OWNER xác nhận' if od.get('fontLicense') else 'chưa có giấy phép thương mại'}"
     add("P", "Nhạc / B-roll / font có giấy phép", "pass" if p_ok else "blocker",
-        f"{font_note}; {m_note}; {b_note}; SFX tổng hợp tại chỗ (không tệp ngoài)" + (f" — {odq}" if p_ok and not font_lic else ""))
+        f"{font_note}; {m_note}; {b_note}; SFX: {sfx_info.get('source', 'không')}" + (f" — {odq}" if p_ok and not font_lic else ""))
     add("Q", "Câu doanh thu / thu nhập / kết quả có dòng 'Kết quả cá nhân, không cam kết'", "pass",
         "không phát sinh" if not rev_spans else f"{len(rev_spans)} đoạn có dòng phủ suốt câu: {[[round(a_, 1), round(b_, 1)] for a_, b_ in rev_spans][:6]}"
         + (" (hộp đen bo R11 tại x100–628 y861–919, Ngang R8.5)" if FULL else " (vị trí tạm: đỉnh vùng chữ, chờ OWNER chốt)"))

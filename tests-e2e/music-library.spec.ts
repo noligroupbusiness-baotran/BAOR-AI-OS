@@ -6,7 +6,7 @@ import { test, expect, request as playwrightRequest } from "@playwright/test";
 import { login, trackErrors } from "./helpers";
 import { E2E } from "./env";
 
-const FILE = "acoustic_e2e-cho-duyet_mixkit1.mp3";
+const FILE = "acoustic_e2e-cho-duyet_pixabay1.mp3";
 const manifest = () => JSON.parse(fs.readFileSync(path.join(E2E.dataDir, "video-assets", "music", "manifest.json"), "utf8")) as { file: string; license: string; ownerApproved?: { by: string } }[];
 
 test("nghe thử, duyệt dùng rồi bỏ duyệt một bài trong thư viện nhạc nền", async ({ page }) => {
@@ -37,7 +37,7 @@ test("nghe thử, duyệt dùng rồi bỏ duyệt một bài trong thư viện 
   expect(playing).toBe(true);
 
   await row.getByRole("button", { name: "Duyệt dùng" }).click();
-  await expect(page.getByText(/Đã duyệt “acoustic_e2e-cho-duyet_mixkit1\.mp3”/)).toBeVisible();
+  await expect(page.getByText(/Đã duyệt “acoustic_e2e-cho-duyet_pixabay1\.mp3”/)).toBeVisible();
   await expect(page.locator("#music-library").getByText("2/2 bài đã duyệt")).toBeVisible();
   const approved = manifest().find((m) => m.file === FILE)!;
   expect(approved.ownerApproved?.by).toBe(E2E.email);
