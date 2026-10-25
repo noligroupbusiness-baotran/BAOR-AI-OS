@@ -91,7 +91,9 @@ export async function pushDraftToMeta(adId: string): Promise<Result> {
   const cfg = readIntegrationConfig("meta_ads");
   if (auth?.adAccountId && cfg.adAccountId !== auth.adAccountId) return { ok: false, error: `Tài khoản quảng cáo đang kết nối (${cfg.adAccountId}) khác tài khoản OWNER ủy quyền (${auth.adAccountId})` };
   const post = db.select().from(schema.scheduledPosts).where(eq(schema.scheduledPosts.id, ad.postId)).get();
-  const pageId = readIntegrationConfig("facebook_page").pageId;
+  // Quảng cáo chạy dưới đúng trang đã đăng bài: Fanpage 2–4 (platform facebook_page_<n>) dùng Page ID của chính trang đó
+  const pageKey = post?.platform && /^facebook_page_\d+$/.test(post.platform) ? post.platform : "facebook_page";
+  const pageId = readIntegrationConfig(pageKey).pageId;
   if (!post?.externalId || !pageId) return { ok: false, error: "Thiếu mã video Facebook hoặc Page ID" };
   // Ảnh bìa gửi thẳng lên Meta (image_hash): đường dẫn tệp của hệ thống cần đăng nhập nên Meta không tải được.
   const thumb = post.thumbnailUploadId ? getUpload(post.thumbnailUploadId) : undefined;

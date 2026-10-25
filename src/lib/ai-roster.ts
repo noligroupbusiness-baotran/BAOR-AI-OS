@@ -28,7 +28,7 @@ export const AI_ROLES: AiRole[] = [
   { id: "video_edit", name: "AI Edit Video", step: "4.2", job: "Biên tập video theo Skill ESV / Edit Video Ngang", defaultModel: "qwen2.5-32b (tại máy)", local: true },
   { id: "caption", name: "AI Viết bài đăng", step: "6.1", job: "Viết nội dung bài đăng theo hook / video", defaultModel: "claude-sonnet-5-5" },
   { id: "ads", name: "AI Quảng cáo", step: "7", job: "Đề xuất và tối ưu quảng cáo", defaultModel: "claude-sonnet-5-5", pending: true },
-  { id: "measure", name: "AI Đo lường", step: "8.2", job: "Đề xuất cải tiến nội dung từ số liệu đã đăng", defaultModel: "claude-sonnet-5-5", pending: true },
+  { id: "measure", name: "AI Đo lường", step: "8.2", job: "Đề xuất cải tiến nội dung từ số liệu đã đăng (sau bước kiểm theo skill)", defaultModel: "claude-sonnet-5-5" },
   { id: "reply", name: "AI Trả lời khách", step: "—", job: "Gợi ý trả lời khách hàng (người duyệt trước khi gửi)", defaultModel: "claude-sonnet-5-5" },
   { id: "assistant", name: "AI Trợ lý", step: "—", job: "Trả lời câu hỏi của OWNER trong app", defaultModel: "claude-opus-5-5" },
 ];

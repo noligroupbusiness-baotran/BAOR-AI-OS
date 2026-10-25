@@ -13,8 +13,15 @@ const pending = (key: string, channels: string[], fields: Connector["fields"], n
   },
 });
 
+// Nhiều fanpage (Personal Brand System 6.2.1.2): Fanpage 2–4 dùng chung adapter Facebook Page, mỗi trang một kết nối riêng (Page ID +
+// token riêng). Không nhận webhook Messenger (route webhook chỉ dùng trang chính); số liệu theo mục tiêu kênh có accountId = khoá này.
+export const EXTRA_FANPAGES = [2, 3, 4] as const;
+export const fanpageKey = (n: number) => `facebook_page_${n}`;
+const fanpageConnectors: Connector[] = EXTRA_FANPAGES.map((n) => ({ ...facebookPageConnector, key: fanpageKey(n), channels: [], parseWebhook: undefined }));
+
 export const connectors: Connector[] = [
   facebookPageConnector,
+  ...fanpageConnectors,
   metaAdsConnector,
   pending("instagram", ["facebook_page"], [{ key: "igUserId", label: "Instagram Business ID" }], "Adapter Instagram chưa xây; sẽ dùng chung token Facebook Page."),
   pending("tiktok", ["tiktok"], [{ key: "accessToken", label: "Access Token", secret: true }], "Adapter TikTok for Business chưa xây; cần app TikTok được duyệt."),

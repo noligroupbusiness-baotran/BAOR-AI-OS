@@ -178,3 +178,75 @@ export function knowledgeProposals(gaps: { briefId: string; gap: string }[], dra
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// Personal Brand System 8.1: kiểm bài ĐÃ ĐĂNG theo skill trong Second Brain TRƯỚC (luật, không AI). Luật lấy từ skill viết content
+// (cấu trúc mặc định Hook → … → CTA; tránh content kiến thức chung kiểu "5 cách chốt Sales"; không tự viết số liệu thị trường) + luật
+// ngôn từ theo nền tảng. Một bài lệch là QUAN SÁT; gộp nhiều bài mới thành đề xuất, kèm cỡ mẫu.
+export interface PublishedPost {
+  id: string;
+  title: string;
+  platform: string;
+  caption: string;
+  issues: string[]; // từ luật ngôn từ + số liệu (tính ở index.ts, cần kịch bản)
+  views: number | null;
+  engagement: number | null;
+  reach: number | null;
+}
+
+// CTA: lời mời hành động rõ ở 2 dòng cuối (bỏ dòng hashtag), hoặc câu hỏi ở CUỐI bài. "?" tu từ giữa bài, "chia sẻ câu chuyện",
+// "linkedin" không tính.
+const CTA_RE = /bình luận|comment|inbox|nhắn tin|để lại|lưu (?:lại|video)|hãy chia sẻ|chia sẻ (?:video|bài)|theo dõi|follow|đăng ký|link (?:ở|trong|dưới|bio)/iu;
+const LISTICLE_RE = /^\s*(?:top\s*)?(?:[2-9]|\d{2,})\s+(?:cách|mẹo|bí quyết|bước|lý do|sai lầm)(?![\p{L}])/iu;
+
+export function skillChecksForPost(p: Pick<PublishedPost, "caption" | "issues">): string[] {
+  const lines = p.caption.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+  const body = lines.filter((l) => !/^(?:#[\p{L}\p{N}_]+\s*)+$/u.test(l));
+  const out: string[] = [];
+  if (!lines.length) return ["không có caption"];
+  const tail = body.slice(-2).join(" ");
+  if (!CTA_RE.test(tail) && !/\?\s*$/.test(body.at(-1) ?? "")) out.push("thiếu lời kêu gọi (CTA) ở cuối — skill: cấu trúc kết bằng CTA");
+  if (LISTICLE_RE.test(lines[0])) out.push("mở bằng dạng “N cách / mẹo…” — skill: tránh content kiến thức chung, ưu tiên trải nghiệm + quan điểm + ví dụ");
+  return [...out, ...p.issues];
+}
+
+/** Khoá gộp: bỏ đuôi nền tảng (" — facebook"), thay số bằng N — cùng một luật = một đề xuất, không sinh khoá rác theo từng con số. */
+export function issueKey(issue: string): string {
+  return issue.split(" — ")[0].replace(/“[^”]*”/g, "“N”").replace(/\d+(?:[.,]\d+)?/g, "N").replace(/\s*\(.*\)\s*$/, "").trim();
+}
+
+export function skillProposals(posts: PublishedPost[], skillLabel: string): ProposalDraft[] {
+  if (!posts.length) return [];
+  const checked = posts.map((p) => ({ p, found: skillChecksForPost(p) }));
+  const byKey = new Map<string, { ps: PublishedPost[]; variants: Set<string> }>();
+  for (const { p, found } of checked)
+    for (const f of found) {
+      const k = issueKey(f);
+      const e = byKey.get(k) ?? { ps: [], variants: new Set<string>() };
+      if (!e.ps.includes(p)) e.ps.push(p);
+      e.variants.add(f.split(" — ")[0]);
+      byKey.set(k, e);
+    }
+  const out: ProposalDraft[] = [];
+  for (const [issueK, { ps, variants }] of byKey) {
+    const key = issueK.slice(0, 80);
+    const issue = variants.size === 1 ? [...variants][0] : `${issueK} (${[...variants].slice(0, 5).join("; ")})`;
+    const rate = (xs: PublishedPost[]) => {
+      const r = xs.filter((x) => x.reach && x.engagement != null).map((x) => (x.engagement! / x.reach!) * 100);
+      return r.length >= 3 ? Math.round((r.reduce((a, b) => a + b, 0) / r.length) * 10) / 10 : null;
+    };
+    const ok = posts.filter((p) => !ps.includes(p));
+    const rBad = rate(ps);
+    const rOk = rate(ok);
+    out.push({
+      key: `skill:${key}`,
+      target: "content",
+      title: `Bài đã đăng lệch skill: ${issueK}`,
+      detail: `${ps.length}/${posts.length} bài đã đăng ${issue}. Kiểm theo ${skillLabel} (bước 8.1 — luật, không AI). Đề xuất: sửa caption mẫu / kịch bản cho các bài sau.${rBad != null && rOk != null ? ` Tương tác TB: bài lệch ${rBad}% · bài đạt ${rOk}% (giả thuyết, chưa phải kết luận).` : ""}`,
+      evidence: ps.slice(0, 8).map((p) => `${p.platform}: “${p.title.slice(0, 80)}”`),
+      sampleSize: posts.length,
+      confidence: posts.length >= 10 ? "medium" : "low",
+    });
+  }
+  return out;
+}

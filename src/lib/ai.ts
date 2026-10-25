@@ -10,6 +10,7 @@ import { roleAllows, roleForPurpose } from "@/lib/ai-roster";
 import { sendAlert } from "@/lib/alerts";
 import { catalogRepo } from "@/lib/catalog/repository";
 import { HOOK_COUNT, HOOK_PLATFORMS, hookContext, saveHooks } from "@/lib/content/hooks";
+import { buildCaption, captionSkill, saveCaptionDraft } from "@/lib/publishing/caption";
 
 // Bộ não AI của hệ thống. Khóa API lấy từ Cài đặt > Kết nối > Claude API, hoặc biến môi trường ANTHROPIC_API_KEY.
 // Mô hình theo từng vị trí: src/lib/ai-roster.ts (Cài đặt › Đội AI).
@@ -138,6 +139,39 @@ export async function generateHooks(topic: string, by: string): Promise<Result<{
   const saved = saveHooks(topic, hooks, { source: "ai", by, allowed: ctx.basis });
   const dropped = hooks.reduce((n, h) => n + h.basisRefs.filter((r) => !ctx.basis.some((b) => `${b.kind}:${b.id}` === r)).length, 0);
   return { ok: true, batchId: saved.batchId, count: saved.ids.length, dropped, short: Math.max(0, HOOK_COUNT - saved.ids.length) };
+}
+
+// Bài đăng theo skill (Personal Brand System 6.1): AI Viết bài đăng viết caption cho video theo skill viết content trong Second Brain,
+// chỉ từ kịch bản đã duyệt; luật caption kiểm lại khi hiển thị. Bản nháp lưu theo video, OWNER sửa rồi mới lên lịch.
+export async function generateCaption(videoId: string): Promise<Result<{ text: string; skill: string }>> {
+  const db = getDb();
+  const v = db.select().from(schema.videos).where(eq(schema.videos.id, videoId)).get();
+  if (!v) return { ok: false, error: "Không tìm thấy video." };
+  const c = v.contentId ? db.select().from(schema.contentItems).where(eq(schema.contentItems.id, v.contentId)).get() : undefined;
+  const skill = captionSkill();
+  const base = buildCaption(videoId);
+  const gated = await gate("caption", `AI viết caption “${v.title.slice(0, 60)}”`, (client, model) =>
+    client.messages.create({
+      model,
+      max_tokens: 4000,
+      system:
+        "Bạn viết caption bài đăng video ngắn cho thương hiệu cá nhân Việt Nam, theo đúng skill được đưa. Chỉ dùng thông tin có trong kịch bản; " +
+        "không bịa số liệu, giá, công dụng; không khẳng định tuyệt đối, không tuyên bố chữa bệnh / giảm cân, không khẳng định thuộc tính cá nhân người xem, " +
+        "không hứa thu nhập. Trả về đúng phần caption (không giải thích), dưới 1.200 ký tự, tối đa 3 hashtag.",
+      messages: [
+        {
+          role: "user",
+          content: `${skill ? `SKILL (${skill.title} · ${skill.status}):\n${skill.body.slice(0, 4000)}` : "(Second Brain chưa có skill viết content — dùng cấu trúc Hook → tình huống → bài học → CTA)"}\n\n` +
+            `Video: ${v.title}\nHook: ${c?.hook ?? ""}\nKịch bản đã duyệt:\n${(c?.draft ?? "").slice(0, 6000) || "(không có)"}\n\nCaption nháp theo luật (để tham khảo):\n${base.text}`,
+        },
+      ],
+    }),
+  );
+  if (!gated.ok) return gated;
+  const text = gated.res.content.map((b) => (b.type === "text" ? b.text : "")).join("").trim();
+  if (!text) return { ok: false, error: "AI không trả về caption." };
+  saveCaptionDraft(videoId, text);
+  return { ok: true, text, skill: skill ? `${skill.title} (${skill.status})` : "chưa có skill" };
 }
 
 export async function generateIdeas(n = 5): Promise<Result<{ count: number }>> {

@@ -4,6 +4,7 @@
 import { requirePermission } from "@/lib/permissions";
 import { decideProposal, markExported, refreshProposals } from "@/lib/learning";
 import { done } from "./common";
+import { aiReviewResults } from "@/lib/learning/ai-review";
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 
@@ -24,4 +25,13 @@ export async function markExportedAction() {
   const actor = await requirePermission("admin", "/insights/learning");
   const n = markExported(actor.name);
   done("/insights/learning", n ? `Đã đánh dấu ${n} đề xuất đã chuyển sang hộp chờ duyệt` : "Không có đề xuất nào để đánh dấu");
+}
+
+// Bước 8.2: AI Đo lường (qua Đội AI — công tắc / trần / mô hình theo vị trí), chạy SAU kiểm theo skill
+export async function aiReviewAction() {
+  const actor = await requirePermission("manager", "/insights/learning");
+  refreshProposals();
+  const r = await aiReviewResults(actor.name);
+  if (!r.ok) return done("/insights/learning?tone=error", r.error);
+  done("/insights/learning", `AI Đo lường: ${r.saved} đề xuất (mới hoặc cập nhật)${r.dropped ? ` (bỏ ${r.dropped} đề xuất không dẫn bài có thật)` : ""}`);
 }

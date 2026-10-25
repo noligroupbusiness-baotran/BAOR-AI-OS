@@ -1,3 +1,5 @@
+import { platformLabel } from "@/components/ui/platform";
+import type { Platform } from "@/lib/types";
 import { Panel, PanelHeader } from "@/components/ui/card";
 import { Pill } from "@/components/ui/pill";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -5,7 +7,7 @@ import { ConfirmAction } from "@/components/campaigns/confirm-action";
 import { cancelVideoPostAction, retryVideoPostAction, setDryRunAction } from "@/lib/actions/publishing";
 import { createAdDraftAction } from "@/lib/actions/ads";
 import { Button } from "@/components/ui/button";
-import { VIDEO_CHANNELS, channelStatus, isAmbiguousFailure, isDryRun, listVideoPosts } from "@/lib/publishing/video";
+import { videoChannels, channelStatus, isAmbiguousFailure, isDryRun, listVideoPosts } from "@/lib/publishing/video";
 import { postStatusLabel } from "@/lib/labels";
 import { fileUrl } from "@/lib/uploads";
 import { formatDateTime, formatNumber } from "@/lib/format";
@@ -33,7 +35,7 @@ export function VideoPostsPanel() {
         }
       />
       <div className="flex flex-wrap gap-1.5 border-b border-border px-4 py-2 text-[12px]">
-        {VIDEO_CHANNELS.map((c) => {
+        {videoChannels().map((c) => {
           const st = channelStatus(c.platform);
           return <Pill key={c.platform} tone={st.canPublish ? "jade" : c.blocked ? "neutral" : "amber"}>{c.label}: {st.reason}</Pill>;
         })}
@@ -54,7 +56,7 @@ export function VideoPostsPanel() {
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-[13px] font-semibold text-ink">{p.title}</span>
                     <Pill tone={st.tone}>{st.label}</Pill>
-                    <span className="text-[12px] text-ink-2">{p.platform}</span>
+                    <span className="text-[12px] text-ink-2">{platformLabel(p.platform as Platform)}</span>
                     {p.mode === "dry_run" && <Pill tone="violet">thử</Pill>}
                   </div>
                   <div className="mt-0.5 text-[12px] text-ink-2">

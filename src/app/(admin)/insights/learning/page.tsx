@@ -4,7 +4,9 @@ import { Pill } from "@/components/ui/pill";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ConfirmAction } from "@/components/campaigns/confirm-action";
-import { decideProposalAction, markExportedAction, refreshLearningAction } from "@/lib/actions/learning";
+import { aiReviewAction, decideProposalAction, markExportedAction, refreshLearningAction } from "@/lib/actions/learning";
+import { captionSkill } from "@/lib/publishing/caption";
+import { roleAllows, roleById } from "@/lib/ai-roster";
 import { analyzeAll, listProposals, secondBrainDraft } from "@/lib/learning";
 import { topicPerformance, MIN_POSTS_PER_TOPIC, MIN_VIEWS } from "@/lib/learning/analyze";
 import { gatherPosts } from "@/lib/learning";
@@ -26,6 +28,9 @@ export default async function LearningPage() {
   const topics = topicPerformance(gatherPosts());
   const proposals = listProposals();
   const draft = secondBrainDraft();
+  const skill = captionSkill();
+  const measure = roleById("measure")!;
+  const measureOk = roleAllows(measure);
   return (
     <>
       <Breadcrumb items={[{ label: "Điều hành", href: "/dashboard" }, { label: "Học & cải tiến" }]} />
@@ -34,6 +39,18 @@ export default async function LearningPage() {
         sub="Đọc kết quả thật (bài đã đăng và xác minh, video, quảng cáo, brief), tìm điều lặp lại, đề xuất cải tiến nội dung, Second Brain và Skill dựng video. Mọi đề xuất là giả thuyết cho tới khi OWNER chấp nhận; hệ thống không tự sửa kho tri thức hay skill."
         action={<form action={refreshLearningAction}><Button type="submit" variant="primary" size="md">Phân tích lại</Button></form>}
       />
+
+      <Panel>
+        <PanelHeader
+          title="Đo lường theo thứ tự: skill trước, AI sau"
+          sub={`8.1 Kiểm theo skill (luật, không AI): ${skill ? `skill “${skill.title}” (${skill.status})` : "Second Brain chưa có skill viết content — kiểm theo cấu trúc mặc định"} — đã kiểm ${facts.skillChecked} bài đăng thật. 8.2 ${measure.name}: ${measureOk.ok ? "chạy khi anh bấm (tính vào trần chi phí AI)" : measureOk.reason}.`}
+          action={
+            <form action={aiReviewAction}>
+              <Button type="submit" variant="soft" size="md" disabled={!measureOk.ok || facts.skillChecked === 0}>AI Đo lường đề xuất</Button>
+            </form>
+          }
+        />
+      </Panel>
 
       <Panel>
         <PanelHeader title="Dữ liệu dùng để phân tích" sub={`Chỉ dữ liệu thật; dữ liệu mẫu bị loại. So sánh chủ đề cần từ ${MIN_POSTS_PER_TOPIC} bài và ${MIN_VIEWS} lượt xem trung bình.`} />

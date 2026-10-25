@@ -2,7 +2,7 @@
 import { desc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { decryptSecret, encryptSecret, maskSecret } from "@/lib/secrets";
-import { connectorFor } from "./registry";
+import { EXTRA_FANPAGES, connectorFor, fanpageKey } from "./registry";
 import type { ConnectorContext } from "./types";
 
 export function readIntegrationConfig(key: string): Record<string, string> {
@@ -44,7 +44,17 @@ export function setIntegrationStatus(key: string, patch: { connected?: boolean; 
   getDb().update(schema.integrations).set(patch).where(eq(schema.integrations.key, key)).run();
 }
 
+/** Dòng kết nối cho Fanpage 2–4 (CSDL đã nạp trước khi có tính năng): thêm nếu thiếu, không đụng dòng đã có. */
+export function ensureFanpageRows(): void {
+  getDb()
+    .insert(schema.integrations)
+    .values(EXTRA_FANPAGES.map((n) => ({ key: fanpageKey(n), name: `Facebook Fanpage ${n}`, description: "Thêm một fanpage để đăng video (Page ID + token riêng của trang).", connected: false, account: null, config: "{}" })))
+    .onConflictDoNothing()
+    .run();
+}
+
 export function listIntegrationStatus() {
+  ensureFanpageRows();
   return getDb()
     .select({
       key: schema.integrations.key,

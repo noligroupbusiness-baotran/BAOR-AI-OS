@@ -11,9 +11,10 @@ import { getSetting } from "@/lib/admin";
 import { logActivity } from "@/lib/activity";
 import { sendAlert } from "@/lib/alerts";
 import { campaignRepo } from "@/lib/campaigns/repository";
-import { connectorFor } from "@/lib/connectors/registry";
-import { connectorContext, finishRun, startRun } from "@/lib/connectors/config";
+import { EXTRA_FANPAGES, connectorFor, fanpageKey } from "@/lib/connectors/registry";
+import { connectorContext, finishRun, readIntegrationConfig, startRun } from "@/lib/connectors/config";
 import { CAPTION_LIMITS } from "@/lib/content/formats";
+import { buildCaption, captionDraft } from "./caption";
 import { getUpload, uploadPath, uploadsDir } from "@/lib/uploads";
 import { latestJob } from "@/lib/video/jobs";
 
@@ -32,6 +33,22 @@ export const VIDEO_CHANNELS: VideoChannel[] = [
   { platform: "youtube", key: "youtube", label: "YouTube Shorts", blocked: "YouTube Data API cần OAuth kênh và dự án Google Cloud." },
 ];
 
+/** Kênh đăng video: kênh gốc + Fanpage 2–4 (mỗi fanpage là một "nền tảng" riêng: bài, chống trùng, số liệu tách theo trang). */
+export function videoChannels(): VideoChannel[] {
+  const db = getDb();
+  const extra = EXTRA_FANPAGES.map((n) => {
+    const key = fanpageKey(n);
+    const row = db.select({ account: schema.integrations.account }).from(schema.integrations).where(eq(schema.integrations.key, key)).get();
+    return { platform: key, key, label: row?.account ? `Fanpage: ${row.account}` : `Facebook Fanpage ${n}` };
+  });
+  return [VIDEO_CHANNELS[0], ...extra, ...VIDEO_CHANNELS.slice(1)];
+}
+
+/** Giới hạn caption: fanpage dùng luật Facebook. */
+export function captionLimitFor(platform: string) {
+  return CAPTION_LIMITS.find((l) => l.platform === (platform.startsWith("facebook") ? "facebook" : platform));
+}
+
 const MAX_ATTEMPTS = 3;
 const VERIFY_GIVE_UP_MS = 24 * 60 * 60 * 1000;
 const g = globalThis as unknown as { __baorPublishing?: Set<string> };
@@ -45,7 +62,7 @@ export function isDryRun(): boolean {
 }
 
 export function channelStatus(platform: string): { channel?: VideoChannel; connected: boolean; canPublish: boolean; reason: string } {
-  const channel = VIDEO_CHANNELS.find((c) => c.platform === platform);
+  const channel = videoChannels().find((c) => c.platform === platform);
   if (!channel) return { connected: false, canPublish: false, reason: "Kênh không hỗ trợ" };
   const integ = getDb().select().from(schema.integrations).where(eq(schema.integrations.key, channel.key)).get();
   const connected = !!integ?.connected;
@@ -54,14 +71,10 @@ export function channelStatus(platform: string): { channel?: VideoChannel; conne
   return { channel, connected, canPublish: connected, reason: connected ? "Đã kết nối" : "Chưa kết nối tài khoản" };
 }
 
-/** Caption đề xuất từ kịch bản đã duyệt: hook + thông điệp chính + một lời kêu gọi. OWNER sửa trước khi lên lịch. */
+/** Caption đề xuất: bản nháp AI Viết bài đăng (nếu đã tạo) hoặc caption dựng theo skill viết content trong Second Brain từ kịch bản đã
+ *  duyệt (src/lib/publishing/caption.ts). OWNER sửa trước khi lên lịch. */
 export function suggestCaption(videoId: string): string {
-  const db = getDb();
-  const v = db.select().from(schema.videos).where(eq(schema.videos.id, videoId)).get();
-  if (!v) return "";
-  const c = v.contentId ? db.select().from(schema.contentItems).where(eq(schema.contentItems.id, v.contentId)).get() : undefined;
-  const key = (c?.draft ?? "").match(/^Thông điệp chính:\s*(.+)$/m)?.[1]?.trim();
-  return [c?.title ?? v.title, key && key !== c?.hook ? key : c?.hook, "Lưu lại video và bình luận câu hỏi của bạn bên dưới."].filter(Boolean).join("\n\n");
+  return captionDraft(videoId) ?? buildCaption(videoId).text;
 }
 
 /** Ảnh bìa: một khung ở 20% thời lượng bản chính, lưu vào kho tải lên. */
@@ -98,8 +111,19 @@ export function scheduleVideoPosts(input: { videoId: string; platforms: string[]
     const st = channelStatus(p);
     if (!st.channel) return { ok: false, error: `Kênh ${p} không hỗ trợ` };
     if (st.channel.blocked) return { ok: false, error: `${st.channel.label}: ${st.channel.blocked}` };
-    const limit = CAPTION_LIMITS.find((l) => l.platform === p);
+    const limit = captionLimitFor(p);
     if (limit && caption.length > limit.maxChars) return { ok: false, error: `${limit.label}: caption vượt ${caption.length - limit.maxChars} ký tự` };
+  }
+  // Hai kênh Facebook trỏ cùng một Page ID (nhập nhầm khi kết nối) → một video lên một trang hai lần mà chống trùng không bắt được
+  const pageOf = new Map<string, string>();
+  for (const p of platforms) {
+    const key = channelStatus(p).channel?.key;
+    if (!key || !key.startsWith("facebook_page")) continue;
+    const pid = readIntegrationConfig(key).pageId;
+    if (!pid) continue;
+    const dup = pageOf.get(pid);
+    if (dup) return { ok: false, error: `${dup} và ${channelStatus(p).channel?.label} cùng là trang ${pid} — kiểm lại Page ID ở Cài đặt › Kết nối` };
+    pageOf.set(pid, channelStatus(p).channel?.label ?? p);
   }
   const when = Date.parse(input.whenIso);
   if (!Number.isFinite(when)) return { ok: false, error: "Giờ đăng không hợp lệ" };

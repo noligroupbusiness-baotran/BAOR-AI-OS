@@ -8,7 +8,8 @@ import { logActivity } from "@/lib/activity";
 import { isSampleAd } from "@/lib/ads/authorization";
 import { videos as seedVideos } from "@/lib/data/videos";
 import { jobVersions, readReport } from "@/lib/video/jobs";
-import { adProposals, contentProposals, feedbackPatterns, knowledgeProposals, topicPerformance, videoQaPatterns, type PostRow, type ProposalDraft, type QaReport } from "./analyze";
+import { adProposals, contentProposals, feedbackPatterns, knowledgeProposals, skillProposals, topicPerformance, videoQaPatterns, type PostRow, type ProposalDraft, type PublishedPost, type QaReport } from "./analyze";
+import { captionIssues, captionSkill, scriptTextFor } from "@/lib/publishing/caption";
 
 const SAMPLE_VIDEOS = new Set(seedVideos.map((v) => v.id));
 const nowIso = () => new Date().toISOString();
@@ -33,6 +34,17 @@ export function gatherPosts(): PostRow[] {
   });
 }
 
+/** Bài đã đăng THẬT (live, đã xác minh) kèm caption và cảnh báo luật caption (so với kịch bản đã duyệt) — cho bước 8.1. */
+export function gatherPublished(): PublishedPost[] {
+  const db = getDb();
+  const posts = db.select().from(schema.scheduledPosts).where(and(eq(schema.scheduledPosts.status, "published"), eq(schema.scheduledPosts.mode, "live"), isNotNull(schema.scheduledPosts.verifiedAt))).all();
+  return posts.map((p) => {
+    const caption = p.caption ?? "";
+    const script = p.videoId ? scriptTextFor(p.videoId) : "";
+    return { id: p.id, title: p.title, platform: p.platform, caption, issues: captionIssues(caption, [p.platform], script), views: p.views, engagement: p.engagement, reach: p.reach };
+  });
+}
+
 export function gatherReports(): QaReport[] {
   const out: QaReport[] = [];
   for (const v of getDb().select({ id: schema.videos.id }).from(schema.videos).all()) {
@@ -45,9 +57,11 @@ export function gatherReports(): QaReport[] {
   return out;
 }
 
-export function analyzeAll(): { proposals: ProposalDraft[]; facts: { posts: number; reports: number; feedback: number; ads: number; briefs: number } } {
+export function analyzeAll(): { proposals: ProposalDraft[]; facts: { posts: number; reports: number; feedback: number; ads: number; briefs: number; skillChecked: number } } {
   const db = getDb();
   const posts = gatherPosts();
+  const published = gatherPublished();
+  const skill = captionSkill();
   const reports = gatherReports();
   const feedback = db.select().from(schema.videoFeedback).where(eq(schema.videoFeedback.kind, "request_changes")).all().filter((f) => !SAMPLE_VIDEOS.has(f.videoId));
   const ads = db.select().from(schema.adCampaigns).all().filter((a) => !isSampleAd(a.id));
@@ -74,8 +88,9 @@ export function analyzeAll(): { proposals: ProposalDraft[]; facts: { posts: numb
     ...feedbackPatterns(feedback.map((f) => ({ videoId: f.videoId, note: f.note }))),
     ...adProposals(ads, cplTarget),
     ...knowledgeProposals(briefs.flatMap((b) => arr(b.gaps).map((gap) => ({ briefId: b.id, gap }))), [...draftUse.values()]),
+    ...skillProposals(published, skill ? `skill “${skill.title}” (${skill.status})` : "cấu trúc mặc định (Second Brain chưa có skill viết content)"),
   ];
-  return { proposals, facts: { posts: posts.length, reports: reports.length, feedback: feedback.length, ads: ads.length, briefs: briefs.length } };
+  return { proposals, facts: { posts: posts.length, reports: reports.length, feedback: feedback.length, ads: ads.length, briefs: briefs.length, skillChecked: published.length } };
 }
 
 /** Chạy phân tích và lưu đề xuất. Cùng khoá thì cập nhật căn cứ; đề xuất OWNER đã quyết giữ nguyên quyết định. */
