@@ -17,6 +17,8 @@ import { isJobFile, type Aspect, type Framing, type JobProgress, type VideoJob, 
 import { addVideoFeedback } from "./feedback";
 import { campaignRepo } from "@/lib/campaigns/repository";
 import { parseShootingScript } from "@/lib/content/shooting-script";
+import { roleAllows, roleById } from "@/lib/ai-roster";
+import { recordAiCall } from "@/lib/router";
 
 export const SKILL = skillJson as unknown as {
   skillId: string;
@@ -511,7 +513,10 @@ export function runJob(job: VideoJob): Promise<void> {
   }
   return new Promise((resolve) => {
     // detached: bộ dựng chạy trong nhóm tiến trình riêng để dừng được cả ffmpeg / whisper con.
-    const child = spawn(pythonBin(), args, { stdio: ["ignore", "pipe", "pipe"], detached: true });
+    // Đội AI: "AI Edit Video" tắt "Cho phép gọi AI" → bộ dựng lập kế hoạch theo luật (ai_plan.available() trả False)
+    const aiEdit = roleAllows(roleById("video_edit")!);
+    const env = aiEdit.ok ? process.env : { ...process.env, BAOR_AI_PLAN: "off" };
+    const child = spawn(pythonBin(), args, { stdio: ["ignore", "pipe", "pipe"], detached: true, env });
     children.add(child);
     writeJob({ ...job, status: "running", startedAt: started, runId, pid: child.pid });
     let timedOut = false;
@@ -563,6 +568,12 @@ function finishJob(job: VideoJob, dir: string, runId: string, title: string, sta
   const report = readJson<VideoReport>(path.join(dir, "report.json"));
   const master = path.join(dir, "master.mp4");
   if (!report || !fs.existsSync(master)) throw new Error("Bộ dựng không tạo ra bản chính");
+  // Sổ chi phí AI chung: mô hình biên tập tại máy đã chạy trong lần dựng này → ghi 1 lần gọi, ₫0 (không tốn API)
+  try {
+    if (report.aiRun) recordAiCall({ purpose: "video_plan", role: "video_edit", model: report.aiRun.model || "mô hình tại máy", inputTokens: 0, outputTokens: 0, ok: true, costVnd: 0 });
+  } catch {
+    // sổ chi phí lỗi không được làm hỏng bản dựng đã xong
+  }
   // Đưa bản chính vào kho tải lên (phát trong Video Studio, đăng bài dùng sau khi duyệt)
   const upId = newId("up");
   const fileName = `${upId}.mp4`;

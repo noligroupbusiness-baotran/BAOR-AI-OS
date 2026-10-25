@@ -132,11 +132,11 @@ export function aiBudgetAllows(): RuleResult<AiBudget> {
   return { ok: true, value: b, reason: "Trong hạn mức." };
 }
 
-export function recordAiCall(input: { purpose: string; model: string; inputTokens: number; outputTokens: number; ok: boolean; error?: string }): string {
+export function recordAiCall(input: { purpose: string; model: string; inputTokens: number; outputTokens: number; ok: boolean; error?: string; role?: string; costVnd?: number }): string {
   const id = newId("ai");
   getDb()
     .insert(schema.aiCalls)
-    .values({ id, at: nowIso(), purpose: input.purpose, model: input.model, inputTokens: input.inputTokens, outputTokens: input.outputTokens, costVnd: input.ok ? estimateCostVnd(input.inputTokens, input.outputTokens) : 0, ok: input.ok, error: input.error ?? null })
+    .values({ id, at: nowIso(), purpose: input.purpose, model: input.model, inputTokens: input.inputTokens, outputTokens: input.outputTokens, costVnd: input.costVnd ?? (input.ok ? estimateCostVnd(input.inputTokens, input.outputTokens) : 0), ok: input.ok, error: input.error ?? null, role: input.role ?? null })
     .run();
   return id;
 }

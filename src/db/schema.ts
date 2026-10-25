@@ -433,6 +433,7 @@ export const aiCalls = sqliteTable("ai_calls", {
   costVnd: integer("cost_vnd").notNull().default(0),
   ok: integer("ok", { mode: "boolean" }).notNull().default(true),
   error: text("error"),
+  role: text("role"), // vị trí AI (src/lib/ai-roster.ts); null = bản ghi cũ, suy từ purpose
 });
 
 // Nhật ký đồng bộ / đăng bài / webhook của từng kết nối.

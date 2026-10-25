@@ -6,11 +6,12 @@ import { getDb, schema } from "@/db";
 import { getBrand, listInsights, listPersonas } from "@/lib/queries";
 import { readIntegrationConfig } from "@/lib/connectors/config";
 import { aiBudgetAllows, recordAiCall, recordDecision } from "@/lib/router";
+import { roleAllows, roleForPurpose } from "@/lib/ai-roster";
 import { sendAlert } from "@/lib/alerts";
 import { catalogRepo } from "@/lib/catalog/repository";
 
 // Bộ não AI của hệ thống. Khóa API lấy từ Cài đặt > Kết nối > Claude API, hoặc biến môi trường ANTHROPIC_API_KEY.
-export const MODEL = "claude-opus-5-5";
+// Mô hình theo từng vị trí: src/lib/ai-roster.ts (Cài đặt › Đội AI).
 
 type Result<T> = ({ ok: true } & T) | { ok: false; error: string };
 
@@ -26,9 +27,17 @@ function getClient(): Anthropic | null {
 
 const NO_KEY = "Chưa có khóa Claude API. Vào Cài đặt > Kết nối > Claude API để nhập khóa.";
 
-// Cổng AI: mọi lần gọi mô hình đi qua đây để (1) kiểm tra trần ngân sách, (2) ghi sổ chi phí,
-// (3) ghi quyết định vào bộ định tuyến với nhãn "AI đề xuất, cần người duyệt".
-export async function gate<T extends { usage?: { input_tokens: number; output_tokens: number } }>(purpose: string, subject: string, call: (client: Anthropic) => Promise<T>): Promise<Result<{ res: T }>> {
+// Cổng AI: mọi lần gọi mô hình đi qua đây để (1) kiểm tra công tắc "Cho phép gọi AI" + trần riêng của vị trí (Đội AI),
+// (2) kiểm tra trần ngân sách chung, (3) ghi sổ chi phí theo vị trí, (4) ghi quyết định vào bộ định tuyến với nhãn
+// "AI đề xuất, cần người duyệt". Mô hình do vị trí quyết định (Cài đặt › Đội AI), truyền vào call.
+export async function gate<T extends { usage?: { input_tokens: number; output_tokens: number } }>(purpose: string, subject: string, call: (client: Anthropic, model: string) => Promise<T>): Promise<Result<{ res: T }>> {
+  const role = roleForPurpose(purpose);
+  const allowed = roleAllows(role);
+  if (!allowed.ok) {
+    recordDecision({ lane: "rule", domain: purpose === "reply" ? "reply" : purpose === "research" ? "research" : "content", subject, outcome: "không gọi AI", reason: allowed.reason, needsApproval: false });
+    return { ok: false, error: allowed.reason };
+  }
+  const model = allowed.value?.model ?? role.defaultModel;
   const client = getClient();
   if (!client) return { ok: false, error: NO_KEY };
   const budget = aiBudgetAllows();
@@ -38,12 +47,12 @@ export async function gate<T extends { usage?: { input_tokens: number; output_to
     return { ok: false, error: `${budget.reason} Nâng trần ở Cài đặt › AI Agent nếu cần.` };
   }
   try {
-    const res = await call(client);
-    const aiCallId = recordAiCall({ purpose, model: MODEL, inputTokens: res.usage?.input_tokens ?? 0, outputTokens: res.usage?.output_tokens ?? 0, ok: true });
-    recordDecision({ lane: "ai", domain: purpose === "reply" ? "reply" : purpose === "research" ? "research" : "content", subject, outcome: "AI đã tạo đề xuất", reason: "Thiếu dữ liệu nguồn có sẵn, dùng AI; người duyệt trước khi dùng.", sources: ["Dữ liệu trong hệ thống (Cài đặt, insight, hội thoại)", `Claude ${MODEL}`], confidence: 70, needsApproval: true, aiCallId });
+    const res = await call(client, model);
+    const aiCallId = recordAiCall({ purpose, role: role.id, model, inputTokens: res.usage?.input_tokens ?? 0, outputTokens: res.usage?.output_tokens ?? 0, ok: true });
+    recordDecision({ lane: "ai", domain: purpose === "reply" ? "reply" : purpose === "research" ? "research" : "content", subject, outcome: "AI đã tạo đề xuất", reason: "Thiếu dữ liệu nguồn có sẵn, dùng AI; người duyệt trước khi dùng.", sources: ["Dữ liệu trong hệ thống (Cài đặt, insight, hội thoại)", `${role.name} · ${model}`], confidence: 70, needsApproval: true, aiCallId });
     return { ok: true, res };
   } catch (e) {
-    recordAiCall({ purpose, model: MODEL, inputTokens: 0, outputTokens: 0, ok: false, error: describeError(e) });
+    recordAiCall({ purpose, role: role.id, model, inputTokens: 0, outputTokens: 0, ok: false, error: describeError(e) });
     return { ok: false, error: describeError(e) };
   }
 }
@@ -90,9 +99,9 @@ const IdeasSchema = z.object({
 });
 
 export async function generateIdeas(n = 5): Promise<Result<{ count: number }>> {
-  const gated = await gate("ideas", `AI đề xuất ${n} ý tưởng nội dung`, (client) =>
+  const gated = await gate("ideas", `AI đề xuất ${n} ý tưởng nội dung`, (client, model) =>
     client.messages.parse({
-      model: MODEL,
+      model,
       max_tokens: 16000,
       system:
         "Bạn là giám đốc nội dung cho một fanpage Việt Nam. Đề xuất ý tưởng bám chặt vào insight khách hàng, viết tiếng Việt tự nhiên, hook ngắn, dàn ý 3-5 gạch đầu dòng. Điểm score phản ánh khả năng tạo tương tác và lead thật. Chỉ dùng giá và công dụng có trong danh mục sản phẩm.",
@@ -130,14 +139,19 @@ export async function generateIdeas(n = 5): Promise<Result<{ count: number }>> {
   }
 }
 
+export function draftPurpose(format: string): "draft" | "caption" {
+  return format === "reel" || format === "story" || format === "script" ? "draft" : "caption";
+}
+
 /** `briefRules`: khi nội dung sinh từ brief nghiên cứu, AI chỉ được viết lại kịch bản quay hiện có theo các luật này. */
 export async function writeDraft(contentId: string, briefRules?: string, validate?: (draft: string) => string[]): Promise<Result<{ draft: string }>> {
   const db = getDb();
   const item = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, contentId)).get();
   if (!item) return { ok: false, error: "Không tìm thấy nội dung." };
-  const gated = await gate("draft", `AI viết nháp “${item.title}”`, (client) =>
+  // Đội AI: kịch bản video (reel / story / script) → AI Kịch bản; bài đăng / caption / bài viết / carousel / ảnh → AI Viết bài đăng
+  const gated = await gate(draftPurpose(item.format), `AI viết nháp “${item.title}”`, (client, model) =>
     client.messages.create({
-      model: MODEL,
+      model,
       max_tokens: 16000,
       system:
         "Bạn viết nội dung mạng xã hội tiếng Việt cho fanpage. Viết bản nháp hoàn chỉnh, đúng định dạng: post = bài đăng có hook, thân, CTA; article = bài dài có tiêu đề phụ; carousel = từng slide đánh số; reel / story / script = kịch bản video 15–60 giây theo 5 cảnh Hook (0–3s), Vấn đề, Giải pháp, Bằng chứng, Kêu gọi, mỗi cảnh có ba dòng Hình ảnh / Lời thoại / Chữ trên màn hình; caption = caption ngắn dưới 125 ký tự ở câu đầu, có CTA, tối đa 5 hashtag; image = bản mô tả ảnh cho thiết kế (thông điệp trên ảnh tối đa 8 từ, chủ thể, bố cục, màu, phong cách, điều cấm). Không dùng emoji quá nhiều. Chỉ dùng giá và công dụng có trong danh mục sản phẩm. Trả về chỉ nội dung nháp, không giải thích.",
@@ -178,9 +192,9 @@ export async function suggestReply(conversationId: string): Promise<Result<{ tex
   if (!conv) return { ok: false, error: "Không tìm thấy hội thoại." };
   const msgs = db.select().from(schema.messages).where(eq(schema.messages.conversationId, conversationId)).orderBy(schema.messages.at).all();
   const b = getBrand();
-  const gated = await gate("reply", `AI gợi ý trả lời ${conv.leadName}`, (client) =>
+  const gated = await gate("reply", `AI gợi ý trả lời ${conv.leadName}`, (client, model) =>
     client.messages.create({
-      model: MODEL,
+      model,
       max_tokens: 2000,
       output_config: { effort: "low" },
       system: `Bạn là nhân viên tư vấn của fanpage ${b.name || ""}. ${catalogContext()} Giọng: ${b.voice}. Trả lời ngắn gọn 1-3 câu, tiếng Việt, hướng tới chốt đơn hoặc lấy số điện thoại. Không hứa điều không có trong danh mục. Chỉ trả về câu trả lời.`,
@@ -210,9 +224,9 @@ export async function suggestReply(conversationId: string): Promise<Result<{ tex
 
 // ---------- Trợ lý: câu hỏi tự do trên ảnh chụp dữ liệu hệ thống ----------
 export async function askAi(question: string, snapshot: string, history: string): Promise<Result<{ text: string }>> {
-  const gated = await gate("assistant", `Trợ lý: “${question.slice(0, 80)}”`, (client) =>
+  const gated = await gate("assistant", `Trợ lý: “${question.slice(0, 80)}”`, (client, model) =>
     client.messages.create({
-      model: MODEL,
+      model,
       max_tokens: 1500,
       output_config: { effort: "low" },
       system:
@@ -254,9 +268,9 @@ export async function extractInsights(): Promise<Result<{ count: number }>> {
     `Bài đã đăng:\n${posts.map((p) => `- [post ${p.id}] "${p.title}" ${p.platform}: reach ${p.reach}, tương tác ${p.engagement}`).join("\n")}`,
     `Nhóm khách hàng có sẵn: ${personas.map((p) => `${p.id}=${p.name}`).join("; ") || "(chưa có)"}`,
   ].join("\n\n");
-  const gated = await gate("research", "AI rút insight từ inbox, lead, bài đăng", (client) =>
+  const gated = await gate("research", "AI rút insight từ inbox, lead, bài đăng", (client, model) =>
     client.messages.parse({
-      model: MODEL,
+      model,
       max_tokens: 6000,
       system:
         "Bạn là chuyên viên nghiên cứu khách hàng. Từ dữ liệu thô, rút ra 2–5 insight cụ thể, có thể hành động, tiếng Việt. Mỗi insight PHẢI kèm evidence là trích dẫn / mã bản ghi có trong dữ liệu (dạng [msg id], [lead id], [post id]); không suy đoán ngoài dữ liệu. confidence phản ánh số bằng chứng. personaId chỉ dùng id có trong danh sách, không có thì null. source ghi rõ loại dữ liệu và số lượng (VD: '18 tin nhắn inbox tuần này').",

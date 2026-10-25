@@ -6,7 +6,8 @@ import { z } from "zod";
 import type Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { getDb, schema } from "@/db";
-import { MODEL, aiConfigured, gate } from "@/lib/ai";
+import { aiConfigured, gate } from "@/lib/ai";
+import { roleForPurpose, roleSettings } from "@/lib/ai-roster";
 import { estimateCostVnd } from "@/lib/router";
 import { getKnowledgePages, searchKnowledge } from "@/lib/knowledge";
 import { recordContentVersion } from "@/lib/content/versions";
@@ -282,7 +283,7 @@ export async function runResearchWithAi(taskId: string, by: string): Promise<{ o
   const maxSearches = 8;
 
   // Bước 1: tìm và đọc nguồn ngoài (công cụ web_search chạy phía Anthropic)
-  const step1 = await gate<RunOut>("research", `Nghiên cứu: ${task.question.slice(0, 80)}`, async (client) => {
+  const step1 = await gate<RunOut>("research", `Nghiên cứu: ${task.question.slice(0, 80)}`, async (client, model) => {
     const messages: Anthropic.Beta.BetaMessageParam[] = [
       { role: "user", content: `Câu hỏi nghiên cứu: ${task.question}\nMục tiêu sử dụng: ${task.purpose}\n\nTri thức nội bộ liên quan (Second Brain):\n${kc.text}\n\nHãy tìm nguồn ngoài, rồi viết báo cáo: kết luận, các quan điểm khác nhau, giới hạn bằng chứng, độ tin cậy, góc ứng dụng và chủ đề content đề xuất. Mỗi ý dẫn nguồn.` },
     ];
@@ -292,7 +293,7 @@ export async function runResearchWithAi(taskId: string, by: string): Promise<{ o
     let searches = 0;
     for (let turn = 0; turn < 4; turn++) {
       const res = await client.beta.messages.create({
-        model: MODEL,
+        model,
         max_tokens: 16000,
         betas: ["server-side-fallback-2026-07-01"],
         fallbacks: "default",
@@ -325,9 +326,9 @@ export async function runResearchWithAi(taskId: string, by: string): Promise<{ o
 
   // Bước 2: chuyển báo cáo thành hồ sơ có cấu trúc (không tìm thêm, chỉ dùng URL đã tìm được)
   const urlList = [...r1.urls.entries()].map(([u, v]) => `- ${u} | ${v.title}${v.pageAge ? ` | ${v.pageAge}` : ""}`).join("\n");
-  const step2 = await gate("research", `Lập hồ sơ nguồn: ${task.question.slice(0, 80)}`, (client) =>
+  const step2 = await gate("research", `Lập hồ sơ nguồn: ${task.question.slice(0, 80)}`, (client, model) =>
     client.messages.parse({
-      model: MODEL,
+      model,
       max_tokens: 16000,
       system: `${RESEARCH_SYSTEM}\nChỉ dùng URL trong danh sách được cung cấp. knowledgeIds chỉ lấy từ id trang Second Brain đã cho. Không thêm brief nếu không đủ căn cứ.`,
       messages: [
@@ -347,7 +348,7 @@ export async function runResearchWithAi(taskId: string, by: string): Promise<{ o
   }
   const vndPerSearch = 260; // ≈ 10 USD / 1.000 lượt tìm
   const cost = estimateCostVnd(r1.usage.input_tokens + (step2.res.usage?.input_tokens ?? 0), r1.usage.output_tokens + (step2.res.usage?.output_tokens ?? 0)) + r1.searches * vndPerSearch;
-  saveResearchResult(taskId, out, { runner: "ai", allowedUrls: new Set(r1.urls.keys()), model: MODEL, searchCount: r1.searches, costVnd: cost, by });
+  saveResearchResult(taskId, out, { runner: "ai", allowedUrls: new Set(r1.urls.keys()), model: roleSettings(roleForPurpose("research")).model, searchCount: r1.searches, costVnd: cost, by });
   return { ok: true, summary: out.summary };
 }
 

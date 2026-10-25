@@ -140,6 +140,9 @@ def llm(messages, schema, max_tokens=1800, temperature=0.2, timeout=600):
 
 
 def available(timeout=3):
+    # Cài đặt › Đội AI: "AI Edit Video" tắt "Cho phép gọi AI" → bộ dựng lập kế hoạch theo luật, không gọi mô hình
+    if os.environ.get("BAOR_AI_PLAN") == "off":
+        return False
     try:
         with urllib.request.urlopen(ENDPOINT.rstrip("/") + "/health", timeout=timeout) as r:
             return json.loads(r.read()).get("status") == "ok"
@@ -717,6 +720,14 @@ def self_test():
     if "đeo tai nghe tư vấn" not in cat or "IMG_0042" in cat or "Gối sofa" in cat:
         bad += 1
         print(f"SAI danh mục ảnh (phải theo mô tả, bỏ ảnh loại): {cat[:200]!r}")
+    # Đội AI tắt "Cho phép gọi AI" (BAOR_AI_PLAN=off) → không có mô hình, bộ dựng lập theo luật
+    os.environ["BAOR_AI_PLAN"] = "off"
+    try:
+        if available() or plan(w2, 40.0, [], log=lambda m: None) is not None:
+            bad += 1
+            print("SAI: BAOR_AI_PLAN=off vẫn gọi mô hình")
+    finally:
+        del os.environ["BAOR_AI_PLAN"]
     print(f"ai_plan tự kiểm: {'đạt' if not bad else f'{bad} lỗi'}")
     return bad == 0
 

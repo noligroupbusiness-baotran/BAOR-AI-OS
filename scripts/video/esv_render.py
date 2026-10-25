@@ -1754,6 +1754,7 @@ def main():
         plan = None  # kế hoạch máy lập ở bản trước: lập lại (AI nếu có mô hình, không thì luật mới nhất)
     if a.ai_plan:
         plan = None  # người dùng bấm "AI biên tập lại"
+    ai_run = None
     broll_dir = (plan or {}).get("brollDir") or os.path.join(os.environ.get("DATA_DIR", os.path.join(P.ROOT, "data")), "video-assets", "broll")
     if plan is None:
         # Biên tập AI trong ứng dụng: mô hình mở chạy tại máy lập kế hoạch, luật ESV kiểm từng mục (ai_plan.py).
@@ -1765,7 +1766,9 @@ def main():
             plan = ai_plan.plan(words, dur, broll_library(broll_dir), (script_text[:1200] + (f" Từ khoá: {a.keywords}" if a.keywords else "")).strip(),
                                 log=lambda m: print(m, file=sys.stderr), music_genres=music_genres(music_library(os.environ.get("DATA_DIR", os.path.join(P.ROOT, "data")))))
             if plan is None:
-                ai_note = " Biên tập AI: không có mô hình tại máy (llama-server) → lập theo luật."
+                ai_note = " Biên tập AI: không có mô hình tại máy (llama-server) hoặc Đội AI đang tắt → lập theo luật."
+            else:
+                ai_run = {"model": (plan.get("ai") or {}).get("model", ""), "seconds": (plan.get("ai") or {}).get("seconds", 0)}
         except Exception as e:  # mô hình lỗi giữa chừng không được làm hỏng cả bản dựng
             plan = None
             ai_note = f" Biên tập AI lỗi ({str(e)[:120]}) → lập theo luật."
@@ -2339,6 +2342,7 @@ def main():
         "zoom": {"formula": "r3 smootherstep, một tâm, không zoom thở", "profile": prof, "pace": pace, "events": zooms, "anchor": [round(ax, 3), round(ay, 3)], "faceDetected": face_ok},
         "audio": {"lufs": mI, "truePeak": mTP, "previewTruePeak": pTP, "music": music_info, "sfx": sfx_info},
         "plan": {"by": plan.get("by", ""), "note": plan.get("note", "")},
+        "aiRun": ai_run,  # mô hình biên tập đã chạy TRONG lần dựng này (ghi sổ Đội AI: AI Edit Video, ₫0 vì chạy tại máy)
         "qa": qa, "failed": failed, "blockers": blockers,
         "timings": job.timings, "elapsedSec": round(time.time() - job.t0, 1),
     }

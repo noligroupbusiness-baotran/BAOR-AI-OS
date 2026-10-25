@@ -70,21 +70,30 @@ Cập nhật bởi MASTER sau mỗi checkpoint. Nguồn vận hành: `docs/BAOR_
 ## VIỆC TIẾP THEO (backlog OWNER đã ủy quyền — tự làm theo thứ tự, không chờ nhắc)
 
 <!-- NEXT:START -->
-Nguồn ủy quyền: chỉ thị OWNER 22/10/2026 "CONTINUE BRAND ENGINE IMPLEMENTATION" + "SHARED OPERATING STANDARD". Mỗi mục đi đủ vòng BUILD (docs/BAOR_OPERATING_MODEL.md §2).
-1. [ĐANG LÀM] Skill ESV + Skill Edit Video Ngang v0.1.r2 (Notion 02 SKILL, ACTIVE — OWNER duyệt 22/10/2026 18:14).
-   XONG (a33bab7): kho tư liệu → thư viện nhạc / SFX (library_sync.py, chỉ ĐỦ-HỒ-SƠ đúng sha256), Cài đặt › Thư viện nhạc nền
-   (OWNER nghe + duyệt), AI chọn loại nhạc; 9:16 theo skill mới (phụ đề PA B y1600 không phát sáng, logo 340 x76/y107, nhạc −24 dB,
-   552792 / 241274 LOẠI, SFX ≤ −19 dB đo thật, bảng kiểm S / T).
-   XONG (2a35675 + commit M3): 16:9 — scripts/video/ngang.py: thẻ ảnh M1–M6 (M3 split khúc cuối: thẻ người nói trên nền navy +
-   cột 3 ô) cạnh người, né cả người (±2 s, lọc mặt chung với J), phụ đề / chữ nhấn / miễn trừ theo số 16:9, sơ đồ né mặt, không logo.
-   Dựng thật 1017 đạt toàn bộ bảng kiểm (J 205 mẫu, 0 đè mặt); B1 4:5 không hồi quy (J 381 mẫu, 0).
-   CÒN: K1–K10 (skill ghi CHƯA CHỐT — chờ OWNER #134a); mật độ ảnh 16:9 thấp (thư viện ảnh chỉ có từ khoá chữ → cần mô tả ảnh /
-   mô hình nhìn ảnh mở); 4K (D-04); mọi số mẫu M1–M6 là MẪU THAM KHẢO chờ OWNER xem. Cập nhật docs/brand-engine/…PROGRESS.md.
-2. Nợ đã ghi (không chặn): script_align "Lan"→"Lành" khi kịch bản viết hoa tên khác; negated_before dừng ở "thì" có thể sót
-   phủ định mệnh đề sau; mỗi video mới gọi mô hình ~6 phút (hàng đợi chậm khi tải nhiều); minh hoạ AI 0 ảnh qua kiểm
-   (thư viện chỉ có mô tả chữ — cân nhắc mô hình nhìn ảnh mở để mô tả ảnh); khôi phục plan.prev-* chưa có nút trong app;
+Nguồn ủy quyền: chỉ thị OWNER 22/10/2026 "CONTINUE BRAND ENGINE IMPLEMENTATION" + "SHARED OPERATING STANDARD"; 25/10/2026 OWNER gửi sơ đồ
+"Personal Brand System" (8 bước + nguyên tắc AI) — "làm theo hệ thống này". Mỗi mục đi đủ vòng BUILD (docs/BAOR_OPERATING_MODEL.md §2).
+OWNER 25/10/2026: "ngưng edit video" — KHÔNG xếp hàng / dựng lại video cho tới khi OWNER nói tiếp (llama-server đã tắt).
+1. [ĐANG LÀM] Personal Brand System — các lát KHÔNG cần khoá nền tảng / tiền thật, theo thứ tự:
+   A. Đội AI (nguyên tắc AI): mỗi vị trí 1 AI, công tắc "Cho phép gọi AI", trần riêng / tháng, màn hình chung Báo cáo › Chi phí AI
+      (src/lib/ai-roster.ts, Cài đặt › Đội AI). AI Edit Video (tại máy) ghi sổ ₫0, tắt → dựng theo luật.
+   B. Tổng kho video ngắn (bước 5): video đã duyệt + video tự edit tải lên (4.1, vào kho không qua bộ dựng) tự vào kho; lọc Đã đăng /
+      Chưa đăng; video đã đăng chuyển mục xoá, sau 1 ngày gỡ tệp (chuyển DATA_DIR/removed, không xoá vĩnh viễn ngoài ý OWNER).
+   C. Bảng Hook & kịch bản (bước 3): mỗi lần gọi trả 10 kết quả, dựa insight bước 2 + Second Brain, < 3 phút, luật ngôn từ theo
+      chính sách từng nền tảng (FB / IG / TikTok / YT); có đường nhập tay không cần AI.
+   D. Nghiên cứu nền tảng (bước 2.1–2.4): nhập bình luận nhóm FB / YouTube / FB (dán CSV/JSON) → nguồn + phát hiện; kết nối thật chờ khoá.
+   E. Bài đăng theo skill (6.1) + nhiều fanpage (6.2.1.2) trong dry-run; IG / YT / TikTok: khung kết nối chờ khoá.
+   F. Đo lường 8.1 đối chiếu skill Second Brain trước, 8.2 AI Đo lường sau công tắc.
+   CHỜ OWNER: khoá Meta / Google / YouTube / TikTok (đăng bài + quảng cáo 7.2–7.5), hồ sơ cá nhân Facebook (6.2.1.1).
+2. Skill ESV + Skill Edit Video Ngang v0.1.r2 — XONG phần Phần chung A (4255aca, ff638df): nhạc A5 (chưa có bài đạt → KHÔNG nhạc),
+   SFX OWNER theo vai trò, cắt lặng A11.4 (+ bảo vệ khoảng có từ), xem trước 720p, số A13, ảnh theo mô tả nội dung A4.1.
+   Đã dựng lại "1017(1)" v_mvib816allf8l bản 6 (16:9) + "B1 Chào hỏi phá" bản 9 (9:16) đạt bảng kiểm; "1011" bản 10 và
+   "1017(1)" v_mvjky1w9g7fjv bản 3 DỪNG theo lệnh OWNER.
+   CÒN: K1–K10 (CHƯA CHỐT — chờ OWNER #134a); logo sáng / tối theo cảnh (A16.1.4); 4K (D-04); giấy phép SFX OWNER CHƯA XÁC MINH;
+   mô tả ảnh mới tải lên chưa có (ảnh mới rơi về tên tệp, có đánh dấu).
+3. Nợ đã ghi (không chặn): script_align "Lan"→"Lành" khi kịch bản viết hoa tên khác; negated_before dừng ở "thì" có thể sót
+   phủ định mệnh đề sau; mỗi video mới gọi mô hình ~6–8 phút; khôi phục plan.prev-* chưa có nút trong app;
    gắn lại kịch bản không gỡ liên kết chiến dịch kế thừa từ kịch bản cũ.
-3. Sau mỗi nhóm được nghiệm thu: cập nhật docs/brand-engine/BAOR-BRAND-ENGINE-IMPLEMENTATION-PROGRESS.md (công thức chấm cố định, chỉ tính bằng chứng mới).
+4. Sau mỗi nhóm được nghiệm thu: cập nhật docs/brand-engine/BAOR-BRAND-ENGINE-IMPLEMENTATION-PROGRESS.md (công thức chấm cố định, chỉ tính bằng chứng mới).
 <!-- NEXT:END -->
 
 ## Lỗi P2 trước khi đăng / chạy quảng cáo thật — ĐÃ SỬA 22/10/2026

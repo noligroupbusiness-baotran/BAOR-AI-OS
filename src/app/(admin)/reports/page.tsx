@@ -9,6 +9,7 @@ import { Table, Th, Td } from "@/components/ui/table";
 import { ProgressBar } from "@/components/ui/progress";
 import { inputClass } from "@/components/ui/field";
 import { CampaignStatusPill } from "@/components/campaigns/status";
+import { AiCostPanel } from "@/components/reports/ai-cost-panel";
 import { campaignRepo } from "@/lib/campaigns/repository";
 import { campaignRows, channelRows, contentRows, costSummary, leadSummary, orderSummary, videoSummary, type ReportFilter } from "@/lib/reports/data";
 import { leadSourceLabel, leadStageLabel } from "@/lib/labels";
@@ -25,6 +26,7 @@ const tabs = [
   { key: "leads", label: "Lead" },
   { key: "orders", label: "Đơn hàng và doanh thu" },
   { key: "costs", label: "Chi phí và ROAS" },
+  { key: "ai", label: "Chi phí AI" },
 ];
 
 export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ tab?: string; month?: string; campaign?: string }> }) {
@@ -152,6 +154,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
       {tab === "leads" && <LeadsPanel f={f} />}
       {tab === "orders" && <OrdersPanel f={f} />}
       {tab === "costs" && <CostsPanel f={f} />}
+      {tab === "ai" && <AiCostPanel />}
       <ModuleGroups moduleKey="reports" />
     </>
   );

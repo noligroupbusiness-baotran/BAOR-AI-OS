@@ -12,6 +12,7 @@ import { logSecurityEvent, renameSecurityAccount, revokeAllSessions } from "@/li
 import { writeIntegrationConfig } from "@/lib/connectors/config";
 import { checkIntegration as runCheck } from "@/lib/connectors/sync";
 import { runSchedulerNow } from "@/lib/scheduler";
+import { roleById, saveRoleSettings } from "@/lib/ai-roster";
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 
@@ -95,6 +96,20 @@ export async function saveAiBudget(fd: FormData) {
   setSetting("ai.dailyCapVnd", String(n("dailyCapVnd")));
   setSetting("ai.monthlyCapVnd", String(n("monthlyCapVnd")));
   done("/settings#ai", "Đã lưu trần chi phí AI");
+}
+
+// Cài đặt › Đội AI: công tắc "Cho phép gọi AI", mô hình, trần riêng của từng vị trí
+export async function saveAiRole(fd: FormData) {
+  await requirePermission("admin", "/settings#ai-team");
+  const id = str(fd, "role");
+  const role = roleById(id);
+  if (!role) return done("/settings#ai-team?tone=error", "Không có vị trí AI này");
+  saveRoleSettings(role.id, {
+    enabled: fd.get("enabled") === "on",
+    ...(role.local ? {} : { model: str(fd, "model") }),
+    monthlyCapVnd: Number(String(fd.get("monthlyCapVnd") ?? "").replace(/[^\d]/g, "")) || 0,
+  });
+  done("/settings#ai-team", `Đã lưu ${role.name}`);
 }
 
 export async function runBackgroundNow() {
