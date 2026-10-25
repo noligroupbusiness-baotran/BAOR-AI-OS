@@ -125,7 +125,7 @@ export function SourceDrop({ scripts = [], defaultContentId = "", defaultCut = t
       </label>
       <label className="flex items-center gap-2 text-[12.5px] text-ink-2">
         <input type="checkbox" checked={final} onChange={(e) => setFinal(e.target.checked)} className="h-3.5 w-3.5 accent-[var(--jade)]" />
-        Video đã dựng sẵn ở ngoài (không dựng lại, vào thẳng Chờ kiểm tra)
+        Video tôi đã tự edit (không dựng lại — OWNER tải lên thì vào thẳng Tổng kho video ngắn, người khác tải thì vào Chờ kiểm tra)
       </label>
       <label className="flex items-center gap-2 text-[12.5px] text-ink-2">
         <input type="checkbox" checked={cut} onChange={(e) => setCut(e.target.checked)} className="h-3.5 w-3.5 accent-[var(--jade)]" />
@@ -143,7 +143,7 @@ export function SourceDrop({ scripts = [], defaultContentId = "", defaultCut = t
                 </div>
               </div>
               <span className={cn("num whitespace-nowrap", it.status === "error" ? "text-brick" : "text-ink-2")}>
-                {it.status === "waiting" ? "Chờ" : it.status === "uploading" ? `${it.pct}%` : it.status === "done" ? (final ? "Đã nhận, chờ kiểm tra" : "Đã nhận — chọn khung hình bên dưới rồi bấm Bắt đầu dựng") : it.error}
+                {it.status === "waiting" ? "Chờ" : it.status === "uploading" ? `${it.pct}%` : it.status === "done" ? (final ? "Đã nhận — OWNER: đã vào Tổng kho; người khác: chờ kiểm tra" : "Đã nhận — chọn khung hình bên dưới rồi bấm Bắt đầu dựng") : it.error}
               </span>
             </li>
           ))}

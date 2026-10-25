@@ -394,6 +394,8 @@ export const videos = sqliteTable("videos", {
   note: text("note").notNull().default(""),
   uploadId: text("upload_id"), // tệp video trong bảng uploads (khi tải lên tay hoặc Agent gửi)
   updatedAt: text("updated_at").notNull(),
+  origin: text("origin").notNull().default("ai_edit"), // ai_edit (bộ dựng) | self_edit (OWNER tự edit, tải lên bản cuối)
+  filesPurgedAt: text("files_purged_at"), // Tổng kho: đã gỡ tệp video sau khi đăng thật quá hạn (giảm dung lượng)
 });
 
 // ---------------------------------------------------------------------------

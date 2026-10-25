@@ -4,6 +4,7 @@ import { publishDuePosts, syncChannelMetrics } from "@/lib/connectors/sync";
 import { runScheduledRules } from "@/lib/automation/engine";
 import { sendAlert } from "@/lib/alerts";
 import { pruneOldData } from "@/lib/retention";
+import { purgePostedVideos } from "@/lib/videos/library";
 import { runAutoEditOnce } from "@/lib/video/auto-edit";
 import { notionConfigured, syncSecondBrain } from "@/lib/knowledge/sync";
 import { getSetting, setSetting } from "@/lib/admin";
@@ -79,6 +80,13 @@ async function tick() {
         if (lp.created) parts.push(`${lp.created} đề xuất cải tiến mới`);
       } catch (e) {
         parts.push(`phân tích lỗi: ${e instanceof Error ? e.message : e}`);
+      }
+      // Tổng kho video ngắn: video đã đăng thật quá hạn (mặc định 1 ngày) → gỡ tệp video, giữ bản ghi
+      try {
+        const pv = purgePostedVideos();
+        if (pv.videos) parts.push(`kho video: gỡ tệp ${pv.videos} video đã đăng (${Math.round(pv.bytes / 1024 / 1024)} MB)`);
+      } catch (e) {
+        parts.push(`kho video lỗi: ${e instanceof Error ? e.message : e}`);
       }
       const r = pruneOldData();
       const total = r.activity + r.decisions + r.automationRuns + r.syncRuns + r.campaignLogs + r.aiCalls + r.orphanFiles + r.orphanRows;
