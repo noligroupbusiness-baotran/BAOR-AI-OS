@@ -81,7 +81,8 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
         title="Nội dung"
         sub="AI đề xuất và viết nháp, bạn là người hoàn thiện. Chỉ bài bạn đã duyệt mới được tự đăng."
         action={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <LinkButton href="/content/hooks" size="md">Bảng Hook (10 hook / lần)</LinkButton>
             <LinkButton href={href("/content?tab=mine&open=new")} size="md">Viết bài mới</LinkButton>
             <form action={aiGenerateIdeas}>
               <Button variant="primary" size="md" type="submit">AI đề xuất 5 ý tưởng</Button>

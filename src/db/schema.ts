@@ -760,3 +760,23 @@ export const improvementProposals = sqliteTable(
   },
   (t) => [uniqueIndex("improvement_proposals_key_idx").on(t.key)],
 );
+
+// Bảng Hook & kịch bản video ngắn (Personal Brand System bước 3): mỗi lần gọi AI trả 10 hook; người chọn hook nào thì tạo nội dung
+// kịch bản từ hook đó. Hook nhập tay (không AI) đi cùng bảng.
+export const hookIdeas = sqliteTable("hook_ideas", {
+  id: text("id").primaryKey(),
+  batchId: text("batch_id").notNull(),
+  topic: text("topic").notNull().default(""),
+  hook: text("hook").notNull(),
+  angle: text("angle").notNull().default(""),
+  beats: text("beats").notNull().default("[]"), // JSON string[] — dàn ý kịch bản ngắn
+  durationSec: integer("duration_sec").notNull().default(60),
+  platforms: text("platforms").notNull().default("[]"), // JSON string[]
+  basis: text("basis").notNull().default("[]"), // JSON {kind: "finding" | "knowledge" | "insight", id, label}[]
+  policyIssues: text("policy_issues").notNull().default("[]"), // JSON string[] — luật ngôn từ theo nền tảng (kiểm theo luật)
+  source: text("source").notNull().default("ai"), // ai | manual
+  status: text("status").notNull().default("new"), // new | picked | rejected
+  contentId: text("content_id"),
+  createdBy: text("created_by").notNull().default(""),
+  createdAt: text("created_at").notNull(),
+});

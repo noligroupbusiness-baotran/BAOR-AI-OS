@@ -9,6 +9,7 @@ import { aiBudgetAllows, recordAiCall, recordDecision } from "@/lib/router";
 import { roleAllows, roleForPurpose } from "@/lib/ai-roster";
 import { sendAlert } from "@/lib/alerts";
 import { catalogRepo } from "@/lib/catalog/repository";
+import { HOOK_COUNT, HOOK_PLATFORMS, hookContext, saveHooks } from "@/lib/content/hooks";
 
 // Bộ não AI của hệ thống. Khóa API lấy từ Cài đặt > Kết nối > Claude API, hoặc biến môi trường ANTHROPIC_API_KEY.
 // Mô hình theo từng vị trí: src/lib/ai-roster.ts (Cài đặt › Đội AI).
@@ -97,6 +98,47 @@ const IdeasSchema = z.object({
     }),
   ),
 });
+
+// Bảng Hook (Personal Brand System bước 3): 10 hook / lần (schema KHÔNG ép min/max — mô hình trả 9 / 11 thì parse vẫn đạt, sổ chi phí
+// ghi đúng token; cắt còn 10, thiếu thì báo; nền tảng lạ do saveHooks lọc), video ngắn < 3 phút, bám căn cứ đưa vào (phát hiện nghiên cứu đã kiểm,
+// Second Brain, insight đã duyệt) — ref căn cứ ngoài danh sách bị bỏ; luật ngôn từ theo nền tảng kiểm lại bằng luật khi lưu.
+const HooksSchema = z.object({
+  hooks: z
+    .array(
+      z.object({
+        hook: z.string().describe("câu mở đầu 3 giây đầu, nói thành lời"),
+        angle: z.string().describe("góc tiếp cận / vì sao người xem dừng lại"),
+        beats: z.array(z.string()).describe("dàn ý kịch bản 3-6 nhịp"),
+        durationSec: z.number().int().describe("độ dài dự kiến, giây, tối đa 180"),
+        platforms: z.array(z.string()).describe(`trong: ${HOOK_PLATFORMS.join(", ")}`),
+        basisRefs: z.array(z.string()).describe("ref căn cứ dạng finding:<id> / knowledge:<id> / insight:<id>, chỉ lấy từ ngữ cảnh"),
+      }),
+    )
+    .describe(`đúng ${HOOK_COUNT} phần tử`),
+});
+
+export async function generateHooks(topic: string, by: string): Promise<Result<{ batchId: string; count: number; dropped: number; short: number }>> {
+  const ctx = hookContext(topic);
+  const gated = await gate("ideas", `AI Hook: 10 hook “${topic.slice(0, 60)}”`, (client, model) =>
+    client.messages.parse({
+      model,
+      max_tokens: 16000,
+      system:
+        "Bạn là biên tập viên video ngắn cho thương hiệu cá nhân Việt Nam. Viết hook nói thành lời, tự nhiên, cụ thể; mỗi hook một góc khác nhau. " +
+        "Chỉ dựa trên căn cứ được đưa (phát hiện nghiên cứu, Second Brain, insight); không bịa số liệu, giá, công dụng. " +
+        "Tuân chính sách nền tảng: không khẳng định tuyệt đối (100%, cam kết, đảm bảo), không tuyên bố chữa bệnh / giảm cân cụ thể, " +
+        "không khẳng định thuộc tính cá nhân người xem (\"bạn đang béo / nợ…\"), không hứa thu nhập. Video dưới 3 phút.",
+      messages: [{ role: "user", content: `${brandContext()}\n\n${ctx.text}\n\nChủ đề OWNER đề xuất: ${topic}\n\nViết đúng ${HOOK_COUNT} hook kèm dàn ý kịch bản ngắn.` }],
+      output_config: { format: zodOutputFormat(HooksSchema) },
+    }),
+  );
+  if (!gated.ok) return gated;
+  const hooks = (gated.res.parsed_output?.hooks ?? []).slice(0, HOOK_COUNT);
+  if (!hooks.length) return { ok: false, error: "AI không trả về hook nào." };
+  const saved = saveHooks(topic, hooks, { source: "ai", by, allowed: ctx.basis });
+  const dropped = hooks.reduce((n, h) => n + h.basisRefs.filter((r) => !ctx.basis.some((b) => `${b.kind}:${b.id}` === r)).length, 0);
+  return { ok: true, batchId: saved.batchId, count: saved.ids.length, dropped, short: Math.max(0, HOOK_COUNT - saved.ids.length) };
+}
 
 export async function generateIdeas(n = 5): Promise<Result<{ count: number }>> {
   const gated = await gate("ideas", `AI đề xuất ${n} ý tưởng nội dung`, (client, model) =>
