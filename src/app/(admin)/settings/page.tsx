@@ -13,6 +13,7 @@ import { AiBudgetPanel, IntegrationsPanel, SystemLogPanel } from "@/components/s
 import { AiTeamPanel } from "@/components/settings/ai-team-panel";
 import { SecondBrainPanel } from "@/components/settings/second-brain-panel";
 import { RenderWorkerPanel } from "@/components/settings/render-worker-panel";
+import { DropFolderPanel } from "@/components/settings/drop-folder-panel";
 import { MoreOptions } from "@/components/settings/setting-item";
 import { FaqPanel } from "@/components/settings/faq-panel";
 import { AlertsPanel, BrandPanel, MusicPanel } from "@/components/settings/brand-panels";
@@ -49,6 +50,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 
         <SettingsGroup id="video">
           <RenderWorkerPanel />
+          <DropFolderPanel />
           <AutoEditPanel />
           <MusicLibraryPanel />
           <MusicPanel />

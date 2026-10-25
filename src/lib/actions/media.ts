@@ -152,3 +152,13 @@ export async function runAutoEditNow() {
   if (!n) return fail("/settings#auto-edit", pendingInbox().length ? "Tệp còn đang được chép hoặc vừa đổi; bộ chạy nền sẽ nhận khi kích thước ổn định (khoảng 1 phút)." : "Hộp thư vào trống. Thả tệp .mov / .mp4 vào thư mục rồi bấm lại.");
   done("/video-studio?tab=editing", `Đã nhận ${n} tệp, đang dựng ngầm.`);
 }
+
+// Cài đặt › Video › Thả tư liệu vào máy: nhận ngay (máy dựng cũng tự nhận mỗi 5 phút)
+export async function importDropNow() {
+  await requirePermission("manager", "/settings#tha-vao");
+  const { importDrop } = await import("@/lib/video/drop-import");
+  const { dataDir } = await import("@/lib/video/jobs");
+  const r = importDrop(dataDir());
+  if (!r.imported.length) return fail("/settings#tha-vao", r.waiting.length ? `Chưa nhận tệp nào: ${r.waiting.length} tệp đang chờ (xem lý do bên dưới).` : "Thư mục thả đang trống.");
+  done("/settings#tha-vao", `Đã nhận ${r.imported.length} tệp vào thư viện${r.waiting.length ? ` · ${r.waiting.length} tệp còn chờ` : ""}.`);
+}

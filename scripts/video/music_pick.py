@@ -9,16 +9,23 @@ import os
 
 MUSIC_PENDING = "chờ OWNER"
 # Phần chung (A) A5.2 / A15 / CK-11 (QĐ-CEO 1010): KHÔNG dùng — Pixabay 552792, 241274 (LOẠI), 136824 (chưa tra bên thứ ba
-# đăng lại → chưa được dùng), và MỌI bài Mixkit. Không bao giờ dùng, kể cả khi manifest còn ghi giấy phép / "default" / OWNER duyệt.
+# đăng lại → chưa được dùng). Không bao giờ dùng, kể cả khi manifest còn ghi giấy phép / "default" / OWNER duyệt.
 BANNED_IDS = ("552792", "241274", "136824")
+# Mixkit: QĐ-CEO 1010 cấm toàn bộ; OWNER 25/10/2026 mở lại CHỈ các bài OWNER đã nghe duyệt ("Mở lại cả 27 bài Mixkit") → bài Mixkit
+# chưa duyệt vẫn không dùng; library_sync vẫn KHÔNG nạp Mixkit mới từ kho.
 BANNED_SOURCES = ("mixkit",)
-A5_NO_MUSIC = ("chưa có bài đạt luật A5 (giấy phép thương mại rõ, không nhãn AI, đã tra YouTube không thấy bên thứ ba đăng lại; "
-               "không Mixkit, không 552792 / 241274 / 136824) → bản KHÔNG nhạc theo Phần chung A5.2")
+OWNER_OK = "OWNER nghe duyệt"
+A5_NO_MUSIC = ("chưa có bài đạt luật A5 (giấy phép thương mại rõ, không nhãn AI, OWNER đã nghe duyệt; Mixkit chỉ bài OWNER duyệt "
+               "(QĐ OWNER 25/10/2026); không 552792 / 241274 / 136824) → bản KHÔNG nhạc theo Phần chung A5.2")
 
 
 def banned(x):
     hay = f"{x.get('file', '')} {x.get('source', '')} {x.get('license', '')}".lower()
-    return next((i for i in BANNED_IDS if i in hay), None) or next((s for s in BANNED_SOURCES if s in hay), None)
+    if any(i in hay for i in BANNED_IDS):
+        return next(i for i in BANNED_IDS if i in hay)
+    if any(s in hay for s in BANNED_SOURCES) and OWNER_OK not in str(x.get("license", "")):
+        return next(s for s in BANNED_SOURCES if s in hay)
+    return None
 
 
 def music_library(data_dir):

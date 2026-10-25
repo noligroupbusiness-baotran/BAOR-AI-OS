@@ -27,6 +27,7 @@ import urllib.request
 
 PENDING = "chờ OWNER nghe duyệt"
 OK_STATUS = "ĐỦ-HỒ-SƠ"
+OWNER_STATUS = "OWNER-CUNG-CAP"  # nhạc / SFX OWNER thả vào máy, tự khai giấy phép (drop-import.ts) — kho không quản
 # Thể loại trong danh mục → tâm trạng / mục đích (tiếng Việt) để bộ dựng và biên tập AI chọn theo nội dung
 GENRE_MOOD = {
     "lofi-chill": ["lofi", "thư giãn", "chia sẻ nhẹ", "đào tạo"],
@@ -203,8 +204,9 @@ def sync(rows, data_dir, dry_run=False, fetch=download, log=print):
                 cur = json.load(open(mf, encoding="utf-8"))
             except (OSError, ValueError):
                 cur = []
+            # Bài OWNER tự thả vào (src/lib/video/drop-import.ts, catalogStatus OWNER-CUNG-CAP) không thuộc danh mục kho → kho không thu hồi
             gone = {m["file"]: ("không còn trong danh mục", "không còn trong danh mục kho tư liệu → không dùng") for m in cur
-                    if isinstance(m, dict) and m.get("catalogStatus") and m.get("file") not in in_catalog}
+                    if isinstance(m, dict) and m.get("catalogStatus") and m.get("catalogStatus") != OWNER_STATUS and m.get("file") not in in_catalog}
             rv = {**gone, **{f: v for f, v in revoked.items() if any(isinstance(m, dict) and m.get("file") == f for m in cur)}}
             report["revoked"] += [f for f, _ in rv.items() if any(m.get("file") == f and m.get("catalogStatus") for m in cur if isinstance(m, dict))]
             json.dump(merge(cur, items, rv), open(mf + ".tmp", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
@@ -302,6 +304,16 @@ def self_test():
         sync(rows_b, tmp, fetch=fake2, log=lambda *_: None)
         s9 = json.load(open(os.path.join(tmp, "video-assets", "sfx", "manifest.json"), encoding="utf-8"))[0]
         check(s9.get("exclude") and s9.get("excludeReason") == "OWNER không thích", f"loại tay qua chu kỳ thu hồi: {s9}")
+        # phản biện thư mục thả (P1-1): bài OWNER tự thả vào (OWNER-CUNG-CAP) đã duyệt — đồng bộ kho KHÔNG được thu hồi / bỏ duyệt
+        mf = os.path.join(tmp, "video-assets", "music", "manifest.json")
+        cur = json.load(open(mf, encoding="utf-8"))
+        cur.append({"file": "buoi-sang.mp3", "license": "Nhạc mua — OWNER nghe duyệt 25/10/2026", "catalogLicense": "Nhạc mua — " + PENDING,
+                    "catalogStatus": OWNER_STATUS, "ownerApproved": {"by": "owner@baor.test"}})
+        json.dump(cur, open(mf, "w", encoding="utf-8"))
+        rep10 = sync(rows_b, tmp, fetch=fake2, log=lambda *_: None)
+        m10 = {m["file"]: m for m in json.load(open(mf, encoding="utf-8"))}["buoi-sang.mp3"]
+        check(not m10.get("exclude") and m10["catalogStatus"] == OWNER_STATUS and m10.get("ownerApproved") and "buoi-sang.mp3" not in rep10["revoked"],
+              f"nhạc OWNER thả vào phải giữ nguyên qua đồng bộ kho: {m10} {rep10['revoked']}")
     print(f"library_sync tự kiểm: {'đạt' if not bad else f'{bad} lỗi'}")
     return bad == 0
 

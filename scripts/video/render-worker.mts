@@ -16,6 +16,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { importDrop } from "../../src/lib/video/drop-import.js";
 
 export interface Spec {
   videoId: string;
@@ -100,6 +101,23 @@ export function readConfig(files = ENV_FILES, env: Record<string, string | undef
 const log = (...x: unknown[]) => console.log(new Date().toLocaleTimeString("vi-VN"), ...x);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// Nhận tư liệu OWNER thả vào DATA_DIR/video-assets/tha-vao/ (ảnh, B-roll, nhạc, hiệu ứng âm thanh) mỗi 5 phút khi rảnh — kể cả lúc
+// chưa có khoá máy dựng (tư liệu nằm trên máy này, không cần máy chủ).
+let lastImport = 0;
+let lastImportSig = "";
+function maybeImport(dataDir: string) {
+  if (Date.now() - lastImport < 5 * 60_000) return;
+  lastImport = Date.now();
+  try {
+    const r = importDrop(dataDir);
+    const sig = `${r.imported.length}/${r.waiting.map((w) => w.file + w.reason).join("|")}`;
+    if (r.imported.length || sig !== lastImportSig) log(`Tư liệu thả vào: đã nhận ${r.imported.length}, chờ ${r.waiting.length}${r.waiting[0] ? ` (vd ${r.waiting[0].kind}/${r.waiting[0].file}: ${r.waiting[0].reason})` : ""}`);
+    lastImportSig = sig;
+  } catch (e) {
+    log("Lỗi nhận tư liệu thả vào:", e instanceof Error ? e.message : e);
+  }
+}
+
 /** Chờ tới khi có cấu hình hợp lệ (đọc lại mỗi phút); `bad` = khoá vừa bị máy chủ từ chối → chờ khoá KHÁC. */
 async function waitConfig(bad = ""): Promise<ReturnType<typeof readConfig>> {
   let said = "";
@@ -108,6 +126,7 @@ async function waitConfig(bad = ""): Promise<ReturnType<typeof readConfig>> {
     const why = !/^https?:\/\//.test(c.base) || !c.key ? `Chưa có cấu hình máy dựng (${ENV_FILES[0]}). Tạo khoá ở Cài đặt › Video › Nơi dựng video rồi dán lệnh vào Terminal — máy dựng tự nhận.` : c.key === bad ? "Khoá máy dựng sai / đã bị thu hồi. Tạo khoá mới ở Cài đặt › Video › Nơi dựng video — máy dựng tự nhận khoá mới." : "";
     if (!why) return c;
     if (why !== said) log((said = why));
+    maybeImport(c.dataDir);
     await sleep(60_000);
   }
 }
@@ -135,6 +154,7 @@ async function main() {
       log("Không gọi được máy chủ:", e instanceof Error ? e.message : e);
     }
     if (!spec) {
+      maybeImport(dataDir);
       await sleep(20_000);
       continue;
     }

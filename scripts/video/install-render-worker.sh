@@ -85,8 +85,21 @@ cat > "$PLIST" <<EOF
 EOF
 plutil -lint "$PLIST" >/dev/null
 
+# Gỡ bản đang chạy rồi ĐỢI gỡ xong (bootout chạy không đồng bộ — nạp lại ngay sẽ lỗi "Bootstrap failed: 5")
 launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
-launchctl bootstrap "$DOMAIN" "$PLIST"
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1 || break
+  sleep 1
+done
+ok=0
+for _ in 1 2 3; do
+  if launchctl bootstrap "$DOMAIN" "$PLIST" 2>/dev/null; then ok=1; break; fi
+  sleep 2
+done
+if [ "$ok" != 1 ]; then
+  echo "Không nạp được máy dựng chạy nền (launchctl bootstrap). Thử lại sau vài giây: npm run render-worker:install"
+  exit 1
+fi
 sleep 2
 echo "Đã cài máy dựng chạy nền ($LABEL) — tự bật khi đăng nhập máy. Nhật ký: $LOG"
 [ -f "$HOME/.baor/render-worker.env" ] || echo "Còn thiếu khoá: Cài đặt › Video › Nơi dựng video › Tạo khoá trên mkt.baor.vn → dán lệnh hiện ra vào Terminal. Máy dựng tự nhận, không cần cài lại."

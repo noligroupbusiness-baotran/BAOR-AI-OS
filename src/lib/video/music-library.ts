@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { dataDir } from "./jobs";
+import { OWNER_STATUS } from "./drop-import";
 
 // Thư viện nhạc nền + SFX của bộ dựng: DATA_DIR/video-assets/{music,sfx}/manifest.json.
 // Nạp từ kho tư liệu bằng scripts/video/library_sync.py (chỉ bài kho ghi ĐỦ-HỒ-SƠ, đúng sha256). "ĐỦ-HỒ-SƠ" là kiểm hồ sơ
@@ -8,13 +9,13 @@ import { dataDir } from "./jobs";
 // bài đã bỏ dấu đó, và bảng kiểm P chặn đăng nếu bài chưa duyệt vẫn được dùng. Chỉ OWNER (quyền quản trị) duyệt / bỏ duyệt.
 
 export const MUSIC_PENDING = "chờ OWNER nghe duyệt";
-/** Không dùng theo Phần chung A5.2 / CK-11 (QĐ-CEO 1010): 552792, 241274 (LOẠI), 136824 (chưa tra bên thứ ba đăng lại) và mọi bài
- *  Mixkit — cùng danh sách với music_pick.BANNED_IDS / BANNED_SOURCES. */
+/** Không dùng theo Phần chung A5.2 / CK-11 (QĐ-CEO 1010): 552792, 241274 (LOẠI), 136824 (chưa tra bên thứ ba đăng lại) — cùng danh
+ *  sách với music_pick.BANNED_IDS. Mixkit: OWNER 25/10/2026 mở lại bài OWNER đã nghe duyệt → app liệt kê bài Mixkit để OWNER duyệt /
+ *  bỏ duyệt; bộ dựng (music_pick.banned) chỉ dùng bài Mixkit đã duyệt. */
 export const BANNED_IDS = ["552792", "241274", "136824"];
-export const BANNED_SOURCES = ["mixkit"];
 const isBanned = (x: Raw) => {
   const hay = `${String(x.file ?? "")} ${String(x.source ?? "")} ${String(x.license ?? "")}`.toLowerCase();
-  return BANNED_IDS.some((id) => hay.includes(id)) || BANNED_SOURCES.some((src) => hay.includes(src));
+  return BANNED_IDS.some((id) => hay.includes(id));
 };
 
 export interface MusicTrack {
@@ -50,8 +51,10 @@ function readManifest(dir: string): Raw[] {
 
 function writeManifest(dir: string, items: Raw[]) {
   const mf = path.join(dir, "manifest.json");
-  fs.writeFileSync(`${mf}.tmp`, JSON.stringify(items, null, 1));
-  fs.renameSync(`${mf}.tmp`, mf);
+  // Tệp tạm riêng từng lần ghi: máy dựng (thư mục thả) và nút duyệt ghi cùng lúc không giẫm tệp tạm của nhau
+  const tmp = `${mf}.${process.pid}.${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(items, null, 1));
+  fs.renameSync(tmp, mf);
 }
 
 /** Bài dùng được trong bộ dựng (có giấy phép, có tệp, không bị loại), bài mặc định lên đầu rồi theo loại. */
@@ -103,7 +106,8 @@ export function approveMusic(file: string, by: string, now = new Date()): { ok: 
   if (!it || it.exclude || isBanned(it)) return { ok: false, error: "Không có bài này trong thư viện nhạc (hoặc bài đã bị loại)" };
   const lic = String(it.license ?? "");
   if (!lic.includes(MUSIC_PENDING)) return { ok: false, error: "Bài này không ở trạng thái chờ nghe duyệt" };
-  if (it.catalogStatus !== "ĐỦ-HỒ-SƠ") return { ok: false, error: "Chỉ duyệt được bài kho tư liệu ghi ĐỦ-HỒ-SƠ" };
+  // Bài kho tư liệu đã kiểm hồ sơ (ĐỦ-HỒ-SƠ) hoặc bài OWNER tự khai giấy phép qua thư mục thả (src/lib/video/drop-import.ts)
+  if (it.catalogStatus !== "ĐỦ-HỒ-SƠ" && it.catalogStatus !== OWNER_STATUS) return { ok: false, error: "Chỉ duyệt được bài kho tư liệu ghi ĐỦ-HỒ-SƠ hoặc bài anh tự khai giấy phép" };
   it.catalogLicense = lic;
   it.license = lic.replace(MUSIC_PENDING, `OWNER nghe duyệt ${vnDate(now)} (${by})`);
   it.ownerApproved = { at: now.toISOString(), by };

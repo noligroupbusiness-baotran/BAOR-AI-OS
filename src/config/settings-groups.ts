@@ -28,6 +28,7 @@ export const SETTINGS_ANCHORS: Record<string, SettingsGroupId> = {
   "auto-edit": "video",
   music: "video",
   "music-library": "video",
+  "tha-vao": "video",
   "ai-team": "ai",
   ai: "ai",
   automation: "tu-dong",

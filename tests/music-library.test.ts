@@ -98,7 +98,7 @@ test("duyệt chỉ cho bài kho ĐỦ-HỒ-SƠ đang chờ; không bỏ duyệt
   assert.equal(ml.musicFilePath("thieu-tep.mp3"), null);
 });
 
-test("Phần chung A5.2 / CK-11: 552792 / 241274 / 136824 và MỌI bài Mixkit không bao giờ được dùng; chưa có bài đạt → bản KHÔNG nhạc", () => {
+test("Phần chung A5.2 / CK-11: 552792 / 241274 / 136824 không bao giờ được dùng; Mixkit chỉ bài OWNER đã duyệt (QĐ OWNER 25/10/2026)", () => {
   seed();
   const mf = path.join(dir, "manifest.json");
   const items = JSON.parse(fs.readFileSync(mf, "utf8")) as Record<string, unknown>[];
@@ -109,12 +109,21 @@ test("Phần chung A5.2 / CK-11: 552792 / 241274 / 136824 và MỌI bài Mixkit 
   items.push({ file: "acoustic_z_mixkit655.mp3", genre: "acoustic", license: "Mixkit Stock Music Free License — OWNER nghe duyệt 22/10/2026", catalogStatus: "ĐỦ-HỒ-SƠ", source: "https://mixkit.co/x" });
   for (const f of ["pixabay-552792-chillhop.mp3", "acoustic_x_pixabay241274.mp3", "cinematic_y_pixabay136824.mp3", "acoustic_z_mixkit655.mp3"]) fs.writeFileSync(path.join(dir, f), "ID3");
   fs.writeFileSync(mf, JSON.stringify(items));
-  assert.ok(!ml.musicLibrary().some((t) => /552792|241274|136824|mixkit/.test(t.file)), "app không liệt kê bài không dùng");
+  assert.ok(!ml.musicLibrary().some((t) => /552792|241274|136824/.test(t.file)), "app không liệt kê bài LOẠI");
+  assert.ok(ml.musicLibrary().some((t) => /mixkit/.test(t.file)), "app liệt kê bài Mixkit để OWNER duyệt / bỏ duyệt");
   assert.equal(ml.approveMusic("acoustic_x_pixabay241274.mp3", "owner@baor.test").ok, false, "không duyệt được bài LOẠI");
   assert.equal(ml.approveMusic("cinematic_y_pixabay136824.mp3", "owner@baor.test").ok, false, "136824 chưa tra → không duyệt được");
+  // Mixkit OWNER đã duyệt → bộ dựng dùng được (loại acoustic chỉ còn bài này)
   for (const seedName of ["a.mp4", "b.mp4", "c.mp4"]) {
     const p = pyPick("acoustic", seedName);
-    assert.equal(p.file, null, `không trộn bài chưa đạt / bị loại: ${p.file}`);
-    assert.match((p.info as { reason?: string }).reason ?? "", /KHÔNG nhạc/);
+    assert.match(String(p.file), /acoustic_z_mixkit655\.mp3$/, `Mixkit đã duyệt phải dùng được: ${p.file}`);
+  }
+  // Mixkit CHƯA duyệt → không bao giờ dùng; chưa có bài đạt → bản KHÔNG nhạc
+  const items2 = JSON.parse(fs.readFileSync(mf, "utf8")) as Record<string, unknown>[];
+  for (const it of items2) if (String(it.file).includes("mixkit")) it.license = "Mixkit Stock Music Free License — chờ OWNER nghe duyệt";
+  fs.writeFileSync(mf, JSON.stringify(items2));
+  for (const seedName of ["a.mp4", "b.mp4", "c.mp4"]) {
+    const p = pyPick("acoustic", seedName);
+    assert.ok(!String(p.file).includes("mixkit"), `Mixkit chưa duyệt không được dùng: ${p.file}`);
   }
 });
