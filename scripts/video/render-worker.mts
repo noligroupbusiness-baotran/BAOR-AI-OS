@@ -2,11 +2,14 @@
 // Nhận việc → tải video gốc → dựng tại máy bằng bộ dựng Skill ESV / Edit Video Ngang (Whisper, mô hình tại máy, ffmpeg) với tư liệu
 // TRÊN MÁY (DATA_DIR/video-assets: kho nhạc / SFX / ảnh đã đồng bộ từ Drive) → gửi bản dựng về.
 //
-// Chạy:  npm run render-worker      (cấu hình trong .env.render-worker — không commit)
+// Chạy:  npm run render-worker            (chạy tay)
+//        npm run render-worker:install    (cài chạy nền, tự bật khi đăng nhập máy — macOS LaunchAgent)
+// Cấu hình: ~/.baor/render-worker.env (lệnh dán sẵn ở Cài đặt › Máy dựng video › Tạo khoá) hoặc .env.render-worker ở gốc repo — không commit
 //   BAOR_REMOTE_URL=https://mkt.baor.vn
-//   BAOR_WORKER_KEY=bw_...            (Cài đặt › Máy dựng video › Tạo khoá — hiện một lần)
+//   BAOR_WORKER_KEY=bw_...            (hiện một lần khi tạo)
 //   BAOR_WORKER_NAME=may-bao          (tuỳ chọn)
 //   DATA_DIR=/đường/dẫn/data          (tuỳ chọn, mặc định ./data của repo)
+// Chưa có khoá / khoá bị thu hồi: máy dựng chờ và đọc lại cấu hình mỗi phút (không thoát) — dán khoá mới là tự nhận.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -73,29 +76,46 @@ async function sha256File(p: string): Promise<string> {
   return h.digest("hex");
 }
 
-function loadEnv() {
-  const f = path.join(ROOT, ".env.render-worker");
-  if (!fs.existsSync(f)) return;
-  for (const line of fs.readFileSync(f, "utf8").split(/\r?\n/)) {
-    const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)\s*$/);
-    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
+export const ENV_FILES = [path.join(os.homedir(), ".baor", "render-worker.env"), path.join(ROOT, ".env.render-worker")];
+
+/** Đọc cấu hình từ tệp (tệp đứng trước thắng); biến môi trường đặt sẵn khi chạy vẫn ưu tiên hơn tệp. */
+export function readConfig(files = ENV_FILES, env: Record<string, string | undefined> = process.env): { base: string; key: string; name: string; dataDir: string } {
+  const fromFile: Record<string, string> = {};
+  for (const f of [...files].reverse()) {
+    if (!fs.existsSync(f)) continue;
+    for (const line of fs.readFileSync(f, "utf8").split(/\r?\n/)) {
+      const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/);
+      if (m) fromFile[m[1]] = m[2].replace(/^["']|["']$/g, "");
+    }
   }
+  const get = (k: string) => env[k] || fromFile[k] || "";
+  return {
+    base: get("BAOR_REMOTE_URL").replace(/\/+$/, ""),
+    key: get("BAOR_WORKER_KEY"),
+    name: (get("BAOR_WORKER_NAME") || os.hostname()).replace(/[^\w.-]/g, "").slice(0, 60) || "may-dung",
+    dataDir: get("DATA_DIR") || path.join(ROOT, "data"),
+  };
 }
 
 const log = (...x: unknown[]) => console.log(new Date().toLocaleTimeString("vi-VN"), ...x);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function main() {
-  loadEnv();
-  const base = (process.env.BAOR_REMOTE_URL ?? "").replace(/\/+$/, "");
-  const key = process.env.BAOR_WORKER_KEY ?? "";
-  if (!/^https?:\/\//.test(base) || !key) {
-    console.error("Thiếu BAOR_REMOTE_URL / BAOR_WORKER_KEY (đặt trong .env.render-worker).");
-    process.exit(2);
+/** Chờ tới khi có cấu hình hợp lệ (đọc lại mỗi phút); `bad` = khoá vừa bị máy chủ từ chối → chờ khoá KHÁC. */
+async function waitConfig(bad = ""): Promise<ReturnType<typeof readConfig>> {
+  let said = "";
+  for (;;) {
+    const c = readConfig();
+    const why = !/^https?:\/\//.test(c.base) || !c.key ? `Chưa có cấu hình máy dựng (${ENV_FILES[0]}). Tạo khoá ở Cài đặt › Máy dựng video rồi dán lệnh vào Terminal — máy dựng tự nhận.` : c.key === bad ? "Khoá máy dựng sai / đã bị thu hồi. Tạo khoá mới ở Cài đặt › Máy dựng video — máy dựng tự nhận khoá mới." : "";
+    if (!why) return c;
+    if (why !== said) log((said = why));
+    await sleep(60_000);
   }
-  const name = (process.env.BAOR_WORKER_NAME || os.hostname()).replace(/[^\w.-]/g, "").slice(0, 60) || "may-dung";
-  const dataDir = process.env.DATA_DIR || path.join(ROOT, "data");
-  const headers = { authorization: `Bearer ${key}`, "x-baor-worker": name };
+}
+
+async function main() {
+  let cfg = await waitConfig();
+  let { base, name, dataDir } = cfg;
+  let headers = { authorization: `Bearer ${cfg.key}`, "x-baor-worker": name };
   const q = (s: Spec) => `videoId=${encodeURIComponent(s.videoId)}&version=${s.version}`;
   log(`Máy dựng “${name}” → ${base} · tư liệu: ${path.join(dataDir, "video-assets")}`);
 
@@ -104,8 +124,11 @@ async function main() {
     try {
       const r = await fetch(`${base}/api/render-worker/claim`, { method: "POST", headers });
       if (r.status === 401) {
-        console.error("Khoá máy dựng sai / đã bị thu hồi. Tạo khoá mới ở Cài đặt › Máy dựng video.");
-        process.exit(3);
+        cfg = await waitConfig(cfg.key);
+        ({ base, name, dataDir } = cfg);
+        headers = { authorization: `Bearer ${cfg.key}`, "x-baor-worker": name };
+        log(`Đã nhận khoá mới — máy dựng “${name}” → ${base}`);
+        continue;
       }
       if (r.status === 200) spec = (await r.json()) as Spec;
     } catch (e) {

@@ -18,7 +18,10 @@
     "verify:full": "tsx scripts/verify.mts --e2e",
     "guardrails": "tsx scripts/guardrails.mts",
     "prepare": "git config core.hooksPath .githooks 2>/dev/null || true",
-    "render-worker": "tsx scripts/video/render-worker.mts"
+    "render-worker": "tsx scripts/video/render-worker.mts",
+    "render-worker:install": "bash scripts/video/install-render-worker.sh install",
+    "render-worker:uninstall": "bash scripts/video/install-render-worker.sh uninstall",
+    "render-worker:status": "bash scripts/video/install-render-worker.sh status"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.124.0",

@@ -6,7 +6,6 @@ import { acceptSkillVersionsAction, revokeWorkerKeyAction, setRenderModeAction }
 import { renderMode } from "@/lib/video/jobs";
 import { workerKeyConfigured, workerLastSeen, workerOnline } from "@/lib/video/worker-auth";
 import { skillStatus } from "@/lib/video/skill-freshness";
-import { publicBaseUrl } from "@/lib/webhooks";
 import { formatDateTime } from "@/lib/format";
 
 // Cài đặt › Máy dựng video: máy của OWNER dựng video cho máy chủ (lấy skill trên Notion, tư liệu trên máy / Drive).
@@ -39,8 +38,9 @@ export function RenderWorkerPanel() {
           <details className="text-[12.5px] text-ink-2">
             <summary className="cursor-pointer">Cách chạy trên máy dựng</summary>
             <ol className="mt-1 list-decimal pl-5">
-              <li>Tạo tệp <code>.env.render-worker</code> trong thư mục BAOR AI OS: <code>BAOR_REMOTE_URL={publicBaseUrl()}</code> và <code>BAOR_WORKER_KEY=…</code></li>
-              <li>Chạy <code>npm run render-worker</code> (để máy bật; mô hình tại máy chạy sẵn thì có AI edit).</li>
+              <li>Cài một lần trên máy dựng (thư mục BAOR AI OS): <code>npm run render-worker:install</code> — chạy nền, tự bật khi đăng nhập máy.</li>
+              <li>Bấm Tạo khoá ở trên, dán lệnh hiện ra vào Terminal của máy dựng. Máy dựng tự nhận khoá.</li>
+              <li>Chuyển “Nơi dựng” sang máy dựng. Kiểm tra trên máy: <code>npm run render-worker:status</code>. Mô hình tại máy chạy sẵn thì có AI edit.</li>
             </ol>
           </details>
         </div>

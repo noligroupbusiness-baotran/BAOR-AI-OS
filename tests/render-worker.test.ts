@@ -167,3 +167,25 @@ test("chuyển về máy chủ khi máy dựng đang giữ job → máy chủ KH
   const q = `videoId=${spec.videoId}&version=${spec.version}`;
   assert.equal((await route.POST(new Request(`${U}/heartbeat?${q}`, { method: "POST", headers: H(), body: "{}" }), P("heartbeat"))).status, 200);
 });
+
+test("cấu hình máy dựng: lệnh dán ở trang tạo khoá ghi đúng tệp; máy dựng đọc được, biến môi trường thắng tệp", async () => {
+  const { setupCommand } = await import("../src/components/settings/worker-key-form");
+  const { execFileSync } = await import("node:child_process");
+  const home = fs.mkdtempSync(path.join(tmp, "home-"));
+  const key = "bw_" + "Ab-_9".repeat(9);
+  execFileSync("bash", ["-c", setupCommand("https://mkt.baor.vn", key)], { env: { ...process.env, HOME: home } });
+  const f = path.join(home, ".baor", "render-worker.env");
+  assert.equal(fs.readFileSync(f, "utf8"), `BAOR_REMOTE_URL=https://mkt.baor.vn\nBAOR_WORKER_KEY=${key}\n`);
+  assert.equal(fs.statSync(f).mode & 0o777, 0o600, "chỉ chủ máy đọc được");
+  const repoEnv = path.join(home, "repo.env");
+  fs.writeFileSync(repoEnv, "BAOR_REMOTE_URL=http://khac\nBAOR_WORKER_NAME=may bao!\n");
+  const c = worker.readConfig([f, repoEnv], {});
+  assert.equal(c.base, "https://mkt.baor.vn", "tệp ~/.baor đứng trước");
+  assert.equal(c.key, key);
+  assert.equal(c.name, "maybao");
+  assert.equal(worker.readConfig([f], { BAOR_WORKER_KEY: "bw_tu_moi_truong_xxxxxxxxxxxx" }).key, "bw_tu_moi_truong_xxxxxxxxxxxx");
+  assert.equal(worker.readConfig([path.join(home, "khong-co")], {}).key, "", "chưa có cấu hình → rỗng (máy dựng chờ, không thoát)");
+  // Ký tự ' trong giá trị không phá lệnh
+  execFileSync("bash", ["-c", setupCommand("https://x.vn/a'b", key)], { env: { ...process.env, HOME: home } });
+  assert.match(fs.readFileSync(f, "utf8"), /^BAOR_REMOTE_URL=https:\/\/x\.vn\/a'b\n/);
+});
