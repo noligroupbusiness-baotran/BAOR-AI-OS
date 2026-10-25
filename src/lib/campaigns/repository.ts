@@ -173,8 +173,9 @@ class SqliteCampaignRepository implements CampaignRepository {
     return catalogRepo.listPeople().map(({ id, name, role }) => ({ id, name, role }));
   }
 
+  /** Danh mục sản phẩm đã bỏ (chỉ marketing, OWNER 25/10/2026): chiến dịch không gắn sản phẩm nữa. */
   products(): Product[] {
-    return catalogRepo.listProducts(true).map(({ id, name, brand, price, unit, description }) => ({ id, name, brand, price, unit, description }));
+    return [];
   }
 
   accounts(): PlatformAccount[] {
@@ -302,7 +303,8 @@ class SqliteCampaignRepository implements CampaignRepository {
     const where = channelGoalId
       ? and(eq(schema.marketingLinks.campaignId, campaignId), eq(schema.marketingLinks.channelGoalId, channelGoalId))
       : eq(schema.marketingLinks.campaignId, campaignId);
-    return this.db.select().from(schema.marketingLinks).where(where).orderBy(desc(schema.marketingLinks.createdAt)).all().map(toLink);
+    // Liên kết "order" / "revenue" cũ (trước khi bỏ bán hàng, OWNER 25/10/2026) còn trong CSDL: không hiển thị
+    return this.db.select().from(schema.marketingLinks).where(where).orderBy(desc(schema.marketingLinks.createdAt)).all().filter((r) => r.entityType !== "order" && r.entityType !== "revenue").map(toLink);
   }
 
   // Tra tên và trạng thái mới nhất của từng thực thể ở phân hệ nguồn.
@@ -383,28 +385,21 @@ class SqliteCampaignRepository implements CampaignRepository {
     return rows.map((a) => ({ ...a, campaignName: names.get(a.campaignId) ?? a.campaignId }));
   }
 
-  // Kết quả = số liệu thật (lead đã gắn, đơn đã thanh toán, chi phí kênh) ưu tiên; thiếu phần nào thì
+  // Kết quả = số liệu thật (lead đã gắn, chi phí kênh) ưu tiên — chỉ marketing, không đơn hàng / doanh thu; thiếu phần nào thì
   // lấy phần đó từ bản mẫu campaign_results (nếu có). source = "system" khi có ít nhất một số thật.
   result(campaignId: string): CampaignResult | undefined {
     const sample = this.db.select().from(schema.campaignResults).where(eq(schema.campaignResults.campaignId, campaignId)).get();
     const c = this.get(campaignId);
     if (!c) return undefined;
     const leads = this.db.select({ n: sql<number>`count(*)` }).from(schema.marketingLinks).where(and(eq(schema.marketingLinks.campaignId, campaignId), eq(schema.marketingLinks.entityType, "lead"))).get()?.n ?? 0;
-    const paid = this.db.select().from(schema.orders).where(and(eq(schema.orders.campaignId, campaignId), eq(schema.orders.status, "paid"))).all();
     const spent = this.goals(campaignId).reduce((n, g) => n + g.spent, 0);
-    const realOrders = paid.length;
-    const realRevenue = paid.reduce((n, o) => n + o.total, 0);
-    const anyReal = leads > 0 || realOrders > 0 || spent > 0;
+    const anyReal = leads > 0 || spent > 0;
     if (!anyReal && !sample) return undefined;
-    const orders = realOrders > 0 ? realOrders : sample?.orders ?? 0;
-    const revenue = realOrders > 0 ? realRevenue : sample?.revenue ?? 0;
     const leadsOut = leads > 0 ? leads : sample?.leads ?? 0;
     const spentOut = spent > 0 ? spent : sample?.spent ?? 0;
-    const metric = (c.targetMetric || "").toLowerCase();
-    const byOrders = /đơn|mua|bán/.test(metric);
-    const achieved = byOrders ? (realOrders > 0 ? realOrders : sample?.achievedValue ?? 0) : leads > 0 ? leads : sample?.achievedValue ?? 0;
-    const usedSample = !!sample && (realOrders === 0 || leads === 0 || spent === 0);
-    return { campaignId, achievedValue: achieved, leads: leadsOut, orders, revenue, spent: spentOut, updatedAt: nowIso(), source: !anyReal ? "sample" : usedSample ? "mixed" : "system" };
+    const achieved = leads > 0 ? leads : sample?.achievedValue ?? 0;
+    const usedSample = !!sample && (leads === 0 || spent === 0);
+    return { campaignId, achievedValue: achieved, leads: leadsOut, spent: spentOut, updatedAt: nowIso(), source: !anyReal ? "sample" : usedSample ? "mixed" : "system" };
   }
 
   logs(campaignId: string, limit = 20): CampaignLog[] {

@@ -15,7 +15,7 @@ export default async function LoginPage() {
   const points = [
     { icon: Workflow, title: "Một nơi điều phối mọi kênh", text: "Chiến dịch đặt mục tiêu; nội dung, video, quảng cáo, khách hàng đều bám theo." },
     { icon: ShieldCheck, title: "AI đề xuất, người quyết định", text: "Không có bài đăng hay đồng chi phí nào chạy khi chưa được phê duyệt." },
-    { icon: BarChart3, title: "Số liệu thật, kết quả rõ", text: "Lead, đơn hàng, chi phí quy về từng chiến dịch và từng kênh." },
+    { icon: BarChart3, title: "Số liệu thật, kết quả rõ", text: "Lead, chi phí, hiệu quả bài đăng quy về từng chiến dịch và từng kênh." },
   ];
 
   return (

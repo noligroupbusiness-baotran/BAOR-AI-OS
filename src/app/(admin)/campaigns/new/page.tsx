@@ -19,7 +19,7 @@ export default function NewCampaignPage() {
         <h1 className="text-[20px] font-bold tracking-[-0.01em] text-ink">Tạo chiến dịch</h1>
         <p className="mt-1 max-w-[64ch] text-ink-2">Một chiến dịch là một mục tiêu kinh doanh cụ thể. Các kênh Facebook, TikTok, Zalo, Email là mục tiêu con của cùng chiến dịch, không tách thành chiến dịch riêng.</p>
       </div>
-      <CampaignWizard people={campaignRepo.people()} products={campaignRepo.products()} accounts={campaignRepo.accounts()} idem={idem} defaultStart={fmt(start)} defaultEnd={fmt(end)} />
+      <CampaignWizard people={campaignRepo.people()} accounts={campaignRepo.accounts()} idem={idem} defaultStart={fmt(start)} defaultEnd={fmt(end)} />
     </>
   );
 }

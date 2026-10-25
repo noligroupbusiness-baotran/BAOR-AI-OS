@@ -1,9 +1,10 @@
-// Nguồn dữ liệu chuẩn của Cài đặt hệ thống: sản phẩm & bảng giá, nhân sự & phân quyền.
+// Nguồn dữ liệu chuẩn của Cài đặt hệ thống: nhân sự & phân quyền. (Sản phẩm & bảng giá đã bỏ — chỉ marketing, OWNER 25/10/2026;
+// bảng products giữ trong CSDL để bảo toàn dữ liệu, không còn đọc / ghi.)
 // Mọi phân hệ (Chiến dịch, Nội dung, AI...) đọc qua catalogRepo, không giữ bản sao riêng.
 import { asc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { hashPassword } from "@/lib/admin";
-import type { Person, Product } from "@/lib/campaigns/types";
+import type { Person } from "@/lib/campaigns/types";
 
 export type Permission = "admin" | "manager" | "staff";
 
@@ -13,10 +14,6 @@ export interface PersonRecord extends Person {
   active: boolean;
   /** Đã được cấp mật khẩu đăng nhập hay chưa (không bao giờ trả về hash). */
   canLogin: boolean;
-}
-
-export interface ProductRecord extends Product {
-  active: boolean;
 }
 
 export const permissionLabel: Record<Permission, { label: string; hint: string }> = {
@@ -29,10 +26,6 @@ const newId = (prefix: string) => `${prefix}_${Date.now().toString(36)}${Math.ra
 const nowIso = () => new Date().toISOString();
 
 export interface CatalogRepository {
-  listProducts(includeInactive?: boolean): ProductRecord[];
-  getProduct(id: string): ProductRecord | undefined;
-  saveProduct(input: Omit<ProductRecord, "id" | "active"> & { id?: string }): ProductRecord;
-  setProductActive(id: string, active: boolean): void;
   listPeople(includeInactive?: boolean): PersonRecord[];
   getPerson(id: string): PersonRecord | undefined;
   savePerson(input: Omit<PersonRecord, "id" | "active" | "canLogin"> & { id?: string; password?: string }): PersonRecord;
@@ -42,30 +35,6 @@ export interface CatalogRepository {
 class SqliteCatalogRepository implements CatalogRepository {
   private get db() {
     return getDb();
-  }
-
-  listProducts(includeInactive = false): ProductRecord[] {
-    const rows = this.db.select().from(schema.products).orderBy(asc(schema.products.brand), asc(schema.products.name)).all();
-    return rows.filter((r) => includeInactive || r.active);
-  }
-
-  getProduct(id: string) {
-    return this.db.select().from(schema.products).where(eq(schema.products.id, id)).get() ?? undefined;
-  }
-
-  saveProduct(input: Omit<ProductRecord, "id" | "active"> & { id?: string }): ProductRecord {
-    const id = input.id ?? newId("pr");
-    const row = { id, name: input.name, brand: input.brand, price: input.price, unit: input.unit, description: input.description, active: true, updatedAt: nowIso() };
-    this.db
-      .insert(schema.products)
-      .values(row)
-      .onConflictDoUpdate({ target: schema.products.id, set: { name: row.name, brand: row.brand, price: row.price, unit: row.unit, description: row.description, updatedAt: row.updatedAt } })
-      .run();
-    return this.getProduct(id) ?? row;
-  }
-
-  setProductActive(id: string, active: boolean) {
-    this.db.update(schema.products).set({ active, updatedAt: nowIso() }).where(eq(schema.products.id, id)).run();
   }
 
   listPeople(includeInactive = false): PersonRecord[] {

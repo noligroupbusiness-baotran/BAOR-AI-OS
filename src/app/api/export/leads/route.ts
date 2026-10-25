@@ -1,8 +1,7 @@
 import { getCurrentUser } from "@/lib/auth";
 import { actorFor, can } from "@/lib/permissions";
 import { listLeads } from "@/lib/queries";
-import { listOrders } from "@/lib/orders/repository";
-import { findSegment, leadsToCsv, spendByLead } from "@/lib/customers/segments";
+import { findSegment, leadsToCsv } from "@/lib/customers/segments";
 import { logActivity } from "@/lib/activity";
 import { RATE_RULES, limitOr429 } from "@/lib/rate-limit";
 
@@ -18,10 +17,9 @@ export async function GET(req: Request) {
   if (limited) return limited;
   const key = new URL(req.url).searchParams.get("segment") ?? "";
   const leads = listLeads();
-  const orders = listOrders();
-  const seg = key ? findSegment(key, leads, orders) : { key: "all", label: "Tất cả khách hàng", leads };
+  const seg = key ? findSegment(key, leads) : { key: "all", label: "Tất cả lead", leads };
   if (!seg) return new Response("Không tìm thấy nhóm", { status: 404 });
-  const csv = leadsToCsv(seg.leads, spendByLead(orders));
+  const csv = leadsToCsv(seg.leads);
   logActivity("human", `${actor.name} xuất CSV ${seg.leads.length} khách, nhóm “${seg.label}”.`, "customers");
   const name = `khach-hang-${seg.key.replace(/[^a-z0-9_-]+/gi, "-")}-${new Date().toISOString().slice(0, 10)}.csv`;
   return new Response(csv, {

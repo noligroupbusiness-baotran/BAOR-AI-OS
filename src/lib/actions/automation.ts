@@ -19,7 +19,7 @@ export async function saveRuleAction(fd: FormData) {
   const back = id ? `/automation?edit=${id}` : "/automation?add=1";
   if (!name) return fail(back, "Cần đặt tên quy tắc");
   if (!(trigger in triggerLabel)) return fail(back, "Điều kiện kích hoạt không hợp lệ");
-  if (!(action in actionLabel)) return fail(back, "Hành động không hợp lệ");
+  if (!(action in actionLabel) || actionLabel[action].legacy) return fail(back, "Hành động không hợp lệ");
   const condition: Condition = {};
   const match = str(fd, "match");
   if (trigger === "message_received") {

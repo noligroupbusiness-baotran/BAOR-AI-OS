@@ -43,8 +43,8 @@ export const leadStageLabel: Record<LeadStage, { label: string; tone: Tone }> = 
   new: { label: "Mới", tone: "violet" },
   contacted: { label: "Đã liên hệ", tone: "sky" },
   qualified: { label: "Tiềm năng", tone: "amber" },
-  won: { label: "Đã mua", tone: "jade" },
-  lost: { label: "Không mua", tone: "neutral" },
+  won: { label: "Đã chuyển đổi", tone: "jade" },
+  lost: { label: "Không chuyển đổi", tone: "neutral" },
 };
 
 export const leadSourceLabel: Record<string, string> = {

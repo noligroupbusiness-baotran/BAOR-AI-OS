@@ -73,7 +73,7 @@ Cập nhật bởi MASTER sau mỗi checkpoint. Nguồn vận hành: `docs/BAOR_
 Nguồn ủy quyền: chỉ thị OWNER 22/10/2026 "CONTINUE BRAND ENGINE IMPLEMENTATION" + "SHARED OPERATING STANDARD"; 25/10/2026 OWNER gửi sơ đồ
 "Personal Brand System" (8 bước + nguyên tắc AI) — "làm theo hệ thống này". Mỗi mục đi đủ vòng BUILD (docs/BAOR_OPERATING_MODEL.md §2).
 OWNER 25/10/2026: "ngưng edit video" — KHÔNG xếp hàng / dựng lại video cho tới khi OWNER nói tiếp (llama-server đã tắt).
-1. [ĐANG LÀM] Personal Brand System — các lát KHÔNG cần khoá nền tảng / tiền thật, theo thứ tự:
+1. [XONG phần không cần khoá] Personal Brand System — các lát KHÔNG cần khoá nền tảng / tiền thật, theo thứ tự:
    A. XONG 3758af6 — Đội AI (nguyên tắc AI): mỗi vị trí 1 AI, công tắc "Cho phép gọi AI", trần riêng / tháng, màn hình chung Báo cáo › Chi phí AI
       (src/lib/ai-roster.ts, Cài đặt › Đội AI). AI Edit Video (tại máy) ghi sổ ₫0, tắt → dựng theo luật.
    B. XONG 9e4806c — Tổng kho video ngắn (bước 5): video đã duyệt + video tự edit tải lên (4.1, vào kho không qua bộ dựng) tự vào kho; lọc Đã đăng /
@@ -81,9 +81,18 @@ OWNER 25/10/2026: "ngưng edit video" — KHÔNG xếp hàng / dựng lại vide
       kênh khác; chỉ áp video đăng sau mốc bật (video.purgeSince). LƯU Ý MERGE: gỡ tệp là vĩnh viễn — OWNER đặt video.purgePosted=0 nếu chưa muốn.
    C. XONG 042070b — Bảng Hook & kịch bản (bước 3, /content/hooks): mỗi lần gọi trả 10 kết quả, dựa insight bước 2 + Second Brain, < 3 phút, luật ngôn từ theo
       chính sách từng nền tảng (FB / IG / TikTok / YT); có đường nhập tay không cần AI.
-   D. XONG (commit kế) — Nghiên cứu nền tảng (bước 2.1–2.4, /insights/research#nen-tang): nhập bình luận nhóm FB / YouTube / FB (dán CSV/JSON) → nguồn + phát hiện; kết nối thật chờ khoá.
-   E. Bài đăng theo skill (6.1) + nhiều fanpage (6.2.1.2) trong dry-run; IG / YT / TikTok: khung kết nối chờ khoá.
-   F. Đo lường 8.1 đối chiếu skill Second Brain trước, 8.2 AI Đo lường sau công tắc.
+   D. XONG a420742 — Nghiên cứu nền tảng (bước 2.1–2.4): nhập bình luận nhóm FB / YouTube / FB (dán CSV/JSON) → nguồn + phát hiện; kết nối thật chờ khoá.
+      Làm lại đơn giản theo sơ đồ (49c69ba): chủ đề → insight từ nền tảng → 10 hook (hook gắn chủ đề qua research_id).
+   E. XONG 3f27db9 — Bài đăng theo skill (6.1) + nhiều fanpage (6.2.1.2) trong dry-run; IG / YT / TikTok: khung kết nối chờ khoá.
+   F. XONG 3f27db9 — Đo lường 8.1 đối chiếu skill Second Brain trước, 8.2 AI Đo lường sau công tắc.
+   G. XONG 4577a1b — Second Brain không hiển thị trong app (OWNER 25/10): trạng thái đồng bộ ở Cài đặt.
+   H. XONG feec024 — Hành trình marketing 8 bước: trang chính 8 thẻ nút bấm, thanh hành trình, /ads riêng; Kết nối chỉ ô API.
+   I. XONG 9042beb — Máy dựng của OWNER: video.renderMode local / remote; máy OWNER GỌI RA máy chủ bằng khoá (máy chủ chỉ lưu SHA-256),
+      dựng tại máy theo 3 trang skill Notion (mốc skill phải xác nhận; skill đổi → ghi chú bản dựng) + tư liệu trên máy / Drive.
+      Cài sau MERGE: Cài đặt › Máy dựng video › Tạo khoá trên mkt.baor.vn → .env.render-worker → `npm run render-worker` → chuyển chế độ.
+   J. XONG (commit kế) — Chỉ marketing (OWNER 25/10 "không bán hàng gì trên này"): XOÁ khỏi code đơn hàng, doanh thu, ROAS, sản phẩm / bảng giá,
+      so giá đối thủ, trả lời giá tự động (reply_price → chuyển người tư vấn). GIỮ lead. Bảng products / orders GIỮ trong CSDL (đánh dấu
+      DEPRECATED, không migration DROP — xoá bảng là quyết định riêng của OWNER); liên kết order / revenue cũ bị lọc khi đọc.
    CHỜ OWNER: khoá Meta / Google / YouTube / TikTok (đăng bài + quảng cáo 7.2–7.5), hồ sơ cá nhân Facebook (6.2.1.1).
 2. Skill ESV + Skill Edit Video Ngang v0.1.r2 — XONG phần Phần chung A (4255aca, ff638df): nhạc A5 (chưa có bài đạt → KHÔNG nhạc),
    SFX OWNER theo vai trò, cắt lặng A11.4 (+ bảo vệ khoảng có từ), xem trước 720p, số A13, ảnh theo mô tả nội dung A4.1.
@@ -93,7 +102,8 @@ OWNER 25/10/2026: "ngưng edit video" — KHÔNG xếp hàng / dựng lại vide
    mô tả ảnh mới tải lên chưa có (ảnh mới rơi về tên tệp, có đánh dấu).
 3. Nợ đã ghi (không chặn): script_align "Lan"→"Lành" khi kịch bản viết hoa tên khác; negated_before dừng ở "thì" có thể sót
    phủ định mệnh đề sau; mỗi video mới gọi mô hình ~6–8 phút; khôi phục plan.prev-* chưa có nút trong app;
-   gắn lại kịch bản không gỡ liên kết chiến dịch kế thừa từ kịch bản cũ.
+   gắn lại kịch bản không gỡ liên kết chiến dịch kế thừa từ kịch bản cũ; E2E music-library chập chờn (1 lần đỏ, chạy lại xanh);
+   máy dựng: các P3 phản biện 9042beb; lên lịch 2 lần riêng cùng Page ID có thể trùng bài; các P3 phản biện nghiên cứu (49c69ba).
 4. Sau mỗi nhóm được nghiệm thu: cập nhật docs/brand-engine/BAOR-BRAND-ENGINE-IMPLEMENTATION-PROGRESS.md (công thức chấm cố định, chỉ tính bằng chứng mới).
 <!-- NEXT:END -->
 

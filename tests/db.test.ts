@@ -37,11 +37,28 @@ test("automation: khiếu nại chuyển người xử lý, không trả lời t
   assert.ok(r.matched.length >= 1);
 });
 
-test("automation: hỏi giá trả lời từ bảng giá; có số điện thoại thì gắn thẻ và đổi giai đoạn", () => {
+test("automation: hỏi giá → chuyển người tư vấn, KHÔNG báo giá (chỉ marketing); có số điện thoại thì gắn thẻ và đổi giai đoạn", () => {
   const price = engine.evaluateMessage("cho em hỏi giá combo bao nhiêu tiền ạ", { dryRun: true });
-  assert.ok(price.autoReply && price.autoReply.includes("₫"), "câu trả lời phải lấy giá từ danh mục");
+  assert.equal(price.needsHuman, true, "hỏi giá chuyển người tư vấn");
+  assert.ok(!price.autoReply || !price.autoReply.includes("₫"), "không tự trả lời giá");
   const phone = engine.evaluateMessage("số em 0909123456 gọi em nhé", { dryRun: true });
   assert.ok(phone.matched.some((m) => m.reason.includes("số điện thoại")));
+});
+
+test("automation: quy tắc cũ reply_price trong CSDL production → chuyển người tư vấn, không báo giá", async () => {
+  const { eq } = await import("drizzle-orm");
+  const d = db.getDb();
+  const [orig] = d.select().from(db.schema.automationRules).where(eq(db.schema.automationRules.id, "ar_price")).all();
+  assert.ok(orig, "có quy tắc hỏi giá mẫu");
+  d.update(db.schema.automationRules).set({ action: "reply_price" }).where(eq(db.schema.automationRules.id, "ar_price")).run();
+  try {
+    const r = engine.evaluateMessage("cho em hỏi giá combo bao nhiêu tiền ạ", { dryRun: true });
+    assert.equal(r.needsHuman, true);
+    assert.ok(!r.autoReply || !r.autoReply.includes("₫"), "không tự trả lời giá");
+    assert.ok(r.matched.some((m) => m.reason.includes("không báo giá")), "đi đúng nhánh reply_price cũ");
+  } finally {
+    d.update(db.schema.automationRules).set({ action: orig.action }).where(eq(db.schema.automationRules.id, "ar_price")).run();
+  }
 });
 
 test("automation: tin không khớp luật nào thì chuyển AI đề xuất, người duyệt", () => {

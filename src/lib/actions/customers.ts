@@ -9,7 +9,6 @@ import { ingestLead } from "@/lib/inbound";
 import { CHANNELS } from "@/config/channels";
 import { findSegment } from "@/lib/customers/segments";
 import { listLeads } from "@/lib/queries";
-import { listOrders } from "@/lib/orders/repository";
 import { currentActor, requirePermission } from "@/lib/permissions";
 import type { LeadStage } from "@/lib/types";
 
@@ -112,7 +111,7 @@ export async function tagSegment(fd: FormData) {
   const tag = str(fd, "tag").replace(/^#/, "").replace(/\s+/g, "-").toLowerCase();
   const back = `/customers?tab=segments&segment=${encodeURIComponent(key)}`;
   if (!tag) return done(`${back}&tone=error`, "Cần nhập tên thẻ.");
-  const seg = findSegment(key, listLeads(), listOrders());
+  const seg = findSegment(key, listLeads());
   if (!seg) return done(`/customers?tab=segments&tone=error`, "Không tìm thấy nhóm.");
   let changed = 0;
   const db = getDb();
@@ -132,7 +131,7 @@ export async function setSegmentStage(fd: FormData) {
   const stage = str(fd, "stage") as LeadStage;
   const back = `/customers?tab=segments&segment=${encodeURIComponent(key)}`;
   if (!STAGES.includes(stage)) return done(`${back}&tone=error`, "Giai đoạn không hợp lệ.");
-  const seg = findSegment(key, listLeads(), listOrders());
+  const seg = findSegment(key, listLeads());
   if (!seg) return done(`/customers?tab=segments&tone=error`, "Không tìm thấy nhóm.");
   let changed = 0;
   for (const l of seg.leads) {

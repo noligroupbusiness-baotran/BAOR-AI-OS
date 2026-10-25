@@ -26,7 +26,7 @@ const tabs: { key: RuleStatus | "all" | "runs"; label: string }[] = [
   { key: "runs", label: "Lịch sử chạy" },
 ];
 
-const stagesAll = [["new", "Mới"], ["contacted", "Đã liên hệ"], ["qualified", "Tiềm năng"], ["won", "Đã mua"], ["lost", "Không mua"]] as const;
+const stagesAll = [["new", "Mới"], ["contacted", "Đã liên hệ"], ["qualified", "Tiềm năng"], ["won", "Đã chuyển đổi"], ["lost", "Không chuyển đổi"]] as const;
 
 export default async function AutomationPage({ searchParams }: { searchParams: Promise<{ tab?: string; add?: string; edit?: string; test?: string }> }) {
   const sp = await searchParams;
@@ -187,15 +187,15 @@ function RuleForm({ rule, campaigns }: { rule?: Rule; campaigns: { id: string; n
       <PanelHeader title={rule ? `Sửa quy tắc “${rule.name}”` : "Quy tắc mới"} sub="Chọn điều kiện kích hoạt và hành động. Trường nào không áp dụng cho lựa chọn của bạn thì để trống." />
       <form action={saveRuleAction} className="grid gap-3 p-4 md:grid-cols-2">
         {rule && <input type="hidden" name="id" value={rule.id} />}
-        <Field label="Tên quy tắc" required className="md:col-span-2"><input name="name" required defaultValue={rule?.name ?? ""} className={inputClass} placeholder="VD: Hỏi giá → trả lời bảng giá" /></Field>
+        <Field label="Tên quy tắc" required className="md:col-span-2"><input name="name" required defaultValue={rule?.name ?? ""} className={inputClass} placeholder="VD: Hỏi giá → chuyển người tư vấn" /></Field>
         <Field label="Khi (điều kiện kích hoạt)" required>
           <select name="trigger" defaultValue={rule?.trigger ?? "message_received"} className={inputClass}>
             {(Object.keys(triggerLabel) as Trigger[]).map((t) => <option key={t} value={t}>{triggerLabel[t].label}</option>)}
           </select>
         </Field>
         <Field label="Thì (hành động)" required>
-          <select name="action" defaultValue={rule?.action ?? "mark_needs_human"} className={inputClass}>
-            {(Object.keys(actionLabel) as Action[]).map((a) => <option key={a} value={a}>{actionLabel[a].label}{actionLabel[a].spends ? " (cần duyệt)" : ""}</option>)}
+          <select name="action" defaultValue={rule && !actionLabel[rule.action]?.legacy ? rule.action : "mark_needs_human"} className={inputClass}>
+            {(Object.keys(actionLabel) as Action[]).filter((a) => !actionLabel[a].legacy).map((a) => <option key={a} value={a}>{actionLabel[a].label}{actionLabel[a].spends ? " (cần duyệt)" : ""}</option>)}
           </select>
         </Field>
 

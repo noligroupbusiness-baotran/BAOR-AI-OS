@@ -25,7 +25,7 @@ export async function askAssistant(prev: AssistantState, fd: FormData): Promise<
   const history = prev.messages.slice(-6).map((m) => `${m.from === "user" ? "Người dùng" : "Trợ lý"}: ${m.text}`).join("\n");
   const r = await askAi(q, systemSnapshot(), history);
   if (!r.ok) {
-    return { messages: [...messages, { id: `a${Date.now()}`, from: "assistant", text: `Chưa trả lời bằng AI được: ${r.error}\n\nCâu hỏi này không thuộc nhóm trả lời được từ dữ liệu sẵn có (việc chờ duyệt, chiến dịch chậm, lỗi, lead mới, doanh thu, tình hình chiến dịch).`, at: new Date().toISOString(), lane: "rule", sources: [] }] };
+    return { messages: [...messages, { id: `a${Date.now()}`, from: "assistant", text: `Chưa trả lời bằng AI được: ${r.error}\n\nCâu hỏi này không thuộc nhóm trả lời được từ dữ liệu sẵn có (việc chờ duyệt, chiến dịch chậm, lỗi, lead mới, tình hình chiến dịch).`, at: new Date().toISOString(), lane: "rule", sources: [] }] };
   }
   return { messages: [...messages, { id: `a${Date.now()}`, from: "assistant", text: r.text, at: new Date().toISOString(), lane: "ai", sources: ["Ảnh chụp dữ liệu hệ thống", "Claude"] }] };
 }

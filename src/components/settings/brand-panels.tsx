@@ -79,7 +79,7 @@ export function BrandPanel() {
         <form action={saveBrand} className="grid gap-3 border-b border-border p-4 md:border-b-0 md:border-r">
           <div className="text-[11.5px] font-semibold uppercase tracking-wide text-ink-3">Giọng văn</div>
           <Field label="Tên thương hiệu"><input name="name" defaultValue={brand.name} className={input} placeholder="VD: Mộc Diệp Spa" /></Field>
-          <Field label="Mô tả ngắn về sản phẩm / dịch vụ chính" hint="Chỉ để AI hiểu bối cảnh; giá và công dụng chi tiết lấy từ danh mục sản phẩm."><input name="products" defaultValue={brand.products} className={input} /></Field>
+          <Field label="Mô tả ngắn về sản phẩm / dịch vụ chính" hint="Chỉ để AI hiểu bối cảnh thương hiệu (không dùng để chào bán / báo giá)."><input name="products" defaultValue={brand.products} className={input} /></Field>
           <Field label="Giọng văn"><textarea name="voice" rows={3} defaultValue={brand.voice} className={textareaClass} /></Field>
           <div><SubmitButton>Lưu giọng văn</SubmitButton></div>
         </form>

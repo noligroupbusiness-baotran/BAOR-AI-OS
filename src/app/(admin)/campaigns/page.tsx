@@ -48,7 +48,6 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
     return `/campaigns?${u.toString()}`;
   };
   const people = campaignRepo.people();
-  const products = campaignRepo.products();
 
   const tiles: { label: string; value: string; hint: string; icon: typeof Megaphone; tone?: "amber" | "brick"; href: string }[] = [
     { label: "Đang thực hiện", value: String(stats.active), hint: "chiến dịch", icon: Megaphone, href: "/campaigns?status=active" },
@@ -96,15 +95,6 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
             <option value="">Tất cả</option>
             {campaignStatusOrder.map((s) => (
               <option key={s} value={s}>{campaignStatusLabel[s].label}</option>
-            ))}
-          </select>
-        </label>
-        <label className="block">
-          <span className="lbl">Sản phẩm / dịch vụ</span>
-          <select name="product" defaultValue={filter.product ?? ""} className={`${inputClass} mt-1`}>
-            <option value="">Tất cả</option>
-            {products.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
         </label>
@@ -165,7 +155,6 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
                     })()}
                   </div>
                   <div className="mt-0.5 text-[12.5px] text-ink-2">{c.objective}</div>
-                  <div className="mt-1 truncate text-[12px] text-ink-3">{c.productNames.join(", ")}</div>
                 </div>
                 <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-[12px] lg:grid-cols-1">
                   <div className="flex gap-1.5"><dt className="text-ink-3">Thời gian</dt><dd className="num text-ink">{formatDate(c.startDate)} – {formatDate(c.endDate)}</dd></div>

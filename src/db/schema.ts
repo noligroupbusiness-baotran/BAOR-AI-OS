@@ -360,6 +360,7 @@ export const campaignLogs = sqliteTable(
 // AI và các phân hệ không tự đặt giá hay nghĩ ra người phụ trách; tất cả đọc từ đây.
 // ---------------------------------------------------------------------------
 
+// DEPRECATED (OWNER 25/10/2026, chỉ marketing): không còn đọc / ghi; giữ bảng để bảo toàn dữ liệu cũ — xoá bảng cần OWNER quyết riêng.
 export const products = sqliteTable("products", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
@@ -458,6 +459,7 @@ export const syncRuns = sqliteTable(
 // Đơn hàng: nguồn doanh thu thật cho chiến dịch và báo cáo. Mỗi đơn gắn lead, sản phẩm từ danh mục,
 // và chiến dịch / mục tiêu kênh (kế thừa từ lead nếu không chỉ định).
 // ---------------------------------------------------------------------------
+// DEPRECATED (OWNER 25/10/2026, chỉ marketing): không còn đọc / ghi; giữ bảng để bảo toàn dữ liệu cũ — xoá bảng cần OWNER quyết riêng.
 export const orders = sqliteTable(
   "orders",
   {

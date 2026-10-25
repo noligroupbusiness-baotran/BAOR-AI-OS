@@ -1,16 +1,14 @@
 // Lớp dữ liệu Báo cáo: so sánh mục tiêu với kết quả ở cấp chiến dịch, kênh, nội dung, video, lead,
-// đơn hàng, chi phí. Không có số trang trí; mọi con số truy ngược được về bản ghi nguồn.
+// chi phí (chỉ marketing — không đơn hàng / doanh thu, OWNER 25/10/2026). Không có số trang trí; mọi con số truy ngược được về bản ghi nguồn.
 import { desc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { channelLabel, metricLabel } from "@/config/channels";
 import { campaignRepo } from "@/lib/campaigns/repository";
-import { campaignProgress, conversionRate, costPerLead, goalProgress, overlapsMonth, roas } from "@/lib/campaigns/results";
+import { campaignProgress, costPerLead, goalProgress, overlapsMonth } from "@/lib/campaigns/results";
 import type { CampaignStatus, ChannelGoal } from "@/lib/campaigns/types";
-import { listOrders } from "@/lib/orders/repository";
 import { listLeads, listPosts } from "@/lib/queries";
 import { listVideos } from "@/lib/videos/repository";
 import { getAiBudget } from "@/lib/router";
-import { catalogRepo } from "@/lib/catalog/repository";
 
 export interface ReportFilter {
   month?: string; // YYYY-MM
@@ -29,13 +27,9 @@ export interface CampaignRow {
   achieved: number;
   progress: number;
   leads: number;
-  orders: number;
-  revenue: number;
   spent: number;
   budget: number;
   cpl: number | null;
-  conversion: number | null;
-  roas: number | null;
   source: "system" | "sample" | "mixed" | "none";
 }
 
@@ -49,8 +43,6 @@ export function campaignRows(f: ReportFilter = {}): CampaignRow[] {
       const goals = campaignRepo.goals(c.id);
       const r = campaignRepo.result(c.id);
       const leads = r?.leads ?? 0;
-      const orders = r?.orders ?? 0;
-      const revenue = r?.revenue ?? 0;
       const spent = r?.spent ?? 0;
       return {
         id: c.id,
@@ -64,13 +56,9 @@ export function campaignRows(f: ReportFilter = {}): CampaignRow[] {
         achieved: r?.achievedValue ?? 0,
         progress: campaignProgress(c, goals, r ?? null),
         leads,
-        orders,
-        revenue,
         spent,
         budget: c.totalBudget,
         cpl: costPerLead(spent, leads),
-        conversion: conversionRate(orders, leads),
-        roas: roas(revenue, spent),
         source: r ? r.source : "none",
       };
     });
@@ -210,23 +198,6 @@ export function leadSummary(f: ReportFilter = {}): LeadSummary {
   };
 }
 
-export function orderSummary(f: ReportFilter = {}) {
-  const orders = listOrders().filter((o) => (f.month ? o.createdAt.startsWith(f.month) : true)).filter((o) => (f.campaignId ? o.campaignId === f.campaignId : true));
-  const paid = orders.filter((o) => o.status === "paid");
-  const revenue = paid.reduce((n, o) => n + o.total, 0);
-  const group = (key: (o: (typeof paid)[number]) => string) => {
-    const m = new Map<string, { n: number; revenue: number }>();
-    for (const o of paid) {
-      const k = key(o);
-      const e = m.get(k) ?? { n: 0, revenue: 0 };
-      e.n += o.quantity;
-      e.revenue += o.total;
-      m.set(k, e);
-    }
-    return [...m.entries()].map(([name, e]) => ({ name, ...e })).sort((a, b) => b.revenue - a.revenue);
-  };
-  return { orders: orders.length, paid: paid.length, pending: orders.filter((o) => o.status === "new").length, revenue, aov: paid.length ? Math.round(revenue / paid.length) : 0, byProduct: group((o) => o.productName), byCampaign: group((o) => o.campaignName ?? "Chưa gắn chiến dịch") };
-}
 
 export function costSummary(f: ReportFilter = {}) {
   const rows = campaignRows(f);
@@ -235,17 +206,13 @@ export function costSummary(f: ReportFilter = {}) {
   return {
     budget: rows.reduce((n, r) => n + r.budget, 0),
     spent: rows.reduce((n, r) => n + r.spent, 0),
-    revenue: rows.reduce((n, r) => n + r.revenue, 0),
     adSpent,
     aiMonth: ai.spentMonthVnd,
     aiCap: ai.monthlyCapVnd,
-    byCampaign: rows.map((r) => ({ name: r.name, budget: r.budget, spent: r.spent, revenue: r.revenue, roas: r.roas })),
+    byCampaign: rows.map((r) => ({ name: r.name, budget: r.budget, spent: r.spent, leads: r.leads, cpl: r.cpl })),
   };
 }
 
-export function productCount() {
-  return catalogRepo.listProducts().length;
-}
 
 export function recentDecisions(limit = 10) {
   return getDb().select().from(schema.marketingDecisions).orderBy(desc(schema.marketingDecisions.at)).limit(limit).all();

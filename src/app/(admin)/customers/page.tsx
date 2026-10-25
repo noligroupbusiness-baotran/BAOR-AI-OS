@@ -7,15 +7,12 @@ import { Segment } from "@/components/ui/segment";
 import { Tiles, Tile } from "@/components/ui/stat";
 import { Table, Th, Td } from "@/components/ui/table";
 import { aiSuggest, createLead, handBackToAi, sendReply, setLeadStage, setSegmentStage, tagSegment, toggleRule, toggleSequence } from "@/lib/actions/customers";
-import { allSegments, spendByLead } from "@/lib/customers/segments";
-import { formatCurrency } from "@/lib/format";
+import { allSegments } from "@/lib/customers/segments";
 import { Field, inputClass } from "@/components/ui/field";
 import { SubmitButton } from "@/components/campaigns/submit-button";
 import { Pager, paginate } from "@/components/ui/pager";
 import { channelLabel } from "@/config/channels";
-import { OrdersTab } from "@/components/customers/orders-tab";
 import { currentActor } from "@/lib/permissions";
-import { listOrders } from "@/lib/orders/repository";
 import { listConversations, listEmailSequences, listLeads, listRules } from "@/lib/queries";
 import { leadSourceLabel, leadStageLabel } from "@/lib/labels";
 import { formatDateTime, formatNumber, formatTime, cn } from "@/lib/format";
@@ -29,15 +26,13 @@ export const metadata = { title: "Khách hàng & email – BAOR AI OS" };
 const stages: LeadStage[] = ["new", "contacted", "qualified", "won", "lost"];
 
 export default async function CustomersPage({ searchParams }: { searchParams: Promise<{ tab?: string; conv?: string; suggest?: string; link?: string; add?: string; page?: string; lead?: string; segment?: string }> }) {
-  const { tab = "inbox", conv, suggest, link, add, page, lead: preselectLead, segment: segmentKey } = await searchParams;
-  const actor = await currentActor();
+  const { tab = "inbox", conv, suggest, link, add, page, segment: segmentKey } = await searchParams;
+  await currentActor();
   const convs = listConversations();
   const selected = convs.find((c) => c.id === conv) ?? convs[0];
   const leads = listLeads();
-  const orders = listOrders();
-  const segments = allSegments(leads, orders);
+  const segments = allSegments(leads);
   const selectedSegment = segments.find((s) => s.key === segmentKey) ?? null;
-  const spend = spendByLead(orders);
   const rules = listRules();
   const seqs = listEmailSequences();
   const needHuman = convs.filter((c) => c.needsHuman).length;
@@ -52,12 +47,12 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
       <Breadcrumb items={[{ label: "Điều hành", href: "/dashboard" }, { label: "Khách hàng" }]} />
       <PageHead
         title="Khách hàng & email"
-        sub="AI trả lời bình luận và inbox theo giọng của bạn, tạo lead, và chuyển cho bạn khi khách sẵn sàng chốt."
+        sub="AI trả lời bình luận và inbox theo giọng của bạn, tạo lead, và chuyển cho bạn khi khách cần tư vấn trực tiếp."
       />
 
       <Tiles>
         <Tile label="Hội thoại" value={String(convs.length)} hint="Từ inbox và bình luận" />
-        <Tile label="Cần bạn" value={String(needHuman)} hint="Khách chờ chốt / gọi lại" tone={needHuman ? "amber" : undefined} />
+        <Tile label="Cần bạn" value={String(needHuman)} hint="Khách chờ tư vấn / gọi lại" tone={needHuman ? "amber" : undefined} />
         <Tile label="Lead" value={String(leads.length)} hint={`${won} đã mua`} />
         <Tile label="Chuỗi email đang chạy" value={String(seqs.filter((s) => s.active).length)} hint={`${formatNumber(seqs.reduce((n, s) => n + s.subscribers, 0))} người trong chuỗi`} />
       </Tiles>
@@ -69,7 +64,6 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
           items={[
             { key: "inbox", label: `Hộp thư · ${convs.length}` },
             { key: "leads", label: `Lead · ${leads.length}` },
-            { key: "orders", label: `Đơn hàng · ${orders.length}` },
             { key: "segments", label: "Phân data" },
             { key: "rules", label: `Quy tắc trả lời · ${rules.length}` },
             { key: "email", label: `Email · ${seqs.length}` },
@@ -197,7 +191,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
                     </div>
                   </Td>
                   <Td><div className="max-w-[260px] truncate">{l.lastMessage}</div><div className="num text-[11px] text-ink-3">{formatDateTime(l.lastMessageAt)}</div></Td>
-                  <Td className="num">{l.phone ?? l.email ?? "—"}<div><Link href={`/customers?tab=orders&add=1&lead=${l.id}`} className="text-[11.5px] font-medium text-jade hover:underline">Tạo đơn</Link></div></Td>
+                  <Td className="num">{l.phone ?? l.email ?? "—"}</Td>
                   <Td right>
                     <form action={setLeadStage} className="flex justify-end gap-1.5">
                       <input type="hidden" name="id" value={l.id} />
@@ -215,12 +209,11 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
         </Panel>
       )}
 
-      {tab === "orders" && <OrdersTab add={add === "1"} page={page} actor={actor} preselectLead={preselectLead} />}
 
       {tab === "segments" && (
         <>
           <Panel>
-            <PanelHeader title="Phân data theo luật" sub={`Khách được chia nhóm tự động theo giai đoạn, thời gian im lặng, đơn hàng, kênh và thẻ. Không dùng AI. ${leads.length} khách, ${formatCurrency(orders.filter((o) => o.status === "paid").reduce((n, o) => n + o.total, 0))} đã thanh toán.`} action={<a href="/api/export/leads" className="inline-flex h-7 items-center rounded-full border border-border-2 px-3 text-[12px] font-medium text-ink hover:bg-ground-2">Tải CSV tất cả</a>} />
+            <PanelHeader title="Phân data theo luật" sub={`Lead được chia nhóm tự động theo giai đoạn, thời gian im lặng, kênh và thẻ. Không dùng AI. ${leads.length} lead.`} action={<a href="/api/export/leads" className="inline-flex h-7 items-center rounded-full border border-border-2 px-3 text-[12px] font-medium text-ink hover:bg-ground-2">Tải CSV tất cả</a>} />
             {(["care", "sales", "channel", "tag"] as const).map((g) => {
               const items = segments.filter((s) => s.group === g);
               if (!items.length) return null;
@@ -243,7 +236,6 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
                           </div>
                           <div className="num text-[12.5px] text-ink">
                             <div className="font-semibold">{sg.leads.length} khách</div>
-                            {sg.revenue > 0 && <div className="text-ink-2">{formatCurrency(sg.revenue)}</div>}
                           </div>
                           <div className="flex flex-wrap gap-1.5 md:justify-end">
                             <LinkButton href={`/customers?tab=leads&segment=${encodeURIComponent(sg.key)}`}>Xem danh sách</LinkButton>
@@ -280,7 +272,6 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
               {selectedSegment.leads.length > 0 && (
                 <div className="border-t border-border px-4 py-2 text-[12px] text-ink-3">
                   Khách trong nhóm: {selectedSegment.leads.slice(0, 8).map((l) => l.name).join(", ")}{selectedSegment.leads.length > 8 ? ` và ${selectedSegment.leads.length - 8} khách khác` : ""}.
-                  {spend.size > 0 && selectedSegment.revenue > 0 ? ` Doanh thu đã trả ${formatCurrency(selectedSegment.revenue)}.` : ""}
                 </div>
               )}
             </Panel>
@@ -290,7 +281,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
 
       {tab === "rules" && (
         <Panel>
-          <PanelHeader title="Quy tắc trả lời tự động" sub="AI dùng giọng thương hiệu của bạn. Khiếu nại và chốt đơn luôn chuyển cho người." />
+          <PanelHeader title="Quy tắc trả lời tự động" sub="AI dùng giọng thương hiệu của bạn. Khiếu nại và hỏi giá luôn chuyển cho người." />
           <Table>
             <thead><tr><Th>Khi khách…</Th><Th>Hệ thống sẽ…</Th><Th right>Đã kích hoạt</Th><Th right>Bật</Th></tr></thead>
             <tbody>

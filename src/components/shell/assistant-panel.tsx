@@ -7,7 +7,7 @@ import { Pill } from "@/components/ui/pill";
 import { askAssistant, type AssistantState } from "@/lib/actions/assistant";
 import { formatTime, cn } from "@/lib/format";
 
-const suggestions = ["Hôm nay có việc gì cần duyệt?", "Chiến dịch nào đang chậm tiến độ?", "Có lỗi gì trong hệ thống không?", "Hôm nay có bao nhiêu lead mới?", "Doanh thu đến giờ bao nhiêu?"];
+const suggestions = ["Hôm nay có việc gì cần duyệt?", "Chiến dịch nào đang chậm tiến độ?", "Có lỗi gì trong hệ thống không?", "Hôm nay có bao nhiêu lead mới?", "Bài nào đang hiệu quả nhất?"];
 
 // Trợ lý AI: câu hỏi vận hành quen thuộc trả lời từ dữ liệu (làn luật); câu khác gọi Claude với ngữ cảnh hệ thống.
 export function AssistantPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -32,7 +32,7 @@ export function AssistantPanel({ open, onClose }: { open: boolean; onClose: () =
       <div className="flex h-full flex-col">
         <div className="flex items-start gap-2.5 border-b border-border px-4 py-3">
           <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-violet-soft text-violet"><Sparkles size={16} aria-hidden /></span>
-          <p className="text-[13px] text-ink">Hỏi về việc cần duyệt, tiến độ chiến dịch, lead, doanh thu, lỗi hệ thống. Câu quen thuộc trả lời ngay từ dữ liệu; câu khác dùng AI có ghi sổ chi phí.</p>
+          <p className="text-[13px] text-ink">Hỏi về việc cần duyệt, tiến độ chiến dịch, lead, lỗi hệ thống. Câu quen thuộc trả lời ngay từ dữ liệu; câu khác dùng AI có ghi sổ chi phí.</p>
         </div>
         <div className="flex flex-wrap gap-1.5 border-b border-border px-4 py-3">
           {suggestions.map((s) => (

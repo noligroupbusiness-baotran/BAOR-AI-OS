@@ -11,7 +11,7 @@ import { inputClass } from "@/components/ui/field";
 import { CampaignStatusPill } from "@/components/campaigns/status";
 import { AiCostPanel } from "@/components/reports/ai-cost-panel";
 import { campaignRepo } from "@/lib/campaigns/repository";
-import { campaignRows, channelRows, contentRows, costSummary, leadSummary, orderSummary, videoSummary, type ReportFilter } from "@/lib/reports/data";
+import { campaignRows, channelRows, contentRows, costSummary, leadSummary, videoSummary, type ReportFilter } from "@/lib/reports/data";
 import { leadSourceLabel, leadStageLabel } from "@/lib/labels";
 import { platformLabel } from "@/components/ui/platform";
 import type { LeadStage, Platform } from "@/lib/types";
@@ -24,8 +24,7 @@ const tabs = [
   { key: "channels", label: "Theo kênh" },
   { key: "content", label: "Nội dung và video" },
   { key: "leads", label: "Lead" },
-  { key: "orders", label: "Đơn hàng và doanh thu" },
-  { key: "costs", label: "Chi phí và ROAS" },
+  { key: "costs", label: "Chi phí" },
   { key: "ai", label: "Chi phí AI" },
 ];
 
@@ -36,14 +35,14 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const filtering = !!(f.month || f.campaignId);
   const campaigns = campaignRepo.list();
   const rows = campaignRows(f);
-  const totals = { leads: rows.reduce((n, r) => n + r.leads, 0), orders: rows.reduce((n, r) => n + r.orders, 0), revenue: rows.reduce((n, r) => n + r.revenue, 0), spent: rows.reduce((n, r) => n + r.spent, 0) };
+  const totals = { leads: rows.reduce((n, r) => n + r.leads, 0), spent: rows.reduce((n, r) => n + r.spent, 0) };
   const sampleCount = rows.filter((r) => r.source === "sample").length;
   const mixedCount = rows.filter((r) => r.source === "mixed").length;
 
   return (
     <>
       <Breadcrumb items={[{ label: "Điều hành", href: "/dashboard" }, { label: "Báo cáo" }]} />
-      <PageHead title="Báo cáo" sub="So sánh mục tiêu đặt ra với kết quả thực tế. Mọi con số truy ngược được về chiến dịch, kênh, nội dung, lead và đơn hàng." />
+      <PageHead title="Báo cáo" sub="So sánh mục tiêu đặt ra với kết quả thực tế. Mọi con số truy ngược được về chiến dịch, kênh, nội dung và lead." />
 
       <form method="get" action="/reports" className="card grid gap-2 px-4 py-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
         <input type="hidden" name="tab" value={tab} />
@@ -58,14 +57,13 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
         <div className="flex gap-1.5"><Button type="submit" variant="soft" size="md">Lọc</Button>{filtering && <LinkButton href={`/reports?tab=${tab}`} variant="ghost" size="md">Xóa lọc</LinkButton>}</div>
       </form>
 
-      <div className="mt-3.5 grid grid-cols-2 gap-2.5 md:grid-cols-4">
+      <div className="mt-3.5 grid grid-cols-2 gap-2.5 md:grid-cols-3">
         <Tile label="Lead" value={formatNumber(totals.leads)} />
-        <Tile label="Đơn đã thanh toán" value={formatNumber(totals.orders)} />
-        <Tile label="Doanh thu" value={formatCurrency(totals.revenue)} />
-        <Tile label="Chi phí" value={formatCurrency(totals.spent)} hint={totals.spent > 0 && totals.revenue > 0 ? `ROAS ${(totals.revenue / totals.spent).toFixed(2)}x` : "ROAS: chưa đủ dữ liệu"} />
+        <Tile label="Chi phí" value={formatCurrency(totals.spent)} />
+        <Tile label="Chi phí / lead" value={totals.leads > 0 && totals.spent > 0 ? formatCurrency(Math.round(totals.spent / totals.leads)) : "—"} />
       </div>
-      {sampleCount > 0 && <p className="mt-2 text-[12px] text-ink-3">{sampleCount} chiến dịch đang dùng số liệu mẫu vì chưa có lead, đơn hoặc chi phí thật. Số sẽ tự thay khi có dữ liệu.</p>}
-      {mixedCount > 0 && <p className="mt-1 text-[12px] text-amber">{mixedCount} chiến dịch có số thật nhưng vài cột (đơn, doanh thu hoặc chi phí) vẫn lấy từ số mẫu. Không dùng các cột đó để ra quyết định.</p>}
+      {sampleCount > 0 && <p className="mt-2 text-[12px] text-ink-3">{sampleCount} chiến dịch đang dùng số liệu mẫu vì chưa có lead hoặc chi phí thật. Số sẽ tự thay khi có dữ liệu.</p>}
+      {mixedCount > 0 && <p className="mt-1 text-[12px] text-amber">{mixedCount} chiến dịch có số thật nhưng vài cột (lead hoặc chi phí) vẫn lấy từ số mẫu. Không dùng các cột đó để ra quyết định.</p>}
 
       <div className="mt-3.5 flex flex-wrap items-center justify-between gap-2">
         <div className="overflow-x-auto"><Segment basePath={`/reports${f.month || f.campaignId ? `?${new URLSearchParams({ ...(f.month ? { month: f.month } : {}), ...(f.campaignId ? { campaign: f.campaignId } : {}) }).toString()}` : ""}`} active={tab} items={tabs} /></div>
@@ -74,10 +72,10 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
 
       {tab === "overview" && (
         <Panel>
-          <PanelHeader title="Mục tiêu chung so với kết quả" sub="Mỗi chiến dịch: mức hoàn thành mục tiêu, lead, đơn, doanh thu, chi phí, ROAS." />
+          <PanelHeader title="Mục tiêu chung so với kết quả" sub="Mỗi chiến dịch: mức hoàn thành mục tiêu, lead, chi phí, CPL." />
           {rows.length === 0 ? <EmptyState title="Không có chiến dịch trong phạm vi lọc" /> : (
             <Table>
-              <thead><tr><Th>Chiến dịch</Th><Th>Mục tiêu</Th><Th right>Lead</Th><Th right>Đơn</Th><Th right>Doanh thu</Th><Th right>Chi phí</Th><Th right>CPL</Th><Th right>ROAS</Th></tr></thead>
+              <thead><tr><Th>Chiến dịch</Th><Th>Mục tiêu</Th><Th right>Lead</Th><Th right>Chi phí</Th><Th right>CPL</Th></tr></thead>
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.id}>
@@ -87,11 +85,8 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
                       <div className="mt-1 flex items-center gap-2"><ProgressBar value={r.progress} className="w-[120px]" label={`Tiến độ ${r.name}`} /><span className="num text-[12px] font-semibold text-ink">{r.progress}%</span>{r.targetValue ? <span className="num text-[11px] text-ink-3">{formatNumber(r.achieved)}/{formatNumber(r.targetValue)} {r.targetMetric}</span> : null}</div>
                     </Td>
                     <Td right className="num">{formatNumber(r.leads)}</Td>
-                    <Td right className="num">{formatNumber(r.orders)}</Td>
-                    <Td right className="num">{formatCurrency(r.revenue)}</Td>
                     <Td right className="num">{formatCurrency(r.spent)}<div className="text-[11px] text-ink-3">/ {formatCurrency(r.budget)}</div></Td>
                     <Td right className="num">{r.cpl ? formatCurrency(r.cpl) : "—"}</Td>
-                    <Td right className={cn("num font-semibold", r.roas === null ? "text-ink-3" : r.roas >= 1 ? "text-jade" : "text-amber")}>{r.roas === null ? "—" : `${r.roas}x`}</Td>
                   </tr>
                 ))}
               </tbody>
@@ -152,7 +147,6 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
       )}
 
       {tab === "leads" && <LeadsPanel f={f} />}
-      {tab === "orders" && <OrdersPanel f={f} />}
       {tab === "costs" && <CostsPanel f={f} />}
       {tab === "ai" && <AiCostPanel />}
       <ModuleGroups moduleKey="reports" />
@@ -192,7 +186,7 @@ function LeadsPanel({ f }: { f: ReportFilter }) {
   return (
     <>
       <Panel>
-        <PanelHeader title="Lead theo giai đoạn" sub={`${s.total} lead · ${s.won} đã mua · tỷ lệ chốt ${s.total ? Math.round((s.won / s.total) * 100) : 0}%.`} />
+        <PanelHeader title="Lead theo giai đoạn" sub={`${s.total} lead · ${s.won} đã chuyển đổi · tỷ lệ chuyển đổi ${s.total ? Math.round((s.won / s.total) * 100) : 0}%.`} />
         <ul className="m-0 list-none p-0">
           {s.byStage.map((x) => (
             <li key={x.stage} className="grid grid-cols-[140px_1fr_60px] items-center gap-3 border-b border-border px-4 py-2 text-[12.5px] last:border-b-0"><span className="text-ink">{leadStageLabel[x.stage as LeadStage]?.label ?? x.stage}</span><ProgressBar value={bar(x.n)} label={x.stage} /><span className="num text-right font-semibold text-ink">{x.n}</span></li>
@@ -219,54 +213,23 @@ function LeadsPanel({ f }: { f: ReportFilter }) {
   );
 }
 
-function OrdersPanel({ f }: { f: ReportFilter }) {
-  const s = orderSummary(f);
-  return (
-    <>
-      <div className="mt-3.5 grid grid-cols-2 gap-2.5 md:grid-cols-4">
-        <Tile label="Đơn đã thanh toán" value={formatNumber(s.paid)} hint={`${s.pending} chờ thanh toán`} />
-        <Tile label="Doanh thu" value={formatCurrency(s.revenue)} />
-        <Tile label="Giá trị đơn trung bình" value={formatCurrency(s.aov)} />
-        <Tile label="Tổng đơn" value={formatNumber(s.orders)} />
-      </div>
-      <div className="grid gap-3.5 md:grid-cols-2">
-        <Panel>
-          <PanelHeader title="Doanh thu theo sản phẩm" sub="Chỉ đơn đã thanh toán; giá theo danh mục tại thời điểm bán." />
-          <ul className="m-0 list-none p-0">
-            {s.byProduct.map((x) => <li key={x.name} className="flex justify-between gap-3 border-b border-border px-4 py-2 text-[12.5px] last:border-b-0"><span>{x.name} <span className="num text-ink-3">× {x.n}</span></span><span className="num font-semibold text-ink">{formatCurrency(x.revenue)}</span></li>)}
-            {s.byProduct.length === 0 && <li className="px-4 py-6 text-center text-[12.5px] text-ink-2">Chưa có đơn đã thanh toán.</li>}
-          </ul>
-        </Panel>
-        <Panel>
-          <PanelHeader title="Doanh thu theo chiến dịch" />
-          <ul className="m-0 list-none p-0">
-            {s.byCampaign.map((x) => <li key={x.name} className="flex justify-between gap-3 border-b border-border px-4 py-2 text-[12.5px] last:border-b-0"><span className="min-w-0 truncate">{x.name}</span><span className="num font-semibold text-ink">{formatCurrency(x.revenue)}</span></li>)}
-            {s.byCampaign.length === 0 && <li className="px-4 py-6 text-center text-[12.5px] text-ink-2">Chưa có đơn đã thanh toán.</li>}
-          </ul>
-        </Panel>
-      </div>
-    </>
-  );
-}
-
 function CostsPanel({ f }: { f: ReportFilter }) {
   const s = costSummary(f);
-  const r = s.spent > 0 && s.revenue > 0 ? (s.revenue / s.spent).toFixed(2) : null;
   return (
     <>
       <div className="mt-3.5 grid grid-cols-2 gap-2.5 md:grid-cols-4">
         <Tile label="Ngân sách chiến dịch" value={formatCurrency(s.budget)} />
         <Tile label="Đã chi (kênh)" value={formatCurrency(s.spent)} hint={`Quảng cáo ${formatCurrency(s.adSpent)}`} />
         <Tile label="Chi phí AI tháng này" value={formatCurrency(s.aiMonth)} hint={`trần ${formatCurrency(s.aiCap)}`} />
-        <Tile label="ROAS tổng" value={r ? `${r}x` : "—"} hint={r ? "doanh thu / chi phí" : "chưa đủ dữ liệu"} />
+        <Tile label="Lead" value={formatNumber(s.byCampaign.reduce((n, x) => n + x.leads, 0))} />
       </div>
       <Panel>
-        <PanelHeader title="Chi phí và ROAS theo chiến dịch" sub="ROAS chỉ tính khi có cả doanh thu và chi phí." />
+        <PanelHeader title="Chi phí theo chiến dịch" />
         <Table>
-          <thead><tr><Th>Chiến dịch</Th><Th right>Ngân sách</Th><Th right>Đã chi</Th><Th right>Doanh thu</Th><Th right>ROAS</Th></tr></thead>
+          <thead><tr><Th>Chiến dịch</Th><Th right>Ngân sách</Th><Th right>Đã chi</Th><Th right>Lead</Th><Th right>CPL</Th></tr></thead>
           <tbody>
             {s.byCampaign.map((x) => (
-              <tr key={x.name}><Td className="font-semibold text-ink">{x.name}</Td><Td right className="num">{formatCurrency(x.budget)}</Td><Td right className="num">{formatCurrency(x.spent)}</Td><Td right className="num">{formatCurrency(x.revenue)}</Td><Td right className={cn("num font-semibold", x.roas === null ? "text-ink-3" : x.roas >= 1 ? "text-jade" : "text-amber")}>{x.roas === null ? "—" : `${x.roas}x`}</Td></tr>
+              <tr key={x.name}><Td className="font-semibold text-ink">{x.name}</Td><Td right className="num">{formatCurrency(x.budget)}</Td><Td right className="num">{formatCurrency(x.spent)}</Td><Td right className="num">{formatNumber(x.leads)}</Td><Td right className="num">{x.cpl ? formatCurrency(x.cpl) : "—"}</Td></tr>
             ))}
           </tbody>
         </Table>

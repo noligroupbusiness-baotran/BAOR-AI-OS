@@ -71,8 +71,7 @@ function parseCampaign(raw: unknown): NewCampaignInput | string {
   if (!objective) return "Cần nhập mục tiêu chung.";
   const ownerId = String(c.ownerId ?? "");
   if (!catalogRepo.getPerson(ownerId)?.active) return "Cần chọn người quản lý chiến dịch đang hoạt động.";
-  const productIds = Array.isArray(c.productIds) ? c.productIds.map(String).filter((id) => catalogRepo.getProduct(id)?.active) : [];
-  if (productIds.length === 0) return "Cần chọn ít nhất một sản phẩm hoặc dịch vụ.";
+  const productIds: string[] = []; // không còn danh mục sản phẩm (chỉ marketing)
   const startDate = String(c.startDate ?? "");
   const endDate = String(c.endDate ?? "");
   if (!isValidDateRange(startDate, endDate)) return "Ngày kết thúc phải sau hoặc bằng ngày bắt đầu.";
@@ -308,7 +307,6 @@ export async function updateCampaign(fd: FormData) {
     targetMetric: str(fd, "targetMetric"),
     targetValue: str(fd, "targetValue") ? num(fd, "targetValue") : null,
     description: str(fd, "description"),
-    productIds: fd.getAll("productIds").map(String),
     audience: str(fd, "audience"),
     location: str(fd, "location"),
     ownerId: str(fd, "ownerId"),
@@ -328,7 +326,6 @@ export async function updateCampaign(fd: FormData) {
   if (parsed.totalBudget !== c.totalBudget) changes.push(`ngân sách ${c.totalBudget.toLocaleString("vi-VN")} → ${parsed.totalBudget.toLocaleString("vi-VN")} ₫`);
   if (parsed.startDate !== c.startDate || parsed.endDate !== c.endDate) changes.push("thời gian");
   if (parsed.ownerId !== c.ownerId) changes.push("người quản lý");
-  if (JSON.stringify(parsed.productIds) !== JSON.stringify(c.productIds)) changes.push("sản phẩm");
   if (parsed.audience !== c.audience || parsed.location !== c.location || parsed.description !== c.description || parsed.budgetNote !== c.budgetNote) changes.push("mô tả");
 
   campaignRepo.update(id, {
@@ -337,7 +334,6 @@ export async function updateCampaign(fd: FormData) {
     targetMetric: parsed.targetMetric,
     targetValue: parsed.targetValue,
     description: parsed.description,
-    productIds: parsed.productIds,
     audience: parsed.audience,
     location: parsed.location,
     ownerId: parsed.ownerId,

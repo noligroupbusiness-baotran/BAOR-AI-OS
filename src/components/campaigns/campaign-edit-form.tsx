@@ -1,13 +1,13 @@
-import type { Campaign, Person, Product } from "@/lib/campaigns/types";
+import type { Campaign, Person } from "@/lib/campaigns/types";
 import { updateCampaign } from "@/lib/actions/campaigns";
 import { Panel, PanelHeader } from "@/components/ui/card";
 import { Field, FormNotice, inputClass, textareaClass } from "@/components/ui/field";
 import { LinkButton } from "@/components/ui/button";
 import { SubmitButton } from "./submit-button";
-import { formatCurrency, cn } from "@/lib/format";
+import { formatCurrency } from "@/lib/format";
 
 // Sửa thông tin chung (bước 1–2) của chiến dịch đã tạo. Mục tiêu kênh sửa ở tab riêng.
-export function CampaignEditForm({ campaign, people, products, allocated, idem }: { campaign: Campaign; people: Person[]; products: Product[]; allocated: number; idem: string }) {
+export function CampaignEditForm({ campaign, people, allocated, idem }: { campaign: Campaign; people: Person[]; allocated: number; idem: string }) {
   const approved = campaign.status === "approved" || campaign.status === "active" || campaign.status === "paused";
   return (
     <Panel>
@@ -35,23 +35,6 @@ export function CampaignEditForm({ campaign, people, products, allocated, idem }
         <Field label="Mô tả" className="md:col-span-2">
           <textarea name="description" rows={3} defaultValue={campaign.description} className={textareaClass} />
         </Field>
-        <div className="md:col-span-2">
-          <span className="lbl">Sản phẩm hoặc dịch vụ <span className="text-brick" aria-hidden>*</span></span>
-          <div className="mt-1.5 grid gap-1.5 sm:grid-cols-2">
-            {products.map((p) => {
-              const on = campaign.productIds.includes(p.id);
-              return (
-                <label key={p.id} className={cn("flex cursor-pointer items-start gap-2.5 rounded-md border px-3 py-2 text-[12.5px]", on ? "border-jade bg-jade-soft/40" : "border-border hover:border-ink-3")}>
-                  <input type="checkbox" name="productIds" value={p.id} defaultChecked={on} className="mt-0.5 accent-[var(--jade)]" />
-                  <span className="min-w-0">
-                    <span className="block font-semibold text-ink">{p.name}</span>
-                    <span className="block text-ink-2">{p.brand}{p.price > 0 ? ` · ${formatCurrency(p.price)}/${p.unit}` : ""}</span>
-                  </span>
-                </label>
-              );
-            })}
-          </div>
-        </div>
         <Field label="Nhóm khách hàng mục tiêu">
           <input name="audience" defaultValue={campaign.audience} className={inputClass} />
         </Field>

@@ -51,6 +51,4 @@ export const entityTypeLabel: Record<LinkedEntityType, { label: string; plural: 
   ad: { label: "Quảng cáo", plural: "Quảng cáo", module: "Đăng bài & Quảng cáo" },
   lead: { label: "Lead", plural: "Lead đang chăm sóc", module: "Khách hàng" },
   automation_run: { label: "Automation", plural: "Automation đã chạy", module: "Automation" },
-  order: { label: "Đơn hàng", plural: "Đơn hàng", module: "Khách hàng" },
-  revenue: { label: "Doanh thu", plural: "Doanh thu", module: "Báo cáo" },
 };

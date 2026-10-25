@@ -70,9 +70,9 @@ export const triggerLabel: Record<Trigger, { label: string; hint: string; kind: 
   ad_cpl_high: { label: "Khi CPL quảng cáo vượt ngưỡng", hint: "Kiểm tra mỗi giờ trên quảng cáo đang chạy.", kind: "schedule" },
 };
 
-export const actionLabel: Record<Action, { label: string; hint: string; spends?: boolean }> = {
+export const actionLabel: Record<Action, { label: string; hint: string; spends?: boolean; legacy?: boolean }> = {
   reply_faq: { label: "Trả lời bằng câu chuẩn trong kho FAQ", hint: "Chỉ khi tin nhắn khớp một câu hỏi trong Cài đặt › Câu trả lời chuẩn." },
-  reply_price: { label: "Trả lời bảng giá từ danh mục", hint: "Giá lấy từ Cài đặt › Sản phẩm." },
+  reply_price: { label: "(cũ) Hỏi giá → chuyển người tư vấn", hint: "Hệ thống chỉ làm marketing, không báo giá.", legacy: true },
   mark_needs_human: { label: "Chuyển cho người xử lý", hint: "Không trả lời tự động, đưa vào Chờ tôi xử lý." },
   set_stage: { label: "Đổi giai đoạn lead", hint: "VD: có số điện thoại → Đã liên hệ." },
   tag_lead: { label: "Gắn nhãn cho lead", hint: "VD: hỏi giá, gọi lại." },

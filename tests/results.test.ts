@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { campaignProgress, checkBudget, conversionRate, goalProgress, overlapsMonth, roas, timingLabel } from "../src/lib/campaigns/results";
+import { campaignProgress, checkBudget, costPerLead, goalProgress, overlapsMonth, timingLabel } from "../src/lib/campaigns/results";
 
 test("ngân sách kênh vượt tổng bị đánh dấu over", () => {
   assert.equal(checkBudget(10_000_000, [{ budget: 6_000_000 }, { budget: 4_000_000 }]).over, false);
@@ -12,9 +12,8 @@ test("tiến độ và tỷ lệ", () => {
   assert.equal(goalProgress({ targetValue: 0, currentValue: 5 }), 0);
   assert.equal(campaignProgress({ targetValue: 300 }, [], { achievedValue: 64 }), 21);
   assert.equal(campaignProgress({ targetValue: null }, [{ targetValue: 100, currentValue: 50 }, { targetValue: 100, currentValue: 100 }]), 75);
-  assert.equal(roas(146_280_000, 2_720_000), 53.78);
-  assert.equal(roas(0, 100), null);
-  assert.equal(conversionRate(41, 64), 64.1);
+  assert.equal(costPerLead(5_900_000, 64), 92_188);
+  assert.equal(costPerLead(0, 64), null);
 });
 
 test("overlapsMonth theo khoảng ngày", () => {

@@ -4,7 +4,6 @@
 import { eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { campaignRepo } from "@/lib/campaigns/repository";
-import { catalogRepo } from "@/lib/catalog/repository";
 import { getAdGuardrails } from "@/lib/queries";
 import { recordDecision } from "@/lib/router";
 import { logActivity } from "@/lib/activity";
@@ -52,12 +51,6 @@ function matchesMessage(c: Condition, text: string): { ok: boolean; reason: stri
   }
 }
 
-function priceReply(): string | undefined {
-  const products = catalogRepo.listProducts().filter((p) => p.price > 0);
-  if (!products.length) return undefined;
-  const list = products.slice(0, 5).map((p) => `${p.name}: ${p.price.toLocaleString("vi-VN")} ₫/${p.unit}`).join("; ");
-  return `Dạ bảng giá hiện tại: ${list}. Anh/chị cho em xin số điện thoại để tư vấn kỹ hơn ạ.`;
-}
 
 // Chạy quy tắc "khi khách nhắn tin". Dry-run = chỉ tính, không ghi (dùng cho nút "Thử với tin nhắn").
 export function evaluateMessage(text: string, ctx: { leadId?: string; leadName?: string; dryRun?: boolean } = {}): MessageOutcome {
@@ -80,14 +73,12 @@ export function evaluateMessage(text: string, ctx: { leadId?: string; leadName?:
         message += " Trả lời bằng câu chuẩn.";
         stop = true;
         break;
-      case "reply_price": {
-        const r = priceReply();
-        if (!r) continue;
-        out.autoReply = out.autoReply ?? r;
-        message += " Trả lời bảng giá.";
+      case "reply_price":
+        // Quy tắc cũ "trả lời bảng giá": hệ thống chỉ làm marketing (OWNER 25/10/2026), không báo giá → chuyển người tư vấn
+        out.needsHuman = true;
+        message += " Khách hỏi giá → chuyển người tư vấn (hệ thống không báo giá).";
         stop = true;
         break;
-      }
       case "mark_needs_human":
         out.needsHuman = true;
         message += " Chuyển người xử lý.";

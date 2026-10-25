@@ -11,7 +11,7 @@ export type ChannelGoalStatus = "planned" | "active" | "paused" | "done" | "erro
 
 // Các loại thực thể có thể gắn vào chiến dịch. Tên khớp với hệ ID dùng chung của hệ thống
 // (insight_id, content_id, asset_id, video_id, approval_id, publication_id, ad_id, lead_id,
-// automation_run_id, order_id, revenue_id).
+// automation_run_id). Chỉ marketing (OWNER 25/10/2026): không còn order / revenue.
 export type LinkedEntityType =
   | "insight"
   | "content"
@@ -21,9 +21,7 @@ export type LinkedEntityType =
   | "publication"
   | "ad"
   | "lead"
-  | "automation_run"
-  | "order"
-  | "revenue";
+  | "automation_run";
 
 export type ApprovalType = "campaign_change" | "channel_goal" | "content" | "video" | "schedule" | "budget" | "automation";
 export type ApprovalStatus = "pending" | "approved" | "rejected";
@@ -107,14 +105,11 @@ export interface CampaignApproval {
   note: string;
 }
 
-// Kết quả tổng của chiến dịch. Giai đoạn này là số liệu mẫu; sau này Báo cáo tổng hợp từ
-// bài đăng, quảng cáo, lead và đơn hàng thật.
+// Kết quả tổng của chiến dịch (marketing): lead + chi phí; số mẫu khi chưa có số thật.
 export interface CampaignResult {
   campaignId: string;
   achievedValue: number; // giá trị đạt được của mục tiêu chung
   leads: number;
-  orders: number;
-  revenue: number;
   spent: number;
   updatedAt: string;
   source: "sample" | "system" | "mixed"; // mixed = có số thật nhưng vài trường vẫn lấy từ bản mẫu

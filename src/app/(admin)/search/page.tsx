@@ -47,8 +47,6 @@ function search(q: string): { group: string; hits: Hit[] }[] {
   const insights = getDb().select().from(schema.insights).all().filter((i) => has(i.title, i.detail, i.source)).map<Hit>((i) => ({ title: i.title, sub: i.source, href: "/insights#insights", tag: `tin cậy ${i.confidence}%` }));
   if (insights.length) groups.push({ group: "Insight", hits: insights });
 
-  const products = catalogRepo.listProducts(true).filter((p) => has(p.name, p.brand, p.description)).map<Hit>((p) => ({ title: p.name, sub: `${p.brand}${p.price ? ` · ${p.price.toLocaleString("vi-VN")} ₫/${p.unit}` : ""}`, href: `/settings?product=${p.id}#products`, tag: "Sản phẩm" }));
-  if (products.length) groups.push({ group: "Sản phẩm", hits: products });
 
   const people = catalogRepo.listPeople(true).filter((p) => has(p.name, p.role, p.email)).map<Hit>((p) => ({ title: p.name, sub: p.role, href: `/settings?person=${p.id}#people`, tag: "Nhân sự" }));
   if (people.length) groups.push({ group: "Nhân sự", hits: people });

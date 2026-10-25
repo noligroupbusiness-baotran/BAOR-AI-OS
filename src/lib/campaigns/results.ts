@@ -1,4 +1,4 @@
-// Hàm tính toán thuần cho Chiến dịch: tiến độ, kiểm tra ngân sách, ROAS, cảnh báo.
+// Hàm tính toán thuần cho Chiến dịch: tiến độ, kiểm tra ngân sách, chi phí / lead, cảnh báo.
 // Không truy cập CSDL để dễ kiểm thử và dùng lại ở cả máy chủ lẫn trình duyệt.
 import { channelDef } from "@/config/channels";
 import type { Campaign, CampaignResult, ChannelGoal, NewChannelGoalInput } from "./types";
@@ -33,16 +33,6 @@ export interface BudgetCheck {
 export function checkBudget(totalBudget: number, goals: Pick<NewChannelGoalInput, "budget">[]): BudgetCheck {
   const allocated = goals.reduce((n, g) => n + (Number.isFinite(g.budget) ? g.budget : 0), 0);
   return { total: totalBudget, allocated, remaining: totalBudget - allocated, over: allocated > totalBudget };
-}
-
-export function roas(revenue: number, spent: number): number | null {
-  if (spent <= 0 || revenue <= 0) return null;
-  return Math.round((revenue / spent) * 100) / 100;
-}
-
-export function conversionRate(orders: number, leads: number): number | null {
-  if (leads <= 0) return null;
-  return Math.round((orders / leads) * 1000) / 10;
 }
 
 export function costPerLead(spent: number, leads: number): number | null {

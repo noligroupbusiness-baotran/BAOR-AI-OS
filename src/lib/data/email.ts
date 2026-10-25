@@ -32,7 +32,7 @@ export const emailSequences: EmailSequence[] = [
   {
     id: "es3",
     name: "Sau mua: hướng dẫn & nhắc mua lại",
-    trigger: "Đơn hàng hoàn tất",
+    trigger: "Lead chuyển đổi",
     steps: 6,
     active: true,
     subscribers: 1520,

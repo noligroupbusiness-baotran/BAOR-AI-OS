@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Check } from "lucide-react";
 import { CHANNELS, METRICS, channelDef, channelLabel, executionLabel, metricLabel, metricUnit, type ChannelKey, type ExecutionType, type MetricKey } from "@/config/channels";
 import { checkBudget, isValidDateRange } from "@/lib/campaigns/results";
-import type { Person, PlatformAccount, Product } from "@/lib/campaigns/types";
+import type { Person, PlatformAccount } from "@/lib/campaigns/types";
 import { createCampaignAction, type CreateCampaignState } from "@/lib/actions/campaigns";
 import { Button } from "@/components/ui/button";
 import { Field, FormNotice, inputClass, textareaClass } from "@/components/ui/field";
@@ -32,7 +32,6 @@ interface GoalDraft {
 
 interface Props {
   people: Person[];
-  products: Product[];
   accounts: PlatformAccount[];
   idem: string;
   defaultStart: string;
@@ -48,7 +47,7 @@ const emptyGoal = (ownerId: string, start: string, end: string): GoalDraft => {
   return { key: `${Date.now()}`, channel: def.key, accountId: def.integrationKey ?? "", executionType: def.executionTypes[0], objective: "", primaryMetric: def.metrics[0], targetValue: "", budget: "", ownerId, startDate: start, endDate: end };
 };
 
-export function CampaignWizard({ people, products, accounts, idem, defaultStart, defaultEnd }: Props) {
+export function CampaignWizard({ people, accounts, idem, defaultStart, defaultEnd }: Props) {
   const [step, setStep] = useState(0);
   const [stepError, setStepError] = useState<string | null>(null);
   const [state, formAction] = useActionState<CreateCampaignState, FormData>(createCampaignAction, {});
@@ -59,7 +58,6 @@ export function CampaignWizard({ people, products, accounts, idem, defaultStart,
   const [targetMetric, setTargetMetric] = useState("");
   const [targetValue, setTargetValue] = useState("");
   const [description, setDescription] = useState("");
-  const [productIds, setProductIds] = useState<string[]>([]);
   const [audience, setAudience] = useState("");
   const [location, setLocation] = useState("");
   const [ownerId, setOwnerId] = useState(people[0]?.id ?? "");
@@ -83,7 +81,7 @@ export function CampaignWizard({ people, products, accounts, idem, defaultStart,
         targetMetric,
         targetValue: targetValue === "" ? null : money(targetValue),
         description,
-        productIds,
+        productIds: [],
         audience,
         location,
         ownerId,
@@ -93,14 +91,13 @@ export function CampaignWizard({ people, products, accounts, idem, defaultStart,
         budgetNote,
         goals: goals.map((g) => ({ ...g, targetValue: money(g.targetValue), budget: money(g.budget), accountId: g.accountId || null })),
       }),
-    [name, objective, targetMetric, targetValue, description, productIds, audience, location, ownerId, startDate, endDate, totalBudget, budgetNote, goals],
+    [name, objective, targetMetric, targetValue, description, audience, location, ownerId, startDate, endDate, totalBudget, budgetNote, goals],
   );
 
   const validateStep = (s: number): string | null => {
     if (s === 0) {
       if (!name.trim()) return "Cần nhập tên chiến dịch.";
       if (!objective.trim()) return "Cần nhập mục tiêu chung.";
-      if (productIds.length === 0) return "Cần chọn ít nhất một sản phẩm hoặc dịch vụ.";
       if (!ownerId) return "Cần chọn người quản lý.";
     }
     if (s === 1) {
@@ -183,26 +180,8 @@ export function CampaignWizard({ people, products, accounts, idem, defaultStart,
             <input inputMode="numeric" value={targetValue} onChange={(e) => setTargetValue(e.target.value)} className={inputClass} placeholder="VD: 300" />
           </Field>
           <Field label="Mô tả" className="md:col-span-2">
-            <textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} className={textareaClass} placeholder="Cách tiếp cận, lý do chọn sản phẩm đầu vào, điểm cần lưu ý." />
+            <textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} className={textareaClass} placeholder="Cách tiếp cận, thông điệp chính, điểm cần lưu ý." />
           </Field>
-          <div className="md:col-span-2">
-            <span className="lbl flex items-center gap-1">Sản phẩm hoặc dịch vụ <span className="text-brick" aria-hidden>*</span></span>
-            <p className="mt-0.5 text-[11.5px] text-ink-3">Giá lấy từ danh mục trong Cài đặt, AI không tự đặt giá.</p>
-            <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
-              {products.map((p) => {
-                const on = productIds.includes(p.id);
-                return (
-                  <label key={p.id} className={cn("flex cursor-pointer items-start gap-2.5 rounded-md border px-3 py-2 text-[12.5px]", on ? "border-jade bg-jade-soft/40" : "border-border hover:border-ink-3")}>
-                    <input type="checkbox" checked={on} onChange={(e) => setProductIds((ids) => (e.target.checked ? [...ids, p.id] : ids.filter((x) => x !== p.id)))} className="mt-0.5 accent-[var(--jade)]" />
-                    <span className="min-w-0">
-                      <span className="block font-semibold text-ink">{p.name}</span>
-                      <span className="block text-ink-2">{p.brand}{p.price > 0 ? ` · ${formatCurrency(p.price)}/${p.unit}` : ""}</span>
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-          </div>
           <Field label="Nhóm khách hàng mục tiêu">
             <input value={audience} onChange={(e) => setAudience(e.target.value)} className={inputClass} placeholder="VD: Nữ 25–35 tuổi, nhân viên văn phòng" />
           </Field>
@@ -363,7 +342,6 @@ export function CampaignWizard({ people, products, accounts, idem, defaultStart,
               <Review label="Tên chiến dịch" value={name} />
               <Review label="Người quản lý" value={people.find((p) => p.id === ownerId)?.name ?? "—"} />
               <Review label="Mục tiêu chung" value={objective + (targetValue ? ` (${formatNumber(money(targetValue))} ${targetMetric})` : "")} wide />
-              <Review label="Sản phẩm / dịch vụ" value={productIds.map((id) => products.find((p) => p.id === id)?.name ?? id).join(", ")} wide />
               <Review label="Khách hàng mục tiêu" value={audience || "—"} />
               <Review label="Khu vực" value={location || "—"} />
               <Review label="Thời gian" value={`${startDate} → ${endDate}`} />

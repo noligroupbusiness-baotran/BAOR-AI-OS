@@ -41,7 +41,6 @@ export default async function CampaignDetailPage({ params, searchParams }: { par
   const goals = campaignRepo.goals(id);
   const result = campaignRepo.result(id) ?? null;
   const people = campaignRepo.people();
-  const products = campaignRepo.products();
   const accounts = campaignRepo.accounts();
   const approvals = campaignRepo.approvals(id);
   const pendingCount = approvals.filter((a) => a.status === "pending").length;
@@ -105,8 +104,8 @@ export default async function CampaignDetailPage({ params, searchParams }: { par
         {tab === "activity" && <LinkButton href={`/content?campaign=${id}`} variant="ghost" className="ml-auto">Mở Nội dung trong ngữ cảnh chiến dịch</LinkButton>}
       </div>
 
-      {editingGeneral && <CampaignEditForm campaign={campaign} people={people} products={products} allocated={checkBudget(campaign.totalBudget, goals).allocated} idem={`${idem}_edit`} />}
-      {tab === "overview" && !editingGeneral && <OverviewTab campaign={campaign} goals={goals} result={result} people={people} products={products} alerts={alerts} logs={logs} />}
+      {editingGeneral && <CampaignEditForm campaign={campaign} people={people} allocated={checkBudget(campaign.totalBudget, goals).allocated} idem={`${idem}_edit`} />}
+      {tab === "overview" && !editingGeneral && <OverviewTab campaign={campaign} goals={goals} result={result} people={people} alerts={alerts} logs={logs} />}
       {tab === "goals" && <GoalsTab campaign={campaign} goals={goals} people={people} accounts={accounts} add={sp.add === "1"} edit={sp.edit} idem={idem} />}
       {tab === "activity" && <ActivityTab campaign={campaign} goals={goals} goalFilter={sp.goal?.trim() || null} />}
       {tab === "approvals" && <ApprovalsTab approvals={approvals} goals={goals} />}

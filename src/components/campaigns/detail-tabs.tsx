@@ -11,8 +11,8 @@ import { inputClass } from "@/components/ui/field";
 import { campaignRepo, type ResolvedLink } from "@/lib/campaigns/repository";
 import { approvalTypeLabel, entityTypeLabel } from "@/lib/campaigns/labels";
 import { entityHref } from "@/lib/campaigns/context";
-import { campaignProgress, checkBudget, conversionRate, costPerLead, goalProgress, roas } from "@/lib/campaigns/results";
-import type { Campaign, CampaignApproval, CampaignLog, CampaignResult, ChannelGoal, LinkedEntityType, Person, PlatformAccount, Product } from "@/lib/campaigns/types";
+import { campaignProgress, checkBudget, costPerLead, goalProgress } from "@/lib/campaigns/results";
+import type { Campaign, CampaignApproval, CampaignLog, CampaignResult, ChannelGoal, LinkedEntityType, Person, PlatformAccount } from "@/lib/campaigns/types";
 import { pauseChannelGoal, resumeChannelGoal } from "@/lib/actions/campaigns";
 import { formatCurrency, formatDate, formatDateTime, formatNumber, cn } from "@/lib/format";
 import { AccountPill, ApprovalStatusPill, GoalStatusPill } from "./status";
@@ -22,7 +22,7 @@ import { ConfirmAction } from "./confirm-action";
 const personName = (people: Person[], id: string | null) => people.find((p) => p.id === id)?.name ?? "Chưa phân công";
 
 // ---------- Tab 1: Tổng quan ----------
-export function OverviewTab({ campaign, goals, result, people, products, alerts, logs }: { campaign: Campaign; goals: ChannelGoal[]; result: CampaignResult | null; people: Person[]; products: Product[]; alerts: string[]; logs: CampaignLog[] }) {
+export function OverviewTab({ campaign, goals, result, people, alerts, logs }: { campaign: Campaign; goals: ChannelGoal[]; result: CampaignResult | null; people: Person[]; alerts: string[]; logs: CampaignLog[] }) {
   const progress = campaignProgress(campaign, goals, result);
   const budget = checkBudget(campaign.totalBudget, goals);
   const spent = goals.reduce((n, g) => n + g.spent, 0);
@@ -41,7 +41,6 @@ export function OverviewTab({ campaign, goals, result, people, products, alerts,
             <ProgressBar value={progress} className="mt-1" label="Tiến độ chung" />
           </div>
           <dl className="grid gap-x-6 gap-y-2.5 border-t border-border px-4 py-3 text-[13px] sm:grid-cols-2">
-            <Info label="Sản phẩm / dịch vụ" value={campaign.productIds.map((id) => products.find((p) => p.id === id)).filter(Boolean).map((p) => `${p!.name}${p!.price ? ` (${formatCurrency(p!.price)})` : ""}`).join(", ") || "—"} />
             <Info label="Khách hàng mục tiêu" value={campaign.audience || "—"} />
             <Info label="Khu vực" value={campaign.location || "—"} />
             <Info label="Thời gian" value={`${formatDate(campaign.startDate)} – ${formatDate(campaign.endDate)}`} />
@@ -295,24 +294,16 @@ export function ResultsTab({ campaign, goals, result }: { campaign: Campaign; go
   const progress = campaignProgress(campaign, goals, result);
   const spent = result?.spent ?? goals.reduce((n, g) => n + g.spent, 0);
   const leads = result?.leads ?? 0;
-  const orders = result?.orders ?? 0;
-  const revenue = result?.revenue ?? 0;
-  const conv = conversionRate(orders, leads);
-  const r = roas(revenue, spent);
   const cpl = costPerLead(spent, leads);
   const hasAny = !!result || goals.some((g) => g.currentValue > 0);
   if (!hasAny) {
     return (
-      <div className="card mt-3.5"><EmptyState title="Chưa có kết quả" hint="Kết quả xuất hiện khi mục tiêu kênh có số liệu từ bài đăng, quảng cáo, lead và đơn hàng." /></div>
+      <div className="card mt-3.5"><EmptyState title="Chưa có kết quả" hint="Kết quả xuất hiện khi mục tiêu kênh có số liệu từ bài đăng, quảng cáo và lead." /></div>
     );
   }
   const rows: { label: string; value: string; note?: string }[] = [
     { label: "Lead", value: formatNumber(leads), note: cpl ? `Chi phí / lead ${formatCurrency(cpl)}` : undefined },
-    { label: "Đơn hàng", value: formatNumber(orders) },
-    { label: "Doanh thu", value: formatCurrency(revenue) },
     { label: "Chi phí", value: formatCurrency(spent), note: `Ngân sách ${formatCurrency(campaign.totalBudget)}` },
-    { label: "Tỷ lệ chuyển đổi", value: conv === null ? "—" : `${conv}%`, note: conv === null ? "Chưa có lead" : "Đơn hàng / lead" },
-    { label: "ROAS", value: r === null ? "—" : `${r}x`, note: r === null ? "Chưa đủ dữ liệu doanh thu và chi phí" : "Doanh thu / chi phí" },
   ];
   return (
     <>

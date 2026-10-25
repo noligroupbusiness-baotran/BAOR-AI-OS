@@ -2,7 +2,6 @@
 // AI chỉ được gọi khi người bấm "AI nhận xét" và có khóa; mọi thứ ở đây chạy không cần AI.
 import { desc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
-import type { Product } from "@/lib/campaigns/types";
 
 export interface CompetitorChannel {
   platform: string;
@@ -108,44 +107,6 @@ export function similarity(a: string, b: string): number {
   return common / Math.min(ta.size, tb.size);
 }
 
-export interface PriceRow {
-  product: Product;
-  competitor: Competitor;
-  offer: CompetitorOffer;
-  match: number;
-  /** Chênh lệch giá của mình so với đối thủ (%): dương = mình đắt hơn. */
-  diffPct: number;
-  verdict: "cheaper" | "similar" | "pricier";
-}
-
-/** Ghép sản phẩm của mình với gói tương đương của từng đối thủ (khớp tên ≥ ngưỡng), tính chênh lệch %. */
-export function priceComparison(products: Product[], competitors: Competitor[], threshold = 0.5): PriceRow[] {
-  const rows: PriceRow[] = [];
-  for (const p of products) {
-    if (!p.price) continue;
-    for (const c of competitors) {
-      if (c.brand && p.brand && c.brand !== p.brand) continue;
-      let best: { offer: CompetitorOffer; match: number } | null = null;
-      for (const o of c.offers) {
-        const m = similarity(p.name, o.name);
-        if (m >= threshold && (!best || m > best.match)) best = { offer: o, match: m };
-      }
-      if (!best || !best.offer.price) continue;
-      const diffPct = Math.round(((p.price - best.offer.price) / best.offer.price) * 100);
-      rows.push({ product: p, competitor: c, offer: best.offer, match: best.match, diffPct, verdict: diffPct <= -10 ? "cheaper" : diffPct >= 10 ? "pricier" : "similar" });
-    }
-  }
-  return rows.sort((a, b) => a.product.name.localeCompare(b.product.name, "vi") || b.match - a.match);
-}
-
-/** Tóm tắt theo luật để hiện trên đầu bảng và đưa cho AI làm ngữ cảnh. */
-export function competitorSummary(rows: PriceRow[]): { cheaper: number; similar: number; pricier: number; text: string } {
-  const cheaper = rows.filter((r) => r.verdict === "cheaper").length;
-  const similar = rows.filter((r) => r.verdict === "similar").length;
-  const pricier = rows.filter((r) => r.verdict === "pricier").length;
-  const text = rows.length ? `${rows.length} cặp so sánh: ${cheaper} rẻ hơn đối thủ, ${similar} ngang giá, ${pricier} đắt hơn.` : "Chưa có gói đối thủ nào khớp tên với sản phẩm của bạn.";
-  return { cheaper, similar, pricier, text };
-}
 
 // Đọc danh sách "tên | giá | đơn vị" mỗi dòng từ ô nhập.
 export function parseOffers(text: string): CompetitorOffer[] {

@@ -7,7 +7,6 @@ import { campaignStatusLabel } from "@/lib/campaigns/labels";
 import { channelLabel } from "@/config/channels";
 import { getHealth } from "@/lib/shell-data";
 import { listDecisions, recordDecision } from "@/lib/router";
-import { listOrders } from "@/lib/orders/repository";
 import { listLeads } from "@/lib/queries";
 import { formatCurrency, formatNumber, dateKey } from "@/lib/format";
 
@@ -26,7 +25,7 @@ export function systemSnapshot(): string {
   const camps = campaignRepo.list().filter((c) => c.status !== "draft").map((c) => {
     const goals = campaignRepo.goals(c.id);
     const r = campaignRepo.result(c.id);
-    return `- ${c.name} [${campaignStatusLabel[c.status].label}] ${c.startDate}→${c.endDate}, ngân sách ${formatCurrency(c.totalBudget)}, tiến độ ${campaignProgress(c, goals, r ?? null)}%; kênh: ${goals.map((g) => `${channelLabel(g.channel)} ${goalProgress(g)}% (${formatNumber(g.currentValue)}/${formatNumber(g.targetValue)})`).join(", ") || "chưa có"}; lead ${r?.leads ?? 0}, đơn ${r?.orders ?? 0}, doanh thu ${formatCurrency(r?.revenue ?? 0)}, chi ${formatCurrency(r?.spent ?? 0)}`;
+    return `- ${c.name} [${campaignStatusLabel[c.status].label}] ${c.startDate}→${c.endDate}, ngân sách ${formatCurrency(c.totalBudget)}, tiến độ ${campaignProgress(c, goals, r ?? null)}%; kênh: ${goals.map((g) => `${channelLabel(g.channel)} ${goalProgress(g)}% (${formatNumber(g.currentValue)}/${formatNumber(g.targetValue)})`).join(", ") || "chưa có"}; lead ${r?.leads ?? 0}, chi ${formatCurrency(r?.spent ?? 0)}`;
   });
   const h = getHealth();
   const sched = getTodaySchedule(6);
@@ -80,23 +79,15 @@ export function answerByRule(question: string): AssistantAnswer | null {
     const leads = listLeads();
     const todayLeads = leads.filter((l) => dateKey(l.lastMessageAt) === today);
     const need = leads.filter((l) => l.stage === "new" || l.stage === "contacted").length;
-    return { text: `Hôm nay có ${todayLeads.length} lead mới${todayLeads.length ? `: ${todayLeads.slice(0, 5).map((l) => `${l.name}${l.phone ? ` (${l.phone})` : ""}`).join(", ")}` : ""}. Tổng ${leads.length} lead, ${need} đang cần chăm sóc, ${leads.filter((l) => l.stage === "won").length} đã mua.`, lane: "rule", sources: ["Khách hàng › Lead"] };
+    return { text: `Hôm nay có ${todayLeads.length} lead mới${todayLeads.length ? `: ${todayLeads.slice(0, 5).map((l) => `${l.name}${l.phone ? ` (${l.phone})` : ""}`).join(", ")}` : ""}. Tổng ${leads.length} lead, ${need} đang cần chăm sóc.`, lane: "rule", sources: ["Khách hàng › Lead"] };
   }
 
-  if (has("doanh thu", "bán được", "đơn hàng", "roas")) {
-    const orders = listOrders();
-    const paid = orders.filter((o) => o.status === "paid");
-    const rev = paid.reduce((n, o) => n + o.total, 0);
-    const byC = new Map<string, number>();
-    for (const o of paid) byC.set(o.campaignName ?? "Chưa gắn chiến dịch", (byC.get(o.campaignName ?? "Chưa gắn chiến dịch") ?? 0) + o.total);
-    return { text: `Doanh thu đã thanh toán: ${formatCurrency(rev)} từ ${paid.length} đơn (${orders.filter((o) => o.status === "new").length} đơn chờ thanh toán).\n${[...byC.entries()].map(([k, v]) => `- ${k}: ${formatCurrency(v)}`).join("\n")}`, lane: "rule", sources: ["Khách hàng › Đơn hàng", "Báo cáo › Đơn hàng và doanh thu"] };
-  }
 
   if (has("chiến dịch nào", "đang chạy", "tình hình chiến dịch", "tổng quan chiến dịch")) {
     const rows = campaignRepo.list().filter((c) => c.status !== "draft").map((c) => {
       const goals = campaignRepo.goals(c.id);
       const r = campaignRepo.result(c.id);
-      return `- ${c.name}: ${campaignStatusLabel[c.status].label}, tiến độ ${campaignProgress(c, goals, r ?? null)}%, ${r?.leads ?? 0} lead, ${formatCurrency(r?.revenue ?? 0)} doanh thu`;
+      return `- ${c.name}: ${campaignStatusLabel[c.status].label}, tiến độ ${campaignProgress(c, goals, r ?? null)}%, ${r?.leads ?? 0} lead`;
     });
     return { text: rows.length ? `Các chiến dịch:\n${rows.join("\n")}` : "Chưa có chiến dịch nào ngoài bản nháp.", lane: "rule", sources: ["Chiến dịch"] };
   }

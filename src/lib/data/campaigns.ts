@@ -79,7 +79,7 @@ export const campaigns: Campaign[] = [
     name: "Sale 9.9 BAOR Skincare",
     description: "Tuần khuyến mãi 9.9: đẩy combo 3 bước cho khách đã tương tác với fanpage.",
     objective: "Bán 500 combo 3 bước trong tuần Sale 9.9",
-    targetMetric: "đơn hàng",
+    targetMetric: "lead",
     targetValue: 500,
     productIds: ["pr_combo3", "pr_serum"],
     audience: "Nữ 25–40 tuổi, đã tương tác với fanpage hoặc từng inbox",
@@ -145,7 +145,7 @@ export const linkedRows: {
     { id: "ct_md1", title: "Gội dưỡng sinh 39K: 45 phút nhắm mắt sau giờ làm", format: "reel", status: "in_progress", insightId: "i_md1", pillar: "Trải nghiệm", hook: "45 phút nhắm mắt, 39.000 đồng, hết mỏi vai gáy.", outline: ["Cảnh khách bước vào sau giờ làm", "Quy trình gội 5 bước", "Khách thở phào", "CTA đặt lịch"], draft: "Kịch bản: mở đầu bằng cảnh tan làm 17:30, khách ghé spa...", assignee: "human", createdAt: "2026-09-08T10:00:00+07:00", score: 84 },
     { id: "ct_md2", title: "Gội dưỡng sinh 39K: vì sao rẻ mà không ẩu", format: "post", status: "review", insightId: "i_md1", pillar: "Niềm tin", hook: "Rẻ không có nghĩa là làm cho xong.", outline: ["Vì sao chọn giá 39K", "Quy trình chuẩn 5 bước", "Cam kết thời gian tối thiểu 40 phút"], draft: "Nhiều chị hỏi vì sao gội dưỡng sinh ở Mộc Diệp chỉ 39.000 đồng...", assignee: "human", createdAt: "2026-09-09T09:00:00+07:00", score: 79 },
     { id: "ct_md3", title: "Khách văn phòng Bến Tre nói gì sau lượt gội đầu tiên", format: "reel", status: "approved", insightId: "i_md1", pillar: "Bằng chứng", hook: "Không kịch bản. Chỉ hỏi một câu: chị thấy sao?", outline: ["3 khách trả lời sau khi gội", "Cảnh quầy lễ tân", "CTA đăng ký 39K"], draft: "Phỏng vấn ngắn 3 khách...", assignee: "human", scheduledFor: "2026-10-03T19:00:00+07:00", createdAt: "2026-09-07T09:00:00+07:00", score: 88 },
-    { id: "ct_rec1", title: "Một ngày của Seller Noli Sales", format: "reel", status: "proposed", insightId: "i_rec1", pillar: "Văn hóa đội ngũ", hook: "8h sáng đến 6h chiều của một Seller, không cắt ghép.", outline: ["Sáng: họp nhóm", "Trưa: gọi khách", "Chiều: chốt đơn đầu tiên", "Lộ trình lên Closer"], assignee: "ai", createdAt: "2026-09-09T15:00:00+07:00", score: 80 },
+    { id: "ct_rec1", title: "Một ngày của Seller Noli Sales", format: "reel", status: "proposed", insightId: "i_rec1", pillar: "Văn hóa đội ngũ", hook: "8h sáng đến 6h chiều của một Seller, không cắt ghép.", outline: ["Sáng: họp nhóm", "Trưa: gọi khách", "Chiều: khách hàng đầu tiên", "Lộ trình lên Closer"], assignee: "ai", createdAt: "2026-09-09T15:00:00+07:00", score: 80 },
     { id: "ct_care1", title: "Email 1: Cảm ơn và ưu đãi quay lại", format: "article", status: "in_progress", insightId: "", pillar: "Chăm sóc", hook: "Cảm ơn chị đã đồng hành cùng Noli Sales.", outline: ["Cảm ơn", "Ưu đãi thành viên", "Nút đặt lại"], draft: "Chào chị, cảm ơn chị đã tin tưởng...", assignee: "human", createdAt: "2026-09-08T11:00:00+07:00", score: 70 },
   ],
   posts: [
@@ -220,11 +220,11 @@ export const campaignApprovals: CampaignApproval[] = [
 ];
 
 export const campaignResults: CampaignResult[] = [
-  { campaignId: "cp_mocdiep_t10", achievedValue: 64, leads: 64, orders: 41, revenue: 5799000, spent: 5900000, updatedAt: "2026-09-10T08:00:00+07:00", source: "sample" },
-  { campaignId: "cp_sale99", achievedValue: 212, leads: 95, orders: 212, revenue: 146280000, spent: 2720000, updatedAt: "2026-09-10T06:00:00+07:00", source: "sample" },
+  { campaignId: "cp_mocdiep_t10", achievedValue: 64, leads: 64, spent: 5900000, updatedAt: "2026-09-10T08:00:00+07:00", source: "sample" },
+  { campaignId: "cp_sale99", achievedValue: 95, leads: 95, spent: 2720000, updatedAt: "2026-09-10T06:00:00+07:00", source: "sample" },
 ];
 
-// Đơn hàng mẫu: gắn lead và chiến dịch bằng ID thật để tab Kết quả và Báo cáo có doanh thu.
+// Đơn hàng mẫu (cũ): không còn nạp — chỉ giữ id để "Xóa dữ liệu mẫu" dọn bản đã nạp trước đây (chỉ marketing, OWNER 25/10/2026).
 export const sampleOrders: { id: string; leadId: string; campaignId: string; channelGoalId: string | null; productId: string; quantity: number; status: "new" | "paid" | "cancelled"; note: string; createdAt: string }[] = [
   { id: "od_s99_1", leadId: "l4", campaignId: "cp_sale99", channelGoalId: "g_s99_email", productId: "pr_combo3", quantity: 1, status: "paid", note: "Đặt qua inbox sau email Sale 9.9", createdAt: "2026-09-08T10:15:00+07:00" },
   { id: "od_s99_2", leadId: "l1", campaignId: "cp_sale99", channelGoalId: "g_s99_fbads", productId: "pr_combo3", quantity: 2, status: "paid", note: "Mua tặng bạn", createdAt: "2026-09-09T20:00:00+07:00" },

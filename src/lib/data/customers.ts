@@ -127,7 +127,7 @@ export const autoReplyRules: AutoReplyRule[] = [
   {
     id: "ar1",
     trigger: "Hỏi giá / bao nhiêu tiền",
-    action: "Trả lời bảng giá + mời inbox, gắn tag 'hỏi giá'",
+    action: "Chuyển người tư vấn, gắn tag 'hỏi giá'",
     enabled: true,
     hits: 214,
   },

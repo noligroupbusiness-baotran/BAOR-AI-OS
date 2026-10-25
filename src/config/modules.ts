@@ -56,7 +56,6 @@ export const moduleGroups: Record<string, ModuleGroup[]> = {
     { name: "Phân Data", status: "active", href: "/customers?tab=segments" },
     { name: "Trạng thái chăm sóc", status: "active", href: "/customers?tab=inbox" },
     { name: "Lịch sử tương tác", status: "active", href: "/customers?tab=inbox" },
-    { name: "Đơn hàng", status: "active", href: "/customers?tab=orders" },
   ],
   automation: [
     { name: "Quy trình đang hoạt động", status: "active", href: "/automation?tab=active" },
@@ -71,10 +70,8 @@ export const moduleGroups: Record<string, ModuleGroup[]> = {
     { name: "Hiệu quả quảng cáo", status: "active", href: "/reports?tab=costs" },
     { name: "Lead", status: "active", href: "/reports?tab=leads" },
     { name: "Chuyển đổi", status: "active", href: "/reports?tab=overview" },
-    { name: "Doanh thu", status: "active", href: "/reports?tab=orders" },
   ],
   settings: [
-    { name: "Sản phẩm và bảng giá", status: "active", href: "/settings#products" },
     { name: "Nhận diện thương hiệu", status: "active", href: "/settings#brand" },
     { name: "Màu sắc, font chữ, khẩu hiệu", status: "active", href: "/settings#brand" },
     { name: "Logo giao diện quản trị", status: "active", href: "/settings#app-logo" },

@@ -99,7 +99,7 @@ export const automationSettings: AutomationSetting[] = [
   {
     key: "auto_reply",
     label: "Tự trả lời comment & inbox",
-    description: "AI trả lời theo quy tắc, chuyển người xử lý khi khiếu nại hoặc cần chốt đơn.",
+    description: "AI trả lời theo quy tắc, chuyển người xử lý khi khiếu nại hoặc khách hỏi giá.",
     enabled: true,
   },
   {

@@ -62,17 +62,11 @@ export function entityHref(type: LinkedEntityType, entityId: string, ctx: Partia
     case "lead":
       path = "/customers?tab=leads";
       break;
-    case "order":
-      path = "/customers";
-      break;
     case "automation_run":
       path = "/automation";
       break;
     case "approval":
       path = "/dashboard";
-      break;
-    case "revenue":
-      path = "/reports";
       break;
   }
   return withCampaignContext(path, ctx);

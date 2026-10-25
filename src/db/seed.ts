@@ -1,4 +1,4 @@
-import { and, count, eq, inArray, isNull } from "drizzle-orm";
+import { and, count, inArray, isNull } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "./schema";
 import { contentItems as seedContent, scheduledPosts as seedPosts } from "@/lib/data/content";
@@ -10,6 +10,7 @@ import { personas as seedPersonas, insights as seedInsights } from "@/lib/data/i
 import { platformResearch as seedResearch } from "@/lib/data/research";
 import { recentActivity } from "@/lib/data/pipeline";
 import { people as seedPeople } from "@/lib/data/people";
+// Sản phẩm / đơn hàng mẫu: không nạp nữa (chỉ marketing, OWNER 25/10/2026); danh sách id giữ để "Xóa dữ liệu mẫu" dọn bản cũ.
 import { products as seedProducts } from "@/lib/data/products";
 import { videos as seedVideos } from "@/lib/data/videos";
 import { competitors as seedCompetitors } from "@/lib/data/competitors";
@@ -121,17 +122,11 @@ export function seedAll(db: Db) {
   });
 }
 
-// Cài đặt (sản phẩm, nhân sự) và Video Studio: nạp khi bảng còn trống, kể cả CSDL đã có dữ liệu cũ.
+// Cài đặt (nhân sự) và Video Studio: nạp khi bảng còn trống, kể cả CSDL đã có dữ liệu cũ.
 export function seedCatalogIfEmpty(db: Db) {
   const [{ n }] = db.select({ n: count() }).from(schema.people).all();
   const [{ v }] = db.select({ v: count() }).from(schema.videos).all();
   if (!(n > 0 && v > 0)) db.transaction((tx) => seedCatalogData(tx));
-  // Đơn hàng mẫu cho CSDL đã nạp chiến dịch trước khi có bảng orders.
-  const [{ o }] = db.select({ o: count() }).from(schema.orders).all();
-  const [{ c }] = db.select({ c: count() }).from(schema.campaigns).all();
-  if (o === 0 && c > 0 && db.select().from(schema.campaigns).where(eq(schema.campaigns.id, "cp_sale99")).get()) {
-    db.transaction((tx) => seedOrdersData(tx));
-  }
   const [{ r }] = db.select({ r: count() }).from(schema.automationRules).all();
   if (r === 0) db.transaction((tx) => seedAutomationData(tx));
   const [{ cm }] = db.select({ cm: count() }).from(schema.competitors).all();
@@ -161,7 +156,6 @@ function seedAutomationData(tx: Pick<Db, "insert">) {
 
 function seedCatalogData(tx: Pick<Db, "insert">) {
   const now = "2026-09-10T08:00:00+07:00";
-  tx.insert(schema.products).values(seedProducts.map((p) => ({ ...p, active: true, updatedAt: now }))).onConflictDoNothing().run();
   tx.insert(schema.people).values(seedPeople.map((p) => ({ ...p, active: true, updatedAt: now }))).onConflictDoNothing().run();
   tx.insert(schema.videos).values(seedVideos.map((v) => ({ ...v, platforms: JSON.stringify(v.platforms) }))).onConflictDoNothing().run();
 }
@@ -180,28 +174,6 @@ export function seedCampaignsIfEmpty(db: Db) {
   });
 }
 
-function seedOrdersData(tx: Pick<Db, "insert">) {
-  const leadName = new Map([...seedLeads, ...linkedRows.leads].map((l) => [l.id, l.name]));
-  const productOf = new Map(seedProducts.map((p) => [p.id, p]));
-  tx.insert(schema.orders)
-    .values(
-      seedOrders.map((o) => {
-        const p = productOf.get(o.productId)!;
-        return { id: o.id, leadId: o.leadId, leadName: leadName.get(o.leadId) ?? "Khách", campaignId: o.campaignId, channelGoalId: o.channelGoalId, productId: o.productId, productName: p.name, quantity: o.quantity, unitPrice: p.price, total: p.price * o.quantity, status: o.status, note: o.note, createdBy: "seed", createdAt: o.createdAt, updatedAt: o.createdAt };
-      }),
-    )
-    .onConflictDoNothing()
-    .run();
-  tx.insert(schema.marketingLinks)
-    .values(
-      seedOrders.flatMap((o) => [
-        { id: `ml_${o.id}`, campaignId: o.campaignId, channelGoalId: o.channelGoalId, entityType: "order", entityId: o.id, status: o.status, ownerId: null, viaType: "lead", viaId: o.leadId, createdAt: o.createdAt },
-        ...(o.status === "paid" ? [{ id: `ml_${o.id}_rev`, campaignId: o.campaignId, channelGoalId: o.channelGoalId, entityType: "revenue", entityId: o.id, status: "paid", ownerId: null, viaType: "order", viaId: o.id, createdAt: o.createdAt }] : []),
-      ]),
-    )
-    .onConflictDoNothing()
-    .run();
-}
 
 // Chiến dịch mẫu + các bản ghi ở phân hệ khác mà chiến dịch liên kết tới (chỉ thêm khi chưa có).
 function seedCampaignData(tx: Pick<Db, "insert">) {
@@ -252,7 +224,6 @@ function seedCampaignData(tx: Pick<Db, "insert">) {
   tx.insert(schema.campaignApprovals).values(seedApprovals).onConflictDoNothing().run();
   tx.insert(schema.campaignResults).values(seedResults).onConflictDoNothing().run();
   tx.insert(schema.campaignLogs).values(seedCampaignLogs.map((l) => ({ ...l, idemKey: null }))).run();
-  seedOrdersData(tx);
 }
 
 // Chỉ xóa bản ghi mẫu (theo ID nạp ban đầu). Dữ liệu người dùng tự tạo được giữ nguyên.

@@ -8,7 +8,7 @@ import { getAdminEmail } from "@/lib/admin";
 import { automationSettings } from "@/lib/data/settings";
 import { cn } from "@/lib/format";
 import { BackupPanel } from "@/components/settings/backup-panel";
-import { PeoplePanel, ProductsPanel } from "@/components/settings/catalog-panels";
+import { PeoplePanel } from "@/components/settings/catalog-panels";
 import { AiBudgetPanel, IntegrationsPanel, SystemLogPanel } from "@/components/settings/integration-panels";
 import { AiTeamPanel } from "@/components/settings/ai-team-panel";
 import { SecondBrainPanel } from "@/components/settings/second-brain-panel";
@@ -21,7 +21,6 @@ import { MusicLibraryPanel } from "@/components/settings/music-library-panel";
 export const metadata = { title: "Cài đặt – BAOR AI OS" };
 
 const sections = [
-  { id: "products", label: "Sản phẩm" },
   { id: "faq", label: "Câu trả lời chuẩn" },
   { id: "people", label: "Nhân sự" },
   { id: "integrations", label: "Kết nối" },
@@ -40,15 +39,15 @@ const sections = [
 
 const input = "mt-1 h-8 w-full rounded-md border border-border-2 bg-surface px-2.5 text-[13px] text-ink outline-none focus-visible:outline-2 focus-visible:outline-jade";
 
-export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ product?: string; person?: string; faq?: string }> }) {
-  const { product, person, faq } = await searchParams;
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ person?: string; faq?: string }> }) {
+  const { person, faq } = await searchParams;
   const automation = getAutomation();
   const adminEmail = getAdminEmail();
 
   return (
     <>
       <Breadcrumb items={[{ label: "Điều hành", href: "/dashboard" }, { label: "Cài đặt hệ thống" }]} />
-      <PageHead title="Cài đặt hệ thống" sub="Nguồn dữ liệu chuẩn: sản phẩm và bảng giá, nhân sự, tài khoản nền tảng, thương hiệu, AI Agent." />
+      <PageHead title="Cài đặt hệ thống" sub="Nguồn dữ liệu chuẩn: nhân sự, tài khoản nền tảng, thương hiệu, AI Agent." />
 
       {/* Điều hướng theo mục: trang dài, nhảy thẳng tới khối cần chỉnh. Panel có scroll-mt nên không bị thanh trên che. */}
       <nav aria-label="Mục cài đặt" className="sticky top-[calc(var(--topbar-h)+8px)] z-30 -mx-1 mb-1 overflow-x-auto px-1">
@@ -61,7 +60,6 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         </ul>
       </nav>
 
-      <ProductsPanel editing={product} />
       <FaqPanel editing={faq} />
       <PeoplePanel editing={person} />
 
