@@ -1,0 +1,1 @@
+ALTER TABLE `scheduled_posts` ADD `target_page_id` text;

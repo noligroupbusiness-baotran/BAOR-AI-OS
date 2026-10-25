@@ -129,16 +129,21 @@ OWNER 25/10/2026 (tối): edit video LẠI ("edit lại đi") — lệnh "ngưng
    zoom lấp trống theo khoảng KHÔNG zoom (≥ 6 s từ lúc zoom trước bắt đầu). Bản 9: FS-06 + trích dẫn + 3 zoom + nhạc.
    CÒN: K1–K10 (CHƯA CHỐT — chờ OWNER #134a); giấy phép SFX OWNER CHƯA XÁC MINH;
    mô tả ảnh mới tải lên chưa có (ảnh mới rơi về tên tệp, có đánh dấu).
-3. Nợ đã ghi (không chặn): script_align "Lan"→"Lành" khi kịch bản viết hoa tên khác; negated_before dừng ở "thì" có thể sót
-   phủ định mệnh đề sau; mỗi video mới gọi mô hình ~6–8 phút; xoá video không lưu trữ góp ý video_comments (dòng mồ côi);
-   chống trùng cùng Page ID là kiểm-rồi-ghi (khoá unique CSDL vẫn theo kênh — cần khoá theo trang nếu chạy nhiều tiến trình);
-   Nghiên cứu bước 1 fallbacks:"default" → giá ghi theo model yêu cầu; TRƯỚC KHI BẬT ĐĂNG THẬT: chống trùng cùng Page ID đọc Page ID
-   HIỆN TẠI của kênh, không phải Page ID lúc đăng → sửa Page ID sau khi đăng có thể đăng trùng (lưu Page ID vào bài lúc lên lịch / đăng);
-   P3 phản biện 25/10: ?tab=approved redirect mất ?campaign=&goal=; deleteVideo chuyển tệp trước rồi mới xoá dòng (không transaction);
-   restorePrevPlan không trả tệp plan khi rerenderVideo NÉM lỗi; meterClient trả Promise thường (gọi .withResponse() qua cổng AI sẽ hỏng);
-   gắn tay chiến dịch đã kế thừa từ kịch bản bị bỏ qua (dòng vẫn mang dấu kế thừa → đổi kịch bản sẽ gỡ);
-   gắn lại kịch bản không gỡ liên kết chiến dịch kế thừa từ kịch bản cũ; E2E music-library chập chờn (1 lần đỏ, chạy lại xanh);
-   máy dựng: các P3 phản biện 9042beb; các P3 phản biện nghiên cứu (49c69ba).
+3. Nợ đã ghi (không chặn): mỗi video mới gọi mô hình ~6–8 phút; chống trùng cùng Page ID là kiểm-rồi-ghi (khoá unique CSDL vẫn theo
+   kênh — cần khoá theo trang nếu chạy nhiều tiến trình); TRƯỚC KHI BẬT ĐĂNG THẬT: lúc đăng chỉ cập nhật Page ID, chưa kiểm lại trùng
+   trang ngay trước khi gửi (Page ID đổi giữa lúc lên lịch và lúc đăng mà trỏ trúng trang đã có bài → vẫn có thể trùng);
+   phủ định còn sót (HEAD cũng sót): "đâu phải cứ … thì …", "có phải … đâu", "không phải ai … thì cũng …", "không bao giờ còn …";
+   script_align: tên ở mép lời nói / ngữ cảnh < 3 từ một phía không còn được sửa (đánh đổi chủ ý — chờ người nghe lại), đổi tên chỉ
+   khác dấu trong khối khớp dài ("Lan"→"Lân") vẫn có; Kho video chưa lọc theo ?campaign=&goal=; deleteVideo chuyển tệp trước rồi mới
+   xoá dòng (không transaction); gắn tay chiến dịch đã kế thừa từ kịch bản bị bỏ qua (dòng vẫn mang dấu kế thừa → đổi kịch bản sẽ gỡ);
+   meterClient dựa vào APIPromise._thenUnwrap (API gạch dưới của SDK 0.124 — test đỏ ngay nếu SDK đổi); ChatGPT / Grok chưa truyền
+   model thực chạy (tính theo model yêu cầu); E2E music-library chập chờn khi máy tải nặng; máy dựng: các P3 phản biện 9042beb;
+   các P3 phản biện nghiên cứu (49c69ba); restorePrevPlan: rerenderVideo ném lỗi SAU khi đã xếp bản dựng → trả tệp plan nhưng bản dựng
+   vẫn chạy với kế hoạch cũ (hiếm, không mất dữ liệu); bài đã có mã nền tảng trên trang nhập nhầm giữ khoá kênh vĩnh viễn (chưa có
+   nút gỡ); bài trước migration 0023 có target_page_id trống → tính theo cấu hình hiện tại.
+   ĐÃ DỌN 25/10 (commit kế): Page ID lưu trên bài lúc lên lịch / đăng (migration 0023), ?tab=approved giữ ngữ cảnh chiến dịch,
+   restorePrevPlan trả tệp khi rerender ném lỗi, meterClient giữ APIPromise, giá theo model thực chạy, script_align "Lan"→"Lành",
+   phủ định "không phải cứ … thì" / "chẳng còn", góp ý video_comments khi xoá, liên kết kế thừa khi đổi kịch bản.
 4. Sau mỗi nhóm được nghiệm thu: cập nhật docs/brand-engine/BAOR-BRAND-ENGINE-IMPLEMENTATION-PROGRESS.md (công thức chấm cố định, chỉ tính bằng chứng mới).
 <!-- NEXT:END -->
 

@@ -129,6 +129,26 @@ test("khôi phục kế hoạch AI trước: đổi tệp plan rồi dựng lạ
   assert.equal(db.getDb().select().from(db.schema.videos).where(eq(db.schema.videos.id, "v_plan")).get()!.status, "editing");
 });
 
+test("khôi phục kế hoạch: rerenderVideo NÉM lỗi (vd ghi việc dựng hỏng) → trả tệp plan về như cũ, báo lỗi, không mất bản cất", () => {
+  seedVideo("v_plan_throw", "review");
+  const d = path.join(tmp, "video-jobs", "v_plan_throw");
+  const human = { by: "Biên tập: OWNER", emphasis: [{ t: 1, text: "NGƯỜI" }], diagrams: [], broll: [] };
+  const ai = { by: "Biên tập AI tại máy (qwen)", emphasis: [{ t: 2, text: "AI" }], diagrams: [], broll: [] };
+  fs.writeFileSync(path.join(d, "plan.json"), JSON.stringify(ai));
+  const prevName = "plan.prev-2026-10-24T10-00-00-000Z.json";
+  fs.writeFileSync(path.join(d, prevName), JSON.stringify(human));
+  // Chỗ thư mục bản 2 bị một TỆP chiếm → writeJob (mkdir) ném lỗi bên trong rerenderVideo
+  fs.writeFileSync(path.join(d, "v2"), "chiếm chỗ");
+  let r: ReturnType<typeof jobs.restorePrevPlan> | undefined;
+  assert.doesNotThrow(() => {
+    r = jobs.restorePrevPlan("v_plan_throw", "OWNER");
+  }, "lỗi bên trong dựng lại không làm sập thao tác");
+  assert.equal(r?.ok, false);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(d, "plan.json"), "utf8")), ai, "kế hoạch đang dùng được trả về");
+  assert.deepEqual(jobs.planBackups("v_plan_throw"), [prevName], "bản cất trả về đúng chỗ, không thêm bản cất thừa");
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(d, prevName), "utf8")), human);
+});
+
 test("xoá video: góp ý theo mốc (video_comments), lịch sử phản hồi và liên kết chiến dịch được ghi vào records.json rồi gỡ khỏi bảng — không để dòng mồ côi", () => {
   seedVideo("v_cm", "review");
   const now = new Date().toISOString();

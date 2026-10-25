@@ -45,6 +45,9 @@ export const scheduledPosts = sqliteTable("scheduled_posts", {
   mode: text("mode").notNull().default("live"),
   /** Chống đăng trùng: một video chỉ một bài trên mỗi kênh (vd "facebook:v_abc"). */
   dedupeKey: text("dedupe_key").unique(),
+  /** Page ID Facebook đích của bài: lưu lúc lên lịch, cập nhật lúc gửi lệnh đăng. Chống trùng theo trang dùng giá trị này
+   *  (OWNER sửa Page ID kênh sau khi đã đăng thì bài cũ vẫn tính đúng trang cũ). null = kênh không phải Facebook / chưa có Page ID. */
+  targetPageId: text("target_page_id"),
 });
 
 export const adCampaigns = sqliteTable("ad_campaigns", {

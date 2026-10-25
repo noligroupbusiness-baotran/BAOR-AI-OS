@@ -6,7 +6,7 @@ import { getDb, schema } from "@/db";
 import { getBrand, listInsights, listPersonas } from "@/lib/queries";
 import { aiBudgetAllows, estimateCostVnd, recordAiCall, recordDecision } from "@/lib/router";
 import { roleAllows, roleForPurpose, roleSettings } from "@/lib/ai-roster";
-import { AI_MODELS, PROVIDERS, ProviderError, clientFor, modelCostVnd, modelInfo, providerConfigured, type AiProvider } from "@/lib/ai-providers";
+import { AI_MODELS, PROVIDERS, ProviderError, clientFor, modelCostVnd, modelInfo, providerConfigured, servedCost, type AiProvider } from "@/lib/ai-providers";
 import { sendAlert } from "@/lib/alerts";
 import { HOOK_COUNT, HOOK_PLATFORMS, hookContext, saveHooks } from "@/lib/content/hooks";
 import { buildCaption, buildPostTitle, captionDraft, captionSkill, postTitle, saveCaptionDraft, savePostTitle, setPostDraftSource } from "@/lib/publishing/caption";
@@ -33,7 +33,9 @@ export function aiConfiguredFor(purpose: string): { ok: boolean; provider: strin
 // nhãn "AI đề xuất, cần người duyệt". Mô hình (và hãng) do vị trí quyết định (Cài đặt › Đội AI), truyền vào call.
 // opts.provider: bước chỉ chạy được trên một hãng (Nghiên cứu bước tìm nguồn dùng công cụ web_search riêng của Claude) → nếu mô hình vị trí
 // thuộc hãng khác thì bước này dùng mô hình mặc định của hãng đó (công tắc, trần, sổ chi phí vẫn tính cho vị trí).
-export async function gate<T extends { usage?: { input_tokens: number; output_tokens: number } }>(purpose: string, subject: string, call: (client: Anthropic, model: string) => Promise<T>, opts: { provider?: AiProvider } = {}): Promise<Result<{ res: T; model: string }>> {
+// Kết quả: model = mô hình yêu cầu (vị trí chọn); servedModel = nhãn mô hình hãng THỰC SỰ chạy (response.model, kèm ghi chú nếu khác /
+// chưa có trong bảng giá) — đúng chuỗi ghi ở cột model của sổ ai_calls; costVnd = đúng số ₫ đã ghi sổ cho lần gọi này.
+export async function gate<T extends { usage?: { input_tokens: number; output_tokens: number } }>(purpose: string, subject: string, call: (client: Anthropic, model: string) => Promise<T>, opts: { provider?: AiProvider } = {}): Promise<Result<{ res: T; model: string; servedModel: string; costVnd: number }>> {
   const role = roleForPurpose(purpose);
   const allowed = roleAllows(role);
   if (!allowed.ok) {
@@ -53,23 +55,33 @@ export async function gate<T extends { usage?: { input_tokens: number; output_to
     void sendAlert({ level: "warn", title: "AI chạm trần chi phí", text: budget.reason, href: "/settings#ai" });
     return { ok: false, error: `${budget.reason} Nâng trần ở Cài đặt › Đội AI nếu cần.` };
   }
-  const meter = meterClient(client);
+  const meter = meterClient(client, model);
   try {
     const res = await call(meter.client, model);
-    // Ưu tiên tổng đồng hồ (mọi phản hồi hãng đã trả trong lần gọi); call không đi qua client (test giả) → usage nó trả về
-    const inputTokens = meter.used.responses > 0 ? meter.used.input : (res.usage?.input_tokens ?? 0);
-    const outputTokens = meter.used.responses > 0 ? meter.used.output : (res.usage?.output_tokens ?? 0);
-    const aiCallId = recordAiCall({ purpose, role: role.id, model, inputTokens, outputTokens, ok: true, costVnd: modelCostVnd(model, inputTokens, outputTokens) });
-    recordDecision({ lane: "ai", domain: purpose === "reply" ? "reply" : purpose === "research" ? "research" : "content", subject, outcome: "AI đã tạo đề xuất", reason: "Thiếu dữ liệu nguồn có sẵn, dùng AI; người duyệt trước khi dùng.", sources: ["Dữ liệu trong hệ thống (Cài đặt, insight, hội thoại)", `${role.name} · ${model}`], confidence: 70, needsApproval: true, aiCallId });
-    return { ok: true, res, model };
+    // Ưu tiên tổng đồng hồ (mọi phản hồi hãng đã trả trong lần gọi, giá theo mô hình thực chạy); call không đi qua client (test giả) →
+    // usage nó trả về, giá mô hình yêu cầu
+    const metered = meter.used.responses > 0;
+    const inputTokens = metered ? meter.used.input : (res.usage?.input_tokens ?? 0);
+    const outputTokens = metered ? meter.used.output : (res.usage?.output_tokens ?? 0);
+    const costVnd = metered ? meter.used.costVnd : (modelCostVnd(model, inputTokens, outputTokens) ?? estimateCostVnd(inputTokens, outputTokens));
+    const servedModel = servedLabel(model, meter.used);
+    const aiCallId = recordAiCall({ purpose, role: role.id, model: servedModel, inputTokens, outputTokens, ok: true, costVnd });
+    recordDecision({ lane: "ai", domain: purpose === "reply" ? "reply" : purpose === "research" ? "research" : "content", subject, outcome: "AI đã tạo đề xuất", reason: "Thiếu dữ liệu nguồn có sẵn, dùng AI; người duyệt trước khi dùng.", sources: ["Dữ liệu trong hệ thống (Cài đặt, insight, hội thoại)", `${role.name} · ${servedModel}`], confidence: 70, needsApproval: true, aiCallId });
+    return { ok: true, res, model, servedModel, costVnd };
   } catch (e) {
     // Hãng có thể ĐÃ trả lời (đã tính tiền) rồi bước sau mới lỗi: parse JSON / schema, từ chối ở lượt sau… → ghi đúng token đã dùng
     // và chi phí của chúng (tính vào trần ngày / tháng / trần riêng vị trí) rồi mới báo lỗi. Hãng báo lỗi HTTP → đồng hồ 0, 0 ₫.
-    const { input, output } = meter.used;
-    const costVnd = input + output > 0 ? (modelCostVnd(model, input, output) ?? estimateCostVnd(input, output)) : 0;
-    recordAiCall({ purpose, role: role.id, model, inputTokens: input, outputTokens: output, ok: false, error: describeError(e), costVnd });
+    const { input, output, costVnd } = meter.used;
+    recordAiCall({ purpose, role: role.id, model: servedLabel(model, meter.used), inputTokens: input, outputTokens: output, ok: false, error: describeError(e), costVnd });
     return { ok: false, error: describeError(e) };
   }
+}
+
+/** Nhãn mô hình ghi sổ: mô hình yêu cầu nếu hãng chạy đúng nó; khác → mô hình thực chạy + "(yêu cầu …; ghi chú giá)". */
+function servedLabel(requested: string, used: { served: Set<string>; notes: Set<string> }): string {
+  const served = [...used.served];
+  if (served.length === 0 || (served.length === 1 && served[0] === requested)) return requested;
+  return `${served.join(" + ")} (yêu cầu ${requested}${used.notes.size ? `; ${[...used.notes].join("; ")}` : ""})`;
 }
 
 type UsageLike = { input_tokens?: number | null; output_tokens?: number | null } | null | undefined;
@@ -78,17 +90,45 @@ type UsageLike = { input_tokens?: number | null; output_tokens?: number | null }
 // TRƯỚC khi chỗ gọi xử lý tiếp. messages.parse của SDK (và của bộ chuyển đổi) = this.create(...) rồi mới parse → gọi parse gốc với `this`
 // là proxy có đồng hồ ở create, nên lỗi parse (JSON hỏng / sai schema) vẫn ném ra như cũ nhưng token đã được đếm.
 // beta.messages (Nghiên cứu web_search) cũng qua đồng hồ. tests/ai-gate-usage.test.ts giữ giả định "parse gọi this.create" của SDK.
-function meterClient(client: Anthropic): { client: Anthropic; used: { input: number; output: number; responses: number } } {
-  const used = { input: 0, output: 0, responses: 0 };
+// create của SDK trả APIPromise (.withResponse() / .asResponse()) → gắn đồng hồ bằng _thenUnwrap của chính APIPromise: vẫn là APIPromise,
+// đồng hồ chạy đúng MỘT lần khi thân phản hồi được parse (APIPromise nhớ kết quả parse; asResponse không parse → không đếm, như SDK).
+// Giá tính theo từng phản hồi với response.model (mô hình hãng thực chạy, vd fallbacks), thiếu / lạ → giá mô hình yêu cầu (servedCost).
+// tests/ai-gate-served-model.test.ts giữ giả định "_thenUnwrap" của SDK.
+// Token cộng theo từng mô hình có giá được áp rồi mới quy ra ₫ (làm tròn một lần / mô hình — một mô hình thì khớp modelCostVnd tổng như cũ).
+type Meter = { input: number; output: number; responses: number; readonly costVnd: number; served: Set<string>; notes: Set<string> };
+function meterClient(client: Anthropic, requested: string): { client: Anthropic; used: Meter } {
+  const byPrice = new Map<string, { input: number; output: number }>(); // "" = mô hình không có trong bảng giá → giá chung
+  const used: Meter = {
+    input: 0,
+    output: 0,
+    responses: 0,
+    get costVnd() {
+      return [...byPrice].reduce((a, [m, t]) => a + ((m ? modelCostVnd(m, t.input, t.output) : undefined) ?? estimateCostVnd(t.input, t.output)), 0);
+    },
+    served: new Set(),
+    notes: new Set(),
+  };
   const tally = <R>(r: R): R => {
-    const u = (r as { usage?: UsageLike } | null)?.usage;
+    const body = r as { usage?: UsageLike; model?: unknown } | null;
+    const u = body?.usage;
     if (u) {
-      used.input += u.input_tokens ?? 0;
-      used.output += u.output_tokens ?? 0;
+      const input = u.input_tokens ?? 0;
+      const output = u.output_tokens ?? 0;
+      const c = servedCost(requested, typeof body.model === "string" ? body.model : undefined, input, output);
+      used.input += input;
+      used.output += output;
+      const bucket = byPrice.get(c.pricedAs ?? "") ?? { input: 0, output: 0 };
+      bucket.input += input;
+      bucket.output += output;
+      byPrice.set(c.pricedAs ?? "", bucket);
+      used.served.add(c.model);
+      if (c.note) used.notes.add(c.note);
       used.responses++;
     }
     return r;
   };
+  type Unwrappable = { _thenUnwrap: (f: (data: unknown) => unknown) => unknown };
+  const isApiPromise = (v: unknown): v is Unwrappable => typeof (v as Partial<Unwrappable> | null)?._thenUnwrap === "function";
   type Fn = (...args: unknown[]) => unknown;
   const passThrough = <O extends object>(target: O, overrides: Record<string, unknown>): O =>
     new Proxy(target, {
@@ -100,7 +140,13 @@ function meterClient(client: Anthropic): { client: Anthropic; used: { input: num
     });
   const meterMessages = <M extends object>(m: M): M => {
     const raw = m as unknown as { create: Fn; parse?: Fn };
-    const overrides: Record<string, unknown> = { create: (...args: unknown[]) => Promise.resolve(raw.create.apply(m, args)).then(tally) };
+    const overrides: Record<string, unknown> = {
+      create: (...args: unknown[]) => {
+        const out = raw.create.apply(m, args);
+        // Claude thật: giữ nguyên kiểu APIPromise; bộ chuyển đổi ChatGPT / Grok, client giả: Promise thường
+        return isApiPromise(out) ? out._thenUnwrap(tally) : Promise.resolve(out).then(tally);
+      },
+    };
     const proxy = passThrough(m, overrides);
     if (typeof raw.parse === "function") overrides.parse = (...args: unknown[]) => raw.parse!.apply(proxy, args);
     return proxy;

@@ -251,8 +251,9 @@ function Side({ title, children, id }: { title?: string; children: ReactNode; id
 
 export default async function VideoStudioPage({ searchParams }: { searchParams: Promise<{ tab?: string; campaign?: string; goal?: string; link?: string; upload?: string; content?: string; open?: string; filter?: string; rename?: string }> }) {
   const sp = await searchParams;
-  // Tab "Đã phê duyệt" đã bỏ — video đã duyệt nằm ở Kho video. Liên kết cũ chuyển sang Kho (mở chi tiết một video thì vẫn mở tại đây).
-  if (sp.tab === "approved" && !sp.open) redirect(LIBRARY);
+  // Tab "Đã phê duyệt" đã bỏ — video đã duyệt nằm ở Kho video. Liên kết cũ chuyển sang Kho (mở chi tiết một video thì vẫn mở tại đây),
+  // giữ ngữ cảnh chiến dịch (?campaign=&goal=).
+  if (sp.tab === "approved" && !sp.open) redirect(withCampaignContext(LIBRARY, readCampaignContext(sp)));
   const scripts = listContent().filter((c) => kindOf(c.format) === "script" && (c.status === "approved" || c.status === "scheduled" || c.status === "published"));
   const tab = tabs.some((t) => t.key === sp.tab) ? (sp.tab as VideoStatus | "all") : "all";
   const ctx = readCampaignContext(sp);

@@ -412,14 +412,43 @@ def plan(words, dur, library=None, content_hint="", log=print, music_genres=None
             return True
         return bool(hint_n) and f" {low} " in f" {hint_n} "
 
+    PUNCT = (",", ".", "?", "!", ";", ":")
+
+    def generic_denied(j_thi):
+        """Vế trước "thì" mở bằng "không phải / chẳng phải / chưa chắc / không hẳn (là) cứ | lúc nào …" → người nói phủ định
+        CẢ quan hệ "X thì Y" ("không phải cứ giảm giá thì khách sẽ mua") → Y tách riêng là nói ngược ý. Khác "nếu không X thì Y" /
+        "không có X thì Y" (phủ định chỉ nằm trong điều kiện, Y vẫn được khẳng định → giữ)."""
+        toks = []
+        for j in range(j_thi - 1, max(-1, j_thi - 11), -1):
+            t = words[j]["text"].strip()
+            if t.endswith(PUNCT) or tnorm(t) in CLAUSE:  # đầu vế trước "thì"
+                break
+            toks.insert(0, tnorm(t))
+        for k in range(len(toks) - 2):
+            if toks[k] in NEG and toks[k + 1] in ("phải", "chắc", "hẳn"):
+                rest = toks[k + 2:]
+                rest = rest[1:] if rest[:1] == ["là"] else rest
+                if rest[:1] == ["cứ"] or rest[:2] == ["lúc", "nào"]:
+                    return True
+        return False
+
     def negated_before(j0):
         """Từ phủ định đứng trước cụm trong CÙNG MỆNH ĐỀ (nhìn lại ≤ 6 từ, dừng ở dấu câu hoặc từ nối "mà / nhưng / rồi /
-        thì / còn") → tách cụm ra sẽ ĐẢO nghĩa: "không được phép hứa hẹn…", "đừng bao giờ hứa hẹn…"."""
+        thì / còn") → tách cụm ra sẽ ĐẢO nghĩa: "không được phép hứa hẹn…", "đừng bao giờ hứa hẹn…".
+        Hai ngoại lệ ở từ nối (đã chứng minh đảo nghĩa thật, xem tự kiểm): "không / chẳng còn …" — "còn" là phó từ (= nữa), không mở
+        mệnh đề; "không phải cứ X thì Y" — phủ định cả quan hệ X → Y."""
         for j in range(j0 - 1, max(-1, j0 - 7), -1):
             t = words[j]["text"].strip()
             if tnorm(t) in NEG:
                 return True
-            if tnorm(t) in CLAUSE or t.endswith((",", ".", "?", "!", ";", ":")):
+            if t.endswith(PUNCT):
+                return False
+            if tnorm(t) in CLAUSE:
+                prev = words[j - 1]["text"].strip() if j > 0 else ""
+                if tnorm(t) == "còn" and tnorm(prev) in NEG and not prev.endswith(PUNCT):
+                    return True
+                if tnorm(t) == "thì" and generic_denied(j):
+                    return True
                 return False
         return False
 
@@ -767,7 +796,17 @@ def self_test():
     for sent_txt, phrase, ok_want in (("không được phép hứa hẹn với khách hàng", "hứa hẹn với khách hàng", False),
                                       ("đừng bao giờ hứa hẹn với khách hàng", "hứa hẹn với khách hàng", False),
                                       ("không cần phải gấp gáp đâu nha", "gấp gáp", False),
-                                      ("không nên vội mà hãy tạo ra cảm giác thân tình", "cảm giác thân tình", True)):
+                                      ("không nên vội mà hãy tạo ra cảm giác thân tình", "cảm giác thân tình", True),
+                                      # "còn" sau từ phủ định là phó từ (= nữa), không mở mệnh đề: "chẳng còn quay lại" ≠ "QUAY LẠI"
+                                      ("khách sẽ chẳng còn quay lại cửa hàng", "quay lại cửa hàng", False),
+                                      ("chị không mua cũng được còn em vẫn tư vấn nhiệt tình", "tư vấn nhiệt tình", True),
+                                      # "không phải cứ X thì Y": phủ định cả quan hệ X → Y; tách Y ra là nói ngược ý người nói
+                                      ("không phải cứ giảm giá thì khách sẽ mua hàng", "khách sẽ mua hàng", False),
+                                      ("chẳng phải cứ nói nhiều thì sẽ chốt được đơn", "chốt được đơn", False),
+                                      # "thì" sau vế điều kiện phủ định: Y là hệ quả được KHẲNG ĐỊNH (không đảo nghĩa) → giữ
+                                      ("không có kịch bản thì đừng ra chiến trường", "đừng ra chiến trường", True),
+                                      ("nếu không tập luyện mỗi ngày thì kết quả sẽ rất kém", "kết quả", True),
+                                      ("làm ngay đi không thì khách bỏ đi mất", "khách bỏ đi", True)):
         wn = [{"text": x, "start": 5.0 + i * 0.5, "end": 5.0 + i * 0.5 + 0.4} for i, x in enumerate(sent_txt.split())]
 
         def fk(messages, schema, _p=phrase, **kw):
@@ -939,6 +978,18 @@ def self_test():
     if gotq != "các bạn bắt buộc phải có kịch bản sale ở bên cạnh mình":
         bad += 1
         print(f"SAI vế chính sau 'thì': {gotq!r}")
+    # "không phải cứ X thì Y" (câu dài): vế sau "thì" KHÔNG được trích — người nói phủ định chính ý đó
+    tq = "không phải cứ giảm giá thật sâu cho khách thì khách hàng sẽ quay lại mua thêm nhiều lần".split()
+    wt = [{"text": x, "start": 1.0 + i * 0.3, "end": 1.25 + i * 0.3} for i, x in enumerate(tq)]
+    g["llm"], g["available"] = fx, (lambda timeout=3: True)
+    try:
+        pt = plan(wt, 30.0, [], log=lambda m: None)
+    finally:
+        g["llm"], g["available"] = real_llm, real_av
+    gotq = next((d["text"] for d in pt["diagrams"] if d["type"] == "quote"), None)
+    if gotq is not None:
+        bad += 1
+        print(f"SAI: vế sau 'không phải cứ … thì' lên khung trích dẫn (đảo nghĩa): {gotq!r}")
     # trưởng biên tập bỏ sơ đồ cuối cùng (chấm 1/5) → khung dự phòng vẫn có (lỗi thật 1011(1) bản 4: sơ đồ so sánh bị chấm 2/5 → 0 khung)
     def fj(messages, schema, **kw):
         if schema is ANALYZE_SCHEMA:
