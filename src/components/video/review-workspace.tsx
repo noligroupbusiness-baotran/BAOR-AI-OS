@@ -98,7 +98,7 @@ function fixSummary(f: CommentFix): string {
  * Video Review: xem bản dựng, góp ý tại mốc / đoạn đang xem, gắn yêu cầu sửa cụ thể vào mục kế hoạch gần đó,
  * "Dựng lại theo góp ý", theo dõi kết quả kiểm từng góp ý ở bản mới, xác nhận / mở lại. Lịch sử góp ý không xoá.
  */
-export function ReviewWorkspace(props: { videoId: string; version: number; back: string; src: string; hdSrc?: string; plan: Obj; keep: [number, number][] | null; comments: ReviewComment[]; canApply: boolean }) {
+export function ReviewWorkspace(props: { videoId: string; version: number; back: string; src: string; hdSrc?: string; plan: Obj; keep: [number, number][] | null; comments: ReviewComment[]; canApply: boolean; aspect?: string }) {
   const player = useRef<PlayerControl>(null);
   const [now, setNow] = useState(0);
   const [mark, setMark] = useState<{ t: number; tEnd: number | null } | null>(null);
@@ -112,9 +112,9 @@ export function ReviewWorkspace(props: { videoId: string; version: number; back:
   const seekTo = (c: ReviewComment) => player.current?.seek(toCutTime(props.keep, c.srcT));
 
   return (
-    <div className="mt-2 grid max-w-[720px] gap-3" data-testid="review-workspace">
+    <div className={props.aspect === "16:9" ? "grid gap-3" : "grid gap-3 sm:grid-cols-[minmax(0,300px)_minmax(0,1fr)]"} data-testid="review-workspace">
       <div>
-        <VideoPlayer src={props.src} hdSrc={props.hdSrc} control={player} onTime={setNow} label={`Bản dựng ${props.version}`} />
+        <VideoPlayer src={props.src} hdSrc={props.hdSrc} control={player} onTime={setNow} label={`Bản dựng ${props.version}`} aspect={props.aspect} />
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[12px]">
           <button type="button" onClick={() => { player.current?.pause(); setMark({ t: Math.round(now * 10) / 10, tEnd: null }); setFix(null); }} className="h-7 rounded-full border border-border-2 px-2.5 font-medium text-ink hover:border-ink-3">
             Góp ý tại {mmss(now)}

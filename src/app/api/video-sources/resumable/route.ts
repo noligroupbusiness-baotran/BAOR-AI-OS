@@ -26,7 +26,7 @@ export async function POST(req: Request) {
     original: url.searchParams.get("name") ?? "",
     size: Number(url.searchParams.get("size") ?? "0"),
     key: url.searchParams.get("key") ?? "",
-    params: { cut: url.searchParams.get("cut") === "1", contentId: (url.searchParams.get("content") ?? "").slice(0, 80) || null, final: url.searchParams.get("mode") === "final", aspect: url.searchParams.get("aspect"), start: url.searchParams.get("start") === "1" },
+    params: { cut: url.searchParams.get("cut") === "1", contentId: (url.searchParams.get("content") ?? "").slice(0, 80) || null, final: url.searchParams.get("mode") === "final", aspect: url.searchParams.get("aspect"), quality: url.searchParams.get("quality"), start: url.searchParams.get("start") === "1" },
     by: { name: g.actor!.name, email: g.actor!.email },
   });
   return r.ok ? Response.json(r) : Response.json(r, { status: r.status });

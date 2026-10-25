@@ -39,7 +39,7 @@ export const moduleGroups: Record<string, ModuleGroup[]> = {
     { name: "Video chờ kiểm tra", status: "active", href: "/video-studio?tab=review" },
     { name: "Video cần chỉnh sửa", status: "active", href: "/video-studio?tab=needs_changes" },
     { name: "Video chờ phê duyệt", status: "active", href: "/video-studio?tab=pending_approval" },
-    { name: "Video đã phê duyệt", status: "active", href: "/video-studio?tab=approved" },
+    { name: "Video đã phê duyệt (Kho video)", status: "active", href: "/video-library" },
     { name: "Phiên bản video theo từng nền tảng", status: "active", href: "/video-studio" },
   ],
   publishing: [

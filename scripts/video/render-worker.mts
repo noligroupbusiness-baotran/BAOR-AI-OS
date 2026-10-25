@@ -24,6 +24,8 @@ export interface Spec {
   title: string;
   sourceName: string;
   aspect: string;
+  /** "1080" | "4k" — chất lượng chọn khi thêm video gốc (bộ dựng chỉ xuất 4K khi nguồn đủ điểm ảnh) */
+  quality?: string;
   cutSilence: boolean;
   framing: { x?: number; y?: number; zoom?: number } | null;
   aiPlan: boolean;
@@ -47,6 +49,7 @@ export function buildArgs(spec: Spec, p: { src: string; work: string; script?: s
   if (spec.corrections.trim()) a.push(`--corrections=${spec.corrections}`);
   if (spec.cutSilence) a.push("--cut-silence");
   a.push(`--aspect=${spec.aspect || "9:16"}`);
+  if (spec.quality === "4k") a.push("--quality=4k");
   if (spec.framing?.x !== undefined) a.push(`--frame-x=${spec.framing.x}`);
   if (spec.framing?.y !== undefined) a.push(`--frame-y=${spec.framing.y}`);
   if (spec.framing?.zoom !== undefined) a.push(`--frame-zoom=${spec.framing.zoom}`);

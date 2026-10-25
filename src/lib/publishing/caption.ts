@@ -63,7 +63,37 @@ export function saveCaptionDraft(videoId: string, text: string): void {
 }
 
 export function clearCaptionDraft(videoId: string): void {
-  getDb().delete(schema.settings).where(eq(schema.settings.key, `publishing.captionDraft.${videoId}`)).run();
+  for (const k of ["captionDraft", "postTitle", "postDraftSource"]) getDb().delete(schema.settings).where(eq(schema.settings.key, `publishing.${k}.${videoId}`)).run();
+}
+
+// Tiêu đề bài đăng (OWNER 25/10/2026: "gọi AI viết luôn nội dung cho video để đăng bài.. gồm tiêu đề và nội dung") — lưu cạnh bản nháp caption.
+export const POST_TITLE_MAX = 100;
+
+/** Tiêu đề theo luật (không AI): hook kịch bản đã duyệt → tên kịch bản → tên video, cắt gọn. */
+export function buildPostTitle(videoId: string): string {
+  const db = getDb();
+  const v = db.select().from(schema.videos).where(eq(schema.videos.id, videoId)).get();
+  if (!v) return "";
+  const c = v.contentId ? db.select().from(schema.contentItems).where(eq(schema.contentItems.id, v.contentId)).get() : undefined;
+  const t = (c?.hook?.trim() || c?.title?.trim() || v.title).replace(/\s+/g, " ");
+  return [...t].length > POST_TITLE_MAX ? `${[...t].slice(0, POST_TITLE_MAX - 1).join("")}…` : t;
+}
+
+export function savePostTitle(videoId: string, title: string): void {
+  setSetting(`publishing.postTitle.${videoId}`, [...title.trim()].slice(0, POST_TITLE_MAX).join(""));
+}
+
+export function postTitle(videoId: string): string | null {
+  return getSetting(`publishing.postTitle.${videoId}`) ?? null;
+}
+
+/** Nguồn bản nháp bài đăng: "ai" (AI Viết bài đăng) hoặc "rule: <lý do>" (theo luật vì AI tắt / thiếu khoá / lỗi). */
+export function setPostDraftSource(videoId: string, source: string): void {
+  setSetting(`publishing.postDraftSource.${videoId}`, source.slice(0, 300));
+}
+
+export function postDraftSource(videoId: string): string | null {
+  return getSetting(`publishing.postDraftSource.${videoId}`) ?? null;
 }
 
 export function captionDraft(videoId: string): string | null {

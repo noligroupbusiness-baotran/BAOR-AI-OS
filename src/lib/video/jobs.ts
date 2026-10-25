@@ -5,7 +5,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { getSetting } from "@/lib/admin";
 import { finishRun, startRun } from "@/lib/connectors/config";
@@ -13,7 +13,7 @@ import { getUpload, listUploads, uploadPath, uploadsDir } from "@/lib/uploads";
 import { logActivity } from "@/lib/activity";
 import { sendAlert } from "@/lib/alerts";
 import skillJson from "../../../scripts/video/skill-vlog.json";
-import { isJobFile, type Aspect, type Framing, type JobProgress, type VideoJob, type VideoReport } from "./job-types";
+import { isJobFile, type Aspect, type Framing, type JobProgress, type VideoJob, type VideoQuality, type VideoReport } from "./job-types";
 import { addVideoFeedback } from "./feedback";
 import { campaignRepo } from "@/lib/campaigns/repository";
 import { parseShootingScript } from "@/lib/content/shooting-script";
@@ -220,9 +220,14 @@ export function linkVideoScript(videoId: string, contentId: string | null, by: s
     if (!scriptSpeech(c.id)) return { ok: false, error: "Kịch bản chưa có lời nói theo cảnh" };
     title = c.title;
   }
-  db.update(schema.videos).set({ contentId: contentId || null, updatedAt: new Date().toISOString() }).where(eq(schema.videos.id, videoId)).run();
-  if (contentId) campaignRepo.inheritLinks("content", contentId, "video", videoId, v.status);
-  addVideoFeedback({ videoId, version: v.version, kind: "link_script", note: contentId ? `Gắn kịch bản “${title}”: bản dựng sau dùng kịch bản để nghe, sửa chữ và biên tập AI` : "Bỏ gắn kịch bản", by });
+  const next = contentId || null;
+  db.transaction(() => {
+    db.update(schema.videos).set({ contentId: next, updatedAt: new Date().toISOString() }).where(eq(schema.videos.id, videoId)).run();
+    // Đổi / bỏ kịch bản: liên kết chiến dịch video KẾ THỪA từ kịch bản cũ (via content = kịch bản cũ) gỡ; gắn tay (via trống) giữ
+    if (v.contentId && v.contentId !== next) campaignRepo.removeInheritedLinks("video", videoId, "content", v.contentId);
+    if (next) campaignRepo.inheritLinks("content", next, "video", videoId, v.status);
+    addVideoFeedback({ videoId, version: v.version, kind: "link_script", note: next ? `Gắn kịch bản “${title}”: bản dựng sau dùng kịch bản để nghe, sửa chữ và biên tập AI` : "Bỏ gắn kịch bản", by });
+  });
   logActivity("human", `${by} ${contentId ? `gắn kịch bản “${title}” cho` : "bỏ kịch bản khỏi"} video “${v.title}”.`, "video");
   return { ok: true, title };
 }
@@ -232,7 +237,7 @@ export function linkVideoScript(videoId: string, contentId: string | null, by: s
 const newId = (prefix: string) => `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 
 /** Video mới từ một tệp nguồn đã nằm trong kho tải lên: "Đang dựng" bản 1, xếp hàng dựng. */
-export function createVideoFromSource(opts: { title: string; sourceUploadId: string; cutSilence: boolean; aspect?: Aspect; framing?: Framing; prompt?: string; by: string; contentId?: string | null; start?: boolean }): string {
+export function createVideoFromSource(opts: { title: string; sourceUploadId: string; cutSilence: boolean; aspect?: Aspect; framing?: Framing; quality?: VideoQuality; prompt?: string; by: string; contentId?: string | null; start?: boolean }): string {
   const start = opts.start ?? true;
   const videoId = newId("v");
   const now = new Date().toISOString();
@@ -247,19 +252,19 @@ export function createVideoFromSource(opts: { title: string; sourceUploadId: str
   // Video kế thừa chiến dịch và mục tiêu kênh của kịch bản.
   if (contentId) campaignRepo.inheritLinks("content", contentId, "video", videoId, "editing");
   const prompt = [opts.prompt ?? "", scriptPrompt(contentId)].filter(Boolean).join(" ").slice(0, 800);
-  writeJob({ videoId, version: 1, status: start ? "queued" : "setup", sourceUploadId: opts.sourceUploadId, cutSilence: opts.cutSilence, aspect: opts.aspect ?? "9:16", framing: opts.framing, prompt, createdAt: now, by: opts.by });
-  addVideoFeedback({ videoId, version: 1, kind: "upload", note: `Nguồn: ${opts.title}${content ? ` · kịch bản “${content.title}”` : ""}${opts.cutSilence ? " · cắt khoảng lặng" : ""} · khung ${opts.aspect ?? "9:16"}`, by: opts.by });
+  writeJob({ videoId, version: 1, status: start ? "queued" : "setup", sourceUploadId: opts.sourceUploadId, cutSilence: opts.cutSilence, aspect: opts.aspect ?? "9:16", framing: opts.framing, quality: opts.quality ?? "1080", prompt, createdAt: now, by: opts.by });
+  addVideoFeedback({ videoId, version: 1, kind: "upload", note: `Nguồn: ${opts.title}${content ? ` · kịch bản “${content.title}”` : ""}${opts.cutSilence ? " · cắt khoảng lặng" : ""} · khung ${opts.aspect ?? "9:16"} · ${opts.quality === "4k" ? "4K" : "1080p"}`, by: opts.by });
   logActivity("human", `${opts.by} thêm nguồn “${opts.title}”${start ? ", Agent Edit Video xếp hàng dựng" : ", chờ chọn khung hình"}.`, "video");
   if (start) void kickWorker();
   return videoId;
 }
 
 /** "Bắt đầu dựng" cho video đang chờ chọn khung: ghi tỷ lệ / khung / cắt lặng rồi xếp hàng. */
-export function startVideoJob(videoId: string, by: string, opts: { aspect: Aspect; framing?: Framing; cutSilence: boolean }): { ok: true } | { ok: false; error: string } {
+export function startVideoJob(videoId: string, by: string, opts: { aspect: Aspect; framing?: Framing; cutSilence: boolean; quality?: VideoQuality }): { ok: true } | { ok: false; error: string } {
   const lj = latestJob(videoId);
   if (!lj || lj.job.status !== "setup") return { ok: false, error: "Video này không ở bước chọn khung" };
   const now = new Date().toISOString();
-  writeJob({ ...lj.job, status: "queued", aspect: opts.aspect, framing: opts.framing, cutSilence: opts.cutSilence, createdAt: now, by });
+  writeJob({ ...lj.job, status: "queued", aspect: opts.aspect, framing: opts.framing, cutSilence: opts.cutSilence, quality: opts.quality ?? lj.job.quality ?? "1080", createdAt: now, by });
   getDb().update(schema.videos).set({ note: `Đang dựng tự động theo ${engineLabel()}, khung ${opts.aspect}.`, updatedAt: now }).where(eq(schema.videos.id, videoId)).run();
   addVideoFeedback({ videoId, version: lj.job.version, kind: "rerender", note: `Bắt đầu dựng: khung ${opts.aspect}${opts.framing ? " (đã cân chỉnh)" : ""}${opts.cutSilence ? ", cắt khoảng lặng" : ""}`, by });
   logActivity("human", `${by} bắt đầu dựng video ${videoId} khung ${opts.aspect}.`, "video");
@@ -289,7 +294,7 @@ export function rerenderVideo(videoId: string, by: string, cutSilence?: boolean,
   const now = new Date().toISOString();
   const aspect = frame?.aspect ?? prev.job.aspect ?? "9:16";
   const framing = frame ? frame.framing : prev.job.framing;
-  writeJob({ videoId, version, status: "queued", sourceUploadId: prev.job.sourceUploadId, cutSilence: cutSilence ?? prev.job.cutSilence, aspect, framing, prompt: prev.job.prompt ?? "", createdAt: now, by, ...(aiPlan ? { aiPlan: true } : {}) });
+  writeJob({ videoId, version, status: "queued", sourceUploadId: prev.job.sourceUploadId, cutSilence: cutSilence ?? prev.job.cutSilence, aspect, framing, ...(prev.job.quality ? { quality: prev.job.quality } : {}), prompt: prev.job.prompt ?? "", createdAt: now, by, ...(aiPlan ? { aiPlan: true } : {}) });
   getDb().update(schema.videos).set({ status: "editing", version, updatedAt: now, note: `Đang dựng bản ${version}.` }).where(eq(schema.videos.id, videoId)).run();
   campaignRepo.syncEntityStatus("video", videoId, "editing");
   // Một lần dựng = một dòng lịch sử (lý do cụ thể do nơi gọi đưa, vd "Dựng lại theo 2 góp ý: …")
@@ -396,15 +401,47 @@ export function stopVideoJob(videoId: string, by: string): { ok: true; version: 
   return { ok: true, version: job.version };
 }
 
-/** Xoá video chưa duyệt (đang dựng / chờ kiểm tra / cần chỉnh sửa): dừng bản đang dựng, gỡ khỏi Video Studio.
- *  Tệp (nguồn, bản dựng, thư mục dựng) và dữ liệu được CHUYỂN vào DATA_DIR/removed/<videoId>-<thời điểm>/ để khôi phục được, không xoá vĩnh viễn. */
-export function deleteVideo(videoId: string, by: string): { ok: true; title: string } | { ok: false; error: string } {
+/** Đánh dấu bài lỗi "chưa rõ đã lên trang chưa" — PHẢI trùng AMBIGUOUS_MARK của src/lib/publishing/video.ts
+ *  (không import để tránh vòng jobs ↔ publishing; tests/video-delete.test.ts giữ hai bên khớp). */
+export const POST_AMBIGUOUS_MARK = "[CẦN KIỂM TRA TRANG]";
+const PENDING_POST = new Set(["scheduled", "publishing", "verifying"]);
+const DELETABLE_STATUS = new Set(["editing", "review", "needs_changes", "approved"]);
+
+type PostRow = typeof schema.scheduledPosts.$inferSelect;
+/** Bài đã (hoặc có thể đã) lên nền tảng thật: đã đăng, có mã bài, hay lỗi chưa rõ (cần kiểm trang). Bài chế độ thử không tính. */
+const postIsLive = (p: PostRow) => p.status === "published" || !!p.externalId || (p.status === "failed" && (p.error ?? "").startsWith(POST_AMBIGUOUS_MARK));
+
+/**
+ * Lý do CHƯA xoá được video (null = xoá được). Dùng chung cho bộ xoá và nút Xoá ở Kho video / Video Studio.
+ * Xoá được: video chưa gửi phê duyệt, hoặc ĐÃ duyệt (người có quyền phê duyệt) mà chưa có bài nào đang lên lịch / đã đăng thật
+ * và chưa dùng cho quảng cáo. Video đang chờ phê duyệt: yêu cầu chỉnh sửa (hoặc duyệt) trước.
+ */
+export function videoDeleteBlock(videoId: string, canDeleteApproved: boolean): string | null {
+  const db = getDb();
+  const v = db.select().from(schema.videos).where(eq(schema.videos.id, videoId)).get();
+  if (!v) return "Không tìm thấy video";
+  if (!DELETABLE_STATUS.has(v.status)) return "Video đang chờ phê duyệt — yêu cầu chỉnh sửa hoặc duyệt trước rồi mới xoá";
+  if (v.status === "approved" && !canDeleteApproved) return "Cần quyền phê duyệt để xoá video đã duyệt";
+  const posts = db.select().from(schema.scheduledPosts).where(eq(schema.scheduledPosts.videoId, videoId)).all();
+  const pending = posts.filter((p) => PENDING_POST.has(p.status)).length;
+  if (pending) return `Video đang có ${pending} bài lên lịch — huỷ lịch trước rồi mới xoá`;
+  const live = posts.filter(postIsLive).length;
+  if (live) return `Video đã đăng thật ${live} bài — không xoá (giữ bài và báo cáo)`;
+  if (db.select().from(schema.adCampaigns).where(eq(schema.adCampaigns.videoId, videoId)).all().length) return "Video đã dùng cho quảng cáo, không xoá";
+  return null;
+}
+
+/** Xoá video chưa gửi phê duyệt, hoặc video đã duyệt chưa có bài lên lịch / đã đăng (xem videoDeleteBlock): dừng bản đang dựng, gỡ khỏi Studio / Kho.
+ *  Tệp (nguồn, bản dựng, thư mục dựng) và dữ liệu được CHUYỂN vào DATA_DIR/removed/<videoId>-<thời điểm>/ để khôi phục được, không xoá vĩnh viễn.
+ *  Bài đăng đã huỷ / lỗi chưa lên trang / chế độ thử, lịch sử phản hồi, góp ý theo mốc và liên kết chiến dịch của video được ghi vào
+ *  records.json rồi gỡ khỏi bảng (không để dòng mồ côi). Phê duyệt chiến dịch (campaign_approvals) giữ lại: là lịch sử của chiến dịch. */
+export function deleteVideo(videoId: string, by: string, opts: { canDeleteApproved?: boolean } = {}): { ok: true; title: string } | { ok: false; error: string } {
   const db = getDb();
   const v = db.select().from(schema.videos).where(eq(schema.videos.id, videoId)).get();
   if (!v) return { ok: false, error: "Không tìm thấy video" };
-  if (!["editing", "review", "needs_changes"].includes(v.status)) return { ok: false, error: "Chỉ xoá được video chưa gửi phê duyệt (đang dựng, chờ kiểm tra, cần chỉnh sửa)" };
-  if (db.select().from(schema.scheduledPosts).where(eq(schema.scheduledPosts.videoId, videoId)).all().length) return { ok: false, error: "Video đã có bài đăng / lịch đăng, không xoá" };
-  if (db.select().from(schema.adCampaigns).where(eq(schema.adCampaigns.videoId, videoId)).all().length) return { ok: false, error: "Video đã dùng cho quảng cáo, không xoá" };
+  const block = videoDeleteBlock(videoId, !!opts.canDeleteApproved);
+  if (block) return { ok: false, error: block };
+  const posts = db.select().from(schema.scheduledPosts).where(eq(schema.scheduledPosts.videoId, videoId)).all();
   const last = latestJob(videoId);
   if (last && (last.job.status === "queued" || last.job.status === "running")) stopVideoJob(videoId, by);
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -418,8 +455,14 @@ export function deleteVideo(videoId: string, by: string): { ok: true; title: str
   }
   if (v.uploadId) upIds.add(v.uploadId);
   const feedback = db.select().from(schema.videoFeedback).where(eq(schema.videoFeedback.videoId, videoId)).all();
+  // Góp ý theo mốc (Video Review) + liên kết chiến dịch: lưu trữ cùng video rồi gỡ khỏi bảng (không để dòng mồ côi trỏ video đã xoá)
+  const comments = db.select().from(schema.videoComments).where(eq(schema.videoComments.videoId, videoId)).all();
+  const links = db.select().from(schema.marketingLinks).where(and(eq(schema.marketingLinks.entityType, "video"), eq(schema.marketingLinks.entityId, videoId))).all();
+  // Liên kết chiến dịch của các BÀI ĐĂNG video này (kế thừa lúc lên lịch, entityType "publication") — bài bị gỡ thì liên kết cũng gỡ
+  const postIds = posts.map((p) => p.id);
+  const postLinks = postIds.length ? db.select().from(schema.marketingLinks).where(and(eq(schema.marketingLinks.entityType, "publication"), inArray(schema.marketingLinks.entityId, postIds))).all() : [];
   const uploads = [...upIds].map((id) => getUpload(id)).filter((u): u is NonNullable<typeof u> => !!u);
-  fs.writeFileSync(path.join(arch, "records.json"), JSON.stringify({ video: v, feedback, uploads, by, removedAt: new Date().toISOString() }, null, 1));
+  fs.writeFileSync(path.join(arch, "records.json"), JSON.stringify({ video: v, feedback, comments, links, postLinks, uploads, posts, by, removedAt: new Date().toISOString() }, null, 1));
   for (const u of uploads) {
     const p = path.join(uploadsDir(), u.fileName);
     if (fs.existsSync(p)) fs.renameSync(p, path.join(arch, u.fileName));
@@ -428,7 +471,11 @@ export function deleteVideo(videoId: string, by: string): { ok: true; title: str
   const jd = path.join(jobsRoot(), videoId);
   if (fs.existsSync(jd)) fs.renameSync(jd, path.join(arch, "video-jobs"));
   db.delete(schema.videoFeedback).where(eq(schema.videoFeedback.videoId, videoId)).run();
-  db.delete(schema.marketingLinks).where(eq(schema.marketingLinks.entityId, videoId)).run();
+  db.delete(schema.videoComments).where(eq(schema.videoComments.videoId, videoId)).run();
+  // Chỉ còn bài không lên trang (đã huỷ / lỗi rõ / chế độ thử) — videoDeleteBlock đã chặn bài chờ / đã đăng
+  db.delete(schema.scheduledPosts).where(eq(schema.scheduledPosts.videoId, videoId)).run();
+  if (postIds.length) db.delete(schema.marketingLinks).where(and(eq(schema.marketingLinks.entityType, "publication"), inArray(schema.marketingLinks.entityId, postIds))).run();
+  db.delete(schema.marketingLinks).where(and(eq(schema.marketingLinks.entityType, "video"), eq(schema.marketingLinks.entityId, videoId))).run();
   db.delete(schema.videos).where(eq(schema.videos.id, videoId)).run();
   logActivity("human", `${by} xoá video “${v.title}” (lưu trữ ở ${path.relative(dataDir(), arch)}).`, "video");
   return { ok: true, title: v.title };
@@ -493,6 +540,7 @@ export function runJob(job: VideoJob): Promise<void> {
     if (s.corrections.trim()) args.push(`--corrections=${s.corrections}`);
     if (job.cutSilence) args.push("--cut-silence");
     args.push(`--aspect=${job.aspect ?? "9:16"}`);
+    if (job.quality === "4k") args.push("--quality=4k");
     if (job.framing?.x !== undefined) args.push(`--frame-x=${job.framing.x}`);
     if (job.framing?.y !== undefined) args.push(`--frame-y=${job.framing.y}`);
     if (job.framing?.zoom !== undefined) args.push(`--frame-zoom=${job.framing.zoom}`);
@@ -728,6 +776,48 @@ export function writeEditorPlan(videoId: string, raw: unknown, by: string): { ok
   return { ok: true };
 }
 
+const PLAN_PREV_RE = /^plan\.prev-[0-9TZ-]+\.json$/;
+const planStamp = () => new Date().toISOString().replace(/[:.]/g, "-");
+
+/** Các kế hoạch cấp video đã lưu trữ (adoptAiPlan cất khi biên tập AI lập kế hoạch mới), mới nhất trước. Tên có mốc ISO nên sắp theo chữ = theo giờ. */
+export function planBackups(videoId: string): string[] {
+  const d = path.join(jobsRoot(), videoId);
+  if (!fs.existsSync(d)) return [];
+  return fs.readdirSync(d).filter((f) => PLAN_PREV_RE.test(f)).sort().reverse();
+}
+
+/**
+ * Khôi phục kế hoạch đã lưu trữ gần nhất làm kế hoạch video rồi dựng lại (bản mới, bản cũ giữ). Không xoá gì:
+ * kế hoạch đang dùng được cất thành plan.prev-<bây giờ>.json (khôi phục lần nữa = quay lại kế hoạch vừa thay).
+ * Kiểm "dựng lại được không" TRƯỚC khi đổi tệp; dựng lại không xếp hàng được thì trả tệp về như cũ.
+ */
+export function restorePrevPlan(videoId: string, by: string): { ok: true; version: number; restored: string } | { ok: false; error: string } {
+  const block = rerenderBlock(videoId);
+  if (block) return { ok: false, error: block };
+  const name = planBackups(videoId)[0];
+  if (!name) return { ok: false, error: "Không có kế hoạch trước để khôi phục" };
+  const d = path.join(jobsRoot(), videoId);
+  const prev = path.join(d, name);
+  const restored = readJson<Record<string, unknown>>(prev);
+  if (!restored || typeof restored !== "object" || Array.isArray(restored)) return { ok: false, error: "Kế hoạch trước không đọc được" };
+  const own = path.join(d, "plan.json");
+  const stamp = planStamp();
+  let stash = path.join(d, `plan.prev-${stamp}.json`);
+  for (let i = 2; fs.existsSync(stash); i++) stash = path.join(d, `plan.prev-${stamp}-${i}.json`);
+  const hadOwn = fs.existsSync(own);
+  if (hadOwn) fs.renameSync(own, stash);
+  fs.renameSync(prev, own);
+  const label = String(restored.by ?? "").trim();
+  const r = rerenderVideo(videoId, by, undefined, undefined, `Khôi phục kế hoạch trước${label ? ` (${label.slice(0, 80)})` : ""} rồi dựng lại`);
+  if (!r.ok) {
+    fs.renameSync(own, prev);
+    if (hadOwn) fs.renameSync(stash, own);
+    return { ok: false, error: r.error };
+  }
+  logActivity("human", `${by} khôi phục kế hoạch biên tập trước (${name}) của video ${videoId}, dựng bản ${r.version}.`, "video");
+  return { ok: true, version: r.version, restored: name };
+}
+
 
 // ---------------------------------------------------------------------------
 // Máy dựng của OWNER (OWNER 25/10/2026: "máy tôi làm máy dựng, lấy skill trên Notion, lấy nguồn từ Drive / có sẵn trong máy").
@@ -749,6 +839,7 @@ export interface RemoteSpec {
   sourceName: string;
   sourceSize: number;
   aspect: string;
+  quality: string;
   cutSilence: boolean;
   framing: Framing | null;
   aiPlan: boolean;
@@ -792,6 +883,7 @@ function remoteSpec(job: VideoJob, title: string, contentId: string | null): Rem
     sourceName: src?.name ?? "source.mp4",
     sourceSize: src?.size ?? 0,
     aspect: job.aspect ?? "9:16",
+    quality: job.quality ?? "1080",
     cutSilence: !!job.cutSilence,
     framing: job.framing ?? null,
     aiPlan: !!job.aiPlan,

@@ -121,6 +121,10 @@ test("tham số dựng của máy dựng giống dựng tại máy chủ; chỉ 
   const a = worker.buildArgs(spec, { src: "/s.mov", work: "/w", script: "/w/input-script.txt", plan: "/w/input-plan.json", words: "/w/input-words.json" });
   for (const x of ["--input=/s.mov", "--job-dir=/w", "--cut-silence", "--aspect=9:16", "--frame-x=0.4", "--no-sfx", "--ai-plan", "--no-music", "--corrections=a => b", "--script=/w/input-script.txt", "--plan=/w/input-plan.json", "--words=/w/input-words.json"]) assert.ok(a.includes(x), x);
   assert.match(a[0], /esv_render\.py$/);
+  // Chất lượng chọn khi thêm video gốc: 4K → --quality=4k ngay sau --aspect (như runJob tại máy chủ); 1080 → không thêm
+  assert.ok(!a.some((x) => x.startsWith("--quality")), "mặc định 1080 không thêm tham số");
+  const q4 = worker.buildArgs({ ...spec, quality: "4k" }, { src: "/s.mov", work: "/w" });
+  assert.equal(q4[q4.indexOf("--aspect=9:16") + 1], "--quality=4k");
   const w = fs.mkdtempSync(path.join(os.tmpdir(), "baor-w-"));
   for (const f of ["master.mp4", "preview.mp4", "report.json", "plan.json", "source.mov", "input-plan.json", "progress.json", "job.json", "x.tmp", "checksums.sha256"]) fs.writeFileSync(path.join(w, f), "x");
   fs.mkdirSync(path.join(w, "work"));

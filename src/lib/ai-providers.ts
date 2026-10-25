@@ -141,8 +141,12 @@ export function compatClient(provider: Exclude<AiProvider, "anthropic">, fetchIm
         void format;
         return res;
       },
+      // Qua this.create như SDK Anthropic: cổng AI (src/lib/ai.ts › meterClient) đếm token của phản hồi TRƯỚC khi parse → JSON hỏng /
+      // sai schema vẫn ném lỗi nhưng sổ chi phí ghi đúng token hãng đã tính tiền.
       async parse(p: CompatParams) {
-        const { text, format, ...res } = await callResponses(provider, p, fetchImpl);
+        const res = await this.create(p);
+        const text = res.content.map((c) => c.text).join("");
+        const format = p.output_config?.format;
         let parsed_output: unknown = null;
         if (text && format?.parse) parsed_output = format.parse(text);
         return { ...res, parsed_output };

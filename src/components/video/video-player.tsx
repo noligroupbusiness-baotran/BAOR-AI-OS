@@ -14,7 +14,10 @@ const fmt = (s: number) => {
 // Trình phát với thanh điều khiển riêng (phát, thời gian, tua, âm lượng, ⛶) — một nút phóng to duy nhất ở thanh dưới.
 // ⛶: thử toàn màn hình thật; nơi chặn toàn màn hình (vd khung trình duyệt nhúng trong app) thì phủ kín cửa sổ.
 // Thoát: bấm lại nút (✕), phím Esc, hoặc bấm vùng nền đen.
-export function VideoPlayer({ src, hdSrc, control, onTime, label }: { src: string; hdSrc?: string; control?: Ref<PlayerControl>; onTime?: (t: number) => void; label?: string }) {
+// Bề rộng theo tỷ lệ khung (Quay & edit video 25/10): video dọc giữ hẹp, video ngang dùng hết cột.
+const maxWidth: Record<string, string> = { "16:9": "max-w-full", "1:1": "max-w-[440px]", "4:5": "max-w-[380px]" };
+
+export function VideoPlayer({ src, hdSrc, control, onTime, label, aspect }: { src: string; hdSrc?: string; control?: Ref<PlayerControl>; onTime?: (t: number) => void; label?: string; aspect?: string }) {
   const wrap = useRef<HTMLDivElement>(null);
   const vid = useRef<HTMLVideoElement>(null);
   const [mode, setMode] = useState<"normal" | "native" | "fill">("normal");
@@ -86,7 +89,7 @@ export function VideoPlayer({ src, hdSrc, control, onTime, label }: { src: strin
     <div
       ref={wrap}
       data-video-fullscreen={big ? "" : undefined}
-      className={big ? "fixed inset-0 z-[90] flex items-center justify-center bg-black" : "relative mt-2 w-full max-w-[300px] overflow-hidden rounded-md border border-border bg-black"}
+      className={big ? "fixed inset-0 z-[90] flex items-center justify-center bg-black" : `relative w-full ${maxWidth[aspect ?? ""] ?? "max-w-[300px]"} overflow-hidden rounded-md border border-border bg-black`}
       onClick={big ? (e) => e.target === e.currentTarget && toggleFull() : undefined}
     >
       <div className={big ? "relative max-h-full" : "relative"} style={big ? { height: "100%", aspectRatio: "auto" } : undefined}>

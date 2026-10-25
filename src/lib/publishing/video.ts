@@ -95,7 +95,7 @@ export function makeThumbnail(masterPath: string, title: string, by: string): st
 
 export type ScheduleResult = { ok: true; created: number; mode: "live" | "dry_run" } | { ok: false; error: string };
 
-export function scheduleVideoPosts(input: { videoId: string; platforms: string[]; whenIso: string; caption: string; by: string }): ScheduleResult {
+export function scheduleVideoPosts(input: { videoId: string; platforms: string[]; whenIso: string; caption: string; title?: string; by: string }): ScheduleResult {
   const db = getDb();
   const v = db.select().from(schema.videos).where(eq(schema.videos.id, input.videoId)).get();
   if (!v) return { ok: false, error: "Không tìm thấy video" };
@@ -128,20 +128,21 @@ export function scheduleVideoPosts(input: { videoId: string; platforms: string[]
   const when = Date.parse(input.whenIso);
   if (!Number.isFinite(when)) return { ok: false, error: "Giờ đăng không hợp lệ" };
   const dry = isDryRun();
-  // Chống đăng trùng: bài thật đã lên lịch/đã đăng thì không tạo lại; bài lỗi/huỷ cho phép tạo lại.
-  const keys = platforms.map((p) => `${p}:${v.id}`);
-  const existing = db.select().from(schema.scheduledPosts).where(inArray(schema.scheduledPosts.dedupeKey, keys)).all();
-  // Bài lỗi nhưng nền tảng ĐÃ nhận video (có externalId) vẫn tính là đã đăng: không lên lịch lại để tránh trùng.
-  // Bài lỗi MƠ HỒ (có thể đã lên trang) cũng tính là còn sống: chỉ đăng lại qua "Thử lại" kèm ghi chú đã kiểm tra trang.
-  const live = existing.filter((e) => (e.status !== "failed" && e.status !== "cancelled") || !!e.externalId || isAmbiguousFailure(e));
+  // Chống đăng trùng THEO TRANG ĐÍCH: bài thật đã lên lịch/đã đăng thì không tạo lại; bài lỗi/huỷ cho phép tạo lại.
+  // Kênh khác nhưng cùng Page ID (đã lên lịch ở lần trước) cũng là cùng trang — dedupe_key theo kênh không bắt được.
+  const live = samePageBlockers(v.id, platforms, dry);
+  if (dry && live.length) return { ok: false, error: `Video đã có bài thử đang chờ trên ${describeBlockers(live, platforms)}. Huỷ bài đó ở Đăng bài rồi lên lịch lại (đổi giờ / caption) — không tạo bài trùng.` };
   if (!dry && live.some((e) => e.status === "failed" && !e.externalId))
-    return { ok: false, error: `Bài trên ${live.filter((e) => isAmbiguousFailure(e)).map((e) => e.platform).join(", ")} lỗi mơ hồ, có thể đã lên trang. Kiểm tra trang rồi dùng “Thử lại” (ghi lại đã kiểm tra), không lên lịch mới.` };
-  if (!dry && live.length) return { ok: false, error: `Video đã có bài trên ${live.map((e) => e.platform).join(", ")} (${live.map((e) => e.status).join(", ")}). Không đăng trùng.` };
+    return { ok: false, error: `Bài trên ${describeBlockers(live.filter((e) => isAmbiguousFailure(e)), platforms)} lỗi mơ hồ, có thể đã lên trang. Kiểm tra trang rồi dùng “Thử lại” (ghi lại đã kiểm tra), không lên lịch mới.` };
+  if (!dry && live.length) return { ok: false, error: `Video đã có bài trên ${describeBlockers(live, platforms)} (${live.map((e) => e.status).join(", ")}). Không đăng trùng.` };
+  const keys = platforms.map((p) => `${p}:${v.id}`);
+  const existing = dry ? [] : db.select().from(schema.scheduledPosts).where(inArray(schema.scheduledPosts.dedupeKey, keys)).all();
   const thumb = makeThumbnail(masterPath, v.title, input.by);
   const rows = platforms.map((p) => ({
     id: newId("sp"),
     contentId: v.contentId ?? "",
-    title: v.title,
+    // Tiêu đề bài đăng (AI / OWNER sửa ở Kho video); trống thì dùng tên video
+    title: input.title?.trim().slice(0, 100) || v.title,
     platform: p,
     scheduledFor: new Date(when).toISOString(),
     status: "scheduled",
@@ -159,6 +160,37 @@ export function scheduleVideoPosts(input: { videoId: string; platforms: string[]
   for (const r of rows) campaignRepo.inheritLinks("video", v.id, "publication", r.id, "scheduled");
   logActivity("human", `${input.by} lên lịch đăng video “${v.title}” lên ${platforms.join(", ")}${dry ? " (chế độ thử, không đăng thật)" : ""}.`, "publishing");
   return { ok: true, created: rows.length, mode: dry ? "dry_run" : "live" };
+}
+
+/** Trang đích thật của một kênh: kênh Facebook đã có Page ID → "fb:<Page ID>" (hai kênh nhập cùng Page ID là MỘT trang);
+ *  kênh khác / chưa có Page ID → chính tên kênh. Đọc cấu hình HIỆN TẠI (sửa đúng Page ID thì hết trùng). */
+function pageTarget(platform: string): string {
+  const key = videoChannels().find((c) => c.platform === platform)?.key;
+  const pid = key?.startsWith("facebook_page") ? readIntegrationConfig(key).pageId : "";
+  return pid ? `fb:${pid}` : platform;
+}
+
+type PostRow = typeof schema.scheduledPosts.$inferSelect;
+
+/** Bài của video trên cùng TRANG với các kênh chọn mà chặn tạo / đăng lại bài mới.
+ *  Đăng thật: bài thật còn sống — chưa lỗi / huỷ, hoặc nền tảng ĐÃ nhận video (có externalId), hoặc lỗi MƠ HỒ (có thể đã lên trang;
+ *  chỉ đăng lại qua "Thử lại" kèm ghi chú đã kiểm tra trang). Bài thử không bao giờ lên trang nên không chặn.
+ *  Chế độ thử: bài (thử hoặc thật) còn đang chờ — lên lịch lại là tạo bài thứ hai; muốn đổi giờ / caption thì huỷ bài chờ trước. */
+function samePageBlockers(videoId: string, platforms: string[], dry: boolean, exceptId?: string): PostRow[] {
+  const targets = new Set(platforms.map(pageTarget));
+  return videoPostsFor(videoId).filter((e) => {
+    if (e.id === exceptId || !targets.has(pageTarget(e.platform))) return false;
+    if (dry) return e.status === "scheduled" || e.status === "publishing";
+    return e.mode !== "dry_run" && ((e.status !== "failed" && e.status !== "cancelled") || !!e.externalId || isAmbiguousFailure(e));
+  });
+}
+
+/** "facebook, facebook_page_3 (cùng trang 111 với kênh anh chọn)" — nêu rõ khi bài chặn nằm ở kênh khác cùng Page ID. */
+function describeBlockers(rows: PostRow[], chosen: string[]): string {
+  const names = [...new Set(rows.map((e) => e.platform))];
+  const cross = names.filter((n) => !chosen.includes(n));
+  const pages = [...new Set(cross.map(pageTarget).filter((t) => t.startsWith("fb:")).map((t) => t.slice(3)))];
+  return names.join(", ") + (pages.length ? ` (cùng trang ${pages.join(", ")} với kênh anh chọn — kiểm lại Page ID ở Cài đặt › Kết nối nếu nhập nhầm)` : "");
 }
 
 function videoFile(videoId: string): { path: string; name: string; size: number } | null {
@@ -316,6 +348,9 @@ export function retryVideoPost(postId: string, checkedNote?: string): { ok: bool
   if (isAmbiguousFailure(p) && (checkedNote ?? "").trim().length < 10) {
     return { ok: false, error: "Lần trước lệnh đăng đã gửi nhưng không rõ kết quả: kiểm tra trang trước, rồi ghi xác nhận (vd 'Đã mở trang lúc 10:05, không thấy bài')." };
   }
+  // Bài lỗi cũ đã có bài thay thế (cùng trang, kể cả kênh khác cùng Page ID): đăng lại bài cũ là đăng trùng
+  const twins = samePageBlockers(p.videoId, [p.platform], p.mode === "dry_run", p.id);
+  if (twins.length) return { ok: false, error: `Video đã có bài trên ${describeBlockers(twins, [p.platform])} (${twins.map((e) => e.status).join(", ")}). Không đăng trùng — dùng bài đó, hoặc huỷ bài đó rồi thử lại.` };
   db.update(schema.scheduledPosts).set({ status: "scheduled", scheduledFor: nowIso(), error: null }).where(eq(schema.scheduledPosts.id, postId)).run();
   return { ok: true };
 }

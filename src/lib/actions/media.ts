@@ -101,7 +101,7 @@ export async function testAlert() {
 
 // Xóa tệp bất kỳ (ảnh/video) khi không còn dùng.
 export async function deleteUploadAction(fd: FormData) {
-  await requirePermission("manager", "/settings");
+  await requirePermission("manager", "/settings#music");
   const id = str(fd, "id");
   const u = getUpload(id);
   if (!u) return fail("/settings#music", "Không tìm thấy tệp");

@@ -13,19 +13,20 @@ const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 const fail = (path: string, msg: string): never => done(`${path}${path.includes("?") ? "&" : "?"}tone=error`, msg);
 
 export async function scheduleVideoAction(fd: FormData) {
-  const back = str(fd, "back") || "/video-studio?tab=approved";
+  const back = str(fd, "back") || "/video-library";
   const actor = await requirePermission("manager", back);
   const when = str(fd, "when"); // datetime-local, giờ VN
   if (!when) return fail(back, "Cần chọn giờ đăng");
   const at = new Date(`${when.length === 16 ? `${when}:00` : when}+07:00`);
   if (Number.isNaN(at.getTime())) return fail(back, "Giờ đăng không hợp lệ");
   const platforms = fd.getAll("platform").map(String);
-  const r = scheduleVideoPosts({ videoId: str(fd, "id"), platforms, whenIso: at.toISOString(), caption: str(fd, "caption"), by: actor.name });
+  const r = scheduleVideoPosts({ videoId: str(fd, "id"), platforms, whenIso: at.toISOString(), caption: str(fd, "caption"), title: str(fd, "title"), by: actor.name });
   if (!r.ok) return fail(back, r.error);
   // Luật caption kiểm trên caption THẬT anh gửi (cảnh báo, không chặn — OWNER quyết)
   const warn = captionIssues(str(fd, "caption"), platforms, scriptTextFor(str(fd, "id")));
   const tail = warn.length ? ` · ⚠ ${warn.length} cảnh báo caption: ${warn[0].slice(0, 120)}` : "";
-  done("/publishing", (r.mode === "dry_run" ? `Đã lên lịch ${r.created} bài ở chế độ thử (không đăng thật)` : `Đã lên lịch ${r.created} bài, đăng đúng giờ và xác minh trên nền tảng`) + tail);
+  // Bước 5 → 6: lên lịch xong sang Đăng bài, nêu rõ bài vừa lên lịch của video này
+  done(`/publishing?video=${encodeURIComponent(str(fd, "id"))}#video-posts`, (r.mode === "dry_run" ? `Đã lên lịch ${r.created} bài ở chế độ thử (không đăng thật)` : `Đã lên lịch ${r.created} bài, đăng đúng giờ và xác minh trên nền tảng`) + tail);
 }
 
 export async function retryVideoPostAction(fd: FormData) {
@@ -55,15 +56,15 @@ export async function setDryRunAction(fd: FormData) {
 
 // Bài đăng theo skill (6.1): AI Viết bài đăng viết caption nháp cho video (qua Đội AI — công tắc / trần / mô hình theo vị trí)
 export async function aiCaptionAction(fd: FormData) {
-  const back = str(fd, "back") || "/video-studio?tab=approved";
+  const back = str(fd, "back") || "/video-library";
   await requirePermission("manager", back);
   const r = await generateCaption(str(fd, "id"));
   if (!r.ok) return fail(back, r.error);
-  done(back, `AI đã viết caption theo skill ${r.skill} — sửa rồi lên lịch`);
+  done(back, `AI đã viết tiêu đề + nội dung theo skill ${r.skill} — sửa rồi lên lịch`);
 }
 
 export async function resetCaptionAction(fd: FormData) {
-  const back = str(fd, "back") || "/video-studio?tab=approved";
+  const back = str(fd, "back") || "/video-library";
   await requirePermission("manager", back);
   clearCaptionDraft(str(fd, "id"));
   done(back, "Đã quay về caption dựng theo skill");

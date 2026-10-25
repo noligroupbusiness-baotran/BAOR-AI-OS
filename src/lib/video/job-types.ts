@@ -40,6 +40,12 @@ export function parseAspect(v: unknown): Aspect {
   return (ASPECTS as readonly string[]).includes(String(v)) ? (String(v) as Aspect) : "9:16";
 }
 
+/** Chất lượng xuất (OWNER 25/10/2026: chọn 1080p hay 4K khi thêm video gốc). Bộ dựng đọc job.quality. */
+export type VideoQuality = "1080" | "4k";
+export function parseQuality(v: unknown): VideoQuality {
+  return String(v).toLowerCase() === "4k" ? "4k" : "1080";
+}
+
 export function parseFraming(x: unknown, y: unknown, zoom: unknown): Framing | undefined {
   const n = (v: unknown, lo: number, hi: number) => {
     const f = Number(v);
@@ -62,6 +68,8 @@ export interface VideoJob {
   aiPlan?: boolean;
   aspect?: Aspect;
   framing?: Framing;
+  /** Chất lượng xuất chọn khi thêm video gốc: "1080" (mặc định) hoặc "4k". */
+  quality?: VideoQuality;
   prompt?: string;
   createdAt: string;
   by?: string;

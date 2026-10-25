@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { uploadsDir } from "@/lib/uploads";
 import { APPROVED_SCRIPT, createVideoFromSource } from "./jobs";
-import { parseAspect } from "./job-types";
+import { parseAspect, parseQuality } from "./job-types";
 import { addVideoFeedback } from "./feedback";
 import { campaignRepo } from "@/lib/campaigns/repository";
 import { getAdminEmail } from "@/lib/admin";
@@ -19,6 +19,8 @@ export interface IntakeParams {
   contentId: string | null;
   final: boolean;
   aspect?: string | null;
+  /** "1080" | "4k" (chọn ở Thêm video gốc) */
+  quality?: string | null;
   start?: boolean;
 }
 
@@ -55,6 +57,6 @@ export function registerSource(i: { tmpPath: string; uploadId: string; original:
     addVideoFeedback({ videoId, version: 1, kind: "upload", note: `Video dựng sẵn: ${i.original}`, by: i.by.name });
     return { videoId };
   }
-  const videoId = createVideoFromSource({ title, sourceUploadId: i.uploadId, cutSilence: i.params.cut, aspect: parseAspect(i.params.aspect), by: i.by.name, contentId: content?.id ?? null, start: !!i.params.start });
+  const videoId = createVideoFromSource({ title, sourceUploadId: i.uploadId, cutSilence: i.params.cut, aspect: parseAspect(i.params.aspect), quality: parseQuality(i.params.quality), by: i.by.name, contentId: content?.id ?? null, start: !!i.params.start });
   return { videoId };
 }

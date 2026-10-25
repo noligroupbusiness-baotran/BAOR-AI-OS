@@ -2,7 +2,7 @@
 import { desc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 
-export type FeedbackKind = "upload" | "send_review" | "send_approval" | "request_changes" | "approve" | "rerender" | "link_script";
+export type FeedbackKind = "upload" | "send_review" | "send_approval" | "request_changes" | "approve" | "rerender" | "link_script" | "rename";
 
 export const feedbackLabel: Record<FeedbackKind, string> = {
   upload: "Thêm nguồn",
@@ -12,6 +12,7 @@ export const feedbackLabel: Record<FeedbackKind, string> = {
   approve: "Phê duyệt",
   rerender: "Dựng lại",
   link_script: "Gắn kịch bản",
+  rename: "Đổi tên",
 };
 
 export function addVideoFeedback(f: { videoId: string; version: number; kind: FeedbackKind; note?: string; by: string }) {

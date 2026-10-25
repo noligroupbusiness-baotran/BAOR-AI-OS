@@ -4,12 +4,12 @@ import { z } from "zod";
 import { desc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { getBrand, listInsights, listPersonas } from "@/lib/queries";
-import { aiBudgetAllows, recordAiCall, recordDecision } from "@/lib/router";
+import { aiBudgetAllows, estimateCostVnd, recordAiCall, recordDecision } from "@/lib/router";
 import { roleAllows, roleForPurpose, roleSettings } from "@/lib/ai-roster";
 import { AI_MODELS, PROVIDERS, ProviderError, clientFor, modelCostVnd, modelInfo, providerConfigured, type AiProvider } from "@/lib/ai-providers";
 import { sendAlert } from "@/lib/alerts";
 import { HOOK_COUNT, HOOK_PLATFORMS, hookContext, saveHooks } from "@/lib/content/hooks";
-import { buildCaption, captionSkill, saveCaptionDraft } from "@/lib/publishing/caption";
+import { buildCaption, buildPostTitle, captionDraft, captionSkill, postTitle, saveCaptionDraft, savePostTitle, setPostDraftSource } from "@/lib/publishing/caption";
 
 // Bộ não AI của hệ thống. Mô hình theo từng vị trí: src/lib/ai-roster.ts (Cài đặt › Đội AI) — Claude, ChatGPT hoặc Grok
 // (src/lib/ai-providers.ts). Khoá API: Cài đặt › Kết nối (Claude API / OpenAI / xAI) hoặc biến môi trường.
@@ -53,17 +53,63 @@ export async function gate<T extends { usage?: { input_tokens: number; output_to
     void sendAlert({ level: "warn", title: "AI chạm trần chi phí", text: budget.reason, href: "/settings#ai" });
     return { ok: false, error: `${budget.reason} Nâng trần ở Cài đặt › Đội AI nếu cần.` };
   }
+  const meter = meterClient(client);
   try {
-    const res = await call(client, model);
-    const inputTokens = res.usage?.input_tokens ?? 0;
-    const outputTokens = res.usage?.output_tokens ?? 0;
+    const res = await call(meter.client, model);
+    // Ưu tiên tổng đồng hồ (mọi phản hồi hãng đã trả trong lần gọi); call không đi qua client (test giả) → usage nó trả về
+    const inputTokens = meter.used.responses > 0 ? meter.used.input : (res.usage?.input_tokens ?? 0);
+    const outputTokens = meter.used.responses > 0 ? meter.used.output : (res.usage?.output_tokens ?? 0);
     const aiCallId = recordAiCall({ purpose, role: role.id, model, inputTokens, outputTokens, ok: true, costVnd: modelCostVnd(model, inputTokens, outputTokens) });
     recordDecision({ lane: "ai", domain: purpose === "reply" ? "reply" : purpose === "research" ? "research" : "content", subject, outcome: "AI đã tạo đề xuất", reason: "Thiếu dữ liệu nguồn có sẵn, dùng AI; người duyệt trước khi dùng.", sources: ["Dữ liệu trong hệ thống (Cài đặt, insight, hội thoại)", `${role.name} · ${model}`], confidence: 70, needsApproval: true, aiCallId });
     return { ok: true, res, model };
   } catch (e) {
-    recordAiCall({ purpose, role: role.id, model, inputTokens: 0, outputTokens: 0, ok: false, error: describeError(e) });
+    // Hãng có thể ĐÃ trả lời (đã tính tiền) rồi bước sau mới lỗi: parse JSON / schema, từ chối ở lượt sau… → ghi đúng token đã dùng
+    // và chi phí của chúng (tính vào trần ngày / tháng / trần riêng vị trí) rồi mới báo lỗi. Hãng báo lỗi HTTP → đồng hồ 0, 0 ₫.
+    const { input, output } = meter.used;
+    const costVnd = input + output > 0 ? (modelCostVnd(model, input, output) ?? estimateCostVnd(input, output)) : 0;
+    recordAiCall({ purpose, role: role.id, model, inputTokens: input, outputTokens: output, ok: false, error: describeError(e), costVnd });
     return { ok: false, error: describeError(e) };
   }
+}
+
+type UsageLike = { input_tokens?: number | null; output_tokens?: number | null } | null | undefined;
+
+// Đồng hồ token của cổng AI: bọc client (Claude thật hoặc bộ chuyển đổi ChatGPT / Grok) để cộng usage của MỌI phản hồi hãng trả về
+// TRƯỚC khi chỗ gọi xử lý tiếp. messages.parse của SDK (và của bộ chuyển đổi) = this.create(...) rồi mới parse → gọi parse gốc với `this`
+// là proxy có đồng hồ ở create, nên lỗi parse (JSON hỏng / sai schema) vẫn ném ra như cũ nhưng token đã được đếm.
+// beta.messages (Nghiên cứu web_search) cũng qua đồng hồ. tests/ai-gate-usage.test.ts giữ giả định "parse gọi this.create" của SDK.
+function meterClient(client: Anthropic): { client: Anthropic; used: { input: number; output: number; responses: number } } {
+  const used = { input: 0, output: 0, responses: 0 };
+  const tally = <R>(r: R): R => {
+    const u = (r as { usage?: UsageLike } | null)?.usage;
+    if (u) {
+      used.input += u.input_tokens ?? 0;
+      used.output += u.output_tokens ?? 0;
+      used.responses++;
+    }
+    return r;
+  };
+  type Fn = (...args: unknown[]) => unknown;
+  const passThrough = <O extends object>(target: O, overrides: Record<string, unknown>): O =>
+    new Proxy(target, {
+      get(t, k) {
+        if (typeof k === "string" && k in overrides) return overrides[k];
+        const v: unknown = Reflect.get(t, k, t);
+        return typeof v === "function" ? v.bind(t) : v;
+      },
+    });
+  const meterMessages = <M extends object>(m: M): M => {
+    const raw = m as unknown as { create: Fn; parse?: Fn };
+    const overrides: Record<string, unknown> = { create: (...args: unknown[]) => Promise.resolve(raw.create.apply(m, args)).then(tally) };
+    const proxy = passThrough(m, overrides);
+    if (typeof raw.parse === "function") overrides.parse = (...args: unknown[]) => raw.parse!.apply(proxy, args);
+    return proxy;
+  };
+  const messages = meterMessages(client.messages);
+  // Bộ chuyển đổi ChatGPT / Grok chỉ có messages (không có beta) → để nguyên
+  const rawBeta = (client as { beta?: Anthropic["beta"] }).beta;
+  const beta = rawBeta?.messages ? passThrough(rawBeta, { messages: meterMessages(rawBeta.messages) }) : rawBeta;
+  return { client: passThrough(client, { messages, beta }), used };
 }
 
 
@@ -149,23 +195,29 @@ export async function generateHooks(topic: string, by: string, researchId?: stri
   return { ok: true, batchId: saved.batchId, count: saved.ids.length, dropped, short: Math.max(0, HOOK_COUNT - saved.ids.length) };
 }
 
-// Bài đăng theo skill (Personal Brand System 6.1): AI Viết bài đăng viết caption cho video theo skill viết content trong Second Brain,
-// chỉ từ kịch bản đã duyệt; luật caption kiểm lại khi hiển thị. Bản nháp lưu theo video, OWNER sửa rồi mới lên lịch.
-export async function generateCaption(videoId: string): Promise<Result<{ text: string; skill: string }>> {
+// Bài đăng theo skill (Personal Brand System 6.1): AI Viết bài đăng viết TIÊU ĐỀ + caption cho video theo skill viết content trong
+// Second Brain, chỉ từ kịch bản đã duyệt; luật caption kiểm lại khi hiển thị. Bản nháp lưu theo video, OWNER sửa rồi mới lên lịch.
+const PostSchema = z.object({
+  title: z.string().describe("Tiêu đề bài đăng ngắn, dưới 100 ký tự, không hashtag"),
+  caption: z.string().describe("Nội dung bài đăng (caption) dưới 1.200 ký tự, tối đa 3 hashtag"),
+});
+
+/** keepExisting: lượt viết NỀN khi video vào Kho — đã có bản nháp (OWNER gõ / bấm "Viết lại bằng AI" trong lúc chờ) thì không ghi đè. */
+export async function generateCaption(videoId: string, opts: { keepExisting?: boolean } = {}): Promise<Result<{ text: string; title: string; skill: string }>> {
   const db = getDb();
   const v = db.select().from(schema.videos).where(eq(schema.videos.id, videoId)).get();
   if (!v) return { ok: false, error: "Không tìm thấy video." };
   const c = v.contentId ? db.select().from(schema.contentItems).where(eq(schema.contentItems.id, v.contentId)).get() : undefined;
   const skill = captionSkill();
   const base = buildCaption(videoId);
-  const gated = await gate("caption", `AI viết caption “${v.title.slice(0, 60)}”`, (client, model) =>
-    client.messages.create({
+  const gated = await gate("caption", `AI viết bài đăng “${v.title.slice(0, 60)}”`, (client, model) =>
+    client.messages.parse({
       model,
       max_tokens: 4000,
       system:
-        "Bạn viết caption bài đăng video ngắn cho thương hiệu cá nhân Việt Nam, theo đúng skill được đưa. Chỉ dùng thông tin có trong kịch bản; " +
+        "Bạn viết bài đăng video ngắn (tiêu đề + caption) cho thương hiệu cá nhân Việt Nam, theo đúng skill được đưa. Chỉ dùng thông tin có trong kịch bản; " +
         "không bịa số liệu, giá, công dụng; không khẳng định tuyệt đối, không tuyên bố chữa bệnh / giảm cân, không khẳng định thuộc tính cá nhân người xem, " +
-        "không hứa thu nhập. Trả về đúng phần caption (không giải thích), dưới 1.200 ký tự, tối đa 3 hashtag.",
+        "không hứa thu nhập. Tiêu đề dưới 100 ký tự, không hashtag. Caption dưới 1.200 ký tự, tối đa 3 hashtag, không giải thích thêm.",
       messages: [
         {
           role: "user",
@@ -173,13 +225,18 @@ export async function generateCaption(videoId: string): Promise<Result<{ text: s
             `Video: ${v.title}\nHook: ${c?.hook ?? ""}\nKịch bản đã duyệt:\n${(c?.draft ?? "").slice(0, 6000) || "(không có)"}\n\nCaption nháp theo luật (để tham khảo):\n${base.text}`,
         },
       ],
+      output_config: { format: zodOutputFormat(PostSchema) },
     }),
   );
   if (!gated.ok) return gated;
-  const text = gated.res.content.map((b) => (b.type === "text" ? b.text : "")).join("").trim();
+  const text = gated.res.parsed_output?.caption?.trim() ?? "";
+  const title = gated.res.parsed_output?.title?.trim() || buildPostTitle(videoId);
   if (!text) return { ok: false, error: "AI không trả về caption." };
+  if (opts.keepExisting && captionDraft(videoId)) return { ok: true, text: captionDraft(videoId) ?? "", title: postTitle(videoId) ?? title, skill: "giữ bản nháp đã có" };
   saveCaptionDraft(videoId, text);
-  return { ok: true, text, skill: skill ? `${skill.title} (${skill.status})` : "chưa có skill" };
+  savePostTitle(videoId, title);
+  setPostDraftSource(videoId, "ai");
+  return { ok: true, text, title, skill: skill ? `${skill.title} (${skill.status})` : "chưa có skill" };
 }
 
 export async function generateIdeas(n = 5): Promise<Result<{ count: number }>> {

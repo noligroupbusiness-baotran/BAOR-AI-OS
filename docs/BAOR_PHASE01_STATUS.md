@@ -72,7 +72,8 @@ Cập nhật bởi MASTER sau mỗi checkpoint. Nguồn vận hành: `docs/BAOR_
 <!-- NEXT:START -->
 Nguồn ủy quyền: chỉ thị OWNER 22/10/2026 "CONTINUE BRAND ENGINE IMPLEMENTATION" + "SHARED OPERATING STANDARD"; 25/10/2026 OWNER gửi sơ đồ
 "Personal Brand System" (8 bước + nguyên tắc AI) — "làm theo hệ thống này". Mỗi mục đi đủ vòng BUILD (docs/BAOR_OPERATING_MODEL.md §2).
-OWNER 25/10/2026: "ngưng edit video" — KHÔNG xếp hàng / dựng lại video cho tới khi OWNER nói tiếp (llama-server đã tắt).
+OWNER 25/10/2026 (tối): edit video LẠI ("edit lại đi") — lệnh "ngưng edit video" trước đó hết hiệu lực. Skill Demo ĐÃ LOẠI BỎ HOÀN TOÀN
+("chỉ giữ 2 skill trước đó"); llama-server (Qwen 32B) đang chạy tại 127.0.0.1:8091 khi cần biên tập AI.
 1. [XONG phần không cần khoá] Personal Brand System — các lát KHÔNG cần khoá nền tảng / tiền thật, theo thứ tự:
    A. XONG 3758af6 — Đội AI (nguyên tắc AI): mỗi vị trí 1 AI, công tắc "Cho phép gọi AI", trần riêng / tháng, màn hình chung Báo cáo › Chi phí AI
       (src/lib/ai-roster.ts, Cài đặt › Đội AI). AI Edit Video (tại máy) ghi sổ ₫0, tắt → dựng theo luật.
@@ -101,18 +102,40 @@ OWNER 25/10/2026: "ngưng edit video" — KHÔNG xếp hàng / dựng lại vide
    M. XONG (commit kế) — Đội AI nhiều hãng: Claude / ChatGPT (OpenAI) / Grok (xAI) cho từng vị trí (Responses API, giá chính thức đọc 25/10/2026
       trong src/lib/ai-providers.ts — hãng đổi giá thì sửa ở đó); chi phí ghi theo giá từng mô hình × tỷ giá (Cài đặt › Đội AI); kiểm khoá thật
       (GET /v1/models). Nghiên cứu bước tìm nguồn (web_search) luôn chạy Claude. CHƯA gọi thật ChatGPT / Grok (chưa có khoá).
+   N. XONG (commit kế) — Hành trình video 4→5→6 (OWNER 25/10 "đơn giản, chuyên nghiệp, ít chữ, nút bấm"): lưới thẻ + xem nhanh, đổi tên
+      hiện rõ, MỘT nút "Duyệt" cho người có quyền (approve_direct, src/lib/videos/transition.ts), duyệt → Kho video (lưới, lên lịch tại chỗ),
+      AI viết tiêu đề + nội dung khi video vào Kho (after(); lỗi → bản theo luật, không ghi đè bản OWNER), gợi ý giờ đăng theo giờ vàng (VN),
+      thêm video gốc chọn Khung 9:16 / 16:9 + Chất lượng 1080p / 4K (--quality=4k; dựng lại giữ chất lượng), xoá trong Kho (video đã duyệt
+      chưa có bài lên lịch / đã đăng, quyền Quản lý; vẫn chuyển vào data/removed), ?tab=approved → /video-library, khôi phục kế hoạch AI trước.
+   O. XONG (commit kế) — Nới luật bộ dựng ESV (OWNER 25/10 "phá bỏ những rules vi phạm để mang lại 1 video hoàn thiện"; GIỮ luật an toàn
+      nghĩa: nguyên văn, phủ định, tiền / số lượng A13, từ nghe chưa chắc): chữ nhấn ≈ 1 / 7 s (tối thiểu 4, cách 2,5 s); số thời lượng
+      ("6 tháng") được hiện; trưởng biên tập chỉ bỏ mục ≤ 1/5; khung trích dẫn dự phòng (nguyên văn, trọn câu / cắt ở ranh giới mệnh đề,
+      bỏ nếu phần sau có phủ định) khi không còn sơ đồ nội dung; zoom lấp trống mỗi 6 s; chưa có bài nhạc duyệt → dùng bài kho ĐỦ-HỒ-SƠ
+      (kể cả Mixkit) để bản dựng có nhạc, giấy phép giữ nguyên văn → bảng kiểm P CHẶN ĐĂNG tới khi OWNER nghe duyệt bài (§7).
+      Cũng xong (commit kế): chống trùng bài cùng Page ID (kể cả lên lịch 2 lần riêng / thử lại / dry-run), từ chối quyền ở Cài đặt mở đúng
+      nhóm + hiện thông báo (toast trước #neo), sổ chi phí AI ghi đúng token khi parse lỗi sau khi hãng đã tính tiền (tính vào trần).
    CHỜ OWNER: khoá Meta / Google / YouTube / TikTok (đăng bài + quảng cáo 7.2–7.5), hồ sơ cá nhân Facebook (6.2.1.1).
 2. Skill ESV + Skill Edit Video Ngang v0.1.r2 — XONG phần Phần chung A (4255aca, ff638df): nhạc A5 (chưa có bài đạt → KHÔNG nhạc),
    SFX OWNER theo vai trò, cắt lặng A11.4 (+ bảo vệ khoảng có từ), xem trước 720p, số A13, ảnh theo mô tả nội dung A4.1.
    Đã dựng lại "1017(1)" v_mvib816allf8l bản 6 (16:9) + "B1 Chào hỏi phá" bản 9 (9:16) đạt bảng kiểm; "1011" bản 10 và
    "1017(1)" v_mvjky1w9g7fjv bản 3 DỪNG theo lệnh OWNER.
-   CÒN: K1–K10 (CHƯA CHỐT — chờ OWNER #134a); logo sáng / tối theo cảnh (A16.1.4); 4K (D-04); giấy phép SFX OWNER CHƯA XÁC MINH;
+   XONG (commit kế): logo sáng / tối theo cảnh A16.1.4 (đo nền ô logo 4 mẫu/s trên đúng nền sẽ xuất, ngưỡng 0,55 ±0,03, giữ ≥ 2 s, mờ 0,2 s;
+   bảng kiểm N đo lại trên bản chính; lỗi đo → logo sáng + N unmeasured, không chết lần dựng) — ngưỡng / giữ 2 s do AI chọn, CHỜ OWNER duyệt;
+   bản logo tối thương hiệu (baor-dark.png, chữ ánh kim có phần gần trắng) khó đọc trên nền rất sáng — OWNER xem có cần bản tối đặc màu;
+   4K (D-04): --quality=4k (crop ≥ 90 % 4K mới xuất 4K; lớp chữ / FS-06 là bản 1080 phóng ×2). Dựng lại "1011(1)" v_mvnu9i50atbkj bản 7:
+   5 chữ nhấn, nhạc kho (chờ OWNER duyệt bài → P chặn đăng), bảng kiểm đạt trừ P.
+   CÒN: K1–K10 (CHƯA CHỐT — chờ OWNER #134a); giấy phép SFX OWNER CHƯA XÁC MINH;
    mô tả ảnh mới tải lên chưa có (ảnh mới rơi về tên tệp, có đánh dấu).
 3. Nợ đã ghi (không chặn): script_align "Lan"→"Lành" khi kịch bản viết hoa tên khác; negated_before dừng ở "thì" có thể sót
-   phủ định mệnh đề sau; mỗi video mới gọi mô hình ~6–8 phút; khôi phục plan.prev-* chưa có nút trong app;
+   phủ định mệnh đề sau; mỗi video mới gọi mô hình ~6–8 phút; xoá video không lưu trữ góp ý video_comments (dòng mồ côi);
+   chống trùng cùng Page ID là kiểm-rồi-ghi (khoá unique CSDL vẫn theo kênh — cần khoá theo trang nếu chạy nhiều tiến trình);
+   Nghiên cứu bước 1 fallbacks:"default" → giá ghi theo model yêu cầu; TRƯỚC KHI BẬT ĐĂNG THẬT: chống trùng cùng Page ID đọc Page ID
+   HIỆN TẠI của kênh, không phải Page ID lúc đăng → sửa Page ID sau khi đăng có thể đăng trùng (lưu Page ID vào bài lúc lên lịch / đăng);
+   P3 phản biện 25/10: ?tab=approved redirect mất ?campaign=&goal=; deleteVideo chuyển tệp trước rồi mới xoá dòng (không transaction);
+   restorePrevPlan không trả tệp plan khi rerenderVideo NÉM lỗi; meterClient trả Promise thường (gọi .withResponse() qua cổng AI sẽ hỏng);
+   gắn tay chiến dịch đã kế thừa từ kịch bản bị bỏ qua (dòng vẫn mang dấu kế thừa → đổi kịch bản sẽ gỡ);
    gắn lại kịch bản không gỡ liên kết chiến dịch kế thừa từ kịch bản cũ; E2E music-library chập chờn (1 lần đỏ, chạy lại xanh);
-   máy dựng: các P3 phản biện 9042beb; parse JSON lỗi sau khi hãng đã tính tiền → sổ ghi 0 token (đếm thiếu trần, có từ trước);
-   requirePermission(...,"/settings") không neo khi bị từ chối quyền; lên lịch 2 lần riêng cùng Page ID có thể trùng bài; các P3 phản biện nghiên cứu (49c69ba).
+   máy dựng: các P3 phản biện 9042beb; các P3 phản biện nghiên cứu (49c69ba).
 4. Sau mỗi nhóm được nghiệm thu: cập nhật docs/brand-engine/BAOR-BRAND-ENGINE-IMPLEMENTATION-PROGRESS.md (công thức chấm cố định, chỉ tính bằng chứng mới).
 <!-- NEXT:END -->
 

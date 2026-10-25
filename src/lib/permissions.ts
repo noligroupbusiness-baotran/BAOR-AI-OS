@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { getAdminEmail } from "@/lib/admin";
 import { catalogRepo, permissionLabel, type Permission } from "@/lib/catalog/repository";
+import { withToast } from "@/lib/actions/common";
 
 // Ai đang thao tác và có quyền gì. Tài khoản quản trị (.env / Cài đặt) luôn là "admin";
 // nhân sự trong Cài đặt › Nhân sự đăng nhập bằng email + mật khẩu riêng và mang quyền của mình.
@@ -36,12 +37,19 @@ export function can(actor: Pick<Actor, "permission">, level: Permission): boolea
   return rank[actor.permission] >= rank[level];
 }
 
+/** Đường quay về khi bị từ chối quyền: ?toast=…&tone=error đặt TRƯỚC #neo (sau neo thì trình duyệt coi là neo, thông báo
+ *  không hiện) và /settings#neo được gắn ?tab=<nhóm> (withToast → withSettingsTab) để mở đúng nhóm Cài đặt. */
+export function deniedPath(backPath: string, level: Permission, current: Permission): string {
+  const i = backPath.indexOf("#");
+  const base = i >= 0 ? backPath.slice(0, i) : backPath;
+  const hash = i >= 0 ? backPath.slice(i) : "";
+  const msg = `Cần quyền ${permissionLabel[level].label} để thực hiện. Bạn đang là ${permissionLabel[current].label}.`;
+  return withToast(`${base}${base.includes("?") ? "&" : "?"}tone=error${hash}`, msg);
+}
+
 // Dùng ở đầu server action: không đủ quyền thì quay về trang kèm thông báo lỗi, không thực hiện.
 export async function requirePermission(level: Permission, backPath: string): Promise<Actor> {
   const actor = await currentActor();
-  if (!can(actor, level)) {
-    const sep = backPath.includes("?") ? "&" : "?";
-    redirect(`${backPath}${sep}toast=${encodeURIComponent(`Cần quyền ${permissionLabel[level].label} để thực hiện. Bạn đang là ${permissionLabel[actor.permission].label}.`)}&tone=error`);
-  }
+  if (!can(actor, level)) redirect(deniedPath(backPath, level, actor.permission));
   return actor;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/format";
 
@@ -19,6 +19,9 @@ export function SourceDrop({ scripts = [], defaultContentId = "", defaultCut = t
   const [contentId, setContentId] = useState(defaultContentId);
   const [final, setFinal] = useState(false);
   const [over, setOver] = useState(false);
+  // OWNER 25/10/2026: chọn khung (9:16 · 16:9) và chất lượng (1080p · 4K) ngay khi thêm video; nhớ lựa chọn cuối trên máy này
+  const [aspect, setAspect] = useStored("baor.upload.aspect", ["9:16", "16:9"] as const);
+  const [quality, setQuality] = useStored("baor.upload.quality", ["1080", "4k"] as const);
   const busy = items.some((i) => i.status === "uploading" || i.status === "waiting");
 
   const update = (idx: number, patch: Partial<Item>) => setItems((xs) => xs.map((x, i) => (i === idx ? { ...x, ...patch } : x)));
@@ -37,7 +40,7 @@ export function SourceDrop({ scripts = [], defaultContentId = "", defaultCut = t
       }
     })();
     update(idx, { status: "uploading" });
-    const open = await fetch(`/api/video-sources/resumable?${q({ name: file.name, size: String(file.size), key: `${file.name}|${file.size}|${file.lastModified}`, cut: cut ? "1" : "0", content: contentId, ...(final ? { mode: "final" } : {}) })}`, { method: "POST" })
+    const open = await fetch(`/api/video-sources/resumable?${q({ name: file.name, size: String(file.size), key: `${file.name}|${file.size}|${file.lastModified}`, cut: cut ? "1" : "0", content: contentId, aspect, quality, ...(final ? { mode: "final" } : {}) })}`, { method: "POST" })
       .then((r) => r.json() as Promise<{ ok: boolean; sid?: string; offset?: number; resumed?: boolean; error?: string }>)
       .catch(() => ({ ok: false, error: "Mất kết nối khi bắt đầu tải lên" }) as { ok: boolean; sid?: string; offset?: number; resumed?: boolean; error?: string });
     if (!open.ok || !open.sid) return update(idx, { status: "error", error: open.error ?? "Không mở được phiên tải lên" });
@@ -123,9 +126,15 @@ export function SourceDrop({ scripts = [], defaultContentId = "", defaultCut = t
           {scripts.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
         </select>
       </label>
-      <label className="flex items-center gap-2 text-[12.5px] text-ink-2">
+      {!final && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <Choice label="Khung" value={aspect} options={[["9:16", "9:16"], ["16:9", "16:9"]]} onChange={(v) => setAspect(v as "9:16" | "16:9")} disabled={busy} />
+          <Choice label="Chất lượng" value={quality} options={[["1080", "1080p"], ["4k", "4K"]]} onChange={(v) => setQuality(v as "1080" | "4k")} disabled={busy} />
+        </div>
+      )}
+      <label className="flex items-center gap-2 text-[12.5px] text-ink-2" title="OWNER tải lên thì vào thẳng Kho video; người khác tải thì vào Chờ kiểm tra">
         <input type="checkbox" checked={final} onChange={(e) => setFinal(e.target.checked)} className="h-3.5 w-3.5 accent-[var(--jade)]" />
-        Video tôi đã tự edit (không dựng lại — OWNER tải lên thì vào thẳng Tổng kho video ngắn, người khác tải thì vào Chờ kiểm tra)
+        Video đã tự edit (không dựng lại)
       </label>
       <label className="flex items-center gap-2 text-[12.5px] text-ink-2">
         <input type="checkbox" checked={cut} onChange={(e) => setCut(e.target.checked)} className="h-3.5 w-3.5 accent-[var(--jade)]" />
@@ -149,6 +158,55 @@ export function SourceDrop({ scripts = [], defaultContentId = "", defaultCut = t
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+/** Lựa chọn nhớ trên máy này (localStorage, bọc try/catch); máy chủ / bị chặn lưu trữ → lựa chọn đầu tiên. */
+const STORE_EVENT = "baor:upload-choice";
+const memory = new Map<string, string>(); // khi trình duyệt chặn lưu trữ: vẫn đổi được trong phiên này
+function useStored<T extends string>(key: string, allowed: readonly T[]): [T, (v: T) => void] {
+  const read = () => {
+    let v: string | null = memory.get(key) ?? null;
+    try {
+      v = localStorage.getItem(key) ?? v;
+    } catch {
+      /* dùng bản trong phiên */
+    }
+    return v && (allowed as readonly string[]).includes(v) ? (v as T) : allowed[0];
+  };
+  const value = useSyncExternalStore(
+    (cb) => {
+      window.addEventListener(STORE_EVENT, cb);
+      return () => window.removeEventListener(STORE_EVENT, cb);
+    },
+    read,
+    () => allowed[0],
+  );
+  const set = (v: T) => {
+    memory.set(key, v);
+    try {
+      localStorage.setItem(key, v);
+    } catch {
+      /* bỏ qua: không nhớ được thì vẫn dùng mặc định */
+    }
+    window.dispatchEvent(new Event(STORE_EVENT));
+  };
+  return [value, set];
+}
+
+/** Nhóm nút chọn một (segmented): nhãn + các lựa chọn. */
+function Choice({ label, value, options, onChange, disabled }: { label: string; value: string; options: [string, string][]; onChange: (v: string) => void; disabled?: boolean }) {
+  return (
+    <div className="flex items-center gap-2 text-[12.5px]">
+      <span className="text-ink-2">{label}</span>
+      <div role="radiogroup" aria-label={label} className="inline-flex rounded-full border border-border-2 bg-surface p-0.5">
+        {options.map(([v, text]) => (
+          <button key={v} type="button" role="radio" aria-checked={value === v} disabled={disabled} onClick={() => onChange(v)} className={cn("num h-6 cursor-pointer rounded-full px-3 text-[12px] font-medium disabled:cursor-not-allowed", value === v ? "bg-jade text-white" : "text-ink-2 hover:text-ink")}>
+            {text}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

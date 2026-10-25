@@ -83,6 +83,8 @@ export interface CampaignRepository {
   /** Liên kết của một nhóm thực thể (để phân hệ khác hiện nhãn chiến dịch). */
   linksForEntities(entityType: LinkedEntityType, entityIds: string[]): Map<string, EntityCampaignLink[]>;
   removeLink(campaignId: string, entityType: LinkedEntityType, entityId: string): void;
+  /** Gỡ các liên kết của thực thể KẾ THỪA từ một nguồn (via_type / via_id), vd video từ kịch bản cũ. Liên kết gắn tay (via trống) giữ nguyên. */
+  removeInheritedLinks(entityType: LinkedEntityType, entityId: string, viaType: LinkedEntityType, viaId: string): void;
   /** Phân hệ nguồn đổi trạng thái → cập nhật trạng thái trong bảng liên kết. */
   syncEntityStatus(entityType: LinkedEntityType, entityId: string, status: string): void;
   /** Sao chép liên kết của thực thể nguồn sang thực thể sinh ra từ nó (VD: nội dung → bài đăng). */
@@ -552,6 +554,13 @@ class SqliteCampaignRepository implements CampaignRepository {
     this.db
       .delete(schema.marketingLinks)
       .where(and(eq(schema.marketingLinks.campaignId, campaignId), eq(schema.marketingLinks.entityType, entityType), eq(schema.marketingLinks.entityId, entityId)))
+      .run();
+  }
+
+  removeInheritedLinks(entityType: LinkedEntityType, entityId: string, viaType: LinkedEntityType, viaId: string) {
+    this.db
+      .delete(schema.marketingLinks)
+      .where(and(eq(schema.marketingLinks.entityType, entityType), eq(schema.marketingLinks.entityId, entityId), eq(schema.marketingLinks.viaType, viaType), eq(schema.marketingLinks.viaId, viaId)))
       .run();
   }
 

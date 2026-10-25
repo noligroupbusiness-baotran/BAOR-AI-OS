@@ -181,6 +181,7 @@ test("khung hình: tỷ lệ / khung cắt từ form được chặn giá trị 
   const arch = fs.readdirSync(path.join(tmp, "removed")).find((x) => x.startsWith(vid))!;
   assert.ok(fs.existsSync(path.join(tmp, "removed", arch, "up_fr.mp4")), "tệp nằm trong lưu trữ, khôi phục được");
   assert.ok(fs.existsSync(path.join(tmp, "removed", arch, "records.json")));
+
 });
 
 test("bảng biên tập: lưu kế hoạch chỉ nhận khoá đã biết, giữ mục tắt; đổi giờ bản cắt lặng ↔ giờ gốc", async () => {

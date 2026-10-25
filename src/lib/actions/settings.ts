@@ -131,7 +131,7 @@ export async function disconnectIntegration(fd: FormData) {
 }
 
 export async function resetSampleData() {
-  await requirePermission("admin", "/settings");
+  await requirePermission("admin", "/settings#sample");
   const db = getDb();
   clearSampleOnly(db);
   seedAll(db);
@@ -140,7 +140,7 @@ export async function resetSampleData() {
 }
 
 export async function clearSampleData() {
-  await requirePermission("admin", "/settings");
+  await requirePermission("admin", "/settings#sample");
   clearSampleOnly(getDb());
   setSetting("data.sampleCleared", "1");
   done("/dashboard", "Đã xóa dữ liệu mẫu, giữ nguyên dữ liệu bạn tự tạo. Hệ thống sẵn sàng nhận dữ liệu thật.");

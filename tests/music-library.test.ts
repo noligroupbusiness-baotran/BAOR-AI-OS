@@ -36,9 +36,9 @@ function seed() {
 }
 
 /** Gọi đúng hàm chọn nhạc của bộ dựng (music_pick.pick_music) trên thư mục tạm. */
-function pyPick(mood: string | null, seedName = "video-a.mp4") {
+function pyPick(mood: string | null, seedName = "video-a.mp4", withPool = false) {
   const py = `import json,sys; sys.path.insert(0, ${JSON.stringify(VIDEO)}); import music_pick as M
-lib = M.music_library(${JSON.stringify(tmp)}); p, lic, info = M.pick_music(lib, ${mood ? JSON.stringify(mood) : "None"}, ${JSON.stringify(seedName)})
+lib = M.music_library(${JSON.stringify(tmp)}); p, lic, info = M.pick_music(lib, ${mood ? JSON.stringify(mood) : "None"}, ${JSON.stringify(seedName)}${withPool ? `, pool=M.music_pool(${JSON.stringify(tmp)})` : ""})
 print(json.dumps({"file": p.split("/")[-1] if p else None, "license": lic, "info": info, "genres": M.music_genres(lib)}, ensure_ascii=False))`;
   const r = spawnSync(PY, ["-c", py], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
@@ -126,4 +126,38 @@ test("Phần chung A5.2 / CK-11: 552792 / 241274 / 136824 không bao giờ đư�
     const p = pyPick("acoustic", seedName);
     assert.ok(!String(p.file).includes("mixkit"), `Mixkit chưa duyệt không được dùng: ${p.file}`);
   }
+});
+
+test("Mixkit CHỜ duyệt ('chờ OWNER nghe duyệt' chứa cụm 'OWNER nghe duyệt') vẫn bị chặn; đã duyệt thì dùng được (lỗi thật 25/10)", () => {
+  const py = `import json,sys; sys.path.insert(0, ${JSON.stringify(VIDEO)}); from music_pick import banned
+print(json.dumps([banned({"file": "a_mixkit1.mp3", "license": "Mixkit Stock Music Free License — chờ OWNER nghe duyệt"}),
+                  banned({"file": "a_mixkit1.mp3", "license": "Mixkit Stock Music Free License — OWNER nghe duyệt 25/10/2026 (o@b)"})]))`;
+  const r = spawnSync(PY, ["-c", py], { encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(JSON.parse(r.stdout), ["mixkit", null]);
+});
+
+test("chưa có bài duyệt → bộ dựng dùng bài kho ĐỦ-HỒ-SƠ (kể cả Mixkit) nhưng giữ giấy phép nguyên văn (P chặn đăng); không bao giờ dùng bài LOẠI (OWNER 25/10/2026)", () => {
+  seed();
+  const mf = path.join(dir, "manifest.json");
+  const items = (JSON.parse(fs.readFileSync(mf, "utf8")) as Record<string, unknown>[]).filter((x) => x.file !== "mac-dinh.mp3");
+  items.push({ file: "acoustic_x_pixabay241274.mp3", genre: "acoustic", license: PENDING_LIC, catalogStatus: "ĐỦ-HỒ-SƠ" });
+  items.push({ file: "lofi_m_mixkit12.mp3", genre: "lofi-chill", license: "Mixkit Stock Music Free License — chờ OWNER nghe duyệt", catalogStatus: "ĐỦ-HỒ-SƠ", source: "https://mixkit.co/x" });
+  for (const f of ["acoustic_x_pixabay241274.mp3", "lofi_m_mixkit12.mp3"]) fs.writeFileSync(path.join(dir, f), "ID3");
+  fs.writeFileSync(mf, JSON.stringify(items));
+  assert.equal(pyPick("acoustic").file, null, "không truyền kho dự phòng → vẫn như cũ: không nhạc");
+  for (const seedName of ["a.mp4", "b.mp4", "c.mp4", "d.mp4"]) {
+    const p = pyPick("acoustic", seedName, true);
+    assert.match(String(p.file), /^acoustic_[ab]_pixabay(963|839)\.mp3$/, `hợp loại, không bài LOẠI / bị loại / thiếu tệp: ${p.file}`);
+    assert.match(p.license, /chờ OWNER nghe duyệt$/, "giấy phép giữ nguyên văn → bảng kiểm P chặn đăng tới khi OWNER duyệt (§7: không giả giấy phép)");
+  }
+  const m = pyPick("lofi-chill", "a.mp4", true);
+  assert.equal(m.file, "lofi_m_mixkit12.mp3", "Mixkit ĐỦ-HỒ-SƠ dùng được qua kho dự phòng");
+  // bài ĐỦ-HỒ-SƠ mà giấy phép KHÔNG ghi "chờ OWNER nghe duyệt" (trạng thái không rõ) → không vào kho dự phòng (P có thể không bắt)
+  const it2 = JSON.parse(fs.readFileSync(mf, "utf8")) as Record<string, unknown>[];
+  for (const it of it2) if (String(it.file).includes("mixkit12")) it.license = "Mixkit Stock Music Free License";
+  fs.writeFileSync(mf, JSON.stringify(it2));
+  assert.notEqual(pyPick("lofi-chill", "a.mp4", true).file, "lofi_m_mixkit12.mp3");
+  const any = pyPick("cinematic", "a.mp4", true);
+  assert.ok(any.file && !/241274|bi-loai|nghi-ai|thieu-tep/.test(any.file), `không hợp loại → bất kỳ bài hợp lệ: ${any.file}`);
 });

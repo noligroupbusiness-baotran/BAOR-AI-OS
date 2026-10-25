@@ -9,7 +9,8 @@ test("cài đặt: liên kết cũ mở đúng nhóm, lưu xong vẫn ở nhóm 
 
   // Liên kết cũ tới mục ở nhóm khác nhóm mặc định
   await page.goto("/settings#people");
-  await expect(page.locator("#people")).toBeVisible();
+  // #neo không gửi lên máy chủ → chuyển nhóm chạy SAU hydrate; máy tải nặng có lúc > 5 s (verify:full 25/10 đỏ, chạy riêng xanh) — chờ lâu hơn, không đổi điều kiện
+  await expect(page.locator("#people")).toBeVisible({ timeout: 20_000 });
   await expect(page).toHaveURL(/[?&]tab=he-thong/);
   await expect(page.locator("#integrations")).toBeHidden();
 

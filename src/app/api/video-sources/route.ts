@@ -39,7 +39,7 @@ export async function POST(req: Request) {
     fs.rmSync(full, { force: true });
     return Response.json({ ok: false, error: `Tải lên chưa trọn (${size}/${declared} byte)` }, { status: 400 });
   }
-  const params = { cut: url.searchParams.get("cut") === "1", contentId: (url.searchParams.get("content") ?? "").slice(0, 80) || null, final: url.searchParams.get("mode") === "final", aspect: url.searchParams.get("aspect"), start: url.searchParams.get("start") === "1" };
+  const params = { cut: url.searchParams.get("cut") === "1", contentId: (url.searchParams.get("content") ?? "").slice(0, 80) || null, final: url.searchParams.get("mode") === "final", aspect: url.searchParams.get("aspect"), quality: url.searchParams.get("quality"), start: url.searchParams.get("start") === "1" };
   const { videoId } = registerSource({ tmpPath: full, uploadId: id, original, ext, size, params, by: { name: actor.name, email: actor.email } });
   return Response.json({ ok: true, videoId, size });
 }

@@ -6,7 +6,11 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ConfirmAction } from "@/components/campaigns/confirm-action";
 import { cancelVideoPostAction, retryVideoPostAction, setDryRunAction } from "@/lib/actions/publishing";
 import { createAdDraftAction } from "@/lib/actions/ads";
-import { Button } from "@/components/ui/button";
+import Link from "next/link";
+import { eq } from "drizzle-orm";
+import { getDb, schema } from "@/db";
+import { Button, LinkButton } from "@/components/ui/button";
+import { latestJob } from "@/lib/video/jobs";
 import { videoChannels, channelStatus, isAmbiguousFailure, isDryRun, listVideoPosts } from "@/lib/publishing/video";
 import { postStatusLabel } from "@/lib/labels";
 import { fileUrl } from "@/lib/uploads";
@@ -14,14 +18,26 @@ import { formatDateTime, formatNumber } from "@/lib/format";
 import type { PostStatus } from "@/lib/types";
 
 // CP04: bài video — chờ đăng, đang xác minh, đã đăng (có đường dẫn từ nền tảng), lỗi, chế độ thử.
-export function VideoPostsPanel() {
+// Bước 6 của hành trình video (OWNER 25/10/2026 "khâu 4 5 6 mượt nhất"): mỗi bài có ảnh xem trước, kênh, giờ, chế độ thử và nút
+// quay lại video trong Kho; ?video=<id> (từ Kho / sau khi lên lịch) làm nổi bật bài của video đó.
+const PENDING = new Set(["scheduled", "publishing", "verifying"]);
+
+function previewOf(videoId: string | null): string | null {
+  if (!videoId) return null;
+  const jv = latestJob(videoId);
+  if (jv?.job.status === "done" && jv.files.includes("preview.mp4")) return `/api/video-jobs/${videoId}/v${jv.job.version}/preview.mp4`;
+  const v = getDb().select({ uploadId: schema.videos.uploadId, purged: schema.videos.filesPurgedAt }).from(schema.videos).where(eq(schema.videos.id, videoId)).get();
+  return v?.uploadId && !v.purged ? fileUrl(v.uploadId) : null;
+}
+
+export function VideoPostsPanel({ focus }: { focus?: string }) {
   const posts = listVideoPosts();
   const dry = isDryRun();
   return (
     <Panel id="video-posts">
       <PanelHeader
         title="Bài video"
-        sub="Chỉ video OWNER đã duyệt. “Đã đăng” chỉ khi nền tảng trả mã bài và hệ thống đọc lại được bài. Chế độ thử kiểm đủ điều kiện nhưng không gọi nền tảng."
+        sub="Video đã duyệt ở Kho. “Đã đăng” chỉ khi đọc lại được bài trên nền tảng. Chế độ thử không gọi nền tảng."
         action={
           <ConfirmAction
             action={setDryRunAction}
@@ -41,30 +57,39 @@ export function VideoPostsPanel() {
         })}
       </div>
       {posts.length === 0 ? (
-        <EmptyState title="Chưa có bài video" hint="Phê duyệt video ở Video Studio rồi bấm Lên lịch đăng." />
+        <EmptyState title="Chưa có bài video" hint="Lên lịch từ Kho video." action={<LinkButton href="/video-library" variant="soft">Tới Kho video</LinkButton>} />
       ) : (
         <ul className="m-0 list-none p-0">
           {posts.map((p) => {
             const st = postStatusLabel[p.status as PostStatus] ?? { label: p.status, tone: "neutral" as const };
+            const preview = p.thumbnailUploadId ? null : previewOf(p.videoId);
+            const kho = p.videoId ? `/video-library?tab=${p.status === "published" ? "posted" : PENDING.has(p.status) ? "scheduled" : "unposted"}&focus=${encodeURIComponent(p.videoId)}#v-${encodeURIComponent(p.videoId)}` : null;
             return (
-              <li key={p.id} className="grid gap-2 border-b border-border px-4 py-2.5 last:border-b-0 md:grid-cols-[56px_minmax(0,1fr)_auto] md:items-center">
+              <li key={p.id} className={`grid grid-cols-[72px_minmax(0,1fr)] gap-x-3 gap-y-2 border-b border-border px-4 py-2.5 last:border-b-0 md:grid-cols-[72px_minmax(0,1fr)_auto] md:items-center ${focus && p.videoId === focus ? "bg-jade-soft/40" : ""}`}>
                 {p.thumbnailUploadId ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={fileUrl(p.thumbnailUploadId)} alt="" className="h-[72px] w-[40px] rounded border border-border object-cover" />
-                ) : <span />}
+                  <img src={fileUrl(p.thumbnailUploadId)} alt="" className="aspect-video w-[72px] rounded border border-border bg-black object-cover" />
+                ) : preview ? (
+                  <video src={`${preview}#t=1`} preload="metadata" muted playsInline aria-hidden className="pointer-events-none aspect-video w-[72px] rounded border border-border bg-black object-cover" />
+                ) : (
+                  <span className="aspect-video w-[72px] rounded border border-border bg-ground-2" />
+                )}
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-[13px] font-semibold text-ink">{p.title}</span>
                     <Pill tone={st.tone}>{st.label}</Pill>
                     <span className="text-[12px] text-ink-2">{platformLabel(p.platform as Platform)}</span>
-                    {p.mode === "dry_run" && <Pill tone="violet">thử</Pill>}
+                    {p.mode === "dry_run" && <Pill tone="violet">Chế độ thử</Pill>}
                   </div>
                   <div className="mt-0.5 text-[12px] text-ink-2">
                     Giờ đăng <span className="num">{formatDateTime(p.scheduledFor)}</span> · thử <span className="num">{p.attempts}</span> lần
                     {p.views != null && <> · <span className="num">{formatNumber(p.views)}</span> lượt xem</>}
                     {p.reach != null && <> · tiếp cận <span className="num">{formatNumber(p.reach)}</span></>}
                   </div>
-                  {p.permalink && <a href={p.permalink} target="_blank" rel="noreferrer" className="text-[12px] text-jade hover:underline">{p.permalink}</a>}
+                  <div className="mt-0.5 flex flex-wrap gap-x-3 text-[12px]">
+                    {p.permalink && <a href={p.permalink} target="_blank" rel="noreferrer" className="font-medium text-jade hover:underline">Xem bài trên {platformLabel(p.platform as Platform)} ›</a>}
+                    {kho && <Link href={kho} className="font-medium text-ink-2 hover:text-ink hover:underline">‹ Video trong Kho</Link>}
+                  </div>
                   {p.error && <div className="text-[12px] text-ink-2">{p.error}</div>}
                   {p.status === "published" && p.mode === "live" && p.verifiedAt && (
                     <details className="mt-1 text-[12px]">
@@ -80,7 +105,7 @@ export function VideoPostsPanel() {
                     </details>
                   )}
                 </div>
-                <div className="flex gap-1.5">
+                <div className="col-span-2 flex gap-1.5 md:col-span-1">
                   {p.status === "failed" && !p.externalId && (isAmbiguousFailure(p) ? (
                     <ConfirmAction action={retryVideoPostAction} fields={{ id: p.id }} label="Thử lại" title="Lần trước không rõ đã đăng chưa" message="Lệnh đăng đã gửi nhưng nền tảng không trả kết quả rõ ràng: bài CÓ THỂ đã lên. Mở trang kiểm tra trước; chỉ đăng lại khi chắc chắn chưa có bài." confirmLabel="Đã kiểm tra, đăng lại" variant="soft" withNote={{ label: "Xác nhận đã kiểm tra trang", required: true, minLength: 10, placeholder: "VD: Đã mở trang lúc 10:05, không thấy bài" }} />
                   ) : (

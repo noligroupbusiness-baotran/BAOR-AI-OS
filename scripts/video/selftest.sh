@@ -201,6 +201,7 @@ assert ev and all(e.get("template", "").startswith("M") for e in ev), f"16:9: �
 assert "khong-giay-phep.jpg" not in json.dumps(ev), "16:9: ảnh thiếu giấy phép phải bị loại"
 assert any("khung vẽ" in s["reason"] for s in r["broll"]["skipped"]), f"16:9: không đặt thẻ khi đang có khung vẽ: {r['broll']['skipped']}"
 assert r["skill"]["name"] == "Skill Edit Video Ngang"
+assert qa.get("N") == "na" and r.get("logo") is None, f"16:9: chưa chèn logo (Ngang R8.6) → bảng kiểm N = na: {[q for q in r['qa'] if q['id'] == 'N']}"
 m3 = [e for e in ev if e["template"] == "M3"]
 assert len(m3) == 3, f"16:9: khúc cuối phải thành M3 (split) với 3 ô: {ev}"
 fr = subprocess.run(["ffmpeg", "-v", "error", "-ss", str(m3[-1]["t0"] + 0.8), "-i", f"{d}/master.mp4", "-frames:v", "1", "-vf", "crop=8:8:1905:5", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], capture_output=True).stdout
@@ -215,6 +216,85 @@ assert c1 and sum(c1) / len(c1) > 50, "thẻ M3 đen / trống"
 assert c1 != c2, "thẻ M3 đứng hình (nền video không chạy)"
 print(f"SELFTEST 16:9 ĐẠT: thẻ {[(e['template'], e['file']) for e in ev]}, bỏ {len(r['broll']['skipped'])}")
 P
+
+# A16.1.4 logo sáng / tối theo cảnh — (1) luật lịch đổi: trễ quanh ngưỡng, giữ ≥ 2 s, chớp sáng ngắn không làm đổi;
+# (2) dựng thật clip tổng hợp nửa sáng nửa tối (+ chớp sáng 1 s) ở 9:16 1080 và 9:16 4K: nửa sáng → logo TỐI, nửa tối → logo SÁNG,
+# đo lại điểm ảnh logo trên bản chính; 16:9 không chèn logo (bảng kiểm N = na, kiểm ở khối 16:9 phía trên).
+python3 - "$HERE" <<'P'
+import sys; sys.path.insert(0, sys.argv[1])
+import esv_render as E
+sps = E.LOGO_SPS
+lum = lambda f, dur: [f(k / sps) for k in range(int(dur * sps))]
+s = E.logo_schedule(lum(lambda t: 0.9 if t < 5 or 8 <= t < 9 else 0.1, 12), 12.0)
+assert [x[2] for x in s] == ["dark", "light"] and abs(s[0][1] - 5.0) <= 0.25, f"nửa sáng → tối, chớp 1 s không đổi: {s}"
+assert E.logo_schedule([0.54, 0.57, 0.53, 0.56] * 12, 12.0) == [(0.0, 12.0, "light")], "dao động sát ngưỡng (trong vùng trễ) không được đổi logo"
+s = E.logo_schedule(lum(lambda t: 0.9 if int(t / 1.5) % 2 else 0.1, 15), 15.0)
+assert min(b - a for a, b, _ in s) >= E.LOGO_HOLD, f"mỗi lần đổi phải giữ ≥ {E.LOGO_HOLD}s: {s}"
+s = E.logo_schedule(lum(lambda t: 0.9 if (t // 3) % 2 else 0.1, 12), 12.0)
+assert [x[2] for x in s] == ["light", "dark", "light", "dark"], f"đổi đúng theo từng đoạn 3 s: {s}"
+fc = E.logo_filter(s, "1:v", "7:v", 340, "76", 107)
+assert fc.count("overlay=") == 4 and "[7:v]" in fc and fc.endswith("[l];") and f"d={E.LOGO_XF:.3f}" in fc, fc
+assert E.logo_filter([(0.0, 9.0, "light")], "1:v", "7:v", 340, "76", 107).count("[7:v]") == 0, "cả video tối: không thêm bản logo tối"
+# lần đo nền chạy LOGO_SPS khung/s: zoom (theo số khung perspective) phải đổi về khung 30 fps — phản biện 25/10 P2-1 (trước đây lệch ×7,5)
+zs = [{"t": 10.0, "out": 14.0, "level": 1.5, "nin": 15, "nout": 15}]
+ev_ = lambda expr, n: eval(expr.replace("(in-1)", "(IN-1)").replace("in-1)", "IN-1)"), {"clip": lambda x, a, b: min(max(x, a), b), "pow": pow, "IN": n})
+for t in (2, 11, 12.5, 16):
+    k = int(t * sps)
+    got = ev_(E.zoom_expr(zs, f"((in-1)*{E.FPS / sps:g})"), k + 1)
+    want = E.zoom_at(zs, int(round(t * E.FPS)))
+    assert abs(got - want) < 1e-6, f"zoom lần đo nền lệch ở {t}s: {got} ≠ {want}"
+assert abs(ev_(E.zoom_expr(zs), int(12 * sps) + 1) - 1.0) < 1e-6, "đối chứng: biến (in-1) ở 4 khung/s thì zoom 12 s rơi sai chỗ"
+print(f"SELFTEST LỊCH LOGO ĐẠT: ngưỡng {E.LOGO_THR} ±{E.LOGO_HYST}, giữ ≥ {E.LOGO_HOLD}s, chuyển mờ {E.LOGO_XF}s")
+P
+echo '{"by": "selftest", "emphasis": [], "diagrams": [], "broll": []}' > "$W/plan-logo.json"
+echo '[]' > "$W/words-logo.json"
+# Ca 3 "cut35" (lỗi thật 25/10 v_mvnu9i50atbkj v6, 9:16 1080 35 s có cắt lặng — chết ở bảng kiểm N): sáng / tối / chớp / sáng, 3 khoảng lặng
+# 1,6 s bị cắt → lịch tính trên dòng thời gian SAU cắt, bảng kiểm N đo lại trên bản chính không được làm chết lần dựng.
+for CASE in 1080 4k cut35; do
+  Q=1080; S=1080x1920; LD=12; CUT=""; AF="anull"
+  # nửa đầu nền sáng (0xEEEEEE), nửa sau tối (0x181818) + chớp sáng 1 s trong nửa tối; nhiễu nhẹ để không bị coi là đứng hình
+  EN="lt(t,$LD/2)+between(t,$LD*0.75,$LD*0.75+1)"
+  if [ "$CASE" = 4k ]; then Q=4k; S=2160x3840; LD=8; EN="lt(t,$LD/2)+between(t,$LD*0.75,$LD*0.75+1)"; fi
+  if [ "$CASE" = cut35 ]; then LD=35; CUT="--cut-silence"; EN="lt(t,10)+between(t,22,23)+gte(t,26)"
+    AF="volume=enable='between(t,8,9.6)+between(t,20,21.6)+between(t,30,31.5)':volume=0"; fi
+  ffmpeg -v error -y -f lavfi -i "color=c=0x181818:s=$S:r=30:d=$LD" -f lavfi -i "sine=frequency=200:duration=$LD" \
+    -vf "drawbox=x=0:y=0:w=iw:h=ih:color=0xEEEEEE:t=fill:enable='$EN',noise=alls=12:allf=t" -af "$AF" \
+    -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest "$W/logo-$CASE.mp4"
+  BAOR_LLM_URL=http://127.0.0.1:9 DATA_DIR="$W/data" python3 "$HERE/esv_render.py" --input "$W/logo-$CASE.mp4" --job-dir "$W/esv-logo-$CASE" --plan "$W/plan-logo.json" \
+    --words "$W/words-logo.json" --no-music --no-sfx --quality "$Q" $CUT 2>"$W/esv-logo-$CASE.log" | tail -1
+  python3 - "$W/esv-logo-$CASE" "$CASE" "$LD" "$HERE/../../public/brand/baor-light.png" <<'P'
+import json, subprocess, sys
+import numpy as np
+from PIL import Image
+d, case, ld, light = sys.argv[1], sys.argv[2], float(sys.argv[3]), sys.argv[4]
+r = json.load(open(f"{d}/report.json"))
+qa = {x["id"]: x for x in r["qa"]}
+k = 2 if case == "4k" else 1
+assert r["output"]["width"] == 1080 * k, f"{case}: {r['output']['width']} ({r['output'].get('quality')})"
+sch = r["logo"]["schedule"]
+if case == "cut35":
+    assert r["output"]["cuts"] >= 2 and r["output"]["seconds"] < ld - 2, f"cut35: phải cắt lặng: {r['output']['cuts']} cắt, {r['output']['seconds']}s"
+    assert [x[2] for x in sch] == ["dark", "light", "dark"], f"cut35: sáng → tối (chớp 1 s không đổi) → sáng: {sch}"
+else:
+    assert [x[2] for x in sch] == ["dark", "light"], f"{case}: nửa sáng → logo tối, nửa tối → logo sáng, chớp 1 s không đổi: {sch}"
+    assert abs(sch[0][1] - ld / 2) <= 0.3, f"{case}: mốc đổi lệch cảnh: {sch}"
+assert min(b - a for a, b, _ in sch) >= 2.0, f"{case}: mỗi bản logo giữ ≥ 2 s: {sch}"
+assert qa["N"]["status"] in ("pass", "info"), f"{case}: bảng kiểm N: {qa['N']}"
+assert "SAI" not in qa["N"]["detail"] and "baor-dark.png" in qa["N"]["detail"], qa["N"]["detail"]
+# đo độc lập trên bản chính: điểm ảnh trong hình logo (alpha > 0,9) — đoạn nền sáng phải TỐI, đoạn nền tối phải SÁNG
+lw = 340 * k
+im = Image.open(light).convert("RGBA")
+lh = round(lw * im.size[1] / im.size[0])
+m = np.asarray(im.getchannel("A").resize((lw, lh), Image.BOX), np.float32) / 255 > 0.9
+def logo_y(t):
+    b = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{t:.2f}", "-i", f"{d}/master.mp4", "-frames:v", "1", "-vf", f"format=gray,crop={lw}:{lh}:{76 * k}:{107 * k}:exact=1",
+                        "-f", "rawvideo", "-pix_fmt", "gray", "-"], capture_output=True).stdout
+    return float(np.frombuffer(b, np.uint8).reshape(lh, lw)[m].mean()) / 255
+yd, yl = logo_y((sch[0][0] + sch[0][1]) / 2), logo_y(sch[1][0] + 1.0)
+assert yd < 0.5 < yl, f"{case}: logo trên nền sáng phải tối ({yd:.2f}), trên nền tối phải sáng ({yl:.2f})"
+print(f"SELFTEST LOGO THEO CẢNH {case} ĐẠT: {r['output']['width']}x{r['output']['height']} {r['output']['seconds']}s, lịch {sch}, logo Y' {yd:.2f} (nền sáng) / {yl:.2f} (nền tối); N {qa['N']['status']}")
+P
+done
 
 # Cân sáng / màu nhẹ: cảnh tối ám xanh lá → nâng gamma + hạ G; ám lạnh → ấm lại; cảnh ấm bình thường → KHÔNG chỉnh (giữ tông da)
 ffmpeg -v error -y -f lavfi -i "color=c=0x2a4a2a:s=640x360:d=2" -pix_fmt yuv420p "$W/g_dark_green.mp4"

@@ -41,8 +41,8 @@ export async function MusicLibraryPanel() {
           <MoreOptions label="Luật chọn nhạc và hiệu ứng âm thanh">
             <ul className="m-0 grid list-disc gap-1 pl-5 text-[12px] text-ink-2">
               <li>Chỉ nạp bài kho tư liệu ghi ĐỦ-HỒ-SƠ, đúng mã sha256. “ĐỦ-HỒ-SƠ” là đội kiểm giấy phép trên trang nguồn, không phải quét Content ID: vẫn có thể bị nhận bản quyền sau này.</li>
-              <li>Bộ dựng chỉ dùng bài đã duyệt VÀ đạt luật A5 của Phần chung (giấy phép rõ, không nhãn AI, đã tra YouTube không thấy bên thứ ba đăng lại). Không Mixkit; 552792, 241274, 136824 không dùng. Chưa có bài đạt → video KHÔNG nhạc (A5.2).</li>
-              <li>Bài chưa duyệt mà được chọn tay → bảng kiểm P chặn đăng.</li>
+              <li>Bộ dựng chỉ dùng bài đã duyệt VÀ đạt luật A5 của Phần chung (giấy phép rõ, không nhãn AI, đã tra YouTube không thấy bên thứ ba đăng lại). 552792, 241274, 136824 không bao giờ dùng.</li>
+              <li>Chưa có bài duyệt hợp loại → bộ dựng tạm dùng một bài kho ĐỦ-HỒ-SƠ (kể cả Mixkit) để video có nhạc; bảng kiểm P chặn ĐĂNG tới khi bạn nghe và duyệt bài đó.</li>
               <li>{sfxCount()} hiệu ứng âm thanh có giấy phép đã nạp: dùng theo vai trò (whoosh chỉ 16:9), mức ≤ −19 dB dưới giọng (A6.3); thiếu vai trò nào thì dùng âm tổng hợp.</li>
             </ul>
           </MoreOptions>

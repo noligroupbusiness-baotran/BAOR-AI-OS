@@ -16,7 +16,7 @@ test("nghe thử, duyệt dùng rồi bỏ duyệt một bài trong thư viện 
   await login(page);
   await page.goto("/settings#music-library");
   const panel = page.locator("#music-library");
-  await expect(panel.getByText("1/2 bài đã duyệt")).toBeVisible();
+  await expect(panel.getByText("1/2 bài đã duyệt")).toBeVisible({ timeout: ACTION_MS }); // #neo → chuyển nhóm sau hydrate (máy tải nặng > 5 s)
   const row = panel.locator(`[data-track="${FILE}"]`);
   await expect(row.getByText("chờ nghe duyệt")).toBeVisible();
 

@@ -78,7 +78,7 @@ test("luật caption: % không có trong kịch bản → cảnh báo; có trong
   assert.match(cap.captionIssues("Cam kết 100% hiệu quả", ["facebook_page_2"], script).join(), /tuyệt đối/);
 });
 
-test("AI Viết bài đăng: tắt thì không gọi; mô hình (giả) viết → lưu nháp, đề xuất dùng nháp; quay về caption theo skill", async () => {
+test("AI Viết bài đăng: tắt thì không gọi; mô hình (giả) viết tiêu đề + caption → lưu nháp, đề xuất dùng nháp; quay về caption theo skill", async () => {
   roster.saveRoleSettings("caption", { enabled: false });
   const off = await ai.generateCaption("v_cap");
   assert.match(off.ok ? "" : off.error, /AI Viết bài đăng đang TẮT/);
@@ -91,7 +91,7 @@ test("AI Viết bài đăng: tắt thì không gọi; mô hình (giả) viết �
   let sent = "";
   const fake = async (body: { messages: { content: string }[] }) => {
     sent = body.messages[0].content;
-    return { id: "m", type: "message", role: "assistant", model: "m", stop_reason: "end_turn", stop_sequence: null, content: [{ type: "text", text: "Caption AI viết theo skill", citations: null }], usage: { input_tokens: 500, output_tokens: 100 } };
+    return { id: "m", type: "message", role: "assistant", model: "m", stop_reason: "end_turn", stop_sequence: null, content: [{ type: "text", text: JSON.stringify({ title: "Tiêu đề AI viết", caption: "Caption AI viết theo skill" }), citations: null }], usage: { input_tokens: 500, output_tokens: 100 } };
   };
   for (const p of protos) p.create = fake;
   process.env.ANTHROPIC_API_KEY = "sk-test-khong-goi-that";
@@ -101,7 +101,17 @@ test("AI Viết bài đăng: tắt thì không gọi; mô hình (giả) viết �
     assert.match(sent, /SKILL \(SK-KNW-01 BAOR Content Sales · DRAFT\)/, "skill được đưa cho mô hình");
     assert.match(sent, /Thông điệp chính/, "kịch bản đã duyệt được đưa cho mô hình");
     assert.equal(pub.suggestCaption("v_cap"), "Caption AI viết theo skill");
+    // 25/10: AI viết cả TIÊU ĐỀ + nội dung (đầu ra có cấu trúc), ghi nguồn "ai"
+    assert.equal(cap.postTitle("v_cap"), "Tiêu đề AI viết");
+    assert.equal(cap.postDraftSource("v_cap"), "ai");
     assert.equal(roster.recentAiCalls(1)[0].role, "caption");
+    // lượt viết NỀN (video vào Kho) không ghi đè bản nháp OWNER gõ trong lúc chờ; bấm "Viết lại bằng AI" thì ghi (phản biện 25/10)
+    cap.saveCaptionDraft("v_cap", "OWNER gõ trong lúc AI viết");
+    const bg = ai.generateCaption("v_cap", { keepExisting: true });
+    assert.equal((await bg).ok, true);
+    assert.equal(cap.captionDraft("v_cap"), "OWNER gõ trong lúc AI viết");
+    assert.equal((await ai.generateCaption("v_cap")).ok, true);
+    assert.equal(cap.captionDraft("v_cap"), "Caption AI viết theo skill");
     cap.clearCaptionDraft("v_cap");
     assert.equal(pub.suggestCaption("v_cap"), cap.buildCaption("v_cap").text);
   } finally {

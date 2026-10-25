@@ -23,7 +23,7 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import pipeline as P  # noqa: E402  (dùng lại: probe, sh, ebur, transcribe, đếm khung, giải mã, sha256, Job)
-from music_pick import music_genres, music_library, pick_music  # noqa: E402  (chọn nhạc nền: không phụ thuộc numpy, test được ở CI)
+from music_pick import music_genres, music_library, music_pool, pick_music  # noqa: E402  (chọn nhạc nền: không phụ thuộc numpy, test được ở CI)
 
 W, H, FPS = 1080, 1920, 30  # hệ toạ độ thiết kế 9:16 của Skill ESV (lớp chữ / sơ đồ vẽ ở hệ này)
 ASPECTS = {"9:16": (1080, 1920), "4:5": (1080, 1350), "1:1": (1080, 1080), "16:9": (1920, 1080)}
@@ -793,6 +793,167 @@ def make_layout(aspect):
 
 
 LAY = make_layout("9:16")
+
+# A16.1.4 — logo sáng / tối theo cảnh: nền vùng logo sáng → bản logo tối, nền tối → bản sáng.
+# Ngưỡng + thời gian chuyển lấy từ skill-vlog.json "logo" (brightThreshold 0,55 luma, crossfadeSec 0,2 — "đo nền theo cảnh = AI").
+try:
+    _LOGO_SK = json.load(open(os.path.join(HERE, "skill-vlog.json"), encoding="utf-8")).get("logo", {})
+except Exception:
+    _LOGO_SK = {}
+LOGO_THR = float(_LOGO_SK.get("brightThreshold", 0.55))
+LOGO_XF = float(_LOGO_SK.get("crossfadeSec", 0.2))
+LOGO_HYST = 0.03  # trễ ±0,03 quanh ngưỡng: nền dao động sát ngưỡng không làm đổi logo [AI SUY LUẬN]
+LOGO_HOLD = 2.0   # mỗi bản logo giữ ≥ 2 s, đoạn ngắn hơn giữ bản đang có (không nháy) [AI SUY LUẬN]
+LOGO_SPS = 4      # mẫu / giây khi đo nền vùng logo (mốc đổi lệch cảnh thật ≤ 0,125 s)
+
+
+def dark_logo(light, explicit="", work=""):
+    """Bản logo tối (đặt trên nền sáng) → (đường dẫn, ghi chú). Ưu tiên --logo-dark, rồi tệp cùng thư mục đổi 'light' → 'dark'
+    (public/brand/baor-dark.png). Bản tối phải cùng tỷ lệ với bản sáng (chồng khít khi chuyển mờ). Không có: tạo tại chỗ từ kênh
+    alpha bản sáng (màu #141414) vào thư mục work của job — không ghi tệp vào repo."""
+    lw, lh = Image.open(light).size
+    b = os.path.basename(light)
+    cands = ([explicit] if explicit else []) + ([os.path.join(os.path.dirname(light), b.replace("light", "dark"))] if "light" in b else [])
+    for c in cands:
+        if c and os.path.isfile(c) and os.path.abspath(c) != os.path.abspath(light):
+            dw, dh = Image.open(c).size
+            if abs(dw / dh - lw / lh) < 0.01:
+                return c, f"tệp {os.path.basename(c)}"
+    im = Image.open(light).convert("RGBA")
+    out = Image.new("RGBA", im.size, (20, 20, 20, 0))
+    out.putalpha(im.getchannel("A"))
+    p = os.path.join(work or ".", "logo_dark_auto.png")
+    out.save(p)
+    return p, "tạo tại chỗ từ bản sáng (đổi màu #141414; không có tệp bản tối cùng tỷ lệ)"
+
+
+def luma_rel(rgb, mask):
+    """Trung bình theo hình logo (mask 0–1) của khối RGB uint8 → (luma Y' Rec.709 0–1, độ chói tương đối WCAG 0–1)."""
+    x = rgb[..., :3].astype(np.float32) / 255.0
+    k = np.array([0.2126, 0.7152, 0.0722], np.float32)
+    lin = np.where(x <= 0.04045, x / 12.92, ((x + 0.055) / 1.055) ** 2.4)
+    w = float(mask.sum()) or 1.0
+    return float(((x @ k) * mask).sum() / w), float(((lin @ k) * mask).sum() / w)
+
+
+def contrast(l1, l2):
+    """Tỷ lệ tương phản WCAG giữa hai độ chói tương đối."""
+    return (max(l1, l2) + 0.05) / (min(l1, l2) + 0.05)
+
+
+def logo_schedule(lum, dur, sps=LOGO_SPS, thr=LOGO_THR, hyst=LOGO_HYST, hold=LOGO_HOLD):
+    """Đoạn [(t0, t1, 'light' | 'dark')] phủ 0..dur từ luma nền vùng logo (mẫu k ở t = k/sps): nền sáng (> ngưỡng) → logo TỐI,
+    nền tối → logo SÁNG. Trễ ±hyst quanh ngưỡng; đoạn ngắn hơn hold gộp vào bên cạnh (giữ bản đang có), ngắn nhất trước →
+    mỗi lần đổi giữ ≥ hold giây (trừ khi cả video ngắn hơn)."""
+    if not lum:
+        return [(0.0, round(dur, 3), "light")]
+    st = "dark" if lum[0] > thr else "light"
+    segs, t0 = [], 0.0
+    for k, v in enumerate(lum):
+        nx = "dark" if st == "light" and v > thr + hyst else "light" if st == "dark" and v < thr - hyst else st
+        if nx != st:
+            tb = min(max(0.0, (k - 0.5) / sps), dur)
+            if tb > t0:
+                segs.append([t0, tb, st])
+                t0 = tb
+            elif segs:  # đổi ngay ở mốc 0 (không xảy ra với k ≥ 1) — phòng hờ
+                segs[-1][1] = tb
+            st = nx
+    segs.append([t0, dur, st])
+    while len(segs) > 1:
+        k = min(range(len(segs)), key=lambda i: segs[i][1] - segs[i][0])
+        if segs[k][1] - segs[k][0] >= hold:
+            break
+        if k == 0:
+            segs[1][0] = segs[0][0]
+            del segs[0]
+        elif k == len(segs) - 1:
+            segs[-2][1] = segs[-1][1]
+            del segs[-1]
+        else:  # hai bên cùng bản (xen kẽ) → nối liền
+            segs[k - 1][1] = segs[k + 1][1]
+            del segs[k:k + 2]
+    return [(round(a, 3), round(b, 3), s) for a, b, s in segs]
+
+
+def logo_check(master, segs, meas, logos, dur):
+    """Bảng kiểm N: (trạng thái, chi tiết có số đo). Đo lại trên BẢN CHÍNH đã mã hoá: điểm ảnh trong hình logo (alpha > 0,9) tại
+    từng mẫu phải gần bản logo theo lịch (bỏ 1 s đầu / cuối và ±0,35 s quanh mốc đổi); tương phản WCAG logo / nền theo từng mẫu."""
+    if not meas or "bg" not in meas:
+        return "unmeasured", f"không đo được nền vùng logo ({(meas or {}).get('error', 'không rõ')}) → giữ logo sáng cả video"
+    bx, by, bw, bh = meas["box"]
+    sw, sh_ = meas["sample"]
+    bgv = meas["bg"]
+    ref = {}
+    for kind, path in zip(("light", "dark"), logos):
+        im = Image.open(path).convert("RGBA").resize((sw, sh_), Image.BOX)
+        arr = np.asarray(im)
+        m_ = (arr[..., 3].astype(np.float32) / 255.0 > 0.9).astype(np.float32)
+        ref[kind] = (luma_rel(arr, m_), m_)
+    strict = ref["light"][1]
+    kind_at = lambda t: next((s_[2] for s_ in segs if s_[0] <= t < s_[1]), segs[-1][2])
+    r_ = subprocess.run(["ffmpeg", "-v", "error", "-i", master, "-vf", f"fps={LOGO_SPS},format=rgb24,crop={bw}:{bh}:{bx}:{by}:exact=1,scale={sw}:{sh_}:flags=area",
+                         "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], capture_output=True)
+    fsz = sw * sh_ * 3
+    bounds = [s_[0] for s_ in segs[1:]]
+    checked, wrong = 0, []
+    for i in range(len(r_.stdout) // fsz):
+        t = i / LOGO_SPS
+        if t < 1.0 or t > dur - 1.0 or any(abs(t - b) < 0.35 for b in bounds):
+            continue
+        y_, _ = luma_rel(np.frombuffer(r_.stdout[i * fsz:(i + 1) * fsz], np.uint8).reshape(sh_, sw, 3), strict)
+        seen = min(ref, key=lambda k_: abs(ref[k_][0][0] - y_))
+        checked += 1
+        if seen != kind_at(t):
+            wrong.append(f"{t:.1f}s cần {kind_at(t)} thấy {seen} (Y' {y_:.2f})")
+    lo = []
+    for i, (y_, l_) in enumerate(bgv):
+        k_ = kind_at(i / LOGO_SPS)
+        lo.append((contrast(ref[k_][0][1], l_), i / LOGO_SPS))
+    cmin, tmin = min(lo) if lo else (0.0, 0.0)
+    weak = [t for c, t in lo if c < 3.0]
+    other = {"light": "dark", "dark": "light"}
+    held = [t for t in weak if contrast(ref[other[kind_at(t)]][0][1], bgv[int(round(t * LOGO_SPS))][1]) >= 3.0]  # bản kia đạt: đoạn < hold giữ bản cũ
+    ys = [v[0] for v in bgv]
+    swaps = len(segs) - 1
+    hold_min = min(b - a for a, b, _ in segs)
+    dark = [f"{a:.1f}–{b:.1f}s" for a, b, k_ in segs if k_ == "dark"]
+    det = (f"đo nền vùng logo {len(bgv)} mẫu ({LOGO_SPS}/s): Y' {min(ys):.2f}–{max(ys):.2f}, ngưỡng {LOGO_THR:.2f} ±{LOGO_HYST:.2f}; "
+           f"logo tối (nền sáng): {', '.join(dark) if dark else 'không đoạn nào'}; {swaps} lần đổi, giữ ngắn nhất {hold_min:.1f}s"
+           f"{' (≥ ' + format(LOGO_HOLD, '.0f') + ' s)' if swaps else ''}, chuyển mờ {LOGO_XF:.1f}s; "
+           f"kiểm trên bản chính {checked - len(wrong)}/{checked} mẫu đúng bản logo"
+           + (f" — SAI: {'; '.join(wrong[:4])}" if wrong else "")
+           + f"; tương phản logo/nền thấp nhất {cmin:.1f}:1 tại {tmin:.1f}s"
+           + (f", {len(weak)} mẫu < 3:1 tại {', '.join(f'{t:.1f}s' for t in weak[:6])}"
+              + (f" ({len(held)} mẫu vì cảnh sáng / tối ngắn < {LOGO_HOLD:.0f} s giữ bản cũ để không nháy" if held else " (")
+              + (f"{'; ' if held else ''}{len(weak) - len(held)} mẫu nền trung tính, cả hai bản đều < 3:1" if len(weak) > len(held) else "") + ")" if weak else "")
+           + (f"; bản tối: {meas['dark']}" if meas.get("dark") else ""))
+    if wrong or not checked and dur > 3.0:
+        return "fail", det
+    return ("pass" if not weak else "info"), det
+
+
+def logo_filter(segs, light_in, dark_in, w, x, y, xf=LOGO_XF):
+    """Đồ thị ffmpeg phủ logo theo đoạn, vào [bg] ra [l]. Mỗi đoạn một bản sao, chồng theo thứ tự thời gian (đoạn sau nằm trên):
+    bản mới hiện dần trong xf giây quanh mốc đổi (mốc ± xf/2), phủ lên bản cũ (hai bản cùng hình alpha) → chuyển mờ không lộ nền;
+    bản cũ tắt khi bản mới đã đậm hẳn. Đoạn đầu giữ kiểu cũ: hiện mờ 0,3–0,9 s (+ trượt vào theo biểu thức x)."""
+    n = {"light": sum(1 for s in segs if s[2] == "light"), "dark": sum(1 for s in segs if s[2] == "dark")}
+    fc = ""
+    for kind, src in (("light", light_in), ("dark", dark_in)):
+        if n[kind]:
+            outs = "".join(f"[lg{kind[0]}{i}]" for i in range(n[kind]))
+            fc += f"[{src}]scale={w}:-1:flags=lanczos,format=rgba" + (f",split={n[kind]}{outs};" if n[kind] > 1 else f"{outs};")
+    used, cur = {"light": 0, "dark": 0}, "bg"
+    for k, (t0, t1, kind) in enumerate(segs):
+        lab = f"lg{kind[0]}{used[kind]}"
+        used[kind] += 1
+        s0 = 0.0 if k == 0 else max(0.0, t0 - xf / 2)
+        fade = "fade=t=in:st=0.3:d=0.6:alpha=1" if k == 0 else f"fade=t=in:st={s0:.3f}:d={xf:.3f}:alpha=1"
+        en = "" if len(segs) == 1 else (f":enable='gte(t,{s0:.3f})'" if k == len(segs) - 1 else f":enable='between(t,{s0:.3f},{t1 + xf / 2:.3f})'")
+        out = "l" if k == len(segs) - 1 else f"lo{k}"
+        fc += f"[{lab}]{fade}[{lab}f];[{cur}][{lab}f]overlay=x='{x}':y={y}:eval=frame{en}[{out}];"
+        cur = out
+    return fc
 
 
 def frame_crop(info, fx, fy, aspect, fr):
@@ -1694,6 +1855,7 @@ def main():
     ap.add_argument("--keywords", default="")
     ap.add_argument("--words", default="")
     ap.add_argument("--logo", default=os.path.join(P.ROOT, "public", "brand", "baor-light.png"))
+    ap.add_argument("--logo-dark", default="", help="bản logo tối (trên nền sáng); trống = tệp cùng thư mục đổi light → dark, không có thì tạo tại chỗ")
     ap.add_argument("--model", default="medium")
     ap.add_argument("--model2", default="small")
     ap.add_argument("--music", default="", help="bài nhạc nền; trống = bài mặc định trong DATA_DIR/video-assets/music/manifest.json")
@@ -1709,6 +1871,7 @@ def main():
     ap.add_argument("--script", default="", help="tệp lời nói của kịch bản đã gắn (Nội dung → Video): gợi ý nghe, sửa chữ, ngữ cảnh biên tập AI")
     ap.add_argument("--no-grade", action="store_true", help="không cân sáng / màu tự động")
     ap.add_argument("--ai-plan", action="store_true", help="bỏ kế hoạch có sẵn, để biên tập AI tại máy lập lại (scripts/video/ai_plan.py)")
+    ap.add_argument("--quality", default="1080", choices=["1080", "4k"], help="4k = xuất gấp đôi (2160x3840 / 3840x2160) khi nguồn đủ điểm ảnh")
     a = ap.parse_args()
     global CW, CH, LAY
     LAY = make_layout(a.aspect)
@@ -1732,9 +1895,9 @@ def main():
     else:
         wav16 = job.p("work", "a16.wav")
         P.sh(["ffmpeg", "-v", "error", "-y", "-i", src, "-vn", "-ac", "1", "-ar", "16000", wav16])
-        job.progress("listen1", f"Nghe lời (mô hình {a.model})", 8)
+        job.progress("listen1", "Nghe lời nói", 8)
         words = P.transcribe(wav16, a.model, script_text[:400])  # kịch bản làm gợi ý tên riêng / thuật ngữ cho Whisper
-        job.progress("listen2", f"Nghe lại đối chiếu ({a.model2})", 30)
+        job.progress("listen2", "Nghe lại để đối chiếu", 30)
         second = P.transcribe(wav16, a.model2, "")
         P.mark_uncertain(words, second)
     fixes = apply_corrections(words, a.corrections)
@@ -1801,6 +1964,15 @@ def main():
     fx, fy, face_ok = face_center(src, info)
     cropf, cw, chh, x0, y0 = frame_crop(info, fx, fy, a.aspect, {"x": a.frame_x, "y": a.frame_y, "zoom": a.frame_zoom})
     ax, ay = (fx - x0) / cw, (fy - y0) / chh
+    # Chất lượng xuất (OWNER 25/10/2026: "ô chất lượng video 1080 hay 4K"): 4K chỉ khi vùng cắt trên nguồn đủ ≥ 90 % điểm ảnh của 4K —
+    # không phóng to "4K giả" (vd nguồn ngang 4K cắt sang dọc 9:16 chỉ còn ~1215 px bề ngang) → giữ 1080 và ghi rõ lý do.
+    Q, quality_note = 1, "1080"
+    if a.quality == "4k":
+        if cw >= 0.9 * 2 * CW and chh >= 0.9 * 2 * CH:
+            Q, quality_note = 2, f"4K {2 * CW}x{2 * CH}"
+        else:
+            quality_note = f"chọn 4K nhưng vùng cắt nguồn chỉ {cw}x{chh} (< 90 % của {2 * CW}x{2 * CH}) → xuất 1080 để không phóng to giả"
+    OW, OH = CW * Q, CH * Q
     # Cân sáng / màu nhẹ (S5): đo trên đúng vùng sẽ xuất, chỉ chỉnh khi lệch rõ
     if a.no_grade:
         GRADE[:], grade_note = [], "tắt (--no-grade)"
@@ -1857,7 +2029,7 @@ def main():
     zooms = [z for z in plan.get("zooms", []) if "nin" in z]
     if not zooms:
         zooms = place_zooms([(e.t0, 1.08 if e.style == "shine" else (1.07 if e.style == "blur" else 1.06)) for e in emph], prof, blocked, dur, cut_times)
-        zooms = fill_zooms(zooms, units, prof, blocked, dur, cut_times)
+        zooms = fill_zooms(zooms, units, prof, blocked, dur, cut_times, every=6.0)  # OWNER 25/10/2026: không để video thưa (cũ 10 s)
     cards, card_skips, dia_pos, track169, split3 = [], [], {}, [], None
     if FULL:
         cards, card_skips, dia_pos, track169 = plan_ngang(src, info, cropf, plan, words, emph, dias, fs_events, rev_spans, zooms, (ax * CW, ay * CH), broll_dir, m3)
@@ -1963,7 +2135,7 @@ def main():
     pick = {"chosenBy": "chọn trong Cài đặt"} if a.music else {}
     music_path, music_lic = (a.music, a.music_license) if a.music else (None, "")
     if not a.music:
-        music_path, music_lic, pick = pick_music(music_library(data_dir), (plan.get("music") or {}).get("mood"), os.path.basename(a.input))
+        music_path, music_lic, pick = pick_music(music_library(data_dir), (plan.get("music") or {}).get("mood"), os.path.basename(a.input), pool=music_pool(data_dir))
     music_info = {"used": False, "reason": "tắt" if a.no_music else pick.get("reason", "thư viện nhạc chưa có bài có giấy phép"), **({k: v for k, v in pick.items() if k == "suggest"})}
     if music_path and not a.no_music and str(music_lic).strip():
         mdur = float(P.sh(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", music_path]).stdout.strip() or 0)
@@ -2032,15 +2204,17 @@ def main():
           f"aresample=192000,alimiter=limit=0.70:attack=1:release=80:level=false,aresample=48000,afade=t=out:st={max(0.0, dur - 0.7):.3f}:d=0.7", "-c:a", "pcm_s24le", final])
 
     # Bản chính: khung + zoom chỉ nền → logo → lớp chữ
-    job.progress("encode", f"Xuất bản chính {CW}x{CH}", 78)
+    job.progress("encode", f"Xuất bản chính {OW}x{OH}", 78)
     # Zoom MƯỢT (ESV mục 6): biến đổi phối cảnh dưới điểm ảnh, làm trên khung gốc (vd 1216x2160) rồi mới thu về 1080x1920.
     # Không làm tròn kích thước theo từng khung (làm tròn gây giật 1–2 px). q = 1 − 1/z(t); tâm zoom A = mặt.
-    zx = zoom_expr(zooms)
     Ax, Ay = ax * cw, ay * chh
-    q = f"(1-1/{zx})"
-    persp = (f"perspective=x0='{Ax:.3f}*{q}':y0='{Ay:.3f}*{q}':x1='{cw}-{cw - Ax:.3f}*{q}':y1='{Ay:.3f}*{q}':"
-             f"x2='{Ax:.3f}*{q}':y2='{chh}-{chh - Ay:.3f}*{q}':x3='{cw}-{cw - Ax:.3f}*{q}':y3='{chh}-{chh - Ay:.3f}*{q}':interpolation=cubic:eval=frame")
-    vf = ["fps=30"] + ([cropf] if cropf else []) + GRADE + ["format=yuv444p", persp, f"scale={CW}:{CH}:flags=lanczos", "unsharp=5:5:0.3", "setsar=1",
+
+    def persp_at(v="(in-1)"):  # v = biến khung 30 fps; lần đo nền logo chạy ít khung/s hơn → đổi về khung 30 fps tương ứng
+        q = f"(1-1/{zoom_expr(zooms, v)})"
+        return (f"perspective=x0='{Ax:.3f}*{q}':y0='{Ay:.3f}*{q}':x1='{cw}-{cw - Ax:.3f}*{q}':y1='{Ay:.3f}*{q}':"
+                f"x2='{Ax:.3f}*{q}':y2='{chh}-{chh - Ay:.3f}*{q}':x3='{cw}-{cw - Ax:.3f}*{q}':y3='{chh}-{chh - Ay:.3f}*{q}':interpolation=cubic:eval=frame")
+    persp = persp_at()
+    vf = ["fps=30"] + ([cropf] if cropf else []) + GRADE + ["format=yuv444p", persp, f"scale={OW}:{OH}:flags=lanczos", "unsharp=5:5:0.3", "setsar=1",
            "setparams=range=tv:colorspace=bt709:color_primaries=bt709:color_trc=bt709"]
     logo_w = LAY["logo_w"]
     # B-roll (ESV/SK-MED-03): cắt cảnh toàn khung theo kế hoạch, hiện/tắt mờ 0,2 s; phụ đề, chữ nhấn, logo vẫn nằm trên.
@@ -2070,7 +2244,7 @@ def main():
             image_clip(fpath, clip, d)
             fpath, start = clip, 0.0
         b_args += ["-ss", f"{start:.3f}", "-t", f"{d:.3f}", "-i", fpath]
-        b_fc += (f"[{idx}:v]fps=30,scale={CW}:{CH}:force_original_aspect_ratio=increase:flags=lanczos,crop={CW}:{CH},setsar=1,format=yuva420p,"
+        b_fc += (f"[{idx}:v]fps=30,scale={OW}:{OH}:force_original_aspect_ratio=increase:flags=lanczos,crop={OW}:{OH},setsar=1,format=yuva420p,"
                  f"fade=t=in:st=0:d=0.2:alpha=1,fade=t=out:st={max(0, d - 0.2):.3f}:d=0.2:alpha=1,setpts=PTS-STARTPTS+{float(b['t0']):.3f}/TB[b{k}];"
                  f"[{last}][b{k}]overlay=0:0:enable='between(t,{float(b['t0']):.3f},{float(b['t1']):.3f})':eof_action=pass[bg{k + 1}];")
         last = f"bg{k + 1}"
@@ -2082,7 +2256,7 @@ def main():
         clip = job.p("work", f"fs_{k}.mp4")
         fs06_clip(src, cropf, t0_, d_, clip, fsd["type"])
         b_args += ["-i", clip]
-        b_fc += (f"[{n_in}:v]fps=30,setsar=1,format=yuv420p,setpts=PTS-STARTPTS+{t0_:.3f}/TB[fs{k}];"
+        b_fc += (f"[{n_in}:v]fps=30,scale={OW}:{OH}:flags=lanczos,setsar=1,format=yuv420p,setpts=PTS-STARTPTS+{t0_:.3f}/TB[fs{k}];"
                  f"[{last}][fs{k}]overlay=0:0:enable='between(t,{t0_:.3f},{t0_ + d_:.3f})':eof_action=pass[fsb{k}];")
         last, n_in = f"fsb{k}", n_in + 1
     for k, lk in enumerate(leaks):
@@ -2090,18 +2264,58 @@ def main():
         clip = job.p("work", f"leak_{k}.mov")
         leak_clip(clip, 3.6)
         b_args += ["-i", clip]
-        b_fc += (f"[{n_in}:v]format=rgba,setpts=PTS-STARTPTS+{t0_:.3f}/TB[lk{k}];"
+        b_fc += (f"[{n_in}:v]format=rgba,scale={OW}:{OH}:flags=lanczos,setpts=PTS-STARTPTS+{t0_:.3f}/TB[lk{k}];"
                  f"[{last}][lk{k}]overlay=0:0:format=auto:enable='between(t,{t0_:.3f},{t0_ + 3.6:.3f})':eof_action=pass[lkb{k}];")
         last, n_in = f"lkb{k}", n_in + 1
+    # A16.1.4 logo sáng / tối theo cảnh: đo nền ĐÚNG vùng logo trên chính nền sẽ xuất (khung, cân màu, zoom, B-roll, FS, vệt sáng —
+    # chưa có logo / chữ), LOGO_SPS mẫu/s, trung bình theo hình logo → lịch đoạn sáng / tối (giữ ≥ 2 s, chuyển mờ 0,2 s).
+    logo_in = [os.path.abspath(a.logo)]
+    logo_sched, logo_meas, logo_dark_path = [(0.0, round(dur, 3), "light")], None, ""
+    if logo_w:
+        lw0, lh0 = Image.open(a.logo).size
+        bx, by, bw = LAY["logo_x"] * Q, LAY["logo_y"] * Q, logo_w * Q
+        bh = int(round(bw * lh0 / lw0))
+        sw = min(160, bw)
+        sh_ = max(4, int(round(bh * sw / bw)))
+        bw_, bh_ = min(bw, OW - bx), min(bh, OH - by)
+        lmask = np.asarray(Image.open(a.logo).convert("RGBA").getchannel("A").resize((sw, sh_), Image.BOX), np.float32) / 255.0
+        try:
+            job.progress("encode", "Đo nền vùng logo theo cảnh (logo sáng / tối)", 77)
+            ns = max(1, int(math.ceil(dur * LOGO_SPS)))
+            # zoom tính theo SỐ KHUNG của perspective: ở {LOGO_SPS} khung/s phải đổi về khung 30 fps, không thì zoom lệch ×{FPS}/{LOGO_SPS} (phản biện 25/10 P2-1)
+            vf_m = [persp_at(f"((in-1)*{FPS / LOGO_SPS:g})") if x is persp else x for x in vf[1:]]
+            fc_m = (f"[0:v]{','.join([f'fps={LOGO_SPS}'] + vf_m)}[bg0];{b_fc}[{last}]null[bgm];"
+                    f"[bgm]format=rgb24,crop={bw_}:{bh_}:{bx}:{by}:exact=1,scale={sw}:{sh_}:flags=area[m]")  # rgb trước khi cắt: yuv420p làm tròn x/y lẻ
+            r_ = subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", src, "-loop", "1", "-i", a.logo, "-framerate", str(FPS), "-start_number", "0",
+                                 "-i", os.path.join(tdir, "%06d.png"), "-i", final, *b_args, "-filter_complex", fc_m, "-map", "[m]",
+                                 "-frames:v", str(ns), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], capture_output=True)
+            fsz = sw * sh_ * 3
+            raw_ = r_.stdout
+            if r_.returncode != 0 or len(raw_) < fsz:
+                raise RuntimeError((r_.stderr or b"").decode("utf-8", "replace")[-300:] or "không có khung")
+            bgv = [luma_rel(np.frombuffer(raw_[i * fsz:(i + 1) * fsz], np.uint8).reshape(sh_, sw, 3), lmask) for i in range(len(raw_) // fsz)]
+            logo_sched = logo_schedule([v[0] for v in bgv], dur)
+            logo_meas = {"box": [bx, by, bw_, bh_], "sample": [sw, sh_], "bg": bgv}
+        except Exception as e_:
+            logo_meas = {"error": str(e_)[:300]}
+        try:
+            dpath, dnote = dark_logo(a.logo, a.logo_dark, job.p("work"))
+            logo_dark_path = os.path.abspath(dpath)
+        except Exception as e_:  # không có bản tối dùng được → giữ logo sáng cả video, ghi lý do ở bảng kiểm N
+            logo_sched, logo_dark_path = [(0.0, round(dur, 3), "light")], ""
+            logo_meas = {"error": f"không có bản logo tối: {e_}"[:300]}
+        if any(s_[2] == "dark" for s_ in logo_sched):
+            logo_in.append(logo_dark_path)
+            logo_meas["dark"] = dnote
+    lx_expr = f"{LAY['logo_x'] * Q}-{12 * Q}*pow(1-min(max((t-0.3)/0.6\\,0)\\,1)\\,3)"
     fc = (f"[0:v]{','.join(vf)}[bg0];{b_fc}[{last}]null[bg];"
-          + (f"[1:v]scale={logo_w}:-1:flags=lanczos,format=rgba,fade=t=in:st=0.3:d=0.6:alpha=1[lg];"
-             f"[bg][lg]overlay=x='{LAY['logo_x']}-12*pow(1-min(max((t-0.3)/0.6\\,0)\\,1)\\,3)':y={LAY['logo_y']}:eval=frame[l];"
-             if logo_w else "[bg]null[l];")
-          + (f"[2:v]format=rgba[tx];" if (LAY["s"] == 1.0 or FULL) else f"[2:v]format=rgba,scale=iw*{LAY['s']}:ih*{LAY['s']}:flags=lanczos[tx];")
-          + f"[l][tx]overlay={0 if FULL else LAY['tx']}:{0 if FULL else LAY['ty']}:format=auto,fade=t=out:st={max(0.0, dur - 0.9):.3f}:d=0.9,format=yuv420p[v]")
+          + (logo_filter(logo_sched, "1:v", f"{n_in}:v", logo_w * Q, lx_expr, LAY["logo_y"] * Q) if logo_w else "[bg]null[l];")
+          + (f"[2:v]format=rgba[tx];" if ((LAY["s"] == 1.0 or FULL) and Q == 1) else f"[2:v]format=rgba,scale=iw*{(1.0 if FULL else LAY['s']) * Q}:ih*{(1.0 if FULL else LAY['s']) * Q}:flags=lanczos[tx];")
+          + f"[l][tx]overlay={0 if FULL else LAY['tx'] * Q}:{0 if FULL else LAY['ty'] * Q}:format=auto,fade=t=out:st={max(0.0, dur - 0.9):.3f}:d=0.9,format=yuv420p[v]")
     master = job.p("master.mp4")
     P.sh(["ffmpeg", "-v", "error", "-y", "-i", src, "-loop", "1", "-i", a.logo, "-framerate", str(FPS), "-start_number", "0", "-i", os.path.join(tdir, "%06d.png"),
-          "-i", final, *b_args, "-filter_complex", fc, "-map", "[v]", "-map", "3:a", "-frames:v", str(N),
+          "-i", final, *b_args, *(["-loop", "1", "-i", logo_in[1]] if len(logo_in) > 1 else []),
+          "-filter_complex", fc, "-map", "[v]", "-map", "3:a", "-frames:v", str(N),
           "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-profile:v", "high", "-pix_fmt", "yuv420p", "-r", str(FPS),
           "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv",
           "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", master])
@@ -2170,7 +2384,8 @@ def main():
     def add(i, name, status, detail):
         qa.append({"id": i, "name": name, "status": status, "detail": detail})
     nfr, mw, mh, mr = P.count_frames(master)
-    add("A", f"{CW}x{CH} ({a.aspect}), 30 fps, H.264, số khung đúng", "pass" if (mw, mh) == (CW, CH) and mr == "30/1" and nfr == N else "fail", f"{mw}x{mh}, {mr}, {nfr}/{N} khung")
+    add("A", f"{OW}x{OH} ({a.aspect}{', 4K' if Q == 2 else ''}), 30 fps, H.264, số khung đúng", "pass" if (mw, mh) == (OW, OH) and mr == "30/1" and nfr == N else "fail",
+        f"{mw}x{mh}, {mr}, {nfr}/{N} khung" + (f"; {quality_note}" if a.quality == "4k" else ""))
     errs = P.decode_errors(master) + P.decode_errors(preview)
     add("B", "Giải mã toàn bộ", "pass" if not errs else "fail", "0 lỗi" if not errs else "; ".join(errs[:3]))
     bd = P.sh(["ffmpeg", "-hide_banner", "-i", master, "-vf", "blackdetect=d=0.3:pix_th=0.08,freezedetect=n=0.001:d=1.5", "-an", "-f", "null", "-"]).stderr
@@ -2289,7 +2504,14 @@ def main():
     add("K", "So với bản trước", "na", "chưa so khung tự động với bản trước (dựng lại từ RAW)")
     add("L", "Độ đọc chữ trắng trên nền sáng", "info", "kiểm bằng mắt khi duyệt")
     add("M", "Tiếng giống từng byte khi chỉ sửa hình", "na", "dựng từ RAW")
-    add("N", "Màu logo theo nền", "info", "logo sáng (nền tối); cần OWNER xem")
+    if logo_w:
+        try:  # đo kiểm không được làm chết lần dựng (lỗi thật 25/10 v_mvnu9i50atbkj v6: bản sửa dở chết ở đây) → ghi chưa đo + lý do
+            n_status, n_detail = logo_check(master, logo_sched, logo_meas, [logo_in[0], logo_dark_path], dur)
+        except Exception as e_:
+            n_status, n_detail = "unmeasured", f"lỗi khi đo lại logo trên bản chính ({type(e_).__name__}: {str(e_)[:160]}); lịch đã dùng {[list(x) for x in logo_sched]}"
+    else:
+        n_status, n_detail = "na", f"{a.aspect}: không chèn logo tới khi có vị trí chuẩn (Skill Edit Video Ngang R8.6, #34c)" if a.aspect == "16:9" else "không chèn logo"
+    add("N", "Màu logo theo nền (A16.1.4: nền sáng → logo tối, nền tối → logo sáng)", n_status, n_detail)
     add("O", "Không lộ tên người / bí mật", "unmeasured", "cần người xem phụ đề")
     b_note = "; ".join(f"minh hoạ {b['t0']:.1f}–{b['t1']:.1f}s {b['file']}" for b in brolls) or "không minh hoạ"
     m_note = (f"nhạc {music_info['file']} ({music_info.get('chosenBy', '')})" + (f"; gợi ý nghe duyệt: {', '.join(music_info['suggest'])}" if music_info.get("suggest") else "")
@@ -2330,7 +2552,7 @@ def main():
                   if a.aspect != "16:9" else
                   {"name": "Skill Edit Video Ngang", "version": "v0.1.r2 (22/10/2026)", "status": "ACTIVE — OWNER duyệt 22/10/2026 18:14", "sourceUrl": "https://app.notion.com/p/4004ceb9517d81849441f9d0f3757538", "engine": "esv_render.py + ngang.py (Pillow, không ASS) — thẻ ảnh M1–M6 (M3 split khúc cuối); CHƯA có K1–K10 (skill CHƯA CHỐT)"}),
         "input": {"file": os.path.basename(src), **info, "crop": cropf},
-        "output": {"master": "master.mp4", "preview": "preview.mp4", "aspect": a.aspect, "width": CW, "height": CH, "crop": cropf, "frames": N, "seconds": round(dur, 3), "cutSilence": bool(keep), "cuts": len(cut_times), "sourceSeconds": round(src_dur, 3),
+        "output": {"master": "master.mp4", "preview": "preview.mp4", "aspect": a.aspect, "width": OW, "height": OH, "quality": quality_note, "crop": cropf, "frames": N, "seconds": round(dur, 3), "cutSilence": bool(keep), "cuts": len(cut_times), "sourceSeconds": round(src_dur, 3),
                    "keep": [[a_, b_] for a_, b_ in keep] if keep else None},
         "transcript": {"words": len(words), "uncertain": uncertain, "corrections": fixes, "secondModel": None if a.words else a.model2,
                        "script": bool(script_text), "scriptFixes": script_fixes[:200]},
@@ -2340,6 +2562,8 @@ def main():
         "diagrams": [{"type": d["type"], "t0": d["t0"], "t1": d.get("t1", d["t0"] + 3.6)} for d in plan.get("diagrams", [])],
         "emphasisDropped": n_emph_plan - len(emph),
         "zoom": {"formula": "r3 smootherstep, một tâm, không zoom thở", "profile": prof, "pace": pace, "events": zooms, "anchor": [round(ax, 3), round(ay, 3)], "faceDetected": face_ok},
+        "logo": {"schedule": [list(x) for x in logo_sched], "files": [os.path.basename(x) for x in logo_in],
+                 "bgLuma": [round(v[0], 3) for v in (logo_meas or {}).get("bg", [])], "darkSource": (logo_meas or {}).get("dark", "")} if logo_w else None,
         "audio": {"lufs": mI, "truePeak": mTP, "previewTruePeak": pTP, "music": music_info, "sfx": sfx_info},
         "plan": {"by": plan.get("by", ""), "note": plan.get("note", "")},
         "aiRun": ai_run,  # mô hình biên tập đã chạy TRONG lần dựng này (ghi sổ Đội AI: AI Edit Video, ₫0 vì chạy tại máy)

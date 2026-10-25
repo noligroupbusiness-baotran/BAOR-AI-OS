@@ -109,3 +109,28 @@ test("phản biện S4: bộ dựng THẬT nhận --script khi chạy việc d�
   assert.ok(scriptArg, "runJob truyền --script cho bộ dựng");
   assert.equal(fs.readFileSync(scriptArg!.slice("--script=".length), "utf8"), jobs.scriptSpeech("c_ok"));
 });
+
+test("đổi / bỏ kịch bản: gỡ liên kết chiến dịch video KẾ THỪA từ kịch bản cũ, giữ liên kết gắn tay, nhận liên kết của kịch bản mới", async () => {
+  const { campaignRepo } = await import("../src/lib/campaigns/repository");
+  content("c_old", "approved");
+  content("c_new", "approved");
+  const base = { channelGoalId: null, status: "in_progress", ownerId: null, viaType: null, viaId: null } as const;
+  campaignRepo.addLink({ ...base, campaignId: "cp_old", entityType: "content", entityId: "c_old" });
+  campaignRepo.addLink({ ...base, campaignId: "cp_both", entityType: "content", entityId: "c_old" });
+  campaignRepo.addLink({ ...base, campaignId: "cp_new", entityType: "content", entityId: "c_new" });
+  campaignRepo.addLink({ ...base, campaignId: "cp_both", entityType: "content", entityId: "c_new" });
+  const vid = jobs.createVideoFromSource({ title: "Nguồn đổi kịch bản", sourceUploadId: "up_x", cutSilence: false, by: "t", contentId: "c_old", start: false });
+  campaignRepo.addLink({ ...base, campaignId: "cp_hand", entityType: "video", entityId: vid, status: "editing" });
+  const links = () =>
+    db.getDb().select().from(db.schema.marketingLinks).where(eq(db.schema.marketingLinks.entityId, vid)).all().map((l) => `${l.campaignId}:${l.viaId ?? "tay"}`).sort();
+  assert.deepEqual(links(), ["cp_both:c_old", "cp_hand:tay", "cp_old:c_old"]);
+
+  assert.equal(jobs.linkVideoScript(vid, "c_new", "OWNER").ok, true);
+  assert.deepEqual(links(), ["cp_both:c_new", "cp_hand:tay", "cp_new:c_new"], "cp_old (chỉ từ kịch bản cũ) gỡ; cp_both theo kịch bản mới; gắn tay giữ");
+
+  assert.equal(jobs.linkVideoScript(vid, "c_new", "OWNER").ok, true, "gắn lại cùng kịch bản");
+  assert.deepEqual(links(), ["cp_both:c_new", "cp_hand:tay", "cp_new:c_new"], "không đổi khi gắn lại cùng kịch bản");
+
+  assert.equal(jobs.linkVideoScript(vid, null, "OWNER").ok, true);
+  assert.deepEqual(links(), ["cp_hand:tay"], "bỏ kịch bản → chỉ còn liên kết gắn tay");
+});

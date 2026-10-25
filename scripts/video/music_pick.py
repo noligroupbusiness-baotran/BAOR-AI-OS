@@ -23,7 +23,9 @@ def banned(x):
     hay = f"{x.get('file', '')} {x.get('source', '')} {x.get('license', '')}".lower()
     if any(i in hay for i in BANNED_IDS):
         return next(i for i in BANNED_IDS if i in hay)
-    if any(s in hay for s in BANNED_SOURCES) and OWNER_OK not in str(x.get("license", "")):
+    # "chờ OWNER nghe duyệt" CHỨA cụm "OWNER nghe duyệt" → phải loại trừ trạng thái chờ (lỗi thật 25/10: 27 bài Mixkit CHỜ duyệt bị coi là đã duyệt)
+    lic = str(x.get("license", ""))
+    if any(s in hay for s in BANNED_SOURCES) and (OWNER_OK not in lic or MUSIC_PENDING in lic):
         return next(s for s in BANNED_SOURCES if s in hay)
     return None
 
@@ -55,11 +57,34 @@ def _by_seed(items, seed):
     return items[int(hashlib.sha256(seed.encode()).hexdigest(), 16) % len(items)]
 
 
-def pick_music(lib, mood=None, seed=""):
+def music_pool(data_dir):
+    """Bài kho ĐỦ-HỒ-SƠ (đội đã kiểm giấy phép) còn chờ OWNER nghe duyệt — kể cả Mixkit; KHÔNG gồm bài bị loại / 552792 / 241274 / 136824.
+    OWNER 25/10/2026 "phá bỏ những rules vi phạm để mang lại 1 video hoàn thiện": chưa có bài duyệt thì bộ dựng tự dùng nhóm này
+    để bản dựng có nhạc; giấy phép giữ NGUYÊN VĂN ("chờ OWNER nghe duyệt") → bảng kiểm P vẫn chặn ĐĂNG tới khi OWNER duyệt bài
+    (§7 không giả giấy phép; chỉ thị 21/10 "chặn chỉ ở phát hành")."""
+    d = os.path.join(data_dir, "video-assets", "music")
+    try:
+        items = json.load(open(os.path.join(d, "manifest.json"), encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    out = []
+    for x in items:
+        if not isinstance(x, dict) or not x.get("file") or x.get("exclude") or x.get("catalogStatus") != "ĐỦ-HỒ-SƠ":
+            continue
+        if MUSIC_PENDING not in str(x.get("license", "")):  # chỉ bài ghi rõ "chờ OWNER nghe duyệt" → bảng kiểm P chắc chắn chặn đăng
+            continue
+        hay = f"{x.get('file', '')} {x.get('source', '')} {x.get('license', '')}".lower()
+        if any(i in hay for i in BANNED_IDS) or not os.path.isfile(os.path.join(d, x["file"])):
+            continue
+        out.append({**x, "path": os.path.join(d, x["file"])})
+    return out
+
+
+def pick_music(lib, mood=None, seed="", pool=None):
     """Chọn bài nhạc nền, cố định theo video (dựng lại không đổi nhạc). Thứ tự:
     1) bài OWNER đã duyệt thuộc loại nhạc AI chọn; 2) bài mặc định đã duyệt;
-    3) chưa có bài duyệt dùng được → bài kho ĐỦ-HỒ-SƠ hợp loại (không hợp thì bất kỳ bài ĐỦ-HỒ-SƠ) để OWNER nghe ngay trong bản dựng —
-       giấy phép vẫn mang "chờ OWNER nghe duyệt" nên bảng kiểm P CHẶN ĐĂNG cho tới khi OWNER duyệt bài đó (Skill ESV B9 P / A5).
+    3) chưa có bài duyệt → `pool` (music_pool: bài kho ĐỦ-HỒ-SƠ, kể cả Mixkit) hợp loại, không hợp thì bất kỳ — bản dựng CÓ nhạc,
+       giấy phép nguyên văn nên bảng kiểm P chặn đăng tới khi OWNER nghe duyệt bài đó (OWNER 25/10/2026; §7).
     Không bao giờ dùng bài LOẠI (BANNED_IDS) hay bài kho không ghi ĐỦ-HỒ-SƠ."""
     ok = [x for x in lib if MUSIC_PENDING not in str(x.get("license", ""))]
     fit = lambda x: mood and (x.get("genre") == mood or mood in x.get("mood", []))  # noqa: E731
@@ -73,8 +98,11 @@ def pick_music(lib, mood=None, seed=""):
     if dflt:
         why = "bài mặc định" + (f" (loại '{mood}' chưa có bài OWNER duyệt)" if mood else "")
         return dflt[0]["path"], dflt[0]["license"], {**info, "chosenBy": why}
-    # Không còn dự phòng "bài chờ duyệt": A5.2 — chưa có bài đạt thì giao bản KHÔNG nhạc, ghi rõ (không trộn bài chưa đạt)
     if ok:
         c = sorted(ok, key=lambda x: x["file"])[0]
         return c["path"], c["license"], {**info, "chosenBy": "bài đã duyệt duy nhất còn lại"}
+    if pool:  # OWNER 25/10/2026: chưa có bài duyệt → bài kho đã kiểm giấy phép (hợp loại nếu có); P chặn đăng tới khi duyệt bài
+        fp = [x for x in pool if fit(x)] or pool
+        c = _by_seed(fp, seed)
+        return c["path"], str(c.get("license", "")), {**info, "chosenBy": f"kho ĐỦ-HỒ-SƠ {'hợp loại' if fp is not pool else 'bất kỳ'} — chưa có bài duyệt; duyệt bài này ở Cài đặt › Video › Thư viện nhạc để được đăng"}
     return None, "", {**info, "reason": A5_NO_MUSIC}
