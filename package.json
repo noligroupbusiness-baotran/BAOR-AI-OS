@@ -17,7 +17,8 @@
     "verify:e2e": "tsx scripts/verify.mts --e2e-only",
     "verify:full": "tsx scripts/verify.mts --e2e",
     "guardrails": "tsx scripts/guardrails.mts",
-    "prepare": "git config core.hooksPath .githooks 2>/dev/null || true"
+    "prepare": "git config core.hooksPath .githooks 2>/dev/null || true",
+    "render-worker": "tsx scripts/video/render-worker.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.124.0",

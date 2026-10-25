@@ -18,6 +18,8 @@ export const SECOND_BRAIN = {
   pages: [
     { id: "3fd4ceb9517d81d5b176ef9b6fe01b19", section: "00 START HERE" },
     { id: "3fd4ceb9517d813e8e3efe93cf72e891", section: "00 QUẢN TRỊ KIẾN THỨC" },
+    // Phần chung (A) của skill dựng video (TỔNG HỢP EDIT VIDEO): trang lẻ, không nằm trong database 02 SKILL — máy dựng theo dõi
+    { id: "4014ceb9517d81b3bdc0f9917b05c190", section: "02 SKILL", kind: "Skill" },
   ],
 } as const;
 
@@ -185,7 +187,7 @@ export async function readSecondBrain(ctx: ConnectorContext, known: Map<string, 
       const body = same ? undefined : await pageBody(ctx, p.id);
       if (same) skipped++;
       else fetchedBodies++;
-      pages.push({ id, url: p.url, section: pg.section, notionEditedAt: p.last_edited_time, body, ...pageProps(p), status: "ACTIVE", kind: "Quy tắc kho" });
+      pages.push({ id, url: p.url, section: pg.section, notionEditedAt: p.last_edited_time, body, ...pageProps(p), status: "ACTIVE", kind: "kind" in pg ? pg.kind : "Quy tắc kho" });
     } catch (e) {
       errors.push(`${pg.section}: ${e instanceof Error ? e.message : String(e)}`);
     }

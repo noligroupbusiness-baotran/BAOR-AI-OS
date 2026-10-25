@@ -12,6 +12,7 @@ import { PeoplePanel, ProductsPanel } from "@/components/settings/catalog-panels
 import { AiBudgetPanel, IntegrationsPanel, SystemLogPanel } from "@/components/settings/integration-panels";
 import { AiTeamPanel } from "@/components/settings/ai-team-panel";
 import { SecondBrainPanel } from "@/components/settings/second-brain-panel";
+import { RenderWorkerPanel } from "@/components/settings/render-worker-panel";
 import { FaqPanel } from "@/components/settings/faq-panel";
 import { AlertsPanel, AppLogoPanel, BrandPanel, MusicPanel } from "@/components/settings/brand-panels";
 import { AutoEditPanel } from "@/components/settings/auto-edit-panel";
@@ -117,6 +118,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       <MusicLibraryPanel />
       <AiTeamPanel />
       <SecondBrainPanel />
+      <RenderWorkerPanel />
       <AiBudgetPanel />
       <AlertsPanel />
       <SystemLogPanel />

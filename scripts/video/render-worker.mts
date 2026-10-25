@@ -1,0 +1,197 @@
+// Máy dựng của OWNER (OWNER 25/10/2026): chạy trên máy OWNER, GỌI RA máy chủ (mkt.baor.vn) — không mở cổng nào vào máy này.
+// Nhận việc → tải video gốc → dựng tại máy bằng bộ dựng Skill ESV / Edit Video Ngang (Whisper, mô hình tại máy, ffmpeg) với tư liệu
+// TRÊN MÁY (DATA_DIR/video-assets: kho nhạc / SFX / ảnh đã đồng bộ từ Drive) → gửi bản dựng về.
+//
+// Chạy:  npm run render-worker      (cấu hình trong .env.render-worker — không commit)
+//   BAOR_REMOTE_URL=https://mkt.baor.vn
+//   BAOR_WORKER_KEY=bw_...            (Cài đặt › Máy dựng video › Tạo khoá — hiện một lần)
+//   BAOR_WORKER_NAME=may-bao          (tuỳ chọn)
+//   DATA_DIR=/đường/dẫn/data          (tuỳ chọn, mặc định ./data của repo)
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import { fileURLToPath } from "node:url";
+
+export interface Spec {
+  videoId: string;
+  version: number;
+  title: string;
+  sourceName: string;
+  aspect: string;
+  cutSilence: boolean;
+  framing: { x?: number; y?: number; zoom?: number } | null;
+  aiPlan: boolean;
+  sfx: boolean;
+  noMusic: boolean;
+  music: { name: string; license: string } | null;
+  keywords: string;
+  model: string;
+  corrections: string;
+  script: string | null;
+  plan: unknown | null;
+  words: unknown | null;
+  allowAi: boolean;
+}
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+
+/** Tham số bộ dựng — cùng thứ tự / ý nghĩa với dựng tại máy chủ (src/lib/video/jobs.ts › runJob, nhánh Skill ESV). */
+export function buildArgs(spec: Spec, p: { src: string; work: string; script?: string; plan?: string; words?: string; music?: string }): string[] {
+  const a = [path.join(ROOT, "scripts", "video", "esv_render.py"), `--input=${p.src}`, `--job-dir=${p.work}`, `--keywords=${spec.keywords}`, `--model=${spec.model}`];
+  if (spec.corrections.trim()) a.push(`--corrections=${spec.corrections}`);
+  if (spec.cutSilence) a.push("--cut-silence");
+  a.push(`--aspect=${spec.aspect || "9:16"}`);
+  if (spec.framing?.x !== undefined) a.push(`--frame-x=${spec.framing.x}`);
+  if (spec.framing?.y !== undefined) a.push(`--frame-y=${spec.framing.y}`);
+  if (spec.framing?.zoom !== undefined) a.push(`--frame-zoom=${spec.framing.zoom}`);
+  if (!spec.sfx) a.push("--no-sfx");
+  if (spec.aiPlan) a.push("--ai-plan");
+  if (spec.noMusic) a.push("--no-music");
+  else if (p.music && spec.music) a.push(`--music=${p.music}`, `--music-license=${spec.music.license}`);
+  if (p.script) a.push(`--script=${p.script}`);
+  if (p.plan) a.push(`--plan=${p.plan}`);
+  if (p.words) a.push(`--words=${p.words}`);
+  return a;
+}
+
+/** Tệp kết quả gửi về: tệp ở gốc thư mục bản dựng, bỏ tệp đầu vào / tạm. */
+export function resultFiles(work: string): string[] {
+  const root = fs
+    .readdirSync(work, { withFileTypes: true })
+    .filter((d) => d.isFile() && !/^(source\.|input-|job\.json|progress\.json)/.test(d.name) && (/\.(mp4|json|png|jpg|txt|srt|vtt|ass|wav|m4a)$/i.test(d.name) || d.name === "checksums.sha256"))
+    .map((d) => d.name);
+  const snapDir = path.join(work, "snapshots");
+  const snaps = fs.existsSync(snapDir) ? fs.readdirSync(snapDir).filter((f) => /^\d{1,4}\.jpg$/.test(f)).map((f) => `snapshots/${f}`) : [];
+  return [...root, ...snaps].sort((x, y) => (x === "master.mp4" ? 1 : y === "master.mp4" ? -1 : x.localeCompare(y)));
+}
+
+async function sha256File(p: string): Promise<string> {
+  const h = createHash("sha256");
+  for await (const chunk of fs.createReadStream(p)) h.update(chunk as Buffer);
+  return h.digest("hex");
+}
+
+function loadEnv() {
+  const f = path.join(ROOT, ".env.render-worker");
+  if (!fs.existsSync(f)) return;
+  for (const line of fs.readFileSync(f, "utf8").split(/\r?\n/)) {
+    const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)\s*$/);
+    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
+  }
+}
+
+const log = (...x: unknown[]) => console.log(new Date().toLocaleTimeString("vi-VN"), ...x);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function main() {
+  loadEnv();
+  const base = (process.env.BAOR_REMOTE_URL ?? "").replace(/\/+$/, "");
+  const key = process.env.BAOR_WORKER_KEY ?? "";
+  if (!/^https?:\/\//.test(base) || !key) {
+    console.error("Thiếu BAOR_REMOTE_URL / BAOR_WORKER_KEY (đặt trong .env.render-worker).");
+    process.exit(2);
+  }
+  const name = (process.env.BAOR_WORKER_NAME || os.hostname()).replace(/[^\w.-]/g, "").slice(0, 60) || "may-dung";
+  const dataDir = process.env.DATA_DIR || path.join(ROOT, "data");
+  const headers = { authorization: `Bearer ${key}`, "x-baor-worker": name };
+  const q = (s: Spec) => `videoId=${encodeURIComponent(s.videoId)}&version=${s.version}`;
+  log(`Máy dựng “${name}” → ${base} · tư liệu: ${path.join(dataDir, "video-assets")}`);
+
+  for (;;) {
+    let spec: Spec | null = null;
+    try {
+      const r = await fetch(`${base}/api/render-worker/claim`, { method: "POST", headers });
+      if (r.status === 401) {
+        console.error("Khoá máy dựng sai / đã bị thu hồi. Tạo khoá mới ở Cài đặt › Máy dựng video.");
+        process.exit(3);
+      }
+      if (r.status === 200) spec = (await r.json()) as Spec;
+    } catch (e) {
+      log("Không gọi được máy chủ:", e instanceof Error ? e.message : e);
+    }
+    if (!spec) {
+      await sleep(20_000);
+      continue;
+    }
+    log(`Nhận dựng “${spec.title}” bản ${spec.version} (${spec.aspect})`);
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), `baor-render-${spec.videoId}-v${spec.version}-`));
+    let stopped = false;
+    let stopBeat = () => {};
+    try {
+      // 1. Video gốc
+      const ext = (path.extname(spec.sourceName) || ".mp4").toLowerCase().replace(/[^.a-z0-9]/g, "");
+      const src = path.join(work, `source${ext}`);
+      const res = await fetch(`${base}/api/render-worker/source?${q(spec)}`, { headers });
+      if (!res.ok || !res.body) throw new Error(`Không tải được video gốc (${res.status})`);
+      const out = fs.createWriteStream(src);
+      const reader = res.body.getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!out.write(value)) await new Promise<void>((r) => out.once("drain", () => r()));
+      }
+      await new Promise<void>((r) => out.end(() => r()));
+      // 2. Đầu vào phụ
+      const files: { script?: string; plan?: string; words?: string; music?: string } = {};
+      if (spec.music && !spec.noMusic) {
+        const mr = await fetch(`${base}/api/render-worker/music?${q(spec)}`, { headers });
+        if (mr.ok) {
+          files.music = path.join(work, `input-music${(path.extname(spec.music.name) || ".mp3").toLowerCase().replace(/[^.a-z0-9]/g, "")}`);
+          fs.writeFileSync(files.music, Buffer.from(await mr.arrayBuffer()));
+        }
+      }
+      if (spec.script) fs.writeFileSync((files.script = path.join(work, "input-script.txt")), spec.script);
+      if (spec.plan) fs.writeFileSync((files.plan = path.join(work, "input-plan.json")), JSON.stringify(spec.plan));
+      if (spec.words) fs.writeFileSync((files.words = path.join(work, "input-words.json")), JSON.stringify(spec.words));
+      // 3. Dựng tại máy
+      const child = spawn(process.env.PYTHON_BIN || "python3", buildArgs(spec, { src, work, ...files }), {
+        stdio: ["ignore", "inherit", "pipe"],
+        detached: true,
+        env: { ...process.env, DATA_DIR: dataDir, ...(spec.allowAi ? {} : { BAOR_AI_PLAN: "off" }) },
+      });
+      let err = "";
+      child.stderr.on("data", (b: Buffer) => {
+        err = (err + b.toString()).slice(-4000);
+      });
+      const beat = setInterval(async () => {
+        let progress: unknown = null;
+        try {
+          progress = JSON.parse(fs.readFileSync(path.join(work, "progress.json"), "utf8"));
+        } catch {}
+        try {
+          const r = await fetch(`${base}/api/render-worker/heartbeat?${q(spec!)}`, { method: "POST", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify({ progress }) });
+          if (r.status === 409 && !stopped) {
+            stopped = true;
+            log("Máy chủ báo dừng — huỷ bản đang dựng.");
+            if (child.pid) process.kill(-child.pid, "SIGTERM");
+          }
+        } catch {}
+      }, 15_000);
+      const code: number = await new Promise((r) => child.on("close", (c) => r(c ?? 1)));
+      // Nhịp tim tiếp tục trong lúc gửi kết quả (tệp lớn mất nhiều phút) — dừng ở finally
+      stopBeat = () => clearInterval(beat);
+      if (stopped) continue;
+      if (code !== 0) throw new Error((err.split("\n").reverse().find((l) => l.startsWith("LỖI:")) ?? err.split("\n").filter(Boolean).pop() ?? `mã thoát ${code}`).replace(/^LỖI:\s*/, ""));
+      // 4. Gửi kết quả
+      for (const f of resultFiles(work)) {
+        const fp = path.join(work, f);
+        const r = await fetch(`${base}/api/render-worker/file?${q(spec)}&name=${encodeURIComponent(f)}`, { method: "PUT", headers: { ...headers, "x-content-sha256": await sha256File(fp) }, body: await fs.openAsBlob(fp) });
+        if (r.status === 409) throw new Error("Máy chủ đã dừng / thu hồi job");
+        if (!r.ok) throw new Error(`Gửi ${f} lỗi (${r.status})`);
+      }
+      const done = await fetch(`${base}/api/render-worker/complete?${q(spec)}`, { method: "POST", headers });
+      log(done.ok ? `Xong “${spec.title}” bản ${spec.version} → Chờ kiểm tra` : `Máy chủ không nhận kết quả (${done.status}): ${await done.text()}`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      log(`Lỗi dựng “${spec.title}”: ${msg}`);
+      await fetch(`${base}/api/render-worker/fail?${q(spec)}`, { method: "POST", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify({ error: msg }) }).catch(() => {});
+    } finally {
+      stopBeat();
+      fs.rmSync(work, { recursive: true, force: true });
+    }
+  }
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) void main();

@@ -13,6 +13,9 @@ import { writeIntegrationConfig } from "@/lib/connectors/config";
 import { checkIntegration as runCheck } from "@/lib/connectors/sync";
 import { runSchedulerNow } from "@/lib/scheduler";
 import { roleById, saveRoleSettings } from "@/lib/ai-roster";
+import { generateWorkerKey, revokeWorkerKey } from "@/lib/video/worker-auth";
+import { acceptSkillVersions } from "@/lib/video/skill-freshness";
+import { logActivity } from "@/lib/activity";
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 
@@ -139,4 +142,35 @@ export async function clearSampleData() {
   clearSampleOnly(getDb());
   setSetting("data.sampleCleared", "1");
   done("/dashboard", "Đã xóa dữ liệu mẫu, giữ nguyên dữ liệu bạn tự tạo. Hệ thống sẵn sàng nhận dữ liệu thật.");
+}
+
+// Cài đặt › Máy dựng video (máy OWNER dựng cho máy chủ)
+export async function setRenderModeAction(fd: FormData) {
+  await requirePermission("admin", "/settings#render-worker");
+  setSetting("video.renderMode", str(fd, "mode") === "remote" ? "remote" : "local");
+  done("/settings#render-worker", str(fd, "mode") === "remote" ? "Đã chuyển: video dựng trên máy dựng của anh" : "Đã chuyển: video dựng trên máy chủ");
+}
+
+/** Tạo khoá máy dựng (thu hồi khoá cũ). Trả khoá về form để hiện ĐÚNG MỘT LẦN — không đặt vào URL / thông báo. */
+type WorkerKeyState = { key?: string; error?: string };
+export async function generateWorkerKeyAction(_prev: WorkerKeyState, _fd: FormData): Promise<WorkerKeyState> {
+  const actor = await requirePermission("admin", "/settings#render-worker");
+  void _prev;
+  void _fd;
+  const key = generateWorkerKey();
+  logActivity("human", `${actor.name} tạo khoá máy dựng mới (khoá cũ bị thu hồi).`, "video");
+  return { key };
+}
+
+export async function revokeWorkerKeyAction() {
+  const actor = await requirePermission("admin", "/settings#render-worker");
+  revokeWorkerKey();
+  logActivity("human", `${actor.name} thu hồi khoá máy dựng.`, "video");
+  done("/settings#render-worker", "Đã thu hồi khoá máy dựng");
+}
+
+export async function acceptSkillVersionsAction() {
+  await requirePermission("admin", "/settings#render-worker");
+  const n = acceptSkillVersions();
+  done("/settings#render-worker", `Đã ghi nhận bộ dựng theo skill hiện tại trên Notion (${n} trang)`);
 }

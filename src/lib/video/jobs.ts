@@ -18,6 +18,7 @@ import { addVideoFeedback } from "./feedback";
 import { campaignRepo } from "@/lib/campaigns/repository";
 import { parseShootingScript } from "@/lib/content/shooting-script";
 import { roleAllows, roleById } from "@/lib/ai-roster";
+import { skillChangeNote } from "./skill-freshness";
 import { recordAiCall } from "@/lib/router";
 
 export const SKILL = skillJson as unknown as {
@@ -356,7 +357,7 @@ function recoverStale() {
   if (worker.recovered) return;
   worker.recovered = true;
   for (const j of allJobs()) {
-    if (j.status !== "running") continue;
+    if (j.status !== "running" || j.worker) continue; // job của máy dựng: do recoverRemoteStale xử lý theo nhịp tim
     // Tiến trình dựng của lần chạy trước còn sống: dừng hẳn trước khi xếp lại, để hai bộ dựng không cùng ghi một thư mục.
     if (isOurRenderer(j.pid)) killGroup(j.pid!);
     if (j.runId) finishRun(j.runId, false, "Máy chủ khởi động lại giữa lúc dựng");
@@ -438,7 +439,11 @@ export async function kickWorker(): Promise<void> {
   // Kiểm thử chạy trên CSDL tạm: không chạy bộ dựng thật.
   if (process.env.BAOR_VIDEO_WORKER === "off") return;
   if (worker.running) return;
+  // Thu hồi job kẹt ở CẢ hai chế độ: job tại chỗ của lần chạy trước (khởi động lại) + job máy dựng mất nhịp tim
   recoverStale();
+  recoverRemoteStale();
+  // Chế độ máy dựng của OWNER: máy chủ không tự dựng, máy dựng gọi /api/render-worker/claim để nhận việc
+  if (renderMode() === "remote") return;
   const next = allJobs()
     .filter((j) => j.status === "queued")
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
@@ -460,7 +465,7 @@ export function runJob(job: VideoJob): Promise<void> {
   const srcPath = src ? uploadPath(src) : null;
   const runId = startRun("video_auto_edit", title);
   const started = new Date().toISOString();
-  writeJob({ ...job, status: "running", startedAt: started, runId });
+  writeJob({ ...job, status: "running", startedAt: started, runId, worker: undefined, heartbeatAt: undefined });
   if (!srcPath) {
     failJob(job, "Không tìm thấy tệp nguồn trong kho tải lên", runId, title);
     return Promise.resolve();
@@ -586,7 +591,13 @@ function finishJob(job: VideoJob, dir: string, runId: string, title: string, sta
     .values({ id: upId, kind: "video", name, fileName, mime: "video/mp4", size, meta: JSON.stringify({ title: name, source: "auto-edit", videoId: job.videoId, version: job.version, skill: `${SKILL.skillId} ${SKILL.version}` }), uploadedBy: "agent-edit-video", createdAt: now })
     .run();
   const failed = report.failed ?? [];
-  const note = `Bản ${job.version}: ${report.output.seconds.toFixed(0)} giây, ${report.captions.units} khung phụ đề, ${report.emphasis.length} chữ nhấn. Bảng kiểm: ${failed.length ? `chưa đạt ${failed.join(", ")}` : "các mục đo được đều đạt"}; ${report.blockers.length} điểm chặn đăng.`;
+  let skillNote = "";
+  try {
+    skillNote = skillChangeNote();
+  } catch {
+    // chỉ mục Second Brain lỗi không được làm hỏng bản dựng
+  }
+  const note = `Bản ${job.version}: ${report.output.seconds.toFixed(0)} giây, ${report.captions.units} khung phụ đề, ${report.emphasis.length} chữ nhấn. Bảng kiểm: ${failed.length ? `chưa đạt ${failed.join(", ")}` : "các mục đo được đều đạt"}; ${report.blockers.length} điểm chặn đăng.${skillNote}`;
   getDb().update(schema.videos).set({ status: "review", version: job.version, uploadId: upId, note, updatedAt: now }).where(eq(schema.videos.id, job.videoId)).run();
   writeJob({ ...job, status: "done", startedAt: started, finishedAt: now, runId, masterUploadId: upId });
   adoptAiPlan(job, dir);
@@ -715,4 +726,171 @@ export function writeEditorPlan(videoId: string, raw: unknown, by: string): { ok
   fs.writeFileSync(path.join(d, "plan.json"), JSON.stringify(plan, null, 1));
   logActivity("human", `${by} sửa kế hoạch biên tập video ${videoId} trong bảng biên tập.`, "video");
   return { ok: true };
+}
+
+
+// ---------------------------------------------------------------------------
+// Máy dựng của OWNER (OWNER 25/10/2026: "máy tôi làm máy dựng, lấy skill trên Notion, lấy nguồn từ Drive / có sẵn trong máy").
+// Máy chủ (mkt.baor.vn) giữ hàng đợi; máy dựng GỌI RA (không mở cổng vào máy OWNER): nhận việc → tải video gốc + tham số → dựng
+// tại máy bằng bộ dựng + tư liệu trên máy (kho Drive đã đồng bộ) → gửi bản dựng về → máy chủ hoàn tất như dựng tại chỗ.
+// ---------------------------------------------------------------------------
+
+export function renderMode(): "local" | "remote" {
+  return getSetting("video.renderMode") === "remote" ? "remote" : "local";
+}
+
+/** Không có nhịp tim quá lâu: máy dựng mất kết nối / tắt máy → lỗi tạm thời (tự xếp lại 1 lần theo failJob). */
+export const REMOTE_STALE_MS = 15 * 60_000;
+
+export interface RemoteSpec {
+  videoId: string;
+  version: number;
+  title: string;
+  sourceName: string;
+  sourceSize: number;
+  aspect: string;
+  cutSilence: boolean;
+  framing: Framing | null;
+  aiPlan: boolean;
+  sfx: boolean;
+  noMusic: boolean;
+  /** Bài nhạc OWNER chọn (máy dựng tải qua GET music) — null khi để AI chọn theo luật A5 / không nhạc. */
+  music: { name: string; license: string } | null;
+  keywords: string;
+  model: string;
+  corrections: string;
+  script: string | null;
+  plan: unknown | null;
+  words: unknown | null;
+  allowAi: boolean; // Đội AI › AI Edit Video "Cho phép gọi AI"
+}
+
+function recoverRemoteStale(now = Date.now()) {
+  for (const j of allJobs()) {
+    if (j.status !== "running" || !j.worker) continue;
+    const beat = Date.parse(j.heartbeatAt ?? j.startedAt ?? "") || 0;
+    if (now - beat < REMOTE_STALE_MS) continue;
+    const title = getDb().select().from(schema.videos).where(eq(schema.videos.id, j.videoId)).get()?.title ?? j.videoId;
+    failJob({ ...j, worker: undefined, heartbeatAt: undefined }, `Máy dựng ${j.worker} mất kết nối quá ${REMOTE_STALE_MS / 60_000} phút`, j.runId ?? startRun("video_auto_edit", title), title);
+  }
+}
+
+function remoteSpec(job: VideoJob, title: string, contentId: string | null): RemoteSpec {
+  const s = editSettings();
+  const src = getUpload(job.sourceUploadId);
+  const dir = jobDir(job.videoId, job.version);
+  const prevVersion = jobVersions(job.videoId).find((v) => v < job.version);
+  const own = path.join(dir, "plan.json");
+  const editorPlan = path.join(jobsRoot(), job.videoId, "plan.json");
+  const prevPlan = prevVersion ? path.join(jobDir(job.videoId, prevVersion), "plan.json") : "";
+  const planPath = [own, editorPlan, prevPlan].find((p) => p && fs.existsSync(p));
+  const wordsPath = prevVersion ? path.join(jobDir(job.videoId, prevVersion), "words_main.json") : "";
+  return {
+    videoId: job.videoId,
+    version: job.version,
+    title,
+    sourceName: src?.name ?? "source.mp4",
+    sourceSize: src?.size ?? 0,
+    aspect: job.aspect ?? "9:16",
+    cutSilence: !!job.cutSilence,
+    framing: job.framing ?? null,
+    aiPlan: !!job.aiPlan,
+    sfx: s.sfx,
+    noMusic: s.musicUploadId === "none",
+    music: (() => {
+      const m = s.musicUploadId && s.musicUploadId !== "none" ? listUploads("music").find((u) => u.id === s.musicUploadId) : undefined;
+      return m ? { name: m.name, license: String(m.meta.license ?? "") } : null;
+    })(),
+    keywords: s.keywords,
+    model: s.model,
+    corrections: s.corrections,
+    script: scriptSpeech(contentId) || null,
+    plan: planPath ? readJson<unknown>(planPath) : null,
+    words: wordsPath && fs.existsSync(wordsPath) ? readJson<unknown>(wordsPath) : null,
+    allowAi: roleAllows(roleById("video_edit")!).ok,
+  };
+}
+
+/** Máy dựng nhận việc kế tiếp (cũ nhất trong hàng đợi). Không có việc → null. */
+export function claimRemoteJob(worker: string): RemoteSpec | null {
+  recoverRemoteStale();
+  const next = allJobs()
+    .filter((j) => j.status === "queued")
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+  if (!next) return null;
+  const video = getDb().select().from(schema.videos).where(eq(schema.videos.id, next.videoId)).get();
+  const title = video?.title ?? next.videoId;
+  const src = getUpload(next.sourceUploadId);
+  const srcPath = src ? uploadPath(src) : null;
+  const runId = startRun("video_auto_edit", title);
+  const now = new Date().toISOString();
+  if (!srcPath || !fs.existsSync(srcPath)) {
+    failJob(next, "Không tìm thấy tệp nguồn trong kho tải lên", runId, title);
+    return null;
+  }
+  writeJob({ ...next, status: "running", startedAt: now, runId, worker: worker.slice(0, 60), heartbeatAt: now, pid: undefined });
+  logActivity("system", `Máy dựng ${worker} nhận dựng “${title}” bản ${next.version}.`, "video");
+  return remoteSpec(next, title, video?.contentId ?? null);
+}
+
+/** Job đang được đúng máy dựng này giữ (chống máy khác / job đã bị dừng ghi đè). */
+export function remoteJobFor(videoId: string, version: number, worker: string): VideoJob | null {
+  const j = readJob(videoId, version);
+  return j && j.status === "running" && j.worker === worker.slice(0, 60) ? j : null;
+}
+
+/** Nhịp tim + tiến độ. Trả false khi job không còn của máy dựng này (bị dừng / quá hạn) → máy dựng huỷ bản đang dựng. */
+export function heartbeatRemote(videoId: string, version: number, worker: string, progress?: JobProgress | null): boolean {
+  const j = remoteJobFor(videoId, version, worker);
+  if (!j) return false;
+  writeJob({ ...j, heartbeatAt: new Date().toISOString() });
+  if (progress && typeof progress === "object") fs.writeFileSync(path.join(jobDir(videoId, version), "progress.json"), JSON.stringify(progress));
+  return true;
+}
+
+/** Máy dựng đã gửi đủ tệp vào thư mục bản dựng → hoàn tất như dựng tại chỗ (bản chính vào kho tải lên, video → Chờ kiểm tra). */
+export function completeRemoteJob(videoId: string, version: number, worker: string): { ok: true } | { ok: false; error: string } {
+  const j = remoteJobFor(videoId, version, worker);
+  if (!j) return { ok: false, error: "Job không còn thuộc máy dựng này" };
+  const title = getDb().select().from(schema.videos).where(eq(schema.videos.id, videoId)).get()?.title ?? videoId;
+  const dir = jobDir(videoId, version);
+  try {
+    finishJob({ ...j, worker: undefined, heartbeatAt: undefined }, dir, j.runId ?? startRun("video_auto_edit", title), title, j.startedAt ?? new Date().toISOString());
+    return { ok: true };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    failJob({ ...j, worker: undefined, heartbeatAt: undefined }, msg, j.runId ?? startRun("video_auto_edit", title), title);
+    return { ok: false, error: msg };
+  }
+}
+
+export function failRemoteJob(videoId: string, version: number, worker: string, msg: string): boolean {
+  const j = remoteJobFor(videoId, version, worker);
+  if (!j) return false;
+  const title = getDb().select().from(schema.videos).where(eq(schema.videos.id, videoId)).get()?.title ?? videoId;
+  failJob({ ...j, worker: undefined, heartbeatAt: undefined }, `Máy dựng ${worker}: ${msg.slice(0, 500)}`, j.runId ?? startRun("video_auto_edit", title), title);
+  return true;
+}
+
+/** Đường dẫn tệp nguồn của job đang được máy dựng giữ (để máy dựng tải về). */
+export function remoteSourcePath(videoId: string, version: number, worker: string): string | null {
+  const j = remoteJobFor(videoId, version, worker);
+  const u = j ? getUpload(j.sourceUploadId) : undefined;
+  const p = u ? uploadPath(u) : null;
+  return p && fs.existsSync(p) ? p : null;
+}
+
+/** Tên tệp máy dựng được phép gửi về thư mục bản dựng (không đường dẫn, không ghi đè job.json). */
+export function remoteFileNameOk(name: string): boolean {
+  if (/^snapshots\/\d{1,4}\.jpg$/.test(name) || name === "checksums.sha256") return true; // ảnh mốc + tổng kiểm như dựng tại chỗ
+  return /^[\w.-]{1,80}\.(mp4|json|png|jpg|txt|srt|vtt|ass|wav|m4a)$/i.test(name) && !/^(job|progress)\.json$/i.test(name) && !name.startsWith(".");
+}
+
+/** Tệp nhạc OWNER chọn ở Cài đặt (máy dựng tải về để dựng giống máy chủ). */
+export function remoteMusicPath(videoId: string, version: number, worker: string): string | null {
+  if (!remoteJobFor(videoId, version, worker)) return null;
+  const s = editSettings();
+  const music = s.musicUploadId && s.musicUploadId !== "none" ? listUploads("music").find((u) => u.id === s.musicUploadId) : undefined;
+  const p = music ? uploadPath(music) : null;
+  return p && fs.existsSync(p) ? p : null;
 }

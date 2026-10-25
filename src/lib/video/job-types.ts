@@ -73,6 +73,9 @@ export interface VideoJob {
   masterUploadId?: string;
   /** PID tiến trình dựng (để dừng khi máy chủ khởi động lại). */
   pid?: number;
+  /** Máy dựng từ xa đang nhận job (chế độ "máy dựng của OWNER") + nhịp tim gần nhất. */
+  worker?: string;
+  heartbeatAt?: string;
 }
 
 export interface JobProgress {
