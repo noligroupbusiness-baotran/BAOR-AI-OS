@@ -1,7 +1,8 @@
 // MỘT nguồn cho mọi con số "cần anh xử lý" (kiểm toán 26/10/2026: bốn nơi đếm lỗi ra bốn số, badge / thẻ / chuông lệch nhau).
 // Tổng quan (ô Lỗi cần xử lý), Việc cần làm, chuông (nhóm Lỗi cần xử lý), sức khoẻ ở thanh trên, badge thanh bên và thẻ Hành trình
 // đều đọc ở đây — cùng định nghĩa, cùng cửa sổ thời gian:
-// - Lỗi = lần chạy lỗi 24 giờ qua (chưa được lần chạy thành công mới hơn cùng đối tượng đóng lại) + bài đăng lỗi + kết nối lỗi.
+// - Lỗi = lần chạy lỗi 24 giờ qua (chưa được lần chạy thành công mới hơn cùng đối tượng đóng lại — trừ lỗi dữ liệu từng gói webhook)
+//   + bài đăng lỗi + kết nối lỗi.
 //   Lần chạy loại "check" tính qua trạng thái kết nối; "publish" / "publish_video" tính qua trạng thái bài (không đếm đôi).
 // - Bài lỗi SAU khi nền tảng đã nhận (có mã bài / "[CẦN KIỂM TRA TRANG]" / "Không xác minh được sau 24 giờ") = "cần kiểm trang":
 //   một mục mức cảnh báo, không làm sức khoẻ đỏ mãi.
@@ -18,6 +19,7 @@ import { videos as seedVideos } from "@/lib/data/videos";
 import { latestJob, videoIdsByRun, VIDEO_RUN_KEY } from "@/lib/video/jobs";
 import { isSamplePost, needsPageCheck } from "@/lib/publishing/guards";
 import { isSample } from "@/lib/sample";
+import { WEBHOOK_CONFIG_ERRORS } from "@/lib/webhooks";
 
 export const ATTENTION_WINDOW_MS = 24 * 3600 * 1000;
 
@@ -29,6 +31,12 @@ const COUNTED_ELSEWHERE = new Set(["check", "publish", "publish_video"]);
 /** Bản ghi cũ (trước 26/10) không phải lỗi: lần thử lại tự động, OWNER bấm Dừng, khởi động lại máy chủ, video đã xoá. */
 const LEGACY_NOT_ERROR = /→ tự thử lại lần \d+$|^Đã dừng theo yêu cầu|^Máy chủ khởi động lại giữa lúc dựng$|^Đã xoá video/;
 
+
+/** Lỗi webhook do CẤU HÌNH (khoá / chữ ký sai — hằng số chung ở src/lib/webhooks.ts, route ghi đúng câu đó): lần nhận thành công sau cùng kết nối chứng tỏ đã sửa → đóng được.
+ *  Lỗi webhook KHÁC là lỗi của TỪNG gói dữ liệu (thiếu tên khách, payload không phải JSON…): gói đó đã mất (vd một lead), lần nhận ok
+ *  của gói sau KHÔNG khắc phục được nó → giữ trong danh sách tới hết cửa sổ 24 giờ (kiểm toán 26/10: một lead lỗi bị che). Lỗi dữ liệu
+ *  chỉ đến sau khi đã qua kiểm khoá / chữ ký, nên người lạ không spam được danh sách này. */
+const closableByLaterOk = (r: RunRow) => r.kind !== "webhook" || WEBHOOK_CONFIG_ERRORS.includes(r.message);
 
 /** Run đóng ok mà không có kết quả dựng / đồng bộ thật (jobs.ts stoppedJob, failJob khi video đã xoá). */
 const NO_RESULT = /^Đã dừng theo yêu cầu|^Đã xoá video/;
@@ -56,7 +64,7 @@ export function failedRuns(now = Date.now()): FailedRun[] {
   const out: FailedRun[] = [];
   for (const r of rows) {
     if (r.ok || !r.finishedAt || COUNTED_ELSEWHERE.has(r.kind) || LEGACY_NOT_ERROR.test(r.message)) continue;
-    if ((lastOk.get(subject(r)) ?? "") >= r.startedAt) continue;
+    if (closableByLaterOk(r) && (lastOk.get(subject(r)) ?? "") >= r.startedAt) continue;
     const videoId = r.integrationKey === VIDEO_RUN_KEY ? (byRun.get(r.id) ?? null) : null;
     if (videoId && !videoIds.has(videoId)) continue; // video đã xoá: không còn gì để xử lý
     out.push({ ...r, videoId });

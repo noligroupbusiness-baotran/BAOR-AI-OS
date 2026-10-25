@@ -1,6 +1,6 @@
 // @critical — luồng nền tảng trên bản build production thật: đăng nhập, các trang chính không lỗi, an toàn đăng bài.
 import { test, expect } from "@playwright/test";
-import { login, trackErrors } from "./helpers";
+import { ACTION_MS, hydrated, login, trackErrors } from "./helpers";
 import { E2E } from "./env";
 
 test("đăng nhập: sai mật khẩu bị từ chối, đúng thì vào bảng điều hành; chưa đăng nhập bị chuyển về /login", async ({ page }) => {
@@ -9,7 +9,7 @@ test("đăng nhập: sai mật khẩu bị từ chối, đúng thì vào bảng 
   await page.locator("#email").fill(E2E.email);
   await page.locator("#password").fill("sai-mat-khau");
   await page.getByRole("button", { name: /Đăng nhập/ }).click();
-  await expect(page.locator("form [role=alert]")).toContainText("không đúng");
+  await expect(page.locator("form [role=alert]")).toContainText("không đúng", { timeout: ACTION_MS }); // kết quả server action đăng nhập
   await login(page);
 });
 
@@ -39,8 +39,10 @@ test("Video Studio: video đã dựng hiện trình phát và bảng biên tập
   await expect(page.getByRole("heading", { name: "E2E · Video chờ góp ý" })).toBeVisible();
   const video = page.locator("video").first();
   await expect(video).toBeVisible();
-  await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.readyState)).toBeGreaterThan(0);
-  await page.getByRole("button", { name: /Bảng biên tập · 3 mục/ }).click();
+  await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.readyState), { timeout: ACTION_MS }).toBeGreaterThan(0); // tải siêu dữ liệu video
+  const openPlan = page.getByRole("button", { name: /Bảng biên tập · 3 mục/ });
+  await hydrated(openPlan); // nút mở bằng onClick: bấm trước hydrate thì mất
+  await openPlan.click();
   await expect(page.getByText("Mũi tên 2 bước")).toBeVisible();
   expect(errors).toEqual([]);
 });

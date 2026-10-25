@@ -65,3 +65,15 @@ export function displayStepOf(code: string): string {
   const s = JOURNEY.find((j) => j.n === n);
   return s ? String(s.step) : code;
 }
+
+/**
+ * Chuẩn hoá chữ đã lưu từ trước (vd đề xuất cải tiến trong CSDL) khi HIỂN THỊ: "bước 8.1" / "bước 8.2" → "bước 7",
+ * không cần đợi "Phân tích lại". Chỉ đổi mã bước đúng dạng (mỗi đoạn 1 chữ số: 8.1, 6.2.1) có trong hành trình. Không đổi
+ * số có dấu chấm ngăn nghìn ("mỗi bước 3.500 lượt"), số thập phân ("bước 2,5") hay số kèm đơn vị ("bước 8.1 triệu").
+ */
+export function displayStepsIn(text: string): string {
+  return text.replace(/\b(bước|Bước|BƯỚC)\s+(\d(?:\.\d)+)(?![.,]?\d)(?!\s*(?:%|triệu|nghìn|ngàn|tỷ|k\b))/gu, (all, word: string, code: string) => {
+    const shown = displayStepOf(code);
+    return shown === code ? all : `${word} ${shown}`;
+  });
+}

@@ -78,7 +78,10 @@ export async function deleteVideoAction(fd: FormData) {
   // Video đã duyệt (Kho video): chỉ người có quyền phê duyệt được xoá; bộ xoá tự chặn khi còn bài lên lịch / đã đăng
   const r = deleteVideo(str(fd, "id"), actor.name, { canDeleteApproved: can(actor, "manager") });
   if (!r.ok) return fail(back, r.error);
-  done(back.replace(/([?&])open=[^&#]*&?/, "$1").replace(/[?&]$/, ""), `Đã xoá video “${r.title}”`);
+  const closed = back.replace(/([?&])open=[^&#]*&?/, "$1").replace(/[?&]$/, "");
+  // Đã gỡ khỏi CSDL nhưng có tệp chưa chuyển vào lưu trữ: báo rõ (tông lỗi), không báo "xong" trơn
+  if (r.warning) return fail(closed, `Đã xoá video “${r.title}”. ${r.warning}`);
+  done(closed, `Đã xoá video “${r.title}”`);
 }
 
 export async function rerenderVideoAction(fd: FormData) {

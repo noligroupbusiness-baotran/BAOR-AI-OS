@@ -63,7 +63,7 @@ export function getBrandPipeline(): BrandPipeline {
   const actions: OwnerAction[] = [];
 
   // Second Brain không hiển thị trong app (OWNER 25/10/2026): hệ thống đọc ngầm; chỉ nhắc OWNER cấp token khi chưa tự đồng bộ.
-  if (!notionConfigured()) actions.push({ stage: "Second Brain", text: "Cấp token Notion chỉ đọc để hệ thống tự đồng bộ kho tri thức 6 giờ một lần.", href: "/settings#integrations", ceo: true });
+  if (!notionConfigured()) actions.push({ stage: "Kiến thức", text: "Cấp token Notion chỉ đọc để hệ thống tự đồng bộ kho tri thức 6 giờ một lần.", href: "/settings#integrations", ceo: true });
 
   // 1. Nghiên cứu (đơn giản): chủ đề → insight từ nền tảng → hook
   const tasks = db.select({ id: schema.researchTasks.id, question: schema.researchTasks.question }).from(schema.researchTasks).all();

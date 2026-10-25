@@ -500,19 +500,21 @@ export function videoDeleteBlock(videoId: string, canDeleteApproved: boolean): s
 /** Xoá video chưa gửi phê duyệt, hoặc video đã duyệt chưa có bài lên lịch / đã đăng (xem videoDeleteBlock): dừng bản đang dựng, gỡ khỏi Studio / Kho.
  *  Tệp (nguồn, bản dựng, thư mục dựng) và dữ liệu được CHUYỂN vào DATA_DIR/removed/<videoId>-<thời điểm>/ để khôi phục được, không xoá vĩnh viễn.
  *  Bài đăng đã huỷ / lỗi chưa lên trang / chế độ thử, lịch sử phản hồi, góp ý theo mốc và liên kết chiến dịch của video được ghi vào
- *  records.json rồi gỡ khỏi bảng (không để dòng mồ côi). Phê duyệt chiến dịch (campaign_approvals) giữ lại: là lịch sử của chiến dịch. */
-export function deleteVideo(videoId: string, by: string, opts: { canDeleteApproved?: boolean } = {}): { ok: true; title: string } | { ok: false; error: string } {
+ *  records.json rồi gỡ khỏi bảng (không để dòng mồ côi). Phê duyệt chiến dịch (campaign_approvals) giữ lại: là lịch sử của chiến dịch.
+ *  Thứ tự (kiểm toán 26/10 — trước đây chuyển tệp TRƯỚC rồi mới xoá dòng, lỗi giữa chừng để lại video "mất tệp"):
+ *  kiểm chặn → ghi records.json (lỗi: chưa đổi gì) → dừng bản đang dựng → MỌI lệnh CSDL trong một transaction (lỗi: CSDL nguyên vẹn,
+ *  tệp chưa chuyển, records.json gỡ) → chuyển tệp. Chuyển tệp lỗi: CSDL đã gỡ nhưng records.json đủ để khôi phục → ghi rõ tệp nào còn
+ *  ở chỗ cũ vào records.json (fileErrors) + nhật ký, trả warning — không có trạng thái nửa vời không ghi nhận. */
+export function deleteVideo(videoId: string, by: string, opts: { canDeleteApproved?: boolean } = {}): { ok: true; title: string; warning?: string } | { ok: false; error: string } {
   const db = getDb();
   const v = db.select().from(schema.videos).where(eq(schema.videos.id, videoId)).get();
   if (!v) return { ok: false, error: "Không tìm thấy video" };
   const block = videoDeleteBlock(videoId, !!opts.canDeleteApproved);
   if (block) return { ok: false, error: block };
+  const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
   const posts = db.select().from(schema.scheduledPosts).where(eq(schema.scheduledPosts.videoId, videoId)).all();
-  const last = latestJob(videoId);
-  if (last && (last.job.status === "queued" || last.job.status === "running")) stopVideoJob(videoId, by);
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const arch = path.join(dataDir(), "removed", `${videoId}-${stamp}`);
-  fs.mkdirSync(arch, { recursive: true });
   const upIds = new Set<string>();
   for (const ver of jobVersions(videoId)) {
     const j = readJob(videoId, ver);
@@ -528,30 +530,109 @@ export function deleteVideo(videoId: string, by: string, opts: { canDeleteApprov
   const postIds = posts.map((p) => p.id);
   const postLinks = postIds.length ? db.select().from(schema.marketingLinks).where(and(eq(schema.marketingLinks.entityType, "publication"), inArray(schema.marketingLinks.entityId, postIds))).all() : [];
   const uploads = [...upIds].map((id) => getUpload(id)).filter((u): u is NonNullable<typeof u> => !!u);
-  fs.writeFileSync(path.join(arch, "records.json"), JSON.stringify({ video: v, feedback, comments, links, postLinks, uploads, posts, by, removedAt: new Date().toISOString() }, null, 1));
+  const runIds = jobVersions(videoId).map((ver) => readJob(videoId, ver)?.runId).filter((x): x is string => !!x);
+  // Tệp sẽ chuyển (đường dẫn tương đối DATA_DIR, ghi vào records.json để khôi phục tay được nếu bước chuyển lỗi)
+  const moves: { from: string; to: string }[] = [];
   for (const u of uploads) {
     const p = path.join(uploadsDir(), u.fileName);
-    if (fs.existsSync(p)) fs.renameSync(p, path.join(arch, u.fileName));
-    db.delete(schema.uploads).where(eq(schema.uploads.id, u.id)).run();
-  }
-  // Giữ ánh xạ run → video sau khi chuyển thư mục dựng đi: lỗi dựng của video đã xoá không còn tính là việc cần xử lý
-  const runIds = jobVersions(videoId).map((ver) => readJob(videoId, ver)?.runId).filter((x): x is string => !!x);
-  if (runIds.length) {
-    const idx = removedRunIndex();
-    for (const r of runIds) idx[r] = videoId;
-    fs.writeFileSync(removedRunIndexPath(), JSON.stringify(idx));
+    if (fs.existsSync(p)) moves.push({ from: p, to: path.join(arch, u.fileName) });
   }
   const jd = path.join(jobsRoot(), videoId);
-  if (fs.existsSync(jd)) fs.renameSync(jd, path.join(arch, "video-jobs"));
+  if (fs.existsSync(jd)) moves.push({ from: jd, to: path.join(arch, "video-jobs") });
+  const rel = (p: string) => path.relative(dataDir(), p);
+  const recordsPath = path.join(arch, "records.json");
+  const records: Record<string, unknown> = { video: v, feedback, comments, links, postLinks, uploads, posts, runIds, files: moves.map((m) => ({ from: rel(m.from), to: rel(m.to) })), by, removedAt: new Date().toISOString() };
+
+  // 1) Bản lưu trữ trước khi đụng gì
+  try {
+    fs.mkdirSync(arch, { recursive: true });
+    fs.writeFileSync(recordsPath, JSON.stringify(records, null, 1));
+  } catch (e) {
+    try {
+      fs.rmSync(recordsPath, { force: true });
+      fs.rmdirSync(arch); // chỉ gỡ khi trống (thư mục vừa tạo)
+    } catch {}
+    return { ok: false, error: `Không ghi được bản lưu trữ, chưa xoá gì: ${errText(e)}` };
+  }
+
+  // 2) Dừng bản đang dựng (bộ dựng không ghi tiếp vào thư mục sắp chuyển)
+  const last = latestJob(videoId);
+  const stopped = !!last && (last.job.status === "queued" || last.job.status === "running");
+  if (stopped) {
+    try {
+      stopVideoJob(videoId, by);
+    } catch (e) {
+      // Dừng lỗi (ghi job.json / CSDL hỏng): chưa xoá gì → gỡ bản lưu trữ vừa ghi, không để records.json "ma" cho video còn nguyên
+      try {
+        fs.rmSync(recordsPath, { force: true });
+        fs.rmdirSync(arch);
+      } catch {}
+      return { ok: false, error: `Không dừng được bản đang dựng, chưa xoá gì: ${errText(e)}` };
+    }
+  }
+
+  // 3) Mọi lệnh CSDL trong MỘT transaction: lỗi giữa chừng → không gỡ dòng nào
+  try {
+    db.transaction((tx) => {
+      if (uploads.length) tx.delete(schema.uploads).where(inArray(schema.uploads.id, uploads.map((u) => u.id))).run();
+      tx.delete(schema.videoFeedback).where(eq(schema.videoFeedback.videoId, videoId)).run();
+      tx.delete(schema.videoComments).where(eq(schema.videoComments.videoId, videoId)).run();
+      // Chỉ còn bài không lên trang (đã huỷ / lỗi rõ / chế độ thử) — videoDeleteBlock đã chặn bài chờ / đã đăng
+      tx.delete(schema.scheduledPosts).where(eq(schema.scheduledPosts.videoId, videoId)).run();
+      if (postIds.length) tx.delete(schema.marketingLinks).where(and(eq(schema.marketingLinks.entityType, "publication"), inArray(schema.marketingLinks.entityId, postIds))).run();
+      tx.delete(schema.marketingLinks).where(and(eq(schema.marketingLinks.entityType, "video"), eq(schema.marketingLinks.entityId, videoId))).run();
+      tx.delete(schema.videos).where(eq(schema.videos.id, videoId)).run();
+    });
+  } catch (e) {
+    // CSDL nguyên vẹn, tệp chưa chuyển: bản lưu trữ không ứng với lần xoá nào → gỡ (chỉ gồm records.json vừa ghi)
+    try {
+      fs.rmSync(recordsPath, { force: true });
+      fs.rmdirSync(arch);
+    } catch {}
+    return { ok: false, error: `Không xoá được video (CSDL lỗi, chưa gỡ gì${stopped ? "; bản đang dựng đã dừng" : ""}): ${errText(e)}` };
+  }
+
+  // 4) Giữ ánh xạ run → video sau khi chuyển thư mục dựng đi: lỗi dựng của video đã xoá không còn tính là việc cần xử lý
+  const fileErrors: { from: string; to: string; error: string }[] = [];
+  if (runIds.length) {
+    try {
+      const idx = removedRunIndex();
+      for (const r of runIds) idx[r] = videoId;
+      fs.writeFileSync(removedRunIndexPath(), JSON.stringify(idx));
+    } catch (e) {
+      fileErrors.push({ from: "", to: rel(removedRunIndexPath()), error: `Không ghi được ánh xạ run → video: ${errText(e)}` });
+    }
+  }
+  // 5) Chuyển tệp (sau khi CSDL đã gỡ): lỗi từng tệp ghi lại, các tệp khác vẫn chuyển
+  for (const m of moves) {
+    try {
+      fs.renameSync(m.from, m.to);
+    } catch (e) {
+      fileErrors.push({ from: rel(m.from), to: rel(m.to), error: errText(e) });
+    }
+  }
   runIndexMemo.at = 0;
-  db.delete(schema.videoFeedback).where(eq(schema.videoFeedback.videoId, videoId)).run();
-  db.delete(schema.videoComments).where(eq(schema.videoComments.videoId, videoId)).run();
-  // Chỉ còn bài không lên trang (đã huỷ / lỗi rõ / chế độ thử) — videoDeleteBlock đã chặn bài chờ / đã đăng
-  db.delete(schema.scheduledPosts).where(eq(schema.scheduledPosts.videoId, videoId)).run();
-  if (postIds.length) db.delete(schema.marketingLinks).where(and(eq(schema.marketingLinks.entityType, "publication"), inArray(schema.marketingLinks.entityId, postIds))).run();
-  db.delete(schema.marketingLinks).where(and(eq(schema.marketingLinks.entityType, "video"), eq(schema.marketingLinks.entityId, videoId))).run();
-  db.delete(schema.videos).where(eq(schema.videos.id, videoId)).run();
-  logActivity("human", `${by} xoá video “${v.title}” (lưu trữ ở ${path.relative(dataDir(), arch)}).`, "video");
+  if (fileErrors.length) {
+    const list = fileErrors.map((f) => (f.from ? `${f.from} (${f.error})` : f.error)).join("; ");
+    const warning = `Đã gỡ video khỏi CSDL (dữ liệu lưu trong ${rel(recordsPath)}) nhưng ${fileErrors.length} tệp chưa chuyển được vào lưu trữ, còn ở chỗ cũ: ${list}`;
+    try {
+      // Ghi qua tệp tạm rồi đổi tên: ghi dở (đĩa đầy) không làm hỏng records.json đầu — bản duy nhất để khôi phục
+      const tmpRec = `${recordsPath}.tmp`;
+      try {
+        fs.writeFileSync(tmpRec, JSON.stringify({ ...records, fileErrors }, null, 1));
+        fs.renameSync(tmpRec, recordsPath);
+      } catch (e) {
+        fs.rmSync(tmpRec, { force: true });
+        throw e;
+      }
+    } catch (e) {
+      console.error(`[video] deleteVideo ${videoId}: không cập nhật được records.json:`, e);
+    }
+    console.error(`[video] deleteVideo ${videoId}: ${warning}`);
+    logActivity("human", `${by} xoá video “${v.title}” — CẢNH BÁO: ${warning}`, "video");
+    return { ok: true, title: v.title, warning };
+  }
+  logActivity("human", `${by} xoá video “${v.title}” (lưu trữ ở ${rel(arch)}).`, "video");
   return { ok: true, title: v.title };
 }
 
@@ -875,7 +956,7 @@ export function planBackups(videoId: string): string[] {
 /**
  * Khôi phục kế hoạch đã lưu trữ gần nhất làm kế hoạch video rồi dựng lại (bản mới, bản cũ giữ). Không xoá gì:
  * kế hoạch đang dùng được cất thành plan.prev-<bây giờ>.json (khôi phục lần nữa = quay lại kế hoạch vừa thay).
- * Kiểm "dựng lại được không" TRƯỚC khi đổi tệp; dựng lại không xếp hàng được thì trả tệp về như cũ.
+ * Kiểm "dựng lại được không" TRƯỚC khi đổi tệp; dựng lại không xếp hàng được thì trả tệp về như cũ (bản lỡ xếp giữa chừng được huỷ trước).
  */
 export function restorePrevPlan(videoId: string, by: string): { ok: true; version: number; restored: string } | { ok: false; error: string } {
   const block = rerenderBlock(videoId);
@@ -898,13 +979,33 @@ export function restorePrevPlan(videoId: string, by: string): { ok: true; versio
     fs.renameSync(own, prev);
     if (hadOwn) fs.renameSync(stash, own);
   };
+  const before = jobVersions(videoId)[0] ?? 0;
   let r: ReturnType<typeof rerenderVideo>;
   try {
     r = rerenderVideo(videoId, by, undefined, undefined, `Khôi phục kế hoạch trước${label ? ` (${label.slice(0, 80)})` : ""} rồi dựng lại`);
   } catch (e) {
-    // Tệp đã đổi chỗ: dựng lại ném lỗi (ghi việc dựng / CSDL hỏng) thì cũng trả tệp về như cũ
+    const why = e instanceof Error ? e.message : String(e);
+    // rerenderVideo có thể ném SAU khi đã xếp bản dựng (writeJob chạy, bước CSDL / lịch sử sau đó lỗi). Trả tệp về khi bản đó còn
+    // trong hàng thì bộ dựng sẽ dựng bằng kế hoạch CŨ mà người dùng tưởng đã huỷ → huỷ bản vừa xếp TRƯỚC (đồng bộ: chưa bộ dựng nào
+    // nhận được), rồi mới trả tệp. Không huỷ được → giữ kế hoạch khôi phục (bản đã xếp dựng đúng kế hoạch đó) và báo rõ.
+    const queued = (jobVersions(videoId)[0] ?? 0) > before ? readJob(videoId, jobVersions(videoId)[0]) : null;
+    if (queued && (queued.status === "queued" || queued.status === "running")) {
+      try {
+        stoppedJob(queued, `${STOP_PREFIX}: khôi phục kế hoạch lỗi giữa chừng (${why.slice(0, 200)}), huỷ bản ${queued.version} trước khi trả kế hoạch cũ`, queued.runId);
+      } catch (e2) {
+        // stoppedJob ghi job.json "đã dừng" TRƯỚC rồi mới cập nhật CSDL: CSDL hỏng (chỉ đọc / khoá) thì ném sau khi bản đã thoát hàng
+        // → đọc lại job: đã thoát queued / running = đã huỷ, trả tệp như thường. Còn trong hàng mới là "không huỷ được".
+        const now = readJob(videoId, queued.version);
+        if (!now || now.status === "queued" || now.status === "running") {
+          try {
+            logActivity("human", `${by} khôi phục kế hoạch trước (${name}) của video ${videoId}: lỗi giữa chừng, bản ${queued.version} ĐÃ xếp dựng với kế hoạch khôi phục.`, "video");
+          } catch {}
+          return { ok: false, error: `Khôi phục kế hoạch lỗi giữa chừng (${why}) nhưng bản ${queued.version} đã xếp dựng với kế hoạch khôi phục và không huỷ được (${e2 instanceof Error ? e2.message : String(e2)}) — kế hoạch khôi phục được giữ.` };
+        }
+      }
+    }
     putBack();
-    return { ok: false, error: `Không dựng lại được: ${e instanceof Error ? e.message : String(e)}` };
+    return { ok: false, error: `Không dựng lại được: ${why}${queued ? ` (đã huỷ bản ${queued.version} vừa xếp)` : ""}` };
   }
   if (!r.ok) {
     putBack();

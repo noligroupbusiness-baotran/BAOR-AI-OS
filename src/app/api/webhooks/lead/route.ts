@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { finishRun, startRun } from "@/lib/connectors/config";
 import { ingestLead } from "@/lib/inbound";
-import { getLeadWebhookKey } from "@/lib/webhooks";
+import { getLeadWebhookKey, WEBHOOK_BAD_JSON_MSG, WEBHOOK_BAD_KEY_MSG, WEBHOOK_MISSING_NAME_MSG, WEBHOOK_TOO_LARGE_MSG } from "@/lib/webhooks";
 import { clientIp } from "@/lib/login-guard";
 import { RATE_RULES, limitOr429 } from "@/lib/rate-limit";
 
@@ -22,23 +22,27 @@ export async function POST(req: NextRequest) {
   const ok = got.length === key.length && timingSafeEqual(Buffer.from(got), Buffer.from(key));
   const runId = startRun("website", "webhook");
   if (!ok) {
-    finishRun(runId, false, "Khóa webhook không đúng.");
+    finishRun(runId, false, WEBHOOK_BAD_KEY_MSG);
     return NextResponse.json({ error: "khóa không đúng" }, { status: 401 });
   }
   let body: Record<string, unknown>;
   try {
     const raw = await req.text();
-    if (raw.length > MAX_BODY) return NextResponse.json({ error: "payload quá lớn" }, { status: 413 });
+    if (raw.length > MAX_BODY) {
+      // Run đã mở ở trên: đóng (lỗi dữ liệu của gói này), không để run mở mãi
+      finishRun(runId, false, WEBHOOK_TOO_LARGE_MSG);
+      return NextResponse.json({ error: "payload quá lớn" }, { status: 413 });
+    }
     body = JSON.parse(raw) as Record<string, unknown>;
     if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("not object");
   } catch {
-    finishRun(runId, false, "Payload không phải JSON.");
+    finishRun(runId, false, WEBHOOK_BAD_JSON_MSG);
     return NextResponse.json({ error: "payload" }, { status: 400 });
   }
   const s = (v: unknown, max: number) => String(v ?? "").slice(0, max);
   const name = s(body.name, 200).trim();
   if (!name) {
-    finishRun(runId, false, "Thiếu tên khách.");
+    finishRun(runId, false, WEBHOOK_MISSING_NAME_MSG);
     return NextResponse.json({ error: "thiếu name" }, { status: 400 });
   }
   const lead = ingestLead({

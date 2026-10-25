@@ -68,6 +68,35 @@ FILLER = set("dạ alo à ờ ừ ừa vâng hả nhé nha nghe nè thế thì m
 # Từ PHỦ ĐỊNH: không bao giờ bị cắt khỏi cụm; cụm đứng ngay sau từ phủ định bị loại ("không nên hứa hẹn" ≠ "HỨA HẸN")
 NEG = set("không chưa chẳng chả đừng chớ".split())
 CLAUSE = set("mà nhưng rồi thì còn".split())  # ranh giới mệnh đề khi nhìn ngược tìm từ phủ định
+# Phản biện 26/10 — phủ định còn sót:
+#  · "đâu phải / đâu có X" (đứng trước) và "… X đâu (có / nha / nhé …)" (CUỐI vế) là phủ định. "ở / chỗ / nơi / tại đâu" là hỏi nơi
+#    chốn; "đi đâu cũng / đâu thì cũng" là "bất cứ đâu" → không phải phủ định.
+#  · "không chỉ / chẳng những X (mà còn Y)": X được KHẲNG ĐỊNH → không tính là phủ định.
+#  · "không bao giờ còn", "chẳng ai còn": "còn" vẫn là phó từ (= nữa) dù không đứng sát ngay sau từ phủ định.
+#  · "không phải / đâu phải / có phải + cứ | ai | mọi | bất cứ | … nào (thì cũng) Y": phủ định cả mệnh đề tổng quát.
+LOCATIVE = set("ở chỗ nơi tại từ về".split())   # "ở / từ / về đâu" hỏi nơi chốn ("đi đâu" cuối câu mơ hồ → vẫn tính phủ định)
+# trợ từ / hô ngữ được đứng sau "đâu" cuối vế ("… đâu anh chị / mọi người / cả nhà / nghen / mấy bạn")
+DAU_TAIL = set("có nha nhé nhá à ạ nè đó đấy ơi nhỉ hết cả nghen nhen hen ha nghe các bạn anh chị em mọi người nhà mấy".split())
+# "đâu" đứng trước phó từ / tình thái là phủ định: "đâu phải / đâu có / đâu còn / đâu bao giờ / đâu thể / đâu cần / đâu dễ …"
+DAU_NEG_NEXT = set("phải có còn bao thể cần dễ được hề nhất".split())
+DAU_WHERE_PREV = LOCATIVE | {"đi"}   # "đi đâu cũng …" = bất cứ đâu, không phải "đâu" phủ định đứng trước
+# "chỉ" ghép thành động từ ("chỉ trích / chỉ ra / chỉ tay / chỉ định …") → "không chỉ X" vẫn là PHỦ ĐỊNH
+# câu hỏi TU TỪ = phủ định (phản biện 26/10 lượt 3): "làm gì / làm sao (mà) có | còn X", "lấy / kiếm / tìm đâu ra X",
+# "(đi / ở) đâu có ai | được | chuyện …", "đâu có người … như vậy / thế". Trừ "phải / nên / cần làm gì có X" (hỏi CÁCH làm, văn nói
+# bỏ "để": "mình phải làm gì có khách hàng mới").
+RHET_HOW_OK = {"phải", "nên", "cần"}
+RHET_DAU_RA = set("lấy kiếm tìm đào".split())
+RHET_DAU_CO = set("ai được chuyện".split())
+CHI_VERB = set("trích ra tay định dẫn bảo đạo đường điểm huy thị trỏ mặt giáo rõ vẽ cho việc".split())
+NEG_GAP = set("bao giờ ai gì hề nào mấy người thể có cả".split())
+QP_NOT_VERB = set("thể những nhiều một các lẽ khi lúc người ai lỗi tiền vẻ".split())  # "có thể / có những / có khi …": "có" không hỏi
+GENERIC_Q = {"cứ", "ai", "mọi", "bất"}
+FWD_STOP = set("nhưng chứ tuy mà".split())  # nhìn XUÔI tìm "đâu" cuối vế: sang vế "nhưng / chứ / mà" là ý khác
+# Phó từ / trợ động từ không bao giờ đứng CUỐI chữ trên màn hình ("KẾT QUẢ SẼ RẤT"); khi cụm mô hình viết bị cắt bớt đuôi cho vừa
+# số tiếng thì bỏ thêm các phó từ chỉ mức độ / tình thái treo ("kết quả thật | tốt" → không dừng ở "thật").
+PRE_ONLY = set("rất sẽ đang cũng vẫn càng hãy sắp".split())
+DANGLE = PRE_ONLY | set("đã quá khá hơi cực chỉ đều bị cứ phải cần nên thật luôn".split())
+AUX_CUT = DANGLE | set("được có là".split())  # cắt ĐẦU cụm ngay sau các từ này là cắt ở ranh giới cụm, không tách đôi từ ghép
 
 
 def content_words(phrase):
@@ -98,18 +127,28 @@ def align(phrase, sent, words, maxw):
     best = None
     for a in range(len(toks)):
         for b in range(a, min(len(toks), a + len(want) + 2)):
-            span = [t for _, t in toks[a:b + 1]]
-            missing = sum(1 for c in core if c not in span)
+            # bỏ hư từ ở hai đầu; phó từ chỉ đứng trước (rất / sẽ / vẫn …) không được treo ở cuối
+            lo, hi = a, b
+            while lo < hi and toks[lo][1] in EDGE | FILLER and toks[lo][1] not in core:
+                lo += 1
+            while hi > lo and (toks[hi][1] in PRE_ONLY or (toks[hi][1] in EDGE | FILLER and toks[hi][1] not in core)):
+                hi -= 1
+            miss = {c for c in core if c not in {t for _, t in toks[lo:hi + 1]}}
+            # cắt ĐẦU tách đôi từ ghép: tiếng có nghĩa của cụm đứng SÁT ngay trước đoạn ("kết | quả sẽ rất kém") → không nhận
+            if lo > 0 and toks[lo - 1][1] in miss and toks[lo - 1][1] not in AUX_CUT:
+                continue
+            # cắt ĐUÔI (cụm dài hơn số tiếng cho phép): không dừng ở phó từ / trợ từ treo; không dừng ngay sau từ phủ định
+            if any(toks[x][1] in miss for x in range(hi + 1, min(len(toks), hi + 3))):
+                while hi > lo and (toks[hi][1] in DANGLE or (toks[hi][1] in EDGE | FILLER and toks[hi][1] not in core)):
+                    hi -= 1
+                if toks[hi][1] in NEG:
+                    continue
+                miss = {c for c in core if c not in {t for _, t in toks[lo:hi + 1]}}
+            missing = sum(1 for c in core if c in miss)
             # mô hình hay thêm từ diễn giải ("hạn chế sự đề phòng"; "hạn chế" là 1 từ 2 tiếng): cụm ≥ 3 tiếng có nghĩa được
             # thiếu tối đa 1/3 số tiếng đó (làm tròn lên), và phải khớp ít nhất 2 tiếng
             if missing > (math.ceil(len(core) / 3) if len(core) >= 3 else 0) or len(core) - missing < min(2, len(core)):
                 continue
-            # bỏ hư từ ở hai đầu
-            lo, hi = a, b
-            while lo < hi and toks[lo][1] in EDGE | FILLER and toks[lo][1] not in core:
-                lo += 1
-            while hi > lo and toks[hi][1] in EDGE | FILLER and toks[hi][1] not in core:
-                hi -= 1
             n = hi - lo + 1
             if n > maxw:
                 continue
@@ -142,6 +181,19 @@ def llm(messages, schema, max_tokens=1800, temperature=0.2, timeout=600):
     return json.loads(d["choices"][0]["message"]["content"])
 
 
+def ask(stats, step, messages, schema, **kw):
+    """Gọi mô hình (tra `llm` lúc gọi → tự kiểm thay được mô hình giả) và ghi số lần gọi / thời gian theo bước vào `stats`
+    (plan["ai"]["calls"]) để đo chỗ tốn thời gian trên máy thật."""
+    t = time.time()
+    try:
+        return llm(messages, schema, **kw)
+    finally:
+        if stats is not None:
+            st = stats.setdefault(step, {"calls": 0, "seconds": 0.0})
+            st["calls"] += 1
+            st["seconds"] = round(st["seconds"] + time.time() - t, 2)
+
+
 def available(timeout=3):
     # Cài đặt › Đội AI: "AI Edit Video" tắt "Cho phép gọi AI" → bộ dựng lập kế hoạch theo luật, không gọi mô hình
     if os.environ.get("BAOR_AI_PLAN") == "off":
@@ -156,12 +208,12 @@ def available(timeout=3):
 ANALYZE_SCHEMA = {
     "type": "object",
     "properties": {
-        "topic": {"type": "string"},
-        "key_ideas": {"type": "array", "maxItems": 10, "items": {"type": "object", "properties": {"sid": {"type": "integer"}, "idea": {"type": "string"}}, "required": ["sid", "idea"]}},
-        "lists": {"type": "array", "maxItems": 6, "items": {"type": "object", "properties": {"sids": {"type": "array", "items": {"type": "integer"}}, "what": {"type": "string"}}, "required": ["sids", "what"]}},
-        "contrasts": {"type": "array", "maxItems": 4, "items": {"type": "object", "properties": {"sids": {"type": "array", "items": {"type": "integer"}}, "what": {"type": "string"}}, "required": ["sids", "what"]}},
-        "cause_effect": {"type": "array", "maxItems": 4, "items": {"type": "object", "properties": {"sids": {"type": "array", "items": {"type": "integer"}}, "what": {"type": "string"}}, "required": ["sids", "what"]}},
-        "sections": {"type": "array", "maxItems": 6, "items": {"type": "object", "properties": {"sid": {"type": "integer"}, "title": {"type": "string"}}, "required": ["sid", "title"]}},
+        "topic": {"type": "string", "maxLength": 240},
+        "key_ideas": {"type": "array", "maxItems": 10, "items": {"type": "object", "properties": {"sid": {"type": "integer"}, "idea": {"type": "string", "maxLength": 140}}, "required": ["sid", "idea"]}},
+        "lists": {"type": "array", "maxItems": 6, "items": {"type": "object", "properties": {"sids": {"type": "array", "items": {"type": "integer"}}, "what": {"type": "string", "maxLength": 140}}, "required": ["sids", "what"]}},
+        "contrasts": {"type": "array", "maxItems": 4, "items": {"type": "object", "properties": {"sids": {"type": "array", "items": {"type": "integer"}}, "what": {"type": "string", "maxLength": 140}}, "required": ["sids", "what"]}},
+        "cause_effect": {"type": "array", "maxItems": 4, "items": {"type": "object", "properties": {"sids": {"type": "array", "items": {"type": "integer"}}, "what": {"type": "string", "maxLength": 140}}, "required": ["sids", "what"]}},
+        "sections": {"type": "array", "maxItems": 6, "items": {"type": "object", "properties": {"sid": {"type": "integer"}, "title": {"type": "string", "maxLength": 80}}, "required": ["sid", "title"]}},
     },
     "required": ["topic", "key_ideas", "lists", "contrasts", "cause_effect", "sections"],
 }
@@ -206,27 +258,32 @@ LUẬT BẮT BUỘC:
 PLAN_SCHEMA = {
     "type": "object",
     "properties": {
-        "summary": {"type": "string"},
-        "emphasis": {"type": "array", "maxItems": 14, "items": {"type": "object", "properties": {"sid": {"type": "integer"}, "phrase": {"type": "string"}, "why": {"type": "string"}}, "required": ["sid", "phrase", "why"]}},
+        "summary": {"type": "string", "maxLength": 300},
+        "emphasis": {"type": "array", "maxItems": 14, "items": {"type": "object", "properties": {"sid": {"type": "integer"}, "phrase": {"type": "string", "maxLength": 80}, "why": {"type": "string", "maxLength": 120}}, "required": ["sid", "phrase", "why"]}},
         "diagrams": {"type": "array", "maxItems": 8, "items": {"type": "object", "properties": {
             "type": {"type": "string", "enum": ["steps", "compare", "arrow", "mechanism", "quote", "chapter"]},
-            "items": {"type": "array", "minItems": 1, "maxItems": 4, "items": {"type": "object", "properties": {"sid": {"type": "integer"}, "phrase": {"type": "string"}}, "required": ["sid", "phrase"]}},
-            "why": {"type": "string"}}, "required": ["type", "items"]}},
+            "items": {"type": "array", "minItems": 1, "maxItems": 4, "items": {"type": "object", "properties": {"sid": {"type": "integer"}, "phrase": {"type": "string", "maxLength": 120}}, "required": ["sid", "phrase"]}},
+            "why": {"type": "string", "maxLength": 120}}, "required": ["type", "items"]}},
     },
     "required": ["summary", "emphasis", "diagrams"],
 }
 
 BROLL_SCHEMA = {
     "type": "object",
-    "properties": {"picks": {"type": "array", "maxItems": 6, "items": {"type": "object", "properties": {"sid": {"type": "integer"}, "asset": {"type": "integer"}, "why": {"type": "string"}}, "required": ["sid", "asset", "why"]}}},
+    "properties": {"picks": {"type": "array", "maxItems": 6, "items": {"type": "object", "properties": {"sid": {"type": "integer"}, "asset": {"type": "integer"}, "why": {"type": "string", "maxLength": 120}}, "required": ["sid", "asset", "why"]}}},
     "required": ["picks"],
 }
-CHECK_SCHEMA = {"type": "object", "properties": {"fit": {"type": "boolean"}, "reason": {"type": "string"}}, "required": ["fit", "reason"]}
+# Kiểm lần 2 GỘP một lần gọi cho mọi ảnh đã chọn (mỗi mục vẫn kèm đúng ngữ cảnh riêng); mục mô hình không trả → coi là KHÔNG hợp
+CHECK_SCHEMA = {"type": "object", "properties": {"checks": {"type": "array", "maxItems": 6, "items": {"type": "object", "properties": {
+    "n": {"type": "integer"}, "fit": {"type": "boolean"}, "reason": {"type": "string", "maxLength": 160}}, "required": ["n", "fit", "reason"]}}}, "required": ["checks"]}
 
 
-REPAIR_SCHEMA = {"type": "object", "properties": {"phrase": {"type": "string"}}, "required": ["phrase"]}
-JUDGE_SCHEMA = {"type": "object", "properties": {"verdicts": {"type": "array", "items": {"type": "object", "properties": {
-    "n": {"type": "integer"}, "score": {"type": "integer", "minimum": 1, "maximum": 5}, "reason": {"type": "string"}}, "required": ["n", "score", "reason"]}}}, "required": ["verdicts"]}
+# Hỏi lại cụm DIỄN GIẢI: gộp mọi cụm chưa ghép được vào MỘT lần gọi (cũ: tối đa 8 lần gọi, mỗi lần ~10–20 s)
+REPAIR_MAX = 8  # số cụm tối đa được hỏi lại mỗi video (như cũ), nay trong một lần gọi
+REPAIR_SCHEMA = {"type": "object", "properties": {"fixes": {"type": "array", "maxItems": REPAIR_MAX, "items": {"type": "object", "properties": {
+    "n": {"type": "integer"}, "phrase": {"type": "string", "maxLength": 120}}, "required": ["n", "phrase"]}}}, "required": ["fixes"]}
+JUDGE_SCHEMA = {"type": "object", "properties": {"verdicts": {"type": "array", "maxItems": 160, "items": {"type": "object", "properties": {
+    "n": {"type": "integer"}, "score": {"type": "integer", "minimum": 1, "maximum": 5}, "reason": {"type": "string", "maxLength": 140}}, "required": ["n", "score", "reason"]}}}, "required": ["verdicts"]}
 JUDGE = """Bạn là TRƯỞNG BIÊN TẬP khắt khe duyệt đồ hoạ cho video dạy bán hàng. Mỗi mục là chữ / sơ đồ sẽ hiện trên màn hình, kèm câu nói gốc.
 Chấm TỪNG mục (theo số n) thang 1–5:
 5 = khái niệm / bước / kết luận cốt lõi của bài; 4 = ý chính rõ, đáng nhớ; 3 = có ích, giúp nhịp video;
@@ -238,14 +295,14 @@ MUSIC = """Chọn MỘT loại nhạc nền hợp nhất với video (nhạc nh�
 Trả về đúng mã loại trong danh sách; why = 1 câu ngắn."""
 
 
-def pick_music_mood(genres, topic, log=print):
+def pick_music_mood(genres, topic, log=print, stats=None):
     """genres: {mã loại: [tâm trạng / mục đích]} lấy từ thư viện nhạc. Trả {"mood", "why"} hoặc None (lỗi / mô hình trả lạ)."""
     if not genres or not topic.strip():
         return None
-    schema = {"type": "object", "properties": {"mood": {"type": "string", "enum": sorted(genres)}, "why": {"type": "string"}}, "required": ["mood", "why"]}
+    schema = {"type": "object", "properties": {"mood": {"type": "string", "enum": sorted(genres)}, "why": {"type": "string", "maxLength": 160}}, "required": ["mood", "why"]}
     menu = "\n".join(f"- {g}: {', '.join(v)}" for g, v in sorted(genres.items()))
     try:
-        out = llm([{"role": "system", "content": MUSIC}, {"role": "user", "content": f"Chủ đề / tóm tắt video: {topic[:900]}\n\nCác loại nhạc:\n{menu}"}], schema, max_tokens=200)
+        out = ask(stats, "music", [{"role": "system", "content": MUSIC}, {"role": "user", "content": f"Chủ đề / tóm tắt video: {topic[:900]}\n\nCác loại nhạc:\n{menu}"}], schema, max_tokens=200)
     except Exception as ex:
         log(f"Chọn loại nhạc lỗi, bỏ qua: {str(ex)[:120]}")
         return None
@@ -278,8 +335,10 @@ def usable_asset(x):
     return bool(str(x.get("license", "")).strip()) and not x.get("exclude")
 
 
-def pick_broll(lib, sents, by_id, diagrams, dur, rejected, topic=""):
-    """Minh hoạ: mô hình chọn ảnh theo mô tả thư viện (chỉ ảnh / clip có giấy phép), rồi KIỂM RIÊNG từng lựa chọn."""
+def pick_broll(lib, sents, by_id, diagrams, dur, rejected, topic="", stats=None):
+    """Minh hoạ: mô hình chọn ảnh theo mô tả thư viện (chỉ ảnh / clip có giấy phép), rồi KIỂM RIÊNG từng lựa chọn — mọi lựa chọn
+    kiểm trong MỘT lần gọi (cũ: một lần gọi mỗi ảnh), mỗi mục vẫn có ngữ cảnh riêng; kết quả giống kiểm tuần tự vì luật cách nhau
+    / trùng ảnh áp SAU khi kiểm, theo đúng thứ tự cũ."""
     broll = []
     if not lib:
         return broll
@@ -290,57 +349,98 @@ def pick_broll(lib, sents, by_id, diagrams, dur, rejected, topic=""):
             "đối tượng / bối cảnh câu đang nói (ví dụ câu về gọi điện tư vấn khách ↔ ảnh nhân sự đeo tai nghe tư vấn; câu về đội "
             "ngũ ↔ ảnh tập thể nhân sự). Không chọn nếu chỉ trùng chữ mà khác nghĩa (câu về gặp khách uống cà phê ↔ ảnh tiệc liên "
             "hoan là SAI). Không có chỗ nào hợp thật thì trả danh sách rỗng. Không chọn câu trong 3 giây đầu.")
-    picks = llm([{"role": "system", "content": "Bạn là biên tập viên hình ảnh, rất khắt khe về việc ảnh khớp nghĩa câu nói."}, {"role": "user", "content": user}], BROLL_SCHEMA, max_tokens=900).get("picks", [])
-    used, last = set(), -1e9
+    picks = ask(stats, "broll", [{"role": "system", "content": "Bạn là biên tập viên hình ảnh, rất khắt khe về việc ảnh khớp nghĩa câu nói."}, {"role": "user", "content": user}], BROLL_SCHEMA, max_tokens=900).get("picks", [])
+    picks = [p for p in picks if isinstance(p, dict)]
+
+    def overlaps(t0, t1):
+        return any(dd["t0"] - 0.3 <= t1 and t0 <= dd.get("t1", dd["t0"] + 3.6) for dd in diagrams if dd["type"] in ("steps", "compare", "arrow", "mechanism", "quote", "fs06", "leak"))
+    # lượt 1: luật không phụ thuộc kết quả kiểm (hợp lệ, ngắn quá, trùng sơ đồ) — mục rớt ở đây không cần hỏi mô hình
+    cand = []
     for p in sorted(picks, key=lambda p: by_id.get(p.get("sid"), {"t0": 1e9})["t0"]):
         s, a = by_id.get(p.get("sid")), p.get("asset")
         if not s or not isinstance(a, int) or isinstance(a, bool) or not (0 <= a < len(lib)):
             rejected.append({"kind": "broll", "reason": f"câu {p.get('sid')} / ảnh #{a} không hợp lệ"})
             continue
-        it = lib[a]
         t0 = round(max(s["t0"], 3.0), 2)
         t1 = round(min(t0 + 2.5, dur - 2.0), 2)
-        if it["file"] in used or t1 - t0 < 1.2 or t0 - last < 6 or any(dd["t0"] - 0.3 <= t1 and t0 <= dd.get("t1", dd["t0"] + 3.6) for dd in diagrams if dd["type"] in ("steps", "compare", "arrow", "mechanism", "quote", "fs06", "leak")):
+        cand.append((p, s, lib[a], t0, t1, t1 - t0 < 1.2 or overlaps(t0, t1)))
+    ask_ = [c for c in cand if not c[5]]
+    verdict = {}
+    if ask_:
+        # Kiểm có NGỮ CẢNH: câu trước + câu sau + chủ đề video (một câu cụt đứng riêng làm bước kiểm loại cả cặp hợp lý)
+        lines = []
+        for n, (p, s, it, t0, t1, _) in enumerate(ask_):
+            ctx = " ".join(by_id[k]["text"] for k in (s["id"] - 1, s["id"], s["id"] + 1) if k in by_id)
+            lines.append(f"{n}. Đoạn đang nói: “{ctx}” — ảnh hiện lúc câu: “{s['text']}” — ảnh: {asset_text(it)}")
+        chk = ask(stats, "broll_check", [{"role": "system", "content": "Trả lời khắt khe, tiếng Việt."},
+                                          {"role": "user", "content": (f"Chủ đề video: {topic[:300]}\n" if topic else "")
+                                           + "Với TỪNG mục (theo số n): ảnh có minh hoạ ĐÚNG việc / bối cảnh đoạn đang nói không (không chỉ trùng chữ)? "
+                                           "Ví dụ: đoạn về gọi điện tư vấn khách ↔ ảnh nhân sự tư vấn qua điện thoại là HỢP; "
+                                           "đoạn về 'mời ly cà phê gặp khách' ↔ ảnh tiệc liên hoan là KHÔNG hợp. Xét từng mục độc lập.\n\n" + "\n".join(lines)}],
+                  CHECK_SCHEMA, max_tokens=120 + 100 * len(ask_))
+        for v in (chk.get("checks", []) if isinstance(chk, dict) else []):
+            if isinstance(v, dict) and isinstance(v.get("n"), int) and not isinstance(v.get("n"), bool) and 0 <= v["n"] < len(ask_):
+                verdict[id(ask_[v["n"]][0])] = v
+    # lượt 2: đúng luật tuần tự cũ (trùng ảnh / cách minh hoạ trước ≥ 6 s tính theo ảnh ĐÃ NHẬN)
+    used, last = set(), -1e9
+    for p, s, it, t0, t1, static_bad in cand:
+        if static_bad or it["file"] in used or t0 - last < 6:
             rejected.append({"kind": "broll", "file": it["file"], "reason": "trùng ảnh / quá sát minh hoạ trước / trùng sơ đồ / sát đầu-cuối"})
             continue
-        # Kiểm có NGỮ CẢNH: câu trước + câu sau + chủ đề video (một câu cụt đứng riêng làm bước kiểm loại cả cặp hợp lý)
-        ctx = " ".join(by_id[k]["text"] for k in (s["id"] - 1, s["id"], s["id"] + 1) if k in by_id)
-        chk = llm([{"role": "system", "content": "Trả lời khắt khe, tiếng Việt."},
-                   {"role": "user", "content": (f"Chủ đề video: {topic[:300]}\n" if topic else "") + f"Đoạn đang nói: “{ctx}”\nẢnh hiện lúc câu: “{s['text']}”\n"
-                                               f"Ảnh: {asset_text(it)}\n"
-                                               "Ảnh này có minh hoạ ĐÚNG việc / bối cảnh đoạn đang nói không (không chỉ trùng chữ)? Ví dụ: đoạn về gọi điện tư vấn khách ↔ ảnh nhân sự tư vấn qua điện thoại là HỢP; "
-                                               "đoạn về 'mời ly cà phê gặp khách' ↔ ảnh tiệc liên hoan là KHÔNG hợp."}],
-                  CHECK_SCHEMA, max_tokens=200)
-        if not chk.get("fit"):
-            rejected.append({"kind": "broll", "file": it["file"], "reason": f"kiểm lần 2: không hợp — {chk.get('reason', '')[:140]}"})
+        v = verdict.get(id(p), {})
+        if v.get("fit") is not True:
+            rejected.append({"kind": "broll", "file": it["file"], "reason": f"kiểm lần 2: không hợp — {str(v.get('reason', 'mô hình không trả lời mục này'))[:140]}"})
             continue
-        broll.append({"t0": t0, "t1": t1, "file": it["file"], "keyword": (it.get("keywords") or [""])[0], "why": f"{p.get('why', '')} | kiểm: {chk.get('reason', '')}"[:200]})
+        broll.append({"t0": t0, "t1": t1, "file": it["file"], "keyword": (it.get("keywords") or [""])[0], "why": f"{p.get('why', '')} | kiểm: {v.get('reason', '')}"[:200]})
         used.add(it["file"])
         last = t1
     return broll
 
 
-def plan(words, dur, library=None, content_hint="", log=print, music_genres=None):
-    """Trả kế hoạch dựng (mốc theo video gốc) hoặc None khi không có mô hình."""
+def analysis_digest(sents, model=""):
+    """Dấu của ĐẦU VÀO bước phân tích (chữ từng câu, kể cả cờ [?], ranh giới câu) + mô hình đang chạy + lời nhắc / schema ANALYZE:
+    trùng hết → phân tích cũ dùng lại được; đổi mô hình hoặc sửa lời nhắc → phân tích lại."""
+    return hashlib.sha256(json.dumps([[[s["text"], len(s["idx"])] for s in sents], model, ANALYZE, ANALYZE_SCHEMA],
+                                     ensure_ascii=False, sort_keys=True).encode()).hexdigest()[:12]
+
+
+def plan(words, dur, library=None, content_hint="", log=print, music_genres=None, prev=None, reanalyze=False):
+    """Trả kế hoạch dựng (mốc theo video gốc) hoặc None khi không có mô hình.
+    prev: kế hoạch AI lần trước của CÙNG video (plan.json) — "AI biên tập lại" cùng lời nói thì DÙNG LẠI bảng phân tích cấu trúc
+    (ai.analysis, khớp ai.analysisDigest / ai.wordsDigest) thay vì gọi lại mô hình; reanalyze=True hoặc BAOR_AI_REANALYZE=1 ép làm lại."""
     if not available():
         log("Không có mô hình tại máy (llama-server) → bỏ biên tập AI")
         return None
     t_start = time.time()
+    stats = {}
     sents = sentences(words)
     by_id = {s["id"]: s for s in sents}
     rejected = []
+    digest = hashlib.sha256(json.dumps([w["text"] for w in words], ensure_ascii=False).encode()).hexdigest()[:12]
+    label = model_label()
+    a_digest = analysis_digest(sents, label)
+    chunks = [sents[k:k + 40] for k in range(0, len(sents), 40)]
+
+    cached = None
+    if prev and not reanalyze and os.environ.get("BAOR_AI_REANALYZE") != "1":
+        pa = prev.get("ai") if isinstance(prev, dict) and isinstance(prev.get("ai"), dict) else {}
+        an = pa.get("analysis")
+        # kế hoạch cũ (chưa có analysisDigest): phải cùng lời nói VÀ cùng mô hình
+        same = pa.get("analysisDigest") == a_digest if pa.get("analysisDigest") else (pa.get("wordsDigest") == digest and pa.get("model") == label)
+        if same and isinstance(an, list) and len(an) == len(chunks) and all(isinstance(x, dict) for x in an):
+            cached = an
+            log(f"Dùng lại phân tích cấu trúc của lần trước (cùng lời nói, {len(an)} đoạn) — không gọi lại mô hình")
 
     # 1) Mô hình chọn chữ nhấn + sơ đồ theo từng đoạn ~40 câu (vừa ngữ cảnh, giữ chất lượng)
     raw_emph, raw_dias, summaries, analyses = [], [], [], []
-    for k in range(0, len(sents), 40):
-        chunk = sents[k:k + 40]
+    for ci, chunk in enumerate(chunks):
         user = (f"Video dài {dur:.0f} giây. " + (f"Chủ đề / kịch bản: {content_hint[:600]}\n" if content_hint else "")
                 + f"Đoạn lời nói (câu {chunk[0]['id']}–{chunk[-1]['id']}):\n{sent_block(chunk)}\n\n"
                 + f"Đề xuất khoảng {max(4, round((chunk[-1]['t1'] - chunk[0]['t0']) / 6))} chữ nhấn (mỗi cái 1–3 tiếng, chép đúng từ câu) và các sơ đồ thật sự có trong đoạn này.")
-        ana = llm([{"role": "system", "content": ANALYZE}, {"role": "user", "content": sent_block(chunk)}], ANALYZE_SCHEMA, max_tokens=1400)
+        ana = cached[ci] if cached else ask(stats, "analyze", [{"role": "system", "content": ANALYZE}, {"role": "user", "content": sent_block(chunk)}], ANALYZE_SCHEMA, max_tokens=1400)
         analyses.append(ana)
         user += "\n\nPHÂN TÍCH CẤU TRÚC (đã làm ở bước trước):\n" + json.dumps(ana, ensure_ascii=False)
-        out = llm([{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}], PLAN_SCHEMA)
+        out = ask(stats, "plan", [{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}], PLAN_SCHEMA)
         out = out if isinstance(out, dict) else {}
         summaries.append(str(out.get("summary", ""))[:300])
         raw_emph += out.get("emphasis", []) if isinstance(out.get("emphasis"), list) else []
@@ -357,16 +457,14 @@ def plan(words, dur, library=None, content_hint="", log=print, music_genres=None
         rejected.append({"kind": "model", "reason": f"mô hình trả {len(bad_e)} chữ nhấn / {len(bad_d)} sơ đồ sai kiểu → bỏ"})
 
     # 2) Kiểm nguyên văn + đặt mốc từ chính lời nói
-    repair_left = [8]  # tối đa 8 lần hỏi lại mô hình mỗi video (mỗi lần ~10–20 s trên máy)
+    def win3(sid):
+        return {"idx": [j for k in (sid - 1, sid, sid + 1) if k in by_id for j in by_id[k]["idx"]]}
 
-    def ground(sid, phrase, maxw=6):
-        s_ = by_id.get(sid)
-        if not s_:
-            return None, f"câu {sid} không tồn tại"
+    def locate(sid, phrase, maxw):
+        s_ = by_id[sid]
         loc = align(phrase, s_, words, maxw)
         if not loc:  # mô hình hay ghi lệch một câu khi cụm nằm ở ranh giới câu: tìm trong câu trước + câu này + câu sau
-            win = {"idx": [j for k in (sid - 1, sid, sid + 1) if k in by_id for j in by_id[k]["idx"]]}
-            loc = align(phrase, win, words, maxw)
+            loc = align(phrase, win3(sid), words, maxw)
         if not loc:  # lệch xa hơn: tìm từng câu trong ±30 s, lấy lần xuất hiện GẦN câu được nêu nhất
             near = sorted((x for x in sents if abs(x["t0"] - s_["t0"]) <= 30), key=lambda x: abs(x["t0"] - s_["t0"]))
             for x in near:
@@ -374,20 +472,46 @@ def plan(words, dur, library=None, content_hint="", log=print, music_genres=None
                 loc = align(phrase, win, words, maxw)
                 if loc:
                     break
-        if not loc and repair_left[0] > 0:
-            # OWNER 25/10/2026 (video không có khung): mô hình hay viết DIỄN GIẢI thay vì chép lời → hỏi lại một lần với đúng câu nói,
-            # chữ lên màn hình vẫn lấy từ LỜI NÓI qua align (không bao giờ lấy chữ mô hình viết)
-            repair_left[0] -= 1
-            win = {"idx": [j for k in (sid - 1, sid, sid + 1) if k in by_id for j in by_id[k]["idx"]]}
-            text_ = " ".join(words[j]["text"].strip() for j in win["idx"] if not words[j].get("uncertain"))
-            try:
-                got = llm([{"role": "user", "content": f"Lời nói: «{text_}»\nChép NGUYÊN VĂN, LIỀN MẠCH một cụm ≤ {maxw} tiếng có trong lời nói trên, "
-                                                        f"diễn đạt đúng ý: «{phrase}». Không thêm / bớt / đổi chữ. Trả JSON {{\"phrase\": \"...\"}}."}],
-                          REPAIR_SCHEMA, max_tokens=120, timeout=60)
-                ph2 = str(got.get("phrase", "")) if isinstance(got, dict) else ""
-                loc = align(ph2, win, words, maxw) if ph2 else None
-            except Exception:  # noqa: BLE001 — sửa cụm là bước phụ; lỗi thì giữ kết luận "không ghép được"
-                loc = None
+        return loc
+
+    # OWNER 25/10/2026 (video không có khung): mô hình hay viết DIỄN GIẢI thay vì chép lời → hỏi lại với đúng câu nói, chữ lên
+    # màn hình vẫn lấy từ LỜI NÓI qua align (không bao giờ lấy chữ mô hình viết). Gộp mọi cụm cần hỏi vào MỘT lần gọi.
+    pending = []
+    for d in raw_dias:
+        its = d["items"][:1] if d.get("type") == "chapter" else d["items"]
+        if NEED[d["type"]][0] <= len(its) <= NEED[d["type"]][1]:
+            pending += [(it["sid"], it["phrase"], 14 if d["type"] == "quote" else 6) for it in its]
+    pending += [(e["sid"], e["phrase"], 4) for e in raw_emph]
+    todo = []
+    for key in pending:
+        if key[0] in by_id and key not in todo and not locate(*key):
+            todo.append(key)
+    todo = todo[:REPAIR_MAX]
+    repaired = {}
+    if todo:
+        lines = []
+        for n, (sid, phrase, maxw) in enumerate(todo):
+            text_ = " ".join(words[j]["text"].strip() for j in win3(sid)["idx"] if not words[j].get("uncertain"))
+            lines.append(f"{n}. Lời nói: «{text_}» — ý cần chép: «{phrase}» — tối đa {maxw} tiếng")
+        try:
+            got = ask(stats, "repair", [{"role": "user", "content": "Với TỪNG mục (theo số n): chép NGUYÊN VĂN, LIỀN MẠCH một cụm (không quá số tiếng ghi ở mục) "
+                                                                    "có trong lời nói của mục đó, diễn đạt đúng ý cần chép. Không thêm / bớt / đổi chữ. "
+                                                                    "Không chép được thì để phrase rỗng.\n\n" + "\n".join(lines)}],
+                      REPAIR_SCHEMA, max_tokens=80 + 70 * len(todo), timeout=120)
+            for v in (got.get("fixes", []) if isinstance(got, dict) else []):
+                if isinstance(v, dict) and isinstance(v.get("n"), int) and not isinstance(v.get("n"), bool) and 0 <= v["n"] < len(todo):
+                    sid, _, maxw = todo[v["n"]]
+                    ph2 = str(v.get("phrase", ""))
+                    loc = align(ph2, win3(sid), words, maxw) if ph2.strip() else None
+                    if loc:
+                        repaired[todo[v["n"]]] = loc
+        except Exception as ex:  # noqa: BLE001 — sửa cụm là bước phụ; lỗi thì giữ kết luận "không ghép được"
+            rejected.append({"kind": "model", "reason": f"hỏi lại cụm diễn giải lỗi, bỏ qua: {str(ex)[:120]}"})
+
+    def ground(sid, phrase, maxw=6):
+        if sid not in by_id:
+            return None, f"câu {sid} không tồn tại"
+        loc = locate(sid, phrase, maxw) or repaired.get((sid, phrase, maxw))
         if not loc:
             return None, f"“{phrase}” không ghép được vào lời nói câu {sid} (thiếu từ / quá {maxw} tiếng / nghe chưa chắc)"
         return loc, ""
@@ -414,41 +538,129 @@ def plan(words, dur, library=None, content_hint="", log=print, music_genres=None
 
     PUNCT = (",", ".", "?", "!", ";", ":")
 
+    send = {j: s_["idx"][-1] for s_ in sents for j in s_["idx"]}  # chỉ số từ cuối câu chứa từ j
+
+    def tok(j):
+        return tnorm(words[j]["text"]) if 0 <= j < len(words) else ""
+
+    def ends(j):
+        return words[j]["text"].strip().endswith(PUNCT)
+
+    def question_particle(j):
+        """"không / chưa" là TRỢ TỪ HỎI: CHỈ khi là từ cuối câu / vế (ngay trước dấu câu, hết câu, hoặc "thì") VÀ trong vế có "có" làm
+        động từ hỏi ("có … không"; "đã … chưa"). Phản biện 26/10 lượt 2 (P1-3): trước "còn" thì KHÔNG BAO GIỜ là trợ từ hỏi —
+        "đã không còn tin", "có những khách sẽ không còn quay lại" là phủ định (loại nhầm "có mua không còn …" để an toàn)."""
+        if tok(j) not in ("không", "chưa") or not (ends(j) or j == send.get(j) or tok(j + 1) == "thì"):
+            return False
+        for k in range(j - 1, max(-1, j - 9), -1):
+            if ends(k) or tok(k) in CLAUSE:
+                return False
+            if (tok(k) == "có" and tok(k + 1) not in QP_NOT_VERB) or (tok(k) == "đã" and tok(j) == "chưa"):
+                return True
+        return False
+
+    def not_only(j):
+        """"không chỉ / không những / chẳng những X": X được KHẲNG ĐỊNH chỉ khi CẢ HAI: cùng câu phía sau có "mà còn / mà cả / mà lại
+        / mà cũng", và "chỉ" không ghép thành động từ (chỉ trích / chỉ ra / chỉ tay / chỉ định …). "đừng / chưa chỉ" luôn phủ định."""
+        if tok(j) not in ("không", "chẳng") or ends(j) or tok(j + 1) not in ("chỉ", "những"):
+            return False
+        if tok(j + 1) == "chỉ" and (ends(j + 1) or tok(j + 2) in CHI_VERB):
+            return False
+        for k in range(j - 1, max(-1, j - 7), -1):  # phủ định bọc ngoài ("không phải sale nào cũng không chỉ …") → không khẳng định
+            if ends(k):
+                break
+            if tok(k) in NEG or (tok(k) == "đâu" and tok(k + 1) in DAU_NEG_NEXT):
+                return False
+        return any(tok(k) == "mà" and not ends(k) and tok(k + 1) in ("còn", "cả", "lại", "cũng") for k in range(j + 2, send.get(j, j)))
+
+    def neg_at(j):
+        """Từ j có làm PHỦ ĐỊNH phần đứng sau nó không."""
+        t, nxt = tok(j), ("" if ends(j) else tok(j + 1))
+        if t in NEG:
+            return not not_only(j) and not question_particle(j)
+        if t in ("có", "còn"):  # "làm gì / làm sao (mà) có | còn X" = không có X; "phải / nên / cần làm gì có X" = hỏi cách làm
+            b = j - 2 if tok(j - 1) == "mà" else j - 1
+            if tok(b) in ("gì", "sao") and tok(b - 1) == "làm" and not any(ends(x) for x in range(b - 1, j)):
+                return tok(b - 2) not in RHET_HOW_OK
+            return False
+        if t != "đâu":
+            return False
+        if nxt == "ra" and tok(j - 1) in RHET_DAU_RA:  # "lấy / kiếm / tìm đâu ra X"
+            return True
+        if nxt == "có" and not ends(j + 1):  # "(đi / ở) đâu có ai | được | chuyện …", "đâu có người … như vậy / thế": tu từ
+            if tok(j + 2) in RHET_DAU_CO:
+                return True
+            if tok(j + 2) == "người":
+                rest = [tok(x) for x in range(j + 3, send.get(j, j) + 1)]
+                if "thế" in rest or any(rest[x:x + 2] == ["như", "vậy"] for x in range(len(rest))):
+                    return True
+        return nxt in DAU_NEG_NEXT and tok(j - 1) not in DAU_WHERE_PREV  # "đâu phải / đâu có / đâu còn X"
+
     def generic_denied(j_thi):
-        """Vế trước "thì" mở bằng "không phải / chẳng phải / chưa chắc / không hẳn (là) cứ | lúc nào …" → người nói phủ định
-        CẢ quan hệ "X thì Y" ("không phải cứ giảm giá thì khách sẽ mua") → Y tách riêng là nói ngược ý. Khác "nếu không X thì Y" /
-        "không có X thì Y" (phủ định chỉ nằm trong điều kiện, Y vẫn được khẳng định → giữ)."""
+        """Vế trước "thì" mở bằng "không / chẳng / đâu / có phải, chưa chắc, không hẳn (là) + cứ | ai | mọi | bất cứ | … nào" → người
+        nói phủ định CẢ quan hệ "X thì Y" ("không phải cứ giảm giá thì khách sẽ mua", "không phải ai làm sale thì cũng giàu có",
+        "có phải cứ … thì …" là câu hỏi tu từ) → Y tách riêng là nói ngược ý. Khác "nếu không X thì Y" / "không có X thì Y" /
+        "không phải lo cứ làm thì sẽ thành công" (phủ định chỉ nằm trong điều kiện / không mở bằng từ tổng quát → Y được khẳng định)."""
         toks = []
         for j in range(j_thi - 1, max(-1, j_thi - 11), -1):
-            t = words[j]["text"].strip()
-            if t.endswith(PUNCT) or tnorm(t) in CLAUSE:  # đầu vế trước "thì"
+            if ends(j) or tok(j) in CLAUSE:  # đầu vế trước "thì"
                 break
-            toks.insert(0, tnorm(t))
+            toks.insert(0, tok(j))
         for k in range(len(toks) - 2):
-            if toks[k] in NEG and toks[k + 1] in ("phải", "chắc", "hẳn"):
+            if (toks[k] in NEG and toks[k + 1] in ("phải", "chắc", "hẳn")) or (toks[k] in ("đâu", "có") and toks[k + 1] == "phải"):
                 rest = toks[k + 2:]
                 rest = rest[1:] if rest[:1] == ["là"] else rest
-                if rest[:1] == ["cứ"] or rest[:2] == ["lúc", "nào"]:
+                if rest[:1] and (rest[0] in GENERIC_Q or rest[1:2] == ["nào"] or rest[:2] == ["cái", "gì"]):
                     return True
         return False
 
     def negated_before(j0):
         """Từ phủ định đứng trước cụm trong CÙNG MỆNH ĐỀ (nhìn lại ≤ 6 từ, dừng ở dấu câu hoặc từ nối "mà / nhưng / rồi /
-        thì / còn") → tách cụm ra sẽ ĐẢO nghĩa: "không được phép hứa hẹn…", "đừng bao giờ hứa hẹn…".
-        Hai ngoại lệ ở từ nối (đã chứng minh đảo nghĩa thật, xem tự kiểm): "không / chẳng còn …" — "còn" là phó từ (= nữa), không mở
-        mệnh đề; "không phải cứ X thì Y" — phủ định cả quan hệ X → Y."""
+        thì / còn") → tách cụm ra sẽ ĐẢO nghĩa: "không được phép hứa hẹn…", "đừng bao giờ hứa hẹn…", "đâu phải chuyện dễ".
+        Ngoại lệ ở từ nối (đã chứng minh đảo nghĩa thật, xem tự kiểm): "không / chẳng (bao giờ / ai …) còn …" — "còn" là phó từ
+        (= nữa), không mở mệnh đề, trừ khi "không" là trợ từ hỏi ("có mua không còn …"); "không phải cứ / ai … thì Y"."""
         for j in range(j0 - 1, max(-1, j0 - 7), -1):
-            t = words[j]["text"].strip()
-            if tnorm(t) in NEG:
+            if neg_at(j):
                 return True
-            if t.endswith(PUNCT):
+            if ends(j):
                 return False
-            if tnorm(t) in CLAUSE:
-                prev = words[j - 1]["text"].strip() if j > 0 else ""
-                if tnorm(t) == "còn" and tnorm(prev) in NEG and not prev.endswith(PUNCT):
+            if tok(j) in CLAUSE:
+                if tok(j) == "còn":
+                    k = j - 1
+                    while k > j - 5 and k >= 0 and not ends(k) and tok(k) in NEG_GAP:
+                        k -= 1
+                    if k >= 0 and not ends(k) and neg_at(k):
+                        return True
+                if tok(j) == "thì" and generic_denied(j):
                     return True
-                if tnorm(t) == "thì" and generic_denied(j):
+                if tok(j) == "mà" and tok(j - 1) == "đâu" and not ends(j - 1):  # "… đâu mà X" (làm gì có chỗ đâu mà ngồi chờ)
                     return True
+                return False
+        return False
+
+    def final_dau(k):
+        """"đâu" ở CUỐI vế là phủ định cả vế: "… thì khách sẽ quay lại đâu", "… đâu có", "… đâu nha các bạn". Sau nó chỉ còn trợ
+        từ / hô ngữ tới hết câu (hoặc tới dấu câu / "mà / nhưng / chứ / còn"). "ở / chỗ / nơi / tại đâu" là hỏi nơi chốn → không tính."""
+        if tok(k) != "đâu" or tok(k - 1) in LOCATIVE:
+            return False
+        m = k
+        while not ends(m) and m < send.get(m, m):
+            m += 1
+            if tok(m) in FWD_STOP or tok(m) == "còn":
+                return True
+            if tok(m) not in DAU_TAIL:
+                return False
+        return True
+
+    def tail_denied(a):
+        """Nhìn XUÔI từ đầu cụm tới hết vế: vế kết bằng "đâu" phủ định → mọi cụm trong vế đó (kể cả vế điều kiện trước "thì") là
+        ý người nói BÁC BỎ → không trích (chữ nhấn, sơ đồ, khung trích dẫn). Mơ hồ ("để đâu", "đi đâu" cuối câu) → vẫn loại (an toàn)."""
+        for k in range(a, send.get(a, a) + 1):
+            if k > a and tok(k) in FWD_STOP:
+                return False
+            if final_dau(k):
+                return True
+            if ends(k):
                 return False
         return False
 
@@ -469,6 +681,9 @@ def plan(words, dur, library=None, content_hint="", log=print, music_genres=None
                 break
             if negated_before(loc[0]):
                 bad = f"“{spoken(words, *loc)}” đứng sau từ phủ định — tách ra sẽ sai nghĩa"
+                break
+            if tail_denied(loc[0]):
+                bad = f"“{spoken(words, *loc)}” nằm trong vế kết bằng “đâu” (phủ định) — tách ra sẽ sai nghĩa"
                 break
             if not number_ok(spoken(words, *loc)):
                 bad = f"“{spoken(words, *loc)}” có số / tiền chưa có trong kịch bản đã duyệt (Skill A13, R8.10)"
@@ -532,6 +747,9 @@ def plan(words, dur, library=None, content_hint="", log=print, music_genres=None
         if negated_before(loc[0]):
             rejected.append({"kind": "emphasis", "phrase": phrase, "reason": "đứng sau từ phủ định — tách ra sẽ sai nghĩa"})
             continue
+        if tail_denied(loc[0]):
+            rejected.append({"kind": "emphasis", "phrase": phrase, "reason": "nằm trong vế kết bằng “đâu” (phủ định) — tách ra sẽ sai nghĩa"})
+            continue
         if not number_ok(phrase):
             rejected.append({"kind": "emphasis", "phrase": phrase, "reason": "có số / tiền chưa có trong kịch bản đã duyệt (Skill A13, R8.10)"})
             continue
@@ -570,7 +788,8 @@ def plan(words, dur, library=None, content_hint="", log=print, music_genres=None
         # biên tập (bước chấm có thể bỏ sơ đồ cuối cùng). Ưu tiên câu không trùng chữ nhấn; trùng thì bỏ chữ nhấn trong khung.
         cands = []
         for a_ in analyses if isinstance(analyses, list) else []:
-            for ki in (a_.get("key_ideas", []) if isinstance(a_, dict) else []):
+            kis = a_.get("key_ideas") if isinstance(a_, dict) else None  # phân tích cũ / mô hình có thể trả null
+            for ki in (kis if isinstance(kis, list) else []):
                 s_ = by_id.get(ki.get("sid")) if isinstance(ki, dict) else None
                 if not s_:
                     continue
@@ -589,7 +808,7 @@ def plan(words, dur, library=None, content_hint="", log=print, music_genres=None
                     if cut is not None and tnorm(words[rng[cut]]["text"]) == "thì" and 5 <= len(rng) - cut - 1 <= 14:
                         # "X thì Y": Y là VẾ CHÍNH (ý chốt) — "bạn làm nghề tư vấn THÌ các bạn bắt buộc phải có kịch bản sale"
                         a0, b0 = rng[cut + 1], rng[-1]
-                        if negated_before(a0) or REFUTE_RE.search(norm(after_)) or NEG & {tnorm(w) for w in after_.split()[:4]}:
+                        if negated_before(a0) or tail_denied(a0) or REFUTE_RE.search(norm(after_)) or NEG & {tnorm(w) for w in after_.split()[:4]}:
                             continue
                     else:
                         if cut is None or tnorm(words[rng[0]]["text"]) in {"nếu", "khi", "vì", "dù", "mặc", "giả"}:
@@ -617,9 +836,20 @@ def plan(words, dur, library=None, content_hint="", log=print, music_genres=None
     def ctx(t):  # lời nói ±4 s quanh mục (câu đã chia có thể gãy; người duyệt cần đủ ngữ cảnh)
         return " ".join(w["text"].strip() for w in words if t - 4 <= w["start"] <= t + 4 and not w.get("uncertain"))
 
+    def fq_key(q):
+        return (q["t0"], q["text"])
+
+    def fq_line(n, q):
+        return f"{n}. KHUNG TRÍCH DẪN “{q['text']}” — câu nói: “{ctx(q['t0'] + 0.4)} {ctx(q['t1'])}”"
+
+    # Khung dự phòng KHÔNG được lên màn hình mà chưa qua trưởng biên tập (ngữ cảnh ±4 s, gồm câu sau). Trước khi chấm đã không còn
+    # sơ đồ nội dung nào → chắc chắn cần khung dự phòng → chấm luôn trong LẦN CHẤM CHÍNH (cũ: một lần gọi riêng sau đó).
+    pre_fq = fallback_quote() if not any(d["type"] != "chapter" for d in diagrams) else []
+    fq_verdict = {}  # (t0, chữ) → phán quyết của trưởng biên tập cho khung dự phòng
+
     # 2b) Trưởng biên tập (mô hình đóng vai người duyệt khắt khe) chấm từng mục; mục bị chấm BỎ thì loại, ghi lý do
     items_ = [("emphasis", e) for e in emphasis] + [("diagram", d) for d in diagrams]
-    if items_:
+    if items_ or pre_fq:
         lines = []
         for n, (k, x) in enumerate(items_):
             if k == "emphasis":
@@ -627,11 +857,17 @@ def plan(words, dur, library=None, content_hint="", log=print, music_genres=None
             else:
                 parts = [x.get("text")] + [x.get(f, {}).get("text") for f in ("wrong", "top", "mid", "bottom")] + [r["text"] for r in x.get("right", []) + x.get("steps", [])]
                 lines.append(f"{n}. SƠ ĐỒ {x['type']}: {' | '.join(p for p in parts if p)} — câu nói: “{ctx(x['t0'] + 0.4)}”")
+        lines += [fq_line(len(items_) + m, q) for m, q in enumerate(pre_fq)]
         verdicts = {}
         try:
-            got = llm([{"role": "system", "content": JUDGE}, {"role": "user", "content": "\n".join(lines)}], JUDGE_SCHEMA, max_tokens=1600)
+            got = ask(stats, "judge", [{"role": "system", "content": JUDGE}, {"role": "user", "content": "\n".join(lines)}], JUDGE_SCHEMA, max_tokens=200 + 90 * len(lines))
+            for q in pre_fq:  # mục mô hình không chấm: giữ như cũ (điểm mặc định 3)
+                fq_verdict[fq_key(q)] = {}
             for v in (got.get("verdicts", []) if isinstance(got, dict) else []):
-                if isinstance(v, dict) and isinstance(v.get("n"), int) and not isinstance(v.get("n"), bool) and 0 <= v["n"] < len(items_):
+                if isinstance(v, dict) and isinstance(v.get("n"), int) and not isinstance(v.get("n"), bool) and 0 <= v["n"] < len(lines):
+                    if v["n"] >= len(items_):
+                        fq_verdict[fq_key(pre_fq[v["n"] - len(items_)])] = v
+                        continue
                     try:
                         v["score"] = int(v.get("score", 3))
                     except (TypeError, ValueError):
@@ -651,27 +887,30 @@ def plan(words, dur, library=None, content_hint="", log=print, music_genres=None
 
     if not any(d["type"] != "chapter" for d in diagrams):  # khung chương chỉ là tiêu đề, không tính là đồ hoạ nội dung
         fq = fallback_quote()
-        if fq:  # khung dự phòng KHÔNG được lên màn hình mà chưa qua trưởng biên tập: chấm riêng với ngữ cảnh ±4 s (gồm câu sau)
+        need = [q for q in fq if fq_key(q) not in fq_verdict]
+        if need:  # chỉ khi trưởng biên tập vừa bỏ sơ đồ cuối cùng (hoặc lần chấm chính lỗi): chấm riêng các khung chưa chấm
             try:
-                got = llm([{"role": "system", "content": JUDGE}, {"role": "user", "content": "\n".join(
-                    f"{n}. KHUNG TRÍCH DẪN “{q['text']}” — câu nói: “{ctx(q['t0'] + 0.4)} {ctx(q['t1'])}”" for n, q in enumerate(fq))}],
-                    JUDGE_SCHEMA, max_tokens=800)
+                got = ask(stats, "judge_fallback", [{"role": "system", "content": JUDGE}, {"role": "user", "content": "\n".join(fq_line(n, q) for n, q in enumerate(need))}],
+                          JUDGE_SCHEMA, max_tokens=200 + 90 * len(need))
                 sc = {v["n"]: v for v in (got.get("verdicts", []) if isinstance(got, dict) else [])
                       if isinstance(v, dict) and isinstance(v.get("n"), int) and not isinstance(v.get("n"), bool)}
-                ok_ = []
-                for n, q in enumerate(fq):
-                    try:
-                        score = int(sc.get(n, {}).get("score", 3))
-                    except (TypeError, ValueError):
-                        score = 0
-                    if score < 2:  # như mục thường: chỉ bỏ khi bị chấm RÕ hỏng (OWNER 25/10/2026 — video không được trơ)
-                        rejected.append({"kind": "diagram", "phrase": q["text"], "reason": f"khung dự phòng bị trưởng biên tập chấm {score}/5: {str(sc.get(n, {}).get('reason', ''))[:120]}"})
-                    else:
-                        ok_.append(q)
-                fq = ok_[:1]
+                for n, q in enumerate(need):
+                    fq_verdict[fq_key(q)] = sc.get(n, {})
             except Exception as ex:
                 rejected.append({"kind": "diagram", "reason": f"không chấm được khung dự phòng → bỏ: {str(ex)[:120]}"})
-                fq = []
+        ok_ = []
+        for q in fq:
+            if fq_key(q) not in fq_verdict:  # chưa qua trưởng biên tập → không lên màn hình
+                continue
+            try:
+                score = int(fq_verdict[fq_key(q)].get("score", 3))
+            except (TypeError, ValueError):
+                score = 0
+            if score < 2:  # như mục thường: chỉ bỏ khi bị chấm RÕ hỏng (OWNER 25/10/2026 — video không được trơ)
+                rejected.append({"kind": "diagram", "phrase": q["text"], "reason": f"khung dự phòng bị trưởng biên tập chấm {score}/5: {str(fq_verdict[fq_key(q)].get('reason', ''))[:120]}"})
+            else:
+                ok_.append(q)
+        fq = ok_[:1]
         diagrams = sorted(diagrams + fq, key=lambda x: x["t0"])
         if fq:
             inside = [e for e in emphasis if fq[0]["t0"] - 0.5 <= e["t"] <= fq[0]["t1"] + 0.5]
@@ -700,15 +939,14 @@ def plan(words, dur, library=None, content_hint="", log=print, music_genres=None
     broll = []
     lib = [x for x in (library or []) if usable_asset(x)]
     try:
-        broll = pick_broll(lib, sents, by_id, diagrams, dur, rejected, " ".join(x for x in summaries if x))
+        broll = pick_broll(lib, sents, by_id, diagrams, dur, rejected, " ".join(x for x in summaries if x), stats)
     except Exception as ex:  # bước ảnh lỗi → không có ảnh, kế hoạch chữ / sơ đồ vẫn giữ
         broll = []
         rejected.append({"kind": "broll", "reason": f"bước chọn ảnh lỗi, bỏ qua: {str(ex)[:120]}"})
     # 4) Loại nhạc nền theo nội dung (bộ dựng chọn bài cụ thể trong loại đó, chỉ bài OWNER đã nghe duyệt)
     topics = " ".join(str(a.get("topic", "")) for a in analyses if isinstance(a, dict))
-    music = pick_music_mood(music_genres or {}, (topics + " " + " ".join(summaries)).strip(), log)
-    label = model_label()
-    digest = hashlib.sha256(json.dumps([w["text"] for w in words], ensure_ascii=False).encode()).hexdigest()[:12]
+    music = pick_music_mood(music_genres or {}, (topics + " " + " ".join(summaries)).strip(), log, stats)
+    log("Biên tập AI — số lần gọi mô hình: " + ", ".join(f"{k} {v['calls']} ({v['seconds']} s)" for k, v in stats.items()))
     return {
         "by": f"Biên tập AI tại máy ({label})",
         "note": " ".join(x for x in summaries if x)[:600],
@@ -716,8 +954,8 @@ def plan(words, dur, library=None, content_hint="", log=print, music_genres=None
         "diagrams": diagrams,
         "broll": broll,
         **({"music": music} if music else {}),
-        "ai": {"model": label, "endpoint": ENDPOINT, "wordsDigest": digest, "seconds": round(time.time() - t_start, 1),
-               "analysis": analyses, "proposed": {"emphasis": len(raw_emph), "diagrams": len(raw_dias)}, "kept": {"emphasis": len(emphasis), "diagrams": len(diagrams), "broll": len(broll)},
+        "ai": {"model": label, "endpoint": ENDPOINT, "wordsDigest": digest, "analysisDigest": a_digest, "analysisReused": bool(cached),
+               "seconds": round(time.time() - t_start, 1), "calls": stats, "analysis": analyses, "proposed": {"emphasis": len(raw_emph), "diagrams": len(raw_dias)}, "kept": {"emphasis": len(emphasis), "diagrams": len(diagrams), "broll": len(broll)},
                "rejected": rejected[:300]},
     }
 
@@ -1016,8 +1254,8 @@ def self_test():
             return {"summary": "", "emphasis": [], "diagrams": [
                 {"type": "chapter", "items": [{"sid": 2, "phrase": "điểm chung với khách"}, {"sid": 2, "phrase": "x"}]}] if chap_only[0] else [
                 {"type": "arrow", "items": [{"sid": 1, "phrase": "biến cảm xúc thành thân thiết"}, {"sid": 2, "phrase": "điểm chung"}]}]}
-        if schema is REPAIR_SCHEMA:
-            return {"phrase": "tạo ra cảm giác thân tình"}
+        if schema is REPAIR_SCHEMA:  # hỏi lại GỘP: một lần gọi, trả theo số mục n
+            return {"fixes": [{"n": int(m), "phrase": "tạo ra cảm giác thân tình"} for m in re.findall(r"(?m)^(\d+)\. ", messages[-1]["content"])]}
         return {}
     chap_only = [False]
     g["llm"], g["available"] = fr, (lambda timeout=3: True)
@@ -1032,6 +1270,203 @@ def self_test():
     if not arrow or arrow["top"]["text"] != "tạo ra cảm giác thân tình" or [d["type"] for d in pc["diagrams"]] != ["leak", "chapter"] or "fs06" not in types:
         bad += 1
         print(f"SAI hiệu ứng khung / sửa cụm diễn giải / chương nhiều mục: {types} {arrow}")
+    # phản biện 26/10 — phủ định còn sót (đảo nghĩa chữ trên màn hình) và các ca ĐÚNG không được loại nhầm
+    def run_plan(fake, w_, dur_=30.0, **kw):
+        g["llm"], g["available"] = fake, (lambda timeout=3: True)
+        try:
+            return plan(w_, dur_, [], log=lambda m: None, **kw)
+        finally:
+            g["llm"], g["available"] = real_llm, real_av
+
+    def WS(text, step=0.5):
+        return [{"text": x, "start": 5.0 + i * step, "end": 5.0 + i * step + step * 0.8} for i, x in enumerate(text.split())]
+    for sent_txt, phrase, ok_want in (
+            ("đâu phải cứ giảm giá thì khách sẽ quay lại mua hàng", "quay lại mua hàng", False),     # "đâu phải cứ X thì Y"
+            ("giảm giá liên tục đâu có hiệu quả lâu dài", "hiệu quả lâu dài", False),             # "đâu có X" đứng trước
+            ("có phải cứ giảm giá thì khách sẽ quay lại mua hàng đâu", "quay lại mua hàng", False),  # "đâu" CUỐI câu
+            ("giảm giá thật sâu thì khách sẽ quay lại mua hàng đâu nha", "quay lại mua hàng", False),
+            ("giảm giá thật sâu thì khách sẽ quay lại mua hàng đâu nha", "giảm giá thật sâu", False),  # vế điều kiện cũng bị bác
+            ("khách sẽ quay lại mua hàng đâu có các bạn", "quay lại mua hàng", False),
+            ("không phải ai làm sale thì cũng thành công rực rỡ", "thành công rực rỡ", False),       # "không phải ai … thì cũng"
+            ("không phải lúc nào khách nói thì cũng đúng hết", "cũng đúng hết", False),
+            ("khách sẽ không bao giờ còn quay lại cửa hàng", "quay lại cửa hàng", False),             # "còn" không sát phủ định
+            ("chẳng ai còn tin lời quảng cáo", "tin lời quảng cáo", False),
+            # ca ĐÚNG: giữ
+            ("không chỉ bán hàng mà còn chăm sóc khách hàng", "chăm sóc khách hàng", True),
+            ("không chỉ bán hàng mà còn chăm sóc khách hàng", "bán hàng", True),                    # "không chỉ X": X khẳng định
+            ("chưa bao giờ bỏ cuộc còn luôn cố gắng mỗi ngày", "luôn cố gắng mỗi ngày", True),
+            ("không phải lo cứ làm thì sẽ thành công", "thành công", True),
+            # phản biện 26/10 lượt 2 (P1-3): "không / chưa" trước "còn" KHÔNG BAO GIỜ là trợ từ hỏi — chấp nhận loại nhầm câu hỏi
+            # "có mua không còn …" (mất một chữ nhấn) để không bao giờ đảo nghĩa "đã / có những … không còn …"
+            ("chị có mua không còn bên em vẫn hỗ trợ tận tình", "hỗ trợ tận tình", False),
+            ("mình đi đâu cũng mang theo kịch bản sale", "kịch bản sale", True),                    # "đâu cũng" = bất cứ đâu
+            ("các bạn tìm khách hàng tiềm năng ở đâu", "khách hàng tiềm năng", True),               # "ở đâu" hỏi nơi chốn
+            ("không có kịch bản thì đừng ra chiến trường", "đừng ra chiến trường", True),
+            # phản biện 26/10 lượt 2 — P1-1: "chỉ" là động từ ghép (chỉ trích / chỉ ra / chỉ tay / chỉ định); "đừng / chưa chỉ" luôn phủ định;
+            # "không chỉ X" chỉ là khẳng định khi cùng câu có "mà còn / mà cả …"
+            ("đừng chỉ trích khách hàng trước mặt người khác", "chỉ trích khách hàng", False),
+            ("sale giỏi không chỉ trích khách hàng bao giờ", "chỉ trích khách hàng", False),
+            ("không chỉ ra lỗi sai của khách hàng", "chỉ ra lỗi sai", False),
+            ("đừng chỉ tay vào mặt khách hàng", "chỉ tay vào mặt", False),
+            ("đừng chỉ tập trung vào giá bán", "tập trung vào giá", False),
+            ("khách hàng chưa chỉ định ngày giao hàng", "chỉ định ngày giao", False),
+            ("không chỉ là giảm giá", "giảm giá", False),
+            ("chẳng những không giúp ích mà còn gây hại", "giúp ích", False),
+            ("không chỉ là giảm giá mà còn là dịch vụ", "giảm giá", True),
+            # P1-2: "không chỉ … đâu" + hô ngữ
+            ("không chỉ đơn giản là giảm giá đâu anh chị", "giảm giá", False),
+            ("không chỉ đơn giản là giảm giá đâu mọi người", "giảm giá", False),
+            ("không chỉ đơn giản là giảm giá đâu", "giảm giá", False),
+            ("bán hàng không chỉ là giảm giá đâu nghen", "giảm giá", False),
+            # P1-3: "đã / có những … không còn" là phủ định, không phải câu hỏi
+            ("khách hàng đã không còn tin tưởng thương hiệu", "tin tưởng thương hiệu", False),
+            ("có những khách hàng sẽ không còn quay lại cửa hàng", "quay lại cửa hàng", False),
+            ("có nhiều người không còn tin quảng cáo", "tin quảng cáo", False),
+            ("sản phẩm có lỗi khách sẽ không còn quay lại mua", "quay lại mua", False),
+            ("khách có tiền nhưng không còn muốn mua", "muốn mua", False),
+            ("mình đã làm khách hàng không còn tin tưởng", "còn tin tưởng", False),
+            ("có cần thiết không phải bàn cãi", "phải bàn cãi", False),
+            ("có khi khách không mà còn ghét mình", "ghét mình", False),
+            ("có những khách chưa rồi lại quay lại", "lại quay lại", False),
+            ("khách có mua không thì mình vẫn chăm sóc", "vẫn chăm sóc", True),                     # câu hỏi thật: vế sau khẳng định
+            # P2: "đâu" + phó từ / tình thái ("đâu còn / đâu bao giờ / đâu thể / đâu cần / đâu dễ"); "đâu mà" / "làm gì có" phủ định
+            ("bây giờ khách đâu còn tin quảng cáo nữa", "tin quảng cáo", False),
+            ("khách hàng đâu bao giờ quay lại cửa hàng", "quay lại cửa hàng", False),
+            ("mình đâu thể giảm giá mãi được", "giảm giá mãi", False),
+            ("bán hàng đâu dễ dàng như mọi người nghĩ", "dễ dàng", False),
+            ("giảm giá đâu cần thiết lắm", "cần thiết lắm", False),
+            ("làm gì có chỗ đâu mà ngồi chờ khách", "ngồi chờ khách", False),
+            ("khách hàng tìm sản phẩm ở đâu", "tìm sản phẩm", True),
+            ("kịch bản sale bắt đầu từ đâu", "kịch bản sale", True),
+            # phản biện 26/10 lượt 3 — câu hỏi TU TỪ là phủ định: "làm gì còn / làm gì mà có / lấy đâu ra / làm sao có /
+            # đi đâu có ai / ở đâu có người … như vậy"
+            ("làm gì còn ai tin quảng cáo", "tin quảng cáo", False),
+            ("làm gì mà có chuyện khách tự quay lại", "khách tự quay lại", False),
+            ("lấy đâu ra khách hàng trung thành", "khách hàng trung thành", False),
+            ("làm sao có khách hàng trung thành nếu không chăm sóc", "khách hàng trung thành", False),
+            ("đi đâu có ai bán rẻ như vậy", "bán rẻ như vậy", False),
+            ("tìm ở đâu có người tận tâm như vậy", "người tận tâm", False),
+            ("không phải sale nào cũng không chỉ bán hàng mà còn chăm sóc khách", "bán hàng", False),  # phủ định bọc ngoài "không chỉ"
+            ("khách hỏi làm gì có lợi nhất", "có lợi nhất", False),   # mơ hồ ("hỏi làm gì" = hỏi để làm gì) → loại cho an toàn
+            # giữ: "phải / nên / cần làm gì có X" là hỏi CÁCH làm (văn nói bỏ "để"), không phải phủ định
+            ("mình phải làm gì có khách hàng mới", "khách hàng mới", True),
+            ("ở đâu có khách hàng ở đó có cơ hội", "cơ hội", True),
+            ("khách ở đâu mình cũng giao hàng tận nơi", "giao hàng tận nơi", True),
+            ("không những chất lượng mà lại giá tốt", "chất lượng", True)):
+        def fk3(messages, schema, _p=phrase, **kw):
+            return {"summary": "", "emphasis": [{"sid": 1, "phrase": _p, "why": ""}], "diagrams": []} if schema is PLAN_SCHEMA else {}
+        pn = run_plan(fk3, WS(sent_txt))
+        if bool(pn["emphasis"]) != ok_want:
+            bad += 1
+            print(f"SAI phủ định (26/10): “{sent_txt}” / “{phrase}” → {[e['text'] for e in pn['emphasis']]}")
+    # sơ đồ trong câu kết bằng "đâu" phủ định → loại
+    def fda(messages, schema, **kw):
+        return {"summary": "", "emphasis": [], "diagrams": [{"type": "arrow", "items": [{"sid": 1, "phrase": "giảm giá thật sâu"}, {"sid": 1, "phrase": "quay lại mua hàng"}]}]} if schema is PLAN_SCHEMA else {}
+    pd_ = run_plan(fda, WS("giảm giá thật sâu thì khách sẽ quay lại mua hàng đâu"))
+    if any(d["type"] == "arrow" for d in pd_["diagrams"]):
+        bad += 1
+        print(f"SAI: sơ đồ trong câu kết bằng “đâu” phủ định vẫn lên màn hình: {pd_['diagrams']}")
+    # khung trích dẫn dự phòng: vế sau "thì" trong câu kết bằng "đâu" / mở bằng "có phải cứ" không được trích; trọn câu thì giữ
+    for text_, want in (("giảm giá thật sâu cho khách hàng cũ thì khách hàng sẽ quay lại mua thêm đâu nha", None),
+                        ("có phải cứ giảm giá thật sâu cho khách thì khách hàng sẽ quay lại mua thêm nhiều lần", None),
+                        ("có phải cứ giảm giá thì khách sẽ quay lại đâu", "có phải cứ giảm giá thì khách sẽ quay lại đâu")):
+        pq3 = run_plan(fx, [{"text": x, "start": 1.0 + i * 0.3, "end": 1.25 + i * 0.3} for i, x in enumerate(text_.split())])
+        got = next((d["text"] for d in pq3["diagrams"] if d["type"] == "quote"), None)
+        if got != want:
+            bad += 1
+            print(f"SAI khung trích dẫn (đâu / có phải cứ): {got!r}, cần {want!r}")
+    # chữ nhấn ≤ 4 tiếng không được cắt cụt nghĩa (phó từ treo cuối, tách đôi từ ghép ở đầu)
+    tr = "nếu bỏ qua bước chào hỏi thì kết quả sẽ rất kém còn kỹ năng bán hàng chuyên nghiệp giúp chốt đơn".split()
+    wtr = [{"text": x, "start": i * 0.3, "end": i * 0.3 + 0.25} for i, x in enumerate(tr)]
+    str_ = {"id": 1, "idx": list(range(len(wtr)))}
+    for ph, want in (("kết quả sẽ rất kém", None), ("kỹ năng bán hàng chuyên nghiệp", "kỹ năng bán hàng"),
+                     ("rất kém", "rất kém"), ("kết quả sẽ", "kết quả")):
+        r = align(ph, str_, wtr, 4)
+        got = spoken(wtr, *r) if r else None
+        if got != want:
+            bad += 1
+            print(f"SAI cắt cụm ≤ 4 tiếng: align({ph!r}) = {got!r}, cần {want!r}")
+
+    def ftr(messages, schema, **kw):
+        if schema is PLAN_SCHEMA:
+            return {"summary": "", "emphasis": [{"sid": 1, "phrase": "kết quả sẽ rất kém", "why": ""}], "diagrams": []}
+        return {"fixes": []} if schema is REPAIR_SCHEMA else {}
+    ptr = run_plan(ftr, WS("nếu bỏ qua bước chào hỏi thì kết quả sẽ rất kém"))
+    if any(tnorm(e["text"].split()[-1]) in DANGLE or e["text"].lower().startswith("quả") for e in ptr["emphasis"]):
+        bad += 1
+        print(f"SAI: chữ nhấn bị cắt cụt nghĩa: {[e['text'] for e in ptr['emphasis']]}")
+    # SỐ LẦN GỌI MÔ HÌNH: hỏi lại cụm gộp 1 lần; kiểm ảnh gộp 1 lần; khung dự phòng chấm chung lần chấm chính; dùng lại phân tích
+    calls = []
+    tc = ("hôm nay mình nói về kịch bản sale cho người mới. " * 3 + "các bạn hãy luôn luôn lắng nghe khách hàng trước khi tư vấn. "
+          "đội ngũ tư vấn gọi điện chăm sóc khách hàng mỗi ngày. mình gặp khách uống ly cà phê để tạo cảm giác thân tình.").split()
+    wc = [{"text": x, "start": 1.0 + i * 0.4, "end": 1.3 + i * 0.4} for i, x in enumerate(tc)]
+    sc_ = sentences(wc)
+    libc = [{"file": f"anh/{k}.jpg", "keywords": ["x"], "license": "OWNER", "desc": f"ảnh {k}"} for k in range(4)]
+
+    def fc(messages, schema, **kw):
+        calls.append(next(k for k, v in (("analyze", ANALYZE_SCHEMA), ("plan", PLAN_SCHEMA), ("repair", REPAIR_SCHEMA), ("judge", JUDGE_SCHEMA),
+                                          ("broll", BROLL_SCHEMA), ("check", CHECK_SCHEMA)) if schema is v) if any(schema is v for v in (ANALYZE_SCHEMA, PLAN_SCHEMA, REPAIR_SCHEMA, JUDGE_SCHEMA, BROLL_SCHEMA, CHECK_SCHEMA)) else "music")
+        content = messages[-1]["content"]
+        ns = [int(m) for m in re.findall(r"(?m)^(\d+)\. ", content)]
+        if schema is ANALYZE_SCHEMA:
+            return {"topic": "kịch bản sale", "key_ideas": [{"sid": sc_[3]["id"], "idea": "lắng nghe"}], "lists": [], "contrasts": [], "cause_effect": [], "sections": []}
+        if schema is PLAN_SCHEMA:
+            return {"summary": "kịch bản sale", "diagrams": [], "emphasis": [{"sid": sc_[0]["id"], "phrase": "biến người lạ thành bạn", "why": ""},
+                                                                          {"sid": sc_[4]["id"], "phrase": "chăm lo khách quen", "why": ""},
+                                                                          {"sid": sc_[5]["id"], "phrase": "kết nối bằng cà phê", "why": ""}]}
+        if schema is REPAIR_SCHEMA:
+            return {"fixes": [{"n": n, "phrase": ph} for n, ph in zip(ns, ("kịch bản sale", "chăm sóc khách hàng", "cảm giác thân tình"))]}
+        if schema is JUDGE_SCHEMA:
+            return {"verdicts": [{"n": n, "score": 4, "reason": "tốt"} for n in ns]}
+        if schema is BROLL_SCHEMA:
+            return {"picks": [{"sid": sc_[4]["id"], "asset": 0, "why": ""}, {"sid": sc_[5]["id"], "asset": 1, "why": ""}, {"sid": sc_[5]["id"], "asset": 2, "why": ""}]}
+        if schema is CHECK_SCHEMA:
+            return {"checks": [{"n": ns[0], "fit": True, "reason": "hợp"}, {"n": ns[1], "fit": False, "reason": "lạc"}]}
+        return {"mood": "acoustic", "why": "ấm"}
+    g["llm"], g["available"] = fc, (lambda timeout=3: True)
+    try:
+        pc1 = plan(wc, 40.0, libc, log=lambda m: None, music_genres=genres)
+        n1 = list(calls)
+        calls.clear()
+        pc2 = plan(wc, 40.0, libc, log=lambda m: None, music_genres=genres, prev=json.loads(json.dumps(pc1)))
+        n2 = list(calls)
+        calls.clear()
+        plan(wc, 40.0, libc, log=lambda m: None, music_genres=genres, prev=pc1, reanalyze=True)
+        n3 = list(calls)
+        calls.clear()
+        plan(wc[:-3], 40.0, libc, log=lambda m: None, music_genres=genres, prev=pc1)  # lời nói khác → phân tích lại
+        n4 = list(calls)
+    finally:
+        g["llm"], g["available"] = real_llm, real_av
+    # P3: phân tích cũ có key_ideas = null không làm vỡ khung dự phòng; đổi mô hình → phân tích lại
+    g["llm"], g["available"] = fc, (lambda timeout=3: True)
+    real_label = g["model_label"]
+    try:
+        prev_null = json.loads(json.dumps(pc1))
+        prev_null["ai"]["analysis"] = [{**a_, "key_ideas": None} for a_ in prev_null["ai"]["analysis"]]
+        try:
+            pn_ = plan(wc, 40.0, libc, log=lambda m: None, music_genres=genres, prev=prev_null)
+            null_ok = pn_["ai"]["analysisReused"]
+        except Exception as ex:  # noqa: BLE001
+            null_ok = f"lỗi: {ex!r}"
+        calls.clear()
+        g["model_label"] = lambda: "mô hình khác"
+        plan(wc, 40.0, libc, log=lambda m: None, music_genres=genres, prev=pc1)
+        n5 = list(calls)
+    finally:
+        g["llm"], g["available"], g["model_label"] = real_llm, real_av, real_label
+    if null_ok is not True or "analyze" not in n5:
+        bad += 1
+        print(f"SAI dùng lại phân tích: key_ideas null → {null_ok}; đổi mô hình → {n5}")
+    want1 = ["analyze", "plan", "repair", "judge", "broll", "check", "music"]
+    if n1 != want1 or n2 != want1[1:] or n3 != want1 or n4.count("analyze") != 1:
+        bad += 1
+        print(f"SAI số lần gọi mô hình: {n1} | dùng lại phân tích: {n2} | ép làm lại: {n3} | lời khác: {n4}")
+    if [e["text"].lower() for e in pc1["emphasis"]] != ["kịch bản sale", "chăm sóc khách hàng", "cảm giác thân tình"] or \
+            not any(d["type"] == "quote" for d in pc1["diagrams"]) or len(pc1["broll"]) != 1 or \
+            not pc2["ai"]["analysisReused"] or pc1["ai"]["analysisReused"] or pc1["ai"]["calls"].get("judge", {}).get("calls") != 1:
+        bad += 1
+        print(f"SAI kết quả khi gộp lần gọi: {[e['text'] for e in pc1['emphasis']]} {[d['type'] for d in pc1['diagrams']]} {pc1['broll']} {pc1['ai']['calls']}")
     # Đội AI tắt "Cho phép gọi AI" (BAOR_AI_PLAN=off) → không có mô hình, bộ dựng lập theo luật
     os.environ["BAOR_AI_PLAN"] = "off"
     try:
@@ -1053,12 +1488,20 @@ def main():
     ap.add_argument("--library", default="", help="thư mục broll có manifest.json")
     ap.add_argument("--content", default="", help="tóm tắt / kịch bản (tuỳ chọn)")
     ap.add_argument("--out", required=True)
+    ap.add_argument("--prev", default="", help="plan.json lần trước của cùng video: cùng lời nói thì dùng lại phân tích cấu trúc")
+    ap.add_argument("--reanalyze", action="store_true", help="ép phân tích lại dù lời nói không đổi")
     a = ap.parse_args()
     words = json.load(open(a.words, encoding="utf-8"))
     lib = []
     if a.library and os.path.exists(os.path.join(a.library, "manifest.json")):
         lib = [x for x in json.load(open(os.path.join(a.library, "manifest.json"), encoding="utf-8")) if os.path.isfile(os.path.join(a.library, x.get("file", "")))]
-    p = plan(words, a.duration, lib, a.content, log=lambda m: print(m, file=sys.stderr))
+    prev = None
+    if a.prev and os.path.isfile(a.prev):
+        try:
+            prev = json.load(open(a.prev, encoding="utf-8"))
+        except ValueError:
+            prev = None
+    p = plan(words, a.duration, lib, a.content, log=lambda m: print(m, file=sys.stderr), prev=prev, reanalyze=a.reanalyze)
     if p is None:
         sys.exit(3)
     json.dump(p, open(a.out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)

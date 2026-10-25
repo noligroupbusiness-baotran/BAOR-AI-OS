@@ -116,9 +116,15 @@ type UsageLike = { input_tokens?: number | null; output_tokens?: number | null }
 // create của SDK trả APIPromise (.withResponse() / .asResponse()) → gắn đồng hồ bằng _thenUnwrap của chính APIPromise: vẫn là APIPromise,
 // đồng hồ chạy đúng MỘT lần khi thân phản hồi được parse (APIPromise nhớ kết quả parse; asResponse không parse → không đếm, như SDK).
 // Giá tính theo từng phản hồi với response.model (mô hình hãng thực chạy, vd fallbacks), thiếu / lạ → giá mô hình yêu cầu (servedCost).
-// tests/ai-gate-served-model.test.ts giữ giả định "_thenUnwrap" của SDK.
+// tests/ai-gate-served-model.test.ts giữ giả định "_thenUnwrap" của SDK; thiếu _thenUnwrap → đường dự phòng .then (cảnh báo một lần).
 // Token cộng theo từng mô hình có giá được áp rồi mới quy ra ₫ (làm tròn một lần / mô hình — một mô hình thì khớp modelCostVnd tổng như cũ).
 type Meter = { input: number; output: number; responses: number; readonly costVnd: number; served: Set<string>; notes: Set<string> };
+let warnedNoThenUnwrap = false;
+function warnNoThenUnwrap() {
+  if (warnedNoThenUnwrap) return;
+  warnedNoThenUnwrap = true;
+  console.warn("[ai] SDK Anthropic không còn APIPromise._thenUnwrap: cổng AI đếm token qua .then (mất .withResponse() / .asResponse() trên client qua cổng). Kiểm meterClient trong src/lib/ai.ts khi nâng SDK.");
+}
 function meterClient(client: Anthropic, requested: string): { client: Anthropic; used: Meter } {
   const byPrice = new Map<string, { input: number; output: number }>(); // "" = mô hình không có trong bảng giá → giá chung
   const used: Meter = {
@@ -152,6 +158,9 @@ function meterClient(client: Anthropic, requested: string): { client: Anthropic;
   };
   type Unwrappable = { _thenUnwrap: (f: (data: unknown) => unknown) => unknown };
   const isApiPromise = (v: unknown): v is Unwrappable => typeof (v as Partial<Unwrappable> | null)?._thenUnwrap === "function";
+  // _thenUnwrap là API gạch dưới (nội bộ) của SDK: bản SDK sau đổi tên / bỏ → vẫn đếm token qua .then (mất .withResponse() trong
+  // trường hợp đó — không chỗ gọi nào của BAOR cần), cảnh báo MỘT lần để biết mà sửa, không làm hỏng sổ chi phí.
+  const looksLikeApiPromise = (v: unknown) => typeof (v as { withResponse?: unknown } | null)?.withResponse === "function";
   type Fn = (...args: unknown[]) => unknown;
   const passThrough = <O extends object>(target: O, overrides: Record<string, unknown>): O =>
     new Proxy(target, {
@@ -167,7 +176,9 @@ function meterClient(client: Anthropic, requested: string): { client: Anthropic;
       create: (...args: unknown[]) => {
         const out = raw.create.apply(m, args);
         // Claude thật: giữ nguyên kiểu APIPromise; bộ chuyển đổi ChatGPT / Grok, client giả: Promise thường
-        return isApiPromise(out) ? out._thenUnwrap(tally) : Promise.resolve(out).then(tally);
+        if (isApiPromise(out)) return out._thenUnwrap(tally);
+        if (looksLikeApiPromise(out)) warnNoThenUnwrap();
+        return Promise.resolve(out).then(tally);
       },
     };
     const proxy = passThrough(m, overrides);

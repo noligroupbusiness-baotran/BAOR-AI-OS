@@ -511,7 +511,7 @@ export function suggestTopics(limit = 8): TopicSuggestion[] {
   for (const p of pages) {
     const topic = p.title.replace(/^\[[^\]]*\]\s*/, "").trim() || p.title;
     if (taken.has(topic.toLowerCase())) continue;
-    out.push({ topic, why: `Second Brain (${p.kind || p.section}) chưa có nội dung nào dùng`, from: "second_brain", status: p.status, refId: p.id });
+    out.push({ topic, why: `Kiến thức (${p.kind || p.section}) chưa có nội dung nào dùng`, from: "second_brain", status: p.status, refId: p.id });
   }
   const findingsFirst = out.filter((o) => o.from === "finding").slice(0, Math.ceil(limit / 2));
   return [...findingsFirst, ...out.filter((o) => o.from === "second_brain")].slice(0, limit);

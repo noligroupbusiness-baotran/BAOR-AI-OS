@@ -96,6 +96,6 @@ test("AI viết lại: chỉ nhận khi giữ nguyên dấu OWNER, NGUỒN, căn
   const story = script.replace(/\[OWNER KỂ:[^\]]*\]/, "Hôm trước anh gọi cho một chị khách và chị ấy rất vui.");
   assert.ok(rewriteViolations(script, story).some((v) => v.includes("OWNER")), "AI không được viết thay câu chuyện");
   assert.ok(rewriteViolations(script, script.replace("Lời chào không phải để chốt.", "Lời chào không phải để chốt, 9 trên 10 người đồng ý.")).some((v) => v.includes("số mới")));
-  assert.ok(rewriteViolations(script, script.replace("[K2] Second Brain", "[K2] Nguồn khác")).some((v) => v.includes("NGUỒN")));
+  assert.ok(rewriteViolations(script, script.replace("[K2] Kiến thức", "[K2] Nguồn khác")).some((v) => v.includes("NGUỒN")));
   assert.ok(rewriteViolations(script, script.replace("Căn cứ: [K1]", "Căn cứ: [K1] [S1]")).some((v) => v.includes("căn cứ")));
 });

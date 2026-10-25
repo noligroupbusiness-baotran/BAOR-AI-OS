@@ -5,9 +5,10 @@ import { getDb, schema } from "@/db";
 import { getSetting, isAdminEmail, setSetting } from "@/lib/admin";
 import { logActivity } from "@/lib/activity";
 import { campaignRepo } from "@/lib/campaigns/repository";
-import { contentItems as seedContent, scheduledPosts as seedPosts } from "@/lib/data/content";
-import { linkedRows } from "@/lib/data/campaigns";
-import { videos as seedVideos } from "@/lib/data/videos";
+import { isSamplePost } from "@/lib/sample";
+
+/** Bài mẫu: MỘT danh sách ID mẫu duy nhất (src/lib/sample.ts — cùng danh sách "Xoá dữ liệu mẫu" dùng). */
+export { isSamplePost };
 
 /** Chế độ thử bật mặc định (§7): chỉ tắt khi OWNER đặt publishing.dryRun = "0". */
 export function isDryRun(): boolean {
@@ -25,12 +26,27 @@ export function setDryRunMode(on: boolean, actor: { email: string; name?: string
 /** Đánh dấu lỗi mơ hồ (lệnh đăng đã gửi, không rõ bài đã lên chưa): đăng lại phải có xác nhận đã kiểm tra trang. */
 export const AMBIGUOUS_MARK = "[CẦN KIỂM TRA TRANG]";
 
+/** Lỗi mơ hồ = bài CÓ THỂ đã lên trang mà chưa ai kiểm: lệnh đăng đã gửi không rõ kết quả, hoặc xác minh bỏ cuộc sau 24 giờ
+ *  (nền tảng đã nhận lệnh, kể cả khi bài thiếu mã). Luật chung: đăng lại chỉ OWNER kèm ghi chú đã kiểm trang; chặn bài anh em
+ *  cùng trang (pageBlockersAmong). */
 export function isAmbiguousFailure(p: { status: string; error: string | null }): boolean {
-  return p.status === "failed" && (p.error ?? "").startsWith(AMBIGUOUS_MARK);
+  const e = p.error ?? "";
+  return p.status === "failed" && (e.startsWith(AMBIGUOUS_MARK) || e.startsWith(VERIFY_GIVE_UP_PREFIX));
 }
 
 /** Lỗi xác minh quá 24 giờ (verifyPublishingPosts): nền tảng đã nhận nhưng đọc lại không được. */
 export const VERIFY_GIVE_UP_PREFIX = "Không xác minh được sau 24 giờ";
+
+/** Kiểm lúc gửi (claimForSend): Page ID kênh khác trang đã lưu lúc lên lịch → không gửi lệnh đăng. */
+export const PAGE_CHANGED_PREFIX = "Page ID đã đổi — kiểm lại kênh";
+
+/** Nhãn lỗi ngắn (giao diện ít chữ); câu đầy đủ để ở chú thích khi rê chuột. Bỏ dấu ":" / "—" treo ở cuối vế đầu. */
+export function postErrorShort(p: { status: string; error: string | null; externalId: string | null }): string | null {
+  if (!p.error) return null;
+  if (needsPageCheck(p)) return "Cần kiểm trang";
+  const first = p.error.split(/(?<=[.:])\s/)[0].replace(/\s*[:—-]+\s*$/, "");
+  return first.length > 60 ? `${first.slice(0, 57)}…` : first;
+}
 
 /** Bài lỗi SAU khi nền tảng có thể đã nhận bài (có mã bài / lỗi mơ hồ / xác minh quá hạn): cần OWNER mở trang kiểm. */
 export function needsPageCheck(p: { status: string; error: string | null; externalId: string | null }): boolean {
@@ -66,18 +82,6 @@ export const inFlight = (g.__baorPublishing ??= new Set<string>());
 
 /** Bài quá giờ hẹn hơn mức này thì KHÔNG tự đăng (vd bài từ tháng 9 khi vừa nối Facebook): chuyển "Quá hạn, cần xếp lại". */
 export const OVERDUE_AFTER_MS = 6 * 60 * 60 * 1000;
-
-const SAMPLE_POSTS = new Set([...seedPosts, ...linkedRows.posts].map((p) => p.id));
-const SAMPLE_CONTENT = new Set([...seedContent, ...linkedRows.content].map((c) => c.id));
-const SAMPLE_VIDEOS = new Set(seedVideos.map((v) => v.id));
-
-/** Bài mẫu (dữ liệu demo nạp ban đầu, cùng danh sách ID mà "Xoá dữ liệu mẫu" dùng — như isSampleAd): bài mẫu, bài chữ dựng từ nội
- *  dung mẫu, hoặc bài video của video mẫu. (Video THẬT quay theo kịch bản mẫu không bị coi là mẫu.) Không bao giờ đăng thật. */
-export function isSamplePost(p: { id: string; contentId?: string | null; videoId?: string | null }): boolean {
-  if (SAMPLE_POSTS.has(p.id)) return true;
-  if (p.videoId) return SAMPLE_VIDEOS.has(p.videoId);
-  return !!p.contentId && SAMPLE_CONTENT.has(p.contentId);
-}
 
 export const SAMPLE_NOTE = "Bài mẫu (dữ liệu demo): không bao giờ đăng thật.";
 

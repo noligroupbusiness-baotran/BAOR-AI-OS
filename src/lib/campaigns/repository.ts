@@ -72,6 +72,7 @@ export interface CampaignRepository {
   setStatus(id: string, status: CampaignStatus, actor: string, extra?: Partial<Pick<Campaign, "approvedBy" | "approvedAt">>): void;
   addGoal(campaignId: string, input: NewChannelGoalInput, status: ChannelGoalStatus): ChannelGoal;
   updateGoal(id: string, patch: Partial<Omit<ChannelGoal, "id" | "campaignId" | "createdAt">>): void;
+  /** Gắn thực thể vào chiến dịch (một dòng / chiến dịch + thực thể). Gắn tay (via trống) lên dòng kế thừa → chuyển thành gắn tay. */
   addLink(link: Omit<LinkedMarketingItem, "id" | "createdAt">): void;
   addApproval(a: Omit<CampaignApproval, "id" | "requestedAt" | "decidedBy" | "decidedAt" | "status"> & { status?: ApprovalStatus }): CampaignApproval;
   decideApprovals(campaignId: string, type: CampaignApproval["type"], status: ApprovalStatus, by: string, note?: string): void;
@@ -482,11 +483,15 @@ class SqliteCampaignRepository implements CampaignRepository {
   }
 
   addLink(link: Omit<LinkedMarketingItem, "id" | "createdAt">) {
-    this.db
-      .insert(schema.marketingLinks)
-      .values({ ...link, id: newId("ml"), createdAt: nowIso() })
-      .onConflictDoNothing()
-      .run();
+    const q = this.db.insert(schema.marketingLinks).values({ ...link, id: newId("ml"), createdAt: nowIso() });
+    // Một dòng / (chiến dịch, thực thể). Gắn TAY (via trống) khi đã có dòng KẾ THỪA (vd video từ kịch bản) → chuyển dòng đó thành gắn tay
+    // (xoá via): nếu không, đổi / bỏ kịch bản (removeInheritedLinks) sẽ gỡ mất liên kết người dùng vừa gắn. Dòng kế thừa gặp dòng có sẵn:
+    // giữ nguyên (gắn tay không bị biến thành kế thừa).
+    if (!link.viaType && !link.viaId) {
+      q.onConflictDoUpdate({ target: [schema.marketingLinks.campaignId, schema.marketingLinks.entityType, schema.marketingLinks.entityId], set: { viaType: null, viaId: null } }).run();
+      return;
+    }
+    q.onConflictDoNothing().run();
   }
 
   addApproval(a: Omit<CampaignApproval, "id" | "requestedAt" | "decidedBy" | "decidedAt" | "status"> & { status?: ApprovalStatus }): CampaignApproval {

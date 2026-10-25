@@ -81,7 +81,7 @@ async function tickBody() {
       if (notionConfigured() && now - lastKb >= 6 * 60 * 60 * 1000) {
         setSetting("knowledge.lastAutoSync", new Date(now).toISOString());
         const kb = await syncSecondBrain();
-        parts.push(`Second Brain: ${kb.ok ? "đồng bộ xong" : "lỗi đồng bộ"}`);
+        parts.push(`Kiến thức: ${kb.ok ? "đồng bộ xong" : "lỗi đồng bộ"}`); // chữ hiển thị (25/10: ẩn tên Second Brain khỏi giao diện)
       }
     }
     // Mỗi ngày: dọn nhật ký cũ và tệp mồ côi theo chính sách lưu trữ.

@@ -223,3 +223,22 @@ test("chuông: mục nhật ký hoạt động trỏ trang theo phân hệ ghi (
   const n = shell.getNotifications().find((x) => x.group === "activity" && x.text === "Thử nhật ký đăng bài");
   assert.equal(n?.href, "/publishing");
 });
+
+test("webhook: lỗi DỮ LIỆU của một gói (thiếu tên khách / payload hỏng) KHÔNG bị lần nhận ok sau đóng; lỗi khoá / chữ ký thì đóng (kiểm toán 26/10)", async () => {
+  reset();
+  const wh = await import("../src/lib/webhooks");
+  // Đúng câu các route ghi (hằng số dùng chung route ↔ attention)
+  failRun("website", "webhook", wh.WEBHOOK_MISSING_NAME_MSG);
+  failRun("facebook_page", "webhook", wh.WEBHOOK_BAD_JSON_MSG);
+  failRun("website", "webhook", wh.WEBHOOK_BAD_KEY_MSG);
+  failRun("facebook_page", "webhook", wh.WEBHOOK_BAD_SIGNATURE_MSG);
+  await sleep(3);
+  config.finishRun(config.startRun("website", "webhook"), true, "Tạo lead Chị A.", 1);
+  config.finishRun(config.startRun("facebook_page", "webhook"), true, "Nhận 1 tin, tạo/cập nhật 1 hội thoại.", 1);
+  const titles = att.listErrors().filter((e) => e.source === "run").map((e) => e.title).sort();
+  assert.equal(titles.length, 2, `còn lại: ${titles.join(" | ")}`);
+  assert.ok(titles.some((t) => /Thiếu tên khách/.test(t)), "lead lỗi không bị che bởi lead sau nhận được");
+  assert.ok(titles.some((t) => /Payload không phải JSON/.test(t)));
+  assert.ok(!titles.some((t) => /Khóa webhook|Chữ ký webhook/.test(t)), "khoá / chữ ký đã đúng (lần sau nhận được) → đóng");
+  assert.equal(att.failedRuns().length, 2, "cùng một nguồn đếm");
+});

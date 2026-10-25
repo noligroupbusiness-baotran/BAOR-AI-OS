@@ -111,6 +111,8 @@ interface CompatParams {
 const asText = (c: Msg["content"] | CompatParams["system"]): string => (typeof c === "string" ? c : (c ?? []).map((b) => b.text ?? "").join("\n"));
 
 interface ResponsesBody {
+  /** Mô hình hãng THỰC chạy (có thể kèm đuôi ngày bản chụp, vd gpt-6.1-sol-2026-09-01) — cổng AI tính giá theo nó (servedCost). */
+  model?: string;
   status?: string;
   incomplete_details?: { reason?: string } | null;
   output?: { type: string; content?: { type: string; text?: string; refusal?: string }[] }[];
@@ -143,6 +145,8 @@ async function callResponses(provider: AiProvider, p: CompatParams, fetchImpl: t
   const refused = parts.some((c) => c.type === "refusal");
   const stop_reason = refused ? "refusal" : json.status === "incomplete" && json.incomplete_details?.reason === "max_output_tokens" ? "max_tokens" : "end_turn";
   return {
+    // Trả mô hình thực chạy như response.model của Claude: meterClient (src/lib/ai.ts) ghi sổ + tính giá theo nó; thiếu → mô hình yêu cầu
+    model: typeof json.model === "string" && json.model.trim() ? json.model : p.model,
     content: text ? [{ type: "text" as const, text }] : [],
     usage: { input_tokens: json.usage?.input_tokens ?? 0, output_tokens: json.usage?.output_tokens ?? 0 },
     stop_reason,

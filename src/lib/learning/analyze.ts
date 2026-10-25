@@ -174,7 +174,7 @@ export function knowledgeProposals(gaps: { briefId: string; gap: string }[], dra
     by.set(k, e);
   }
   for (const [k, e] of by) {
-    out.push({ key: `second_brain:gap:${k}`, target: "second_brain", title: `Second Brain còn thiếu: ${e.text.slice(0, 90)}`, detail: `Ghi nhận ở ${e.briefs.size} brief. Đề xuất OWNER bổ sung (câu chuyện thật, câu thoại chuẩn, số liệu nội bộ). Hệ thống không tự viết kiến thức thay OWNER.`, evidence: [...e.briefs].map((b) => `brief ${b}`), sampleSize: e.briefs.size, confidence: e.briefs.size >= 3 ? "medium" : "low" });
+    out.push({ key: `second_brain:gap:${k}`, target: "second_brain", title: `Kiến thức còn thiếu: ${e.text.slice(0, 90)}`, detail: `Ghi nhận ở ${e.briefs.size} brief. Đề xuất OWNER bổ sung (câu chuyện thật, câu thoại chuẩn, số liệu nội bộ). Hệ thống không tự viết kiến thức thay OWNER.`, evidence: [...e.briefs].map((b) => `brief ${b}`), sampleSize: e.briefs.size, confidence: e.briefs.size >= 3 ? "medium" : "low" });
   }
   for (const d of draftUse) {
     if (d.uses < 2) continue;

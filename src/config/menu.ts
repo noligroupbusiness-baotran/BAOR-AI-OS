@@ -38,7 +38,7 @@ export interface MenuItem {
   tone: GroupTone;
   /** Nhóm trên thanh bên. */
   group: MenuGroup;
-  /** Phím tắt Alt + số để nhảy tới phân hệ. */
+  /** Phím tắt Alt + phím này để nhảy tới phân hệ: "1"…"7" = bước 1…7, "8" = Tổng quan, "9" = Lead, "0" = Cài đặt. */
   hotkey?: string;
   /** Phân hệ còn là trang khung: hiện nhãn "đang xây" trên menu. */
   building?: boolean;
@@ -47,19 +47,39 @@ export interface MenuItem {
 }
 
 export const menu: MenuItem[] = [
-  { key: "dashboard", tone: "blue", href: "/dashboard", label: "Tổng quan", description: "Tình hình chung (chi tiêu AI, kết nối, dựng video, sao lưu, lỗi) và hành trình marketing 7 bước.", icon: LayoutDashboard, group: "ops", hotkey: "1" },
-  { key: "research", tone: "cyan", href: "/insights/research", label: "1 · Chủ đề & insight", description: "Chủ đề → insight từ nhóm Facebook, YouTube, Facebook, social.", icon: FlaskConical, group: "brand", hotkey: "2" },
-  { key: "content", tone: "violet", href: "/content/hooks", label: "2 · Hook & kịch bản", description: "10 hook mỗi lần, kịch bản video ngắn.", icon: FileText, group: "brand", hotkey: "3", also: ["/content"] },
-  { key: "video-studio", tone: "pink", href: "/video-studio", label: "3 · Quay & edit video", description: "Tải video, AI edit theo skill.", icon: Clapperboard, group: "brand", hotkey: "4" },
-  { key: "video-library", tone: "pink", href: "/video-library", label: "4 · Kho video", description: "Chưa đăng, đã đăng, mục xoá.", icon: Archive, group: "brand", hotkey: "5" },
-  { key: "publishing", tone: "orange", href: "/publishing", label: "5 · Đăng bài", description: "Lên lịch đăng, fanpage, caption theo skill.", icon: CalendarClock, group: "brand", hotkey: "6" },
-  { key: "ads", tone: "orange", href: "/ads", label: "6 · Quảng cáo", description: "Quảng cáo từ video đã đăng, trong ủy quyền ngân sách.", icon: Megaphone, group: "brand", hotkey: "7" },
-  { key: "learning", tone: "yellow", href: "/insights/learning", label: "7 · Đo lường", description: "Kiểm theo skill, AI đề xuất cải tiến.", icon: Sparkles, group: "brand", hotkey: "8" },
+  { key: "dashboard", tone: "blue", href: "/dashboard", label: "Tổng quan", description: "Tình hình chung (chi tiêu AI, kết nối, dựng video, sao lưu, lỗi) và hành trình marketing 7 bước.", icon: LayoutDashboard, group: "ops", hotkey: "8" },
+  { key: "research", tone: "cyan", href: "/insights/research", label: "1 · Chủ đề & insight", description: "Chủ đề → insight từ nhóm Facebook, YouTube, Facebook, social.", icon: FlaskConical, group: "brand", hotkey: "1" },
+  { key: "content", tone: "violet", href: "/content/hooks", label: "2 · Hook & kịch bản", description: "10 hook mỗi lần, kịch bản video ngắn.", icon: FileText, group: "brand", hotkey: "2", also: ["/content"] },
+  { key: "video-studio", tone: "pink", href: "/video-studio", label: "3 · Quay & edit video", description: "Tải video, AI edit theo skill.", icon: Clapperboard, group: "brand", hotkey: "3" },
+  { key: "video-library", tone: "pink", href: "/video-library", label: "4 · Kho video", description: "Chưa đăng, đã đăng, mục xoá.", icon: Archive, group: "brand", hotkey: "4" },
+  { key: "publishing", tone: "orange", href: "/publishing", label: "5 · Đăng bài", description: "Lên lịch đăng, fanpage, caption theo skill.", icon: CalendarClock, group: "brand", hotkey: "5" },
+  { key: "ads", tone: "orange", href: "/ads", label: "6 · Quảng cáo", description: "Quảng cáo từ video đã đăng, trong ủy quyền ngân sách.", icon: Megaphone, group: "brand", hotkey: "6" },
+  { key: "learning", tone: "yellow", href: "/insights/learning", label: "7 · Đo lường", description: "Kiểm theo skill, AI đề xuất cải tiến.", icon: Sparkles, group: "brand", hotkey: "7" },
   { key: "campaigns", tone: "emerald", href: "/campaigns", label: "Chiến dịch", description: "Mục tiêu, ngân sách, thời gian và kết quả từng chiến dịch.", icon: Target, group: "business" },
   { key: "customers", tone: "emerald", href: "/customers", label: "Lead", description: "Lead từ quảng cáo / fanpage, hộp thư, chăm sóc.", icon: Users, group: "business", hotkey: "9" },
   { key: "assets", tone: "indigo", href: "/assets", label: "Tư liệu", description: "Logo, thư viện nhạc nền, nhạc tải lên, ảnh / B-roll, thư mục thả tư liệu.", icon: Images, group: "business" },
   { key: "settings", tone: "slate", href: "/settings", label: "Cài đặt", description: "Kết nối API, Đội AI, thương hiệu, nhân sự, bảo mật.", icon: Settings, group: "system", hotkey: "0" },
 ];
+
+/**
+ * Phím tắt của một lần bấm Alt+số (trả "0"…"9"; không phải phím tắt thì null). Chỉ dãy số: cùng vị trí trên QWERTY / AZERTY / ISO,
+ * không đụng phím hệ thống (Alt+` bị GNOME bắt, nhãn lệch trên AZERTY). Đọc e.code (vị trí phím vật lý), không đọc e.key:
+ * trên Mac Option+1 cho e.key = "¡".
+ * Không nhận khi đang gõ (ô nhập, contenteditable, IME đang soạn) hoặc có Shift: bố cục Mac Đức / Pháp gõ [ ] { } | bằng
+ * Option(+Shift)+số, nhận phím tắt lúc đó sẽ chuyển trang và mất chữ đang gõ.
+ */
+export function hotkeyOf(e: { altKey: boolean; ctrlKey: boolean; metaKey: boolean; shiftKey?: boolean; isComposing?: boolean; code: string; target?: unknown }): string | null {
+  if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.isComposing || isTypingTarget(e.target)) return null;
+  const digit = /^(?:Digit|Numpad)([0-9])$/.exec(e.code);
+  return digit ? digit[1] : null;
+}
+
+/** Đích phím là chỗ gõ chữ (input / textarea / select / contenteditable). */
+export function isTypingTarget(target: unknown): boolean {
+  const el = target as { tagName?: string; isContentEditable?: boolean } | null | undefined;
+  if (!el) return false;
+  return el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable === true;
+}
 
 /** Mục menu khớp đường dẫn dài nhất, để /insights/research không làm sáng cả mục /insights. */
 export function activeMenuItem(pathname: string): MenuItem | undefined {

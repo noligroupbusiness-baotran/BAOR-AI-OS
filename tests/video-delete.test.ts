@@ -1,6 +1,6 @@
 // Xoá video ở Kho (OWNER 25/10: "phải cho phép xoá video ở phần kho video") + khôi phục kế hoạch AI trước (plan.prev-*).
 // CSDL + thư mục dữ liệu tạm, bộ dựng tắt.
-import { test, before } from "node:test";
+import { test, before, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -187,4 +187,196 @@ test("xoá video: liên kết chiến dịch của BÀI ĐĂNG đã huỷ (kế 
   const arch = fs.readdirSync(path.join(tmp, "removed")).find((x) => x.startsWith("v_pl-"))!;
   const rec = JSON.parse(fs.readFileSync(path.join(tmp, "removed", arch, "records.json"), "utf8"));
   assert.deepEqual(rec.postLinks.map((l: { id: string }) => l.id), ["ml_pl"]);
+});
+
+// ---------------------------------------------------------------- kiểm toán 26/10: thứ tự xoá + khôi phục kế hoạch lỗi giữa chừng
+
+/** Video có tệp nguồn trong kho tải lên + lịch sử phản hồi + liên kết chiến dịch (để thấy rõ bước nào đã / chưa chạy). */
+function seedFull(id: string) {
+  seedVideo(id, "review");
+  const now = new Date().toISOString();
+  const d = db.getDb();
+  fs.mkdirSync(path.join(tmp, "uploads"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "uploads", `${id}.mp4`), "video");
+  d.insert(db.schema.uploads).values({ id: `up_${id}`, kind: "video", name: `${id}.mp4`, fileName: `${id}.mp4`, createdAt: now }).run();
+  d.update(db.schema.videos).set({ uploadId: `up_${id}` }).where(eq(db.schema.videos.id, id)).run();
+  d.insert(db.schema.videoFeedback).values({ id: `vf_${id}`, videoId: id, version: 1, kind: "send_review", note: "", by: "OWNER", at: now }).run();
+  d.insert(db.schema.marketingLinks).values({ id: `ml_${id}`, campaignId: `cp_${id}`, entityType: "video", entityId: id, status: "review", createdAt: now }).run();
+}
+
+function state(id: string) {
+  const d = db.getDb();
+  return {
+    video: videoExists(id),
+    feedback: d.select().from(db.schema.videoFeedback).where(eq(db.schema.videoFeedback.videoId, id)).all().length,
+    links: d.select().from(db.schema.marketingLinks).where(eq(db.schema.marketingLinks.entityId, id)).all().length,
+    uploadRow: !!d.select().from(db.schema.uploads).where(eq(db.schema.uploads.id, `up_${id}`)).get(),
+    uploadFile: fs.existsSync(path.join(tmp, "uploads", `${id}.mp4`)),
+    jobsDir: fs.existsSync(path.join(tmp, "video-jobs", id)),
+    archives: fs.existsSync(path.join(tmp, "removed")) ? fs.readdirSync(path.join(tmp, "removed")).filter((x) => x.startsWith(`${id}-`)).length : 0,
+  };
+}
+const untouched = { video: true, feedback: 1, links: 1, uploadRow: true, uploadFile: true, jobsDir: true, archives: 0 };
+
+test("xoá video: ghi records.json lỗi → chưa đổi gì (dòng CSDL, tệp nguồn, thư mục dựng nguyên chỗ)", (t: TestContext) => {
+  seedFull("v_rec_fail");
+  const orig = fs.writeFileSync;
+  t.mock.method(fs, "writeFileSync", (...args: Parameters<typeof fs.writeFileSync>) => {
+    if (String(args[0]).endsWith("records.json")) throw new Error("đĩa đầy");
+    return orig.apply(fs, args);
+  });
+  const r = jobs.deleteVideo("v_rec_fail", "OWNER");
+  assert.equal(r.ok, false);
+  assert.match(!r.ok ? r.error : "", /chưa xoá gì: đĩa đầy/);
+  assert.deepEqual(state("v_rec_fail"), untouched);
+});
+
+test("xoá video: CSDL lỗi giữa chừng (lệnh xoá video cuối cùng) → transaction lùi lại hết, tệp CHƯA chuyển, không để bản lưu trữ lẻ", () => {
+  seedFull("v_db_fail");
+  const sq = db.getSqlite();
+  sq.exec("CREATE TRIGGER t_no_del_video BEFORE DELETE ON videos WHEN OLD.id = 'v_db_fail' BEGIN SELECT RAISE(ABORT, 'CSDL bị khoá'); END;");
+  try {
+    let r: ReturnType<typeof jobs.deleteVideo> | undefined;
+    assert.doesNotThrow(() => {
+      r = jobs.deleteVideo("v_db_fail", "OWNER");
+    }, "lỗi CSDL không làm sập thao tác");
+    assert.equal(r?.ok, false);
+    assert.match(r && !r.ok ? r.error : "", /CSDL lỗi, chưa gỡ gì\): CSDL bị khoá/);
+    assert.deepEqual(state("v_db_fail"), untouched, "lịch sử phản hồi / liên kết / dòng tải lên đã xoá trước đó trong transaction được khôi phục; tệp không bị chuyển");
+  } finally {
+    sq.exec("DROP TRIGGER t_no_del_video");
+  }
+  assert.equal(jobs.deleteVideo("v_db_fail", "OWNER").ok, true, "hết lỗi thì xoá bình thường");
+});
+
+test("xoá video: chuyển tệp lỗi SAU khi CSDL đã gỡ → báo warning, records.json ghi rõ tệp còn ở chỗ cũ, nhật ký có cảnh báo; tệp khác vẫn chuyển", (t: TestContext) => {
+  seedFull("v_mv_fail");
+  const orig = fs.renameSync;
+  t.mock.method(fs, "renameSync", (...args: Parameters<typeof fs.renameSync>) => {
+    if (String(args[0]).endsWith(path.join("video-jobs", "v_mv_fail"))) throw new Error("EBUSY thư mục đang mở");
+    return orig.apply(fs, args);
+  });
+  const r = jobs.deleteVideo("v_mv_fail", "OWNER");
+  assert.equal(r.ok, true);
+  assert.match(r.ok ? (r.warning ?? "") : "", /1 tệp chưa chuyển được vào lưu trữ, còn ở chỗ cũ: video-jobs\/v_mv_fail \(EBUSY thư mục đang mở\)/);
+  const s = state("v_mv_fail");
+  assert.deepEqual([s.video, s.feedback, s.links, s.uploadRow], [false, 0, 0, false], "CSDL gỡ trọn (một transaction)");
+  assert.equal(s.uploadFile, false, "tệp nguồn vẫn chuyển vào lưu trữ");
+  assert.equal(s.jobsDir, true, "thư mục dựng lỗi chuyển → còn ở chỗ cũ, được ghi nhận");
+  const arch = fs.readdirSync(path.join(tmp, "removed")).find((x) => x.startsWith("v_mv_fail-"))!;
+  assert.ok(fs.existsSync(path.join(tmp, "removed", arch, "v_mv_fail.mp4")));
+  const rec = JSON.parse(fs.readFileSync(path.join(tmp, "removed", arch, "records.json"), "utf8"));
+  assert.equal(rec.video.id, "v_mv_fail", "dữ liệu CSDL lưu đủ để khôi phục");
+  assert.deepEqual(rec.fileErrors.map((f: { from: string }) => f.from), [path.join("video-jobs", "v_mv_fail")]);
+  assert.equal(rec.files.length, 2, "danh sách tệp dự kiến chuyển cũng ghi lại");
+  const acts = db.getDb().select().from(db.schema.activity).all().map((a) => a.message);
+  assert.ok(acts.some((m) => /xoá video “Video v_mv_fail” — CẢNH BÁO: .*chưa chuyển được/.test(m)), "nhật ký ghi rõ trạng thái");
+});
+
+function seedPlans(id: string) {
+  seedVideo(id, "review");
+  const d = path.join(tmp, "video-jobs", id);
+  const human = { by: "Biên tập: OWNER", emphasis: [{ t: 1, text: "NGƯỜI" }], diagrams: [], broll: [] };
+  const ai = { by: "Biên tập AI tại máy (qwen)", emphasis: [{ t: 2, text: "AI" }], diagrams: [], broll: [] };
+  fs.writeFileSync(path.join(d, "plan.json"), JSON.stringify(ai));
+  const prevName = "plan.prev-2026-10-24T10-00-00-000Z.json";
+  fs.writeFileSync(path.join(d, prevName), JSON.stringify(human));
+  return { d, human, ai, prevName };
+}
+
+test("khôi phục kế hoạch: rerenderVideo ném SAU khi đã xếp bản dựng → huỷ bản vừa xếp TRƯỚC rồi mới trả tệp (không dựng bằng kế hoạch cũ)", (t: TestContext) => {
+  const { d, ai, prevName, human } = seedPlans("v_plan_late");
+  const sq = db.getSqlite();
+  // writeJob + cập nhật videos đã chạy, ghi lịch sử phản hồi (addVideoFeedback) lỗi
+  sq.exec("CREATE TRIGGER t_no_fb BEFORE INSERT ON video_feedback WHEN NEW.video_id IN ('v_plan_late', 'v_plan_keep') BEGIN SELECT RAISE(ABORT, 'lịch sử hỏng'); END;");
+  try {
+    const r = jobs.restorePrevPlan("v_plan_late", "OWNER");
+    assert.equal(r.ok, false);
+    assert.match(!r.ok ? r.error : "", /Không dựng lại được: lịch sử hỏng \(đã huỷ bản 2 vừa xếp\)/);
+    const j2 = jobs.readJob("v_plan_late", 2)!;
+    assert.equal(j2.status, "error", "bản 2 không còn trong hàng dựng");
+    assert.ok(jobs.isStoppedJob(j2), "đánh dấu đã dừng (không phải lỗi dựng, không vào Việc cần làm)");
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(d, "plan.json"), "utf8")), ai, "kế hoạch đang dùng trả về");
+    assert.deepEqual(jobs.planBackups("v_plan_late"), [prevName]);
+    assert.equal(jobs.rerenderBlock("v_plan_late"), null, "dựng lại được tiếp (không kẹt 'đang trong hàng dựng')");
+
+    // Huỷ bản vừa xếp cũng lỗi → KHÔNG trả tệp (bản đã xếp dựng đúng kế hoạch khôi phục), báo rõ
+    const k = seedPlans("v_plan_keep");
+    const orig = fs.renameSync;
+    let jobWrites = 0;
+    const rn = t.mock.method(fs, "renameSync", (...args: Parameters<typeof fs.renameSync>) => {
+      // lần ghi job.json thứ 2 của bản 2 = stoppedJob (huỷ bản vừa xếp) lỗi
+      if (String(args[0]).endsWith(path.join("v_plan_keep", "v2", "job.json.tmp")) && ++jobWrites === 2) throw new Error("ổ đĩa chỉ đọc");
+      return orig.apply(fs, args);
+    });
+    const r2 = jobs.restorePrevPlan("v_plan_keep", "OWNER");
+    rn.mock.restore();
+    assert.equal(r2.ok, false);
+    assert.match(!r2.ok ? r2.error : "", /bản 2 đã xếp dựng với kế hoạch khôi phục và không huỷ được \(ổ đĩa chỉ đọc\) — kế hoạch khôi phục được giữ/);
+    assert.equal(jobs.readJob("v_plan_keep", 2)!.status, "queued");
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(k.d, "plan.json"), "utf8")), human, "bản đang xếp dựng đúng kế hoạch đang nằm ở plan.json");
+  } finally {
+    sq.exec("DROP TRIGGER t_no_fb");
+  }
+});
+
+test("khôi phục kế hoạch: CSDL hỏng toàn phần (cập nhật videos lỗi) → stoppedJob đã ghi 'đã dừng' rồi mới ném: coi là đã huỷ, trả tệp, báo đúng (phản biện P2-1)", () => {
+  const { d, ai, prevName } = seedPlans("v_plan_ro");
+  const sq = db.getSqlite();
+  sq.exec("CREATE TRIGGER t_ro_video BEFORE UPDATE ON videos WHEN OLD.id = 'v_plan_ro' BEGIN SELECT RAISE(ABORT, 'CSDL chỉ đọc'); END;");
+  try {
+    const r = jobs.restorePrevPlan("v_plan_ro", "OWNER");
+    assert.equal(r.ok, false);
+    assert.match(!r.ok ? r.error : "", /Không dựng lại được: CSDL chỉ đọc \(đã huỷ bản 2 vừa xếp\)/);
+    assert.doesNotMatch(!r.ok ? r.error : "", /kế hoạch khôi phục được giữ/);
+    assert.ok(jobs.isStoppedJob(jobs.readJob("v_plan_ro", 2)), "bản 2 đã thoát hàng dựng");
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(d, "plan.json"), "utf8")), ai, "kế hoạch đang dùng trả về");
+    assert.deepEqual(jobs.planBackups("v_plan_ro"), [prevName]);
+  } finally {
+    sq.exec("DROP TRIGGER t_ro_video");
+  }
+});
+
+test("xoá video: dừng bản đang dựng lỗi (ghi job.json lỗi) → không ném, không để records.json 'ma', video nguyên vẹn (phản biện P2-2)", (t: TestContext) => {
+  seedFull("v_stop_fail");
+  const jf = path.join(tmp, "video-jobs", "v_stop_fail", "v1", "job.json");
+  fs.writeFileSync(jf, JSON.stringify({ ...JSON.parse(fs.readFileSync(jf, "utf8")), status: "queued" }));
+  const orig = fs.renameSync;
+  t.mock.method(fs, "renameSync", (...args: Parameters<typeof fs.renameSync>) => {
+    if (String(args[0]).endsWith("job.json.tmp")) throw new Error("ổ chỉ đọc");
+    return orig.apply(fs, args);
+  });
+  let r: ReturnType<typeof jobs.deleteVideo> | undefined;
+  assert.doesNotThrow(() => {
+    r = jobs.deleteVideo("v_stop_fail", "OWNER");
+  });
+  assert.equal(r?.ok, false);
+  assert.match(r && !r.ok ? r.error : "", /Không dừng được bản đang dựng, chưa xoá gì: ổ chỉ đọc/);
+  assert.deepEqual(state("v_stop_fail"), untouched);
+});
+
+test("xoá video: ghi lại records.json (kèm fileErrors) lỗi giữa chừng → bản records.json đầu vẫn nguyên, đọc được (ghi qua tệp tạm)", (t: TestContext) => {
+  seedFull("v_rec_torn");
+  const origRename = fs.renameSync;
+  const origWrite = fs.writeFileSync;
+  t.mock.method(fs, "renameSync", (...args: Parameters<typeof fs.renameSync>) => {
+    if (String(args[0]).endsWith(path.join("video-jobs", "v_rec_torn"))) throw new Error("EBUSY");
+    return origRename.apply(fs, args);
+  });
+  let recWrites = 0;
+  t.mock.method(fs, "writeFileSync", (...args: Parameters<typeof fs.writeFileSync>) => {
+    // lần ghi thứ 2 thẳng vào records.json: ghi dở rồi đĩa đầy
+    if (String(args[0]).endsWith("records.json") && ++recWrites === 2) {
+      origWrite.call(fs, args[0], "{\"video\":");
+      throw new Error("đĩa đầy");
+    }
+    return origWrite.apply(fs, args);
+  });
+  const r = jobs.deleteVideo("v_rec_torn", "OWNER");
+  assert.equal(r.ok, true);
+  const arch = fs.readdirSync(path.join(tmp, "removed")).find((x) => x.startsWith("v_rec_torn-"))!;
+  const rec = JSON.parse(fs.readFileSync(path.join(tmp, "removed", arch, "records.json"), "utf8"));
+  assert.equal(rec.video.id, "v_rec_torn");
+  assert.deepEqual(rec.fileErrors.map((f: { from: string }) => f.from), [path.join("video-jobs", "v_rec_torn")]);
+  assert.ok(!fs.readdirSync(path.join(tmp, "removed", arch)).some((f) => f.endsWith(".tmp")), "không để tệp tạm");
 });

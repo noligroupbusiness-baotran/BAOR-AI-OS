@@ -88,7 +88,7 @@ export function analyzeAll(): { proposals: ProposalDraft[]; facts: { posts: numb
     ...feedbackPatterns(feedback.map((f) => ({ videoId: f.videoId, note: f.note }))),
     ...adProposals(ads, cplTarget),
     ...knowledgeProposals(briefs.flatMap((b) => arr(b.gaps).map((gap) => ({ briefId: b.id, gap }))), [...draftUse.values()]),
-    ...skillProposals(published, skill ? `skill “${skill.title}” (${skill.status})` : "cấu trúc mặc định (Second Brain chưa có skill viết content)"),
+    ...skillProposals(published, skill ? `skill “${skill.title}” (${skill.status})` : "cấu trúc mặc định (kho kiến thức chưa có skill viết content)"),
   ];
   return { proposals, facts: { posts: posts.length, reports: reports.length, feedback: feedback.length, ads: ads.length, briefs: briefs.length, skillChecked: published.length } };
 }

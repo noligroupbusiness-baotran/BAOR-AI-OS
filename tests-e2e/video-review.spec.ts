@@ -3,7 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { test, expect, type Page } from "@playwright/test";
-import { login, trackErrors } from "./helpers";
+import { ACTION_MS, hydrated, login, trackErrors } from "./helpers";
 import { E2E } from "./env";
 
 const VID = "v_e2e_review";
@@ -12,7 +12,8 @@ const ws = (page: Page) => page.getByTestId("review-workspace");
 /** Đưa trình phát tới mốc (như kéo thanh tua) và đợi giao diện nhận mốc mới. */
 async function seekTo(page: Page, t: number) {
   const video = ws(page).locator("video");
-  await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.readyState)).toBeGreaterThan(0);
+  await hydrated(video); // mốc hiện trên nút nhờ onTimeUpdate phía trình duyệt
+  await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.readyState), { timeout: ACTION_MS }).toBeGreaterThan(0);
   await video.evaluate((v: HTMLVideoElement, to) => {
     v.currentTime = to;
   }, t);
@@ -40,7 +41,7 @@ test("góp ý tại mốc + yêu cầu sửa → tua bằng mốc → so phiên 
   await target.selectOption({ label: "0:01.5 · Chữ nhấn “PHÁ BĂNG”" });
   await expect(form.getByLabel("Cách sửa")).toHaveValue("off");
   await form.getByRole("button", { name: "Lưu góp ý" }).click();
-  await expect(page).toHaveURL(/toast=/);
+  await expect(page).toHaveURL(/toast=/, { timeout: ACTION_MS }); // server action lưu góp ý + redirect
 
   // Góp ý thứ hai: chỉ ghi chú, ở đoạn 5,2–6,4 s
   await seekTo(page, 5.2);
@@ -51,10 +52,10 @@ test("góp ý tại mốc + yêu cầu sửa → tua bằng mốc → so phiên 
   await expect(form2).toContainText(/đoạn 0:05\.\d – 0:06\.\d/);
   await form2.getByLabel("Nội dung góp ý").fill("Mũi tên hiện hơi nhanh (ghi chú)");
   await form2.getByRole("button", { name: "Lưu góp ý" }).click();
-  await expect(page).toHaveURL(/toast=/);
+  await expect(page).toHaveURL(/toast=/, { timeout: ACTION_MS });
 
   const items = page.getByTestId("review-comment");
-  await expect(items).toHaveCount(2);
+  await expect(items).toHaveCount(2, { timeout: ACTION_MS }); // danh sách render lại sau server action
   await expect(items.first()).toContainText("Chưa xử lý");
   await expect(items.first()).toContainText("Yêu cầu sửa: Chữ nhấn “PHÁ BĂNG” → Bỏ mục này");
 
@@ -65,8 +66,8 @@ test("góp ý tại mốc + yêu cầu sửa → tua bằng mốc → so phiên 
 
   // Dựng lại theo góp ý (bộ dựng tắt trong E2E: bản 3 nằm trong hàng đợi)
   await page.getByRole("button", { name: "Dựng lại theo 1 góp ý" }).click();
-  await expect(page).toHaveURL(/toast=.*b%E1%BA%A3n%203|toast=/);
-  await expect(page.getByText("1 góp ý đang chờ bản dựng mới")).toBeVisible();
+  await expect(page).toHaveURL(/toast=.*b%E1%BA%A3n%203|toast=/, { timeout: ACTION_MS }); // server action xếp hàng bản 3
+  await expect(page.getByText("1 góp ý đang chờ bản dựng mới")).toBeVisible({ timeout: ACTION_MS });
   // Bản mới đang dựng: khung góp ý vẫn hiện trên bản đã dựng xong gần nhất, góp ý ở trạng thái "Đang dựng lại"
   await expect(ws(page)).toBeVisible();
   await expect(page.getByTestId("review-comment").first()).toContainText("Đang dựng lại");

@@ -155,3 +155,37 @@ test("Nghiên cứu bước 1 (fallbacks) chạy bằng mô hình khác → chi 
   assert.equal(router.getAiBudget().callsToday, 2);
   assert.equal(roster.roleSpendThisMonth().find((x) => x.role.id === "research")!.calls, 2);
 });
+
+test("SDK thiếu APIPromise._thenUnwrap (API gạch dưới đổi / bỏ) → cổng AI vẫn đếm token đúng qua .then, cảnh báo MỘT lần", async () => {
+  globalThis.fetch = fetchSeq(claudeMsg("claude-sonnet-5-5", "chào"));
+  // Lấy đúng prototype APIPromise mà ai.ts dùng (cùng bản SDK đã nạp) từ một lần gọi thật qua cổng
+  let proto: { _thenUnwrap?: unknown } | null = null;
+  await ai.gate("caption", "lấy prototype", async (client: Anthropic, model: string) => {
+    const p = client.messages.create({ model, max_tokens: 10, messages: [{ role: "user", content: "x" }] });
+    proto = Object.getPrototypeOf(p) as { _thenUnwrap?: unknown };
+    return p;
+  });
+  assert.ok(proto && typeof (proto as { _thenUnwrap?: unknown })._thenUnwrap === "function", "đúng prototype có _thenUnwrap");
+  const target = proto as unknown as { _thenUnwrap?: unknown };
+  const saved = target._thenUnwrap;
+  const warns: string[] = [];
+  const realWarn = console.warn;
+  console.warn = (...a: unknown[]) => void warns.push(a.map(String).join(" "));
+  delete target._thenUnwrap;
+  try {
+    db.getDb().delete(db.schema.aiCalls).run();
+    const r = await ai.gate("caption", "SDK không có _thenUnwrap", async (client: Anthropic, model: string) => {
+      const a = await client.messages.create({ model, max_tokens: 10, messages: [{ role: "user", content: "x" }] });
+      await client.beta.messages.create({ model, max_tokens: 10, messages: [{ role: "user", content: "y" }] });
+      return a;
+    });
+    assert.ok(r.ok, r.ok ? "" : r.error);
+    const [last] = router.listAiCalls(1);
+    assert.deepEqual([last.model, last.inputTokens, last.outputTokens, last.costVnd], ["claude-sonnet-5-5", 2000, 800, providers.modelCostVnd("claude-sonnet-5-5", 2000, 800)], "hai phản hồi đều được đếm");
+    await ai.gate("caption", "lần nữa", (client, model) => client.messages.create({ model, max_tokens: 10, messages: [{ role: "user", content: "z" }] }));
+    assert.equal(warns.filter((w) => /_thenUnwrap/.test(w)).length, 1, "cảnh báo một lần, không lặp mỗi lần gọi");
+  } finally {
+    target._thenUnwrap = saved;
+    console.warn = realWarn;
+  }
+});

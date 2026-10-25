@@ -1,6 +1,6 @@
 // @critical — Nội dung → Video trên bản build production: gắn kịch bản đã duyệt cho video có sẵn, rồi bỏ gắn.
 import { test, expect } from "@playwright/test";
-import { login, trackErrors } from "./helpers";
+import { ACTION_MS, login, trackErrors } from "./helpers";
 
 test("gắn kịch bản đã duyệt cho video có sẵn và bỏ gắn", async ({ page }) => {
   const errors = trackErrors(page);
@@ -13,12 +13,13 @@ test("gắn kịch bản đã duyệt cho video có sẵn và bỏ gắn", async
   await expect(form).toBeVisible();
   await form.getByLabel("Kịch bản đã duyệt").selectOption({ label: "E2E · Kịch bản chào hỏi phá băng" });
   await form.getByRole("button", { name: "Lưu kịch bản" }).click();
-  await expect(page).toHaveURL(/toast=/);
-  await expect(page.getByRole("link", { name: "E2E · Kịch bản chào hỏi phá băng" })).toBeVisible();
-  await expect(page.getByText(/Gắn kịch bản “E2E · Kịch bản chào hỏi phá băng”: bản dựng sau/)).toBeVisible();
+  // Server action ghi CSDL + redirect ?toast= + render lại: máy tải nặng có lúc > 5 s
+  await expect(page).toHaveURL(/toast=/, { timeout: ACTION_MS });
+  await expect(page.getByRole("link", { name: "E2E · Kịch bản chào hỏi phá băng" })).toBeVisible({ timeout: ACTION_MS });
+  await expect(page.getByText(/Gắn kịch bản “E2E · Kịch bản chào hỏi phá băng”: bản dựng sau/)).toBeVisible({ timeout: ACTION_MS });
   await openScript();
   await page.getByRole("form", { name: "Gắn kịch bản" }).getByLabel("Kịch bản đã duyệt").selectOption("");
   await page.getByRole("form", { name: "Gắn kịch bản" }).getByRole("button", { name: "Lưu kịch bản" }).click();
-  await expect(page.getByText("chưa gắn kịch bản")).toBeVisible();
+  await expect(page.getByText("chưa gắn kịch bản")).toBeVisible({ timeout: ACTION_MS }); // sau server action bỏ gắn
   expect(errors).toEqual([]);
 });

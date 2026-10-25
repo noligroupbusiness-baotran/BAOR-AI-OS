@@ -5,7 +5,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { and, desc, eq, inArray, isNotNull, lte } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, lte } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { logActivity } from "@/lib/activity";
 import { sendAlert } from "@/lib/alerts";
@@ -18,7 +18,7 @@ import { getUpload, uploadPath, uploadsDir } from "@/lib/uploads";
 import { latestJob } from "@/lib/video/jobs";
 import { getAutomation } from "@/lib/queries";
 import { isAdminEmail } from "@/lib/admin";
-import { AMBIGUOUS_MARK, SAMPLE_NOTE, VERIFY_GIVE_UP_PREFIX, ambiguousRetryBlock, previousExternalId, inFlight, isAmbiguousFailure, isDryRun, isSamplePost, needsPageCheck, parseRescheduleWhen, recoverStuckPublishing, sweepOverduePosts } from "./guards";
+import { AMBIGUOUS_MARK, PAGE_CHANGED_PREFIX, SAMPLE_NOTE, VERIFY_GIVE_UP_PREFIX, ambiguousRetryBlock, previousExternalId, inFlight, isAmbiguousFailure, isDryRun, isSamplePost, needsPageCheck, parseRescheduleWhen, recoverStuckPublishing, sweepOverduePosts } from "./guards";
 
 export { AMBIGUOUS_MARK, isAmbiguousFailure, isDryRun } from "./guards";
 
@@ -185,8 +185,8 @@ function pageTarget(platform: string): string {
 type PostRow = typeof schema.scheduledPosts.$inferSelect;
 
 /** Trang đích của một bài ĐÃ có. Bài đã gửi lệnh đăng (đang đăng / đã đăng / lỗi): Page ID lưu trong bài lúc đăng — OWNER sửa
- *  Page ID kênh sau đó không đổi trang bài đã lên. Bài còn chờ: sẽ đăng lên trang kênh đang cấu hình (lúc đăng cập nhật lại).
- *  Bài cũ chưa lưu Page ID → cấu hình kênh hiện tại như trước. */
+ *  Page ID kênh sau đó không đổi trang bài đã lên. Bài còn chờ: tính theo trang kênh đang cấu hình (chặt hơn: nếu Page ID đã đổi so
+ *  với lúc lên lịch thì lúc gửi claimForSend không gửi). Bài cũ chưa lưu Page ID → cấu hình kênh hiện tại như trước. */
 function postTarget(e: PostRow): string {
   return e.targetPageId && e.status !== "scheduled" ? `fb:${e.targetPageId}` : pageTarget(e.platform);
 }
@@ -223,6 +223,71 @@ export function describeBlockers(rows: PostRow[], chosen: string[]): string {
   const cross = rows.filter((e) => !chosen.includes(e.platform) || postTarget(e) !== pageTarget(e.platform));
   const pages = [...new Set(cross.map(postTarget).filter((t) => t.startsWith("fb:")).map((t) => t.slice(3)))];
   return names.join(", ") + (pages.length ? ` (cùng trang ${pages.join(", ")} với kênh anh chọn — kiểm lại Page ID ở Cài đặt › Kết nối nếu nhập nhầm)` : "");
+}
+
+/** Page ID kênh HIỆN TẠI khác trang đã lưu lúc lên lịch → lý do không gửi (null = cùng trang, hoặc bài cũ / kênh không phải
+ *  Facebook nên không lưu trang). Không tự đăng lên trang khác trang OWNER chọn lúc lên lịch. */
+export function pageChangedReason(p: Pick<PostRow, "platform" | "targetPageId">): string | null {
+  if (!p.targetPageId) return null;
+  const now = channelPageId(p.platform);
+  if (now === p.targetPageId) return null;
+  return `${PAGE_CHANGED_PREFIX}: lúc lên lịch là trang ${p.targetPageId}, kênh ${p.platform} giờ ${now ? `là trang ${now}` : "chưa có Page ID"}. Không gửi lệnh đăng — kiểm Cài đặt › Kết nối rồi Đăng lại (đăng lên trang hiện tại) hoặc Huỷ.`;
+}
+
+/** Bài cùng video (bài video) / cùng nội dung chữ (bài chữ) với bài này. */
+function siblingPosts(p: PostRow): PostRow[] {
+  const t = schema.scheduledPosts;
+  return p.videoId ? videoPostsFor(p.videoId) : getDb().select().from(t).where(and(eq(t.contentId, p.contentId), isNull(t.videoId))).all();
+}
+
+export type SendClaim = { ok: true; post: PostRow } | { ok: false; outcome: "lost" | "failed" | "cancelled" | "error"; reason: string };
+
+/** GIÀNH QUYỀN GỬI THEO TRANG — bước cuối ngay trước khi gọi nền tảng, dùng chung bài chữ và bài video.
+ *  Trong MỘT giao dịch BEGIN IMMEDIATE (khoá ghi của SQLite: tiến trình khác cùng tệp CSDL phải chờ — busy_timeout mặc định 5 s
+ *  của better-sqlite3) đọc lại bài, Page ID kênh hiện tại và các bài cùng video / nội dung trên cùng trang, rồi mới chuyển
+ *  "publishing". Kiểm và giành quyền nằm trong cùng một khoá nên hai tiến trình không thể cùng thấy "trang trống" rồi cùng gửi.
+ *  Không dùng unique index (xem báo cáo 26/10): CSDL đang chạy có thể đã có dòng trùng → migration tạo index sẽ thất bại.
+ *  - Bài không còn "scheduled" (lượt / tiến trình khác đã giành) → lost.
+ *  - Page ID kênh đã đổi so với lúc lên lịch → failed (lỗi rõ ràng, chưa gửi gì: Đăng lại / Huỷ được).
+ *  - Trang đã có bài khác cùng video / nội dung đã gửi lệnh đăng (đang đăng / đang xác minh / đã đăng / có mã / lỗi mơ hồ) → cancelled. */
+export function claimForSend(postId: string): SendClaim {
+  try {
+    return claimForSendTx(postId);
+  } catch (e) {
+    // SQLITE_BUSY (tiến trình khác giữ khoá ghi quá busy_timeout) hay lỗi CSDL khác: chỉ bỏ qua BÀI NÀY ở lượt này (vẫn "scheduled",
+    // chưa gửi gì, lượt sau thử lại) — không để lỗi thoát lên làm cả lượt chạy bỏ qua phần đăng / xác minh. Không ghi CSDL ở đây
+    // (đang bận khoá); ghi ra nhật ký máy chủ.
+    const reason = `Chưa giành được quyền gửi (${e instanceof Error ? e.message : e}); thử lại lượt sau.`;
+    console.warn(`[publishing] ${postId}: ${reason}`);
+    return { ok: false, outcome: "error", reason };
+  }
+}
+
+function claimForSendTx(postId: string): SendClaim {
+  const t = schema.scheduledPosts;
+  return getDb().transaction(
+    (tx) => {
+      const p = tx.select().from(t).where(eq(t.id, postId)).get();
+      if (!p || p.status !== "scheduled") return { ok: false as const, outcome: "lost" as const, reason: "Bài đã được lượt chạy khác giành quyền đăng." };
+      const changed = pageChangedReason(p);
+      if (changed) {
+        tx.update(t).set({ status: "failed", error: changed }).where(and(eq(t.id, p.id), eq(t.status, "scheduled"))).run();
+        return { ok: false as const, outcome: "failed" as const, reason: changed };
+      }
+      // Bài cùng trang còn "scheduled" không chặn (bài nào giành quyền trước thì đăng, bài kia tới lượt sẽ thấy và bị huỷ).
+      const sent = pageBlockersAmong(siblingPosts(p), [p.platform], false, p.id).filter((e) => e.status !== "scheduled");
+      if (sent.length) {
+        const reason = `Trùng: ${p.videoId ? "video" : "nội dung"} đã có bài trên ${describeBlockers(sent, [p.platform])} (${sent.map((e) => e.status).join(", ")}). Không đăng trùng.`;
+        tx.update(t).set({ status: "cancelled", dedupeKey: null, error: reason }).where(and(eq(t.id, p.id), eq(t.status, "scheduled"))).run();
+        return { ok: false as const, outcome: "cancelled" as const, reason };
+      }
+      // Lưu trang thật sắp nhận lệnh đăng (= trang lúc lên lịch; bài cũ chưa lưu thì lấy trang kênh hiện tại)
+      const r = tx.update(t).set({ status: "publishing", attempts: p.attempts + 1, targetPageId: channelPageId(p.platform) ?? p.targetPageId }).where(and(eq(t.id, p.id), eq(t.status, "scheduled"))).run();
+      if (r.changes !== 1) return { ok: false as const, outcome: "lost" as const, reason: "Bài đã được lượt chạy khác giành quyền đăng." };
+      return { ok: true as const, post: tx.select().from(t).where(eq(t.id, p.id)).get()! };
+    },
+    { behavior: "immediate" },
+  );
 }
 
 function videoFile(videoId: string): { path: string; name: string; size: number } | null {
@@ -288,10 +353,18 @@ export async function publishDueVideoPosts(): Promise<{ published: number; teste
       out.skipped++;
       continue;
     }
-    // Giành quyền đăng nguyên tử: hai lượt chạy song song không cùng đăng một bài.
-    // Lưu luôn trang thật sắp nhận lệnh đăng (Page ID có thể đã sửa sau lúc lên lịch)
-    const claim = db.update(schema.scheduledPosts).set({ status: "publishing", attempts: post.attempts + 1, targetPageId: channelPageId(post.platform) ?? post.targetPageId }).where(and(eq(schema.scheduledPosts.id, post.id), eq(schema.scheduledPosts.status, "scheduled"))).run();
-    if (claim.changes !== 1) continue;
+    // Giành quyền gửi THEO TRANG, nguyên tử kể cả nhiều tiến trình: kiểm lại Page ID + bài trùng trang ngay trước khi gọi nền tảng.
+    const claim = claimForSend(post.id);
+    if (!claim.ok) {
+      if (claim.outcome === "error") out.skipped++;
+      else if (claim.outcome !== "lost") {
+        out[claim.outcome === "failed" ? "failed" : "skipped"]++;
+        campaignRepo.syncEntityStatus("publication", post.id, claim.outcome);
+        logActivity("system", `Không gửi “${post.title}” lên ${post.platform}: ${claim.reason}`, "publishing");
+        if (claim.outcome === "failed") void sendAlert({ level: "error", title: `Không đăng: ${post.title}`, text: claim.reason, href: "/publishing" });
+      }
+      continue;
+    }
     inFlight.add(post.id);
     const runId = startRun(st.channel.key, "publish_video");
     try {
@@ -332,8 +405,17 @@ export async function verifyPublishingPosts(): Promise<{ verified: number; pendi
     const connector = st.channel ? connectorFor(st.channel.key) : undefined;
     // Bài video đọc lại video; bài chữ đọc lại bài trên trang (trường khác nhau trên Graph API)
     const verify = p.videoId ? connector?.verifyPost : connector?.verifyFeedPost;
-    if (!verify || !p.externalId) continue;
-    const r = await verify(connectorContext(st.channel!.key), p.externalId);
+    // Kênh không còn connector / hàm đọc lại (hoặc bài thiếu mã): không đọc lại được — vẫn phải ra "cần kiểm trang" sau hạn bỏ cuộc,
+    // không kẹt "đang xác minh" mãi. Lỗi ném ra khi đọc lại (mạng) cũng tính như một lần đọc không được.
+    let r: { ok: boolean; permalink?: string; publishedAt?: string; message: string };
+    if (!verify || !p.externalId || !st.channel) r = { ok: false, message: !p.externalId ? "Bài thiếu mã trên nền tảng" : "Kênh không còn kết nối đọc lại bài" };
+    else {
+      try {
+        r = await verify(connectorContext(st.channel.key), p.externalId);
+      } catch (e) {
+        r = { ok: false, message: `Lỗi khi đọc lại bài (${e instanceof Error ? e.message : e})` };
+      }
+    }
     if (r.ok && r.permalink) {
       const at = nowIso();
       db.update(schema.scheduledPosts).set({ status: "published", permalink: r.permalink, verifiedAt: at, publishedAt: r.publishedAt ?? p.publishedAt ?? at, error: null }).where(eq(schema.scheduledPosts.id, p.id)).run();
@@ -341,10 +423,13 @@ export async function verifyPublishingPosts(): Promise<{ verified: number; pendi
       if (p.contentId) db.update(schema.contentItems).set({ status: "published" }).where(eq(schema.contentItems.id, p.contentId)).run();
       logActivity("system", `Đã đăng và xác minh “${p.title}” trên ${p.platform}: ${r.permalink}`, "publishing");
       out.verified++;
-    } else if (p.publishedAt && Date.now() - Date.parse(p.publishedAt) > VERIFY_GIVE_UP_MS) {
-      db.update(schema.scheduledPosts).set({ status: "failed", error: `${VERIFY_GIVE_UP_PREFIX}: ${r.message}. Kiểm tra trang (mã ${p.externalId}).` }).where(eq(schema.scheduledPosts.id, p.id)).run();
+    } else if (Date.now() - Date.parse(p.publishedAt ?? p.scheduledFor) > VERIFY_GIVE_UP_MS) {
+      // Bài cũ thiếu publishedAt: tính từ giờ hẹn (luôn trước lúc gửi) — không có mốc thì không bao giờ bỏ cuộc được
+      db.update(schema.scheduledPosts).set({ status: "failed", error: `${VERIFY_GIVE_UP_PREFIX}: ${r.message}. Kiểm tra trang${p.externalId ? ` (mã ${p.externalId})` : ""}.` }).where(and(eq(schema.scheduledPosts.id, p.id), eq(schema.scheduledPosts.status, "verifying"))).run();
+      campaignRepo.syncEntityStatus("publication", p.id, "failed");
+      logActivity("system", `“${p.title}” trên ${p.platform}: ${VERIFY_GIVE_UP_PREFIX} (${r.message}) — cần kiểm trang.`, "publishing");
     } else {
-      db.update(schema.scheduledPosts).set({ error: r.message }).where(eq(schema.scheduledPosts.id, p.id)).run();
+      if (p.error !== r.message) db.update(schema.scheduledPosts).set({ error: r.message }).where(eq(schema.scheduledPosts.id, p.id)).run();
       out.pending++;
     }
   }
@@ -401,7 +486,10 @@ export function retryVideoPost(postId: string, checkedNote?: string, whenIso?: s
   }
   // Mã bài cũ (OWNER kiểm "Không thấy bài") giữ trong ghi chú + nhật ký: còn tra / xoá bài thứ nhất nếu nhìn nhầm
   const oldId = previousExternalId(p);
-  db.update(schema.scheduledPosts).set({ status: "scheduled", scheduledFor: at, error: oldId ? `Đăng lại sau kiểm trang — mã bài cũ ${oldId}.` : null, dedupeKey }).where(eq(schema.scheduledPosts.id, postId)).run();
+  // Bài bị chặn vì Page ID kênh đã đổi: OWNER bấm Đăng lại = đăng lên trang kênh HIỆN TẠI (đã kiểm chống trùng theo trang đó ở trên).
+  // Lỗi khác giữ trang lúc lên lịch: kênh đổi trang thì lúc gửi vẫn bị chặn, không lặng lẽ đăng sang trang khác.
+  const targetPageId = (p.error ?? "").startsWith(PAGE_CHANGED_PREFIX) ? channelPageId(p.platform) : p.targetPageId;
+  db.update(schema.scheduledPosts).set({ status: "scheduled", scheduledFor: at, error: oldId ? `Đăng lại sau kiểm trang — mã bài cũ ${oldId}.` : null, dedupeKey, targetPageId }).where(eq(schema.scheduledPosts.id, postId)).run();
   if (oldId || isAmbiguousFailure(p)) logActivity("human", `${by?.name ?? by?.email ?? "Người dùng"} đăng lại bài lỗi “${p.title}” trên ${p.platform}${oldId ? ` (mã bài cũ ${oldId})` : ""}${checkedNote?.trim() ? `; đã kiểm trang: ${checkedNote.trim().slice(0, 120)}` : ""}.`, "publishing");
   campaignRepo.syncEntityStatus("publication", postId, "scheduled");
   return { ok: true };

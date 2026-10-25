@@ -56,10 +56,5 @@ export function PostActions({ post: p, owner }: { post: PostRow; owner: boolean 
   );
 }
 
-/** Nhãn lỗi ngắn (giao diện ít chữ); câu đầy đủ để ở chú thích khi rê chuột. */
-export function postErrorShort(p: Pick<PostRow, "status" | "error" | "externalId">): string | null {
-  if (!p.error) return null;
-  if (needsPageCheck(p)) return "Cần kiểm trang";
-  const first = p.error.split(/(?<=[.:])\s/)[0];
-  return first.length > 60 ? `${first.slice(0, 57)}…` : first;
-}
+/** Nhãn lỗi ngắn: luật ở src/lib/publishing/guards.ts (có test). */
+export { postErrorShort } from "@/lib/publishing/guards";

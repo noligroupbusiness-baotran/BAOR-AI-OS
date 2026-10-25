@@ -51,7 +51,7 @@ export const purposeLabel: Record<PurposeKind, string> = {
   audience: "Hiểu một nhóm khán giả",
   verify: "Kiểm chứng một chủ đề",
   trend: "Xu hướng ảnh hưởng thương hiệu",
-  gap: "Lấp khoảng trống Second Brain",
+  gap: "Lấp khoảng trống kiến thức",
   result: "Giải thích một kết quả content",
 };
 
@@ -90,7 +90,7 @@ export function verifyFinding(f: FindingInput, sources: SourceRef[], pages: Pick
   const missingSrc = f.sourceIds.length - srcs.length;
   const missingKp = f.knowledgeIds.length - kps.length;
   if (missingSrc > 0) notes.push(`${missingSrc} nguồn ngoài không tồn tại trong hồ sơ`);
-  if (missingKp > 0) notes.push(`${missingKp} trang Second Brain không có trong chỉ mục hoặc đã lưu trữ`);
+  if (missingKp > 0) notes.push(`${missingKp} trang kiến thức không có trong chỉ mục hoặc đã lưu trữ`);
   const strongSrc = srcs.some((s) => s.grade === "A" || s.grade === "B");
   const usableKp = kps.some((p) => usableStatus(p.status));
   const ownerKp = kps.filter((p) => p.labels.includes("[OWNER]"));
@@ -99,13 +99,13 @@ export function verifyFinding(f: FindingInput, sources: SourceRef[], pages: Pick
     case "FACT":
       if (!strongSrc && !usableKp) {
         ok = false;
-        notes.push("Sự thật cần ít nhất 1 nguồn hạng A/B hoặc trang Second Brain ACTIVE/VERIFIED");
+        notes.push("Sự thật cần ít nhất 1 nguồn hạng A/B hoặc trang kiến thức ACTIVE/VERIFIED");
       }
       break;
     case "OWNER_VIEW":
       if (ownerKp.length === 0) {
         ok = false;
-        notes.push("Quan điểm OWNER phải dẫn về trang Second Brain có nhãn [OWNER]; không gán kiến thức bên ngoài thành quan điểm OWNER");
+        notes.push("Quan điểm OWNER phải dẫn về trang kiến thức có nhãn [OWNER]; không gán kiến thức bên ngoài thành quan điểm OWNER");
       } else if (!ownerKp.some((p) => usableStatus(p.status))) {
         notes.push("Trang OWNER đang là DRAFT: dùng được nhưng phải ghi là nháp");
       }
@@ -119,7 +119,7 @@ export function verifyFinding(f: FindingInput, sources: SourceRef[], pages: Pick
     case "PROCEDURE":
       if (kps.length === 0) {
         ok = false;
-        notes.push("Quy trình cần dẫn về trang SOP hoặc Skill trong Second Brain");
+        notes.push("Quy trình cần dẫn về trang SOP hoặc Skill trong kho kiến thức");
       } else if (!usableKp) {
         notes.push("Quy trình chỉ có bản DRAFT: phải ghi là nháp");
       }
@@ -160,7 +160,7 @@ export function verifyBrief(points: BriefPoint[], sources: SourceRef[], pages: P
     const r = verifyFinding({ statement: p.text, classification: p.classification, sourceIds: p.sourceIds, knowledgeIds: p.knowledgeIds }, sources, pages);
     if (!r.ok) issues.push(`Luận điểm ${i + 1}: ${r.notes.join("; ")}`);
   });
-  if (!points.some((p) => p.knowledgeIds.length > 0)) issues.push("Không luận điểm nào dùng tri thức Second Brain");
+  if (!points.some((p) => p.knowledgeIds.length > 0)) issues.push("Không luận điểm nào dùng kho kiến thức");
   if (!points.some((p) => p.sourceIds.length > 0)) issues.push("Không luận điểm nào dùng nguồn ngoài");
   return { ok: issues.length === 0, issues };
 }

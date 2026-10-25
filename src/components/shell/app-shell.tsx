@@ -9,7 +9,7 @@ import { NotificationPanel } from "./notification-panel";
 import { AssistantPanel } from "./assistant-panel";
 import { Toast } from "@/components/ui/toast";
 import { applyTheme, effectiveTheme, nextThemeMode, readStore, sidebarStore, themeStore, viewModeStore } from "@/lib/client-store";
-import { menu } from "@/config/menu";
+import { hotkeyOf, isTypingTarget, menu } from "@/config/menu";
 import { ShortcutsDialog } from "./shortcuts-dialog";
 import type { Health, NotificationItem } from "@/lib/shell-types";
 import type { BrandLogos } from "./brand-mark";
@@ -60,20 +60,20 @@ export function AppShell({ user, badges, health, notifications, logos, children 
     applyTheme(next);
   }, [theme]);
 
-  // Phím tắt toàn cục: Alt+số nhảy phân hệ, ? mở bảng phím tắt, Esc đóng bảng đang mở.
+  // Phím tắt toàn cục: Alt+1…7 = bước 1…7, Alt+8 Tổng quan, Alt+9 Lead, Alt+0 Cài đặt (xem hotkeyOf), ? mở bảng phím tắt.
+  // Đang gõ (ô nhập / contenteditable / IME đang soạn) thì không nhận phím tắt nào: Option+số trên Mac là để gõ ký tự.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName;
-      const typing = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (e.target as HTMLElement)?.isContentEditable;
-      if (e.altKey && !e.ctrlKey && !e.metaKey && /^[0-9]$/.test(e.key)) {
-        const m = menu.find((x) => x.hotkey === e.key);
+      if (e.isComposing || isTypingTarget(e.target)) return;
+      const hk = hotkeyOf(e);
+      if (hk) {
+        const m = menu.find((x) => x.hotkey === hk);
         if (m) {
           e.preventDefault();
           router.push(m.href);
         }
         return;
       }
-      if (typing) return;
       if (e.key === "?" && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
         setShortcutsOpen((v) => !v);

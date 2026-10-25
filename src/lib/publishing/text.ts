@@ -13,8 +13,8 @@ import type { PublishResult } from "@/lib/connectors/types";
 import { kindOf } from "@/lib/content/formats";
 import { getAutomation } from "@/lib/queries";
 import { recordDecision } from "@/lib/router";
-import { AMBIGUOUS_MARK, SAMPLE_NOTE, inFlight, isAmbiguousFailure, isDryRun, isSamplePost, ambiguousRetryBlock, parseRescheduleWhen, previousExternalId, recoverStuckPublishing, releaseContentIfIdle, sweepOverduePosts } from "./guards";
-import { cancelPostRow, channelPageId, describeBlockers, overdueOnSamePage, pageBlockersAmong } from "./video";
+import { AMBIGUOUS_MARK, PAGE_CHANGED_PREFIX, SAMPLE_NOTE, inFlight, isAmbiguousFailure, isDryRun, isSamplePost, ambiguousRetryBlock, parseRescheduleWhen, previousExternalId, recoverStuckPublishing, releaseContentIfIdle, sweepOverduePosts } from "./guards";
+import { cancelPostRow, channelPageId, claimForSend, describeBlockers, overdueOnSamePage, pageBlockersAmong } from "./video";
 
 /** Kênh nhận bài CHỮ và khoá kết nối của kênh. TikTok / YouTube chỉ nhận video, Instagram cần ảnh / video → không nhận bài chữ. */
 export const TEXT_PLATFORMS: Record<string, { key: string; label: string }> = {
@@ -206,20 +206,21 @@ export async function publishDueTextPosts(): Promise<{ published: number; tested
       out.skipped++;
       continue;
     }
-    // Bài chữ cũ (trước khi có dedupe_key) có thể trùng: nội dung đã có bài ĐÃ GỬI lệnh đăng lên cùng trang → không đăng thêm.
-    const sent = pageBlockersAmong(textPostsFor(post.contentId), [post.platform], false, post.id).filter((e) => e.status !== "scheduled");
-    if (sent.length) {
-      db.update(schema.scheduledPosts).set({ status: "cancelled", dedupeKey: null, error: `Trùng: nội dung đã có bài trên ${describeBlockers(sent, [post.platform])} (${sent.map((e) => e.status).join(", ")}). Không đăng trùng.` }).where(and(eq(schema.scheduledPosts.id, post.id), eq(schema.scheduledPosts.status, "scheduled"))).run();
-      out.skipped++;
+    // Giành quyền gửi THEO TRANG, nguyên tử kể cả nhiều tiến trình (claimForSend, chung với bài video): ngay trước khi gọi nền tảng
+    // kiểm lại Page ID kênh so với lúc lên lịch, và nội dung đã có bài ĐÃ GỬI lệnh đăng lên cùng trang (bài chữ cũ trước khi có
+    // dedupe_key, hoặc tiến trình khác vừa giành) → không gửi.
+    const claim = claimForSend(post.id);
+    if (!claim.ok) {
+      if (claim.outcome === "error") out.skipped++;
+      else if (claim.outcome !== "lost") {
+        out[claim.outcome === "failed" ? "failed" : "skipped"]++;
+        campaignRepo.syncEntityStatus("publication", post.id, claim.outcome);
+        releaseContentIfIdle(post.contentId);
+        recordDecision({ lane: "rule", domain: "publish", subject: `Đăng “${post.title}” lên ${post.platform}`, entityType: "publication", entityId: post.id, outcome: "chặn", reason: claim.reason, needsApproval: false });
+        if (claim.outcome === "failed") void sendAlert({ level: "error", title: `Không đăng: ${post.title}`, text: claim.reason, href: "/publishing" });
+      }
       continue;
     }
-    // Giành quyền đăng nguyên tử: hai lượt chạy chồng nhau không cùng đăng một bài.
-    const claim = db
-      .update(schema.scheduledPosts)
-      .set({ status: "publishing", attempts: post.attempts + 1, targetPageId: channelPageId(post.platform) ?? post.targetPageId })
-      .where(and(eq(schema.scheduledPosts.id, post.id), eq(schema.scheduledPosts.status, "scheduled")))
-      .run();
-    if (claim.changes !== 1) continue;
     recordDecision({ lane: "rule", domain: "publish", subject: `Đăng “${post.title}” lên ${post.platform}`, entityType: "publication", entityId: post.id, outcome: "cho phép", reason: "Đủ điều kiện đăng.", needsApproval: false });
     inFlight.add(post.id);
     const runId = startRun(gate.key, "publish");
@@ -285,7 +286,10 @@ export function retryTextPost(postId: string, checkedNote?: string, whenIso?: st
   }
   // Mã bài cũ (OWNER kiểm "Không thấy bài") giữ trong ghi chú + nhật ký: còn tra / xoá bài thứ nhất nếu nhìn nhầm
   const oldId = previousExternalId(p);
-  db.update(schema.scheduledPosts).set({ status: "scheduled", scheduledFor: at, error: oldId ? `Đăng lại sau kiểm trang — mã bài cũ ${oldId}.` : null, dedupeKey }).where(eq(schema.scheduledPosts.id, postId)).run();
+  // Bài bị chặn vì Page ID kênh đã đổi: OWNER bấm Đăng lại = đăng lên trang kênh HIỆN TẠI (đã kiểm chống trùng theo trang đó ở trên).
+  // Lỗi khác giữ trang lúc lên lịch: kênh đổi trang thì lúc gửi vẫn bị chặn, không lặng lẽ đăng sang trang khác.
+  const targetPageId = (p.error ?? "").startsWith(PAGE_CHANGED_PREFIX) ? channelPageId(p.platform) : p.targetPageId;
+  db.update(schema.scheduledPosts).set({ status: "scheduled", scheduledFor: at, error: oldId ? `Đăng lại sau kiểm trang — mã bài cũ ${oldId}.` : null, dedupeKey, targetPageId }).where(eq(schema.scheduledPosts.id, postId)).run();
   if (oldId || isAmbiguousFailure(p)) logActivity("human", `${by?.name ?? by?.email ?? "Người dùng"} đăng lại bài lỗi “${p.title}” trên ${p.platform}${oldId ? ` (mã bài cũ ${oldId})` : ""}${checkedNote?.trim() ? `; đã kiểm trang: ${checkedNote.trim().slice(0, 120)}` : ""}.`, "publishing");
   if (content.status === "approved") db.update(schema.contentItems).set({ status: "scheduled" }).where(eq(schema.contentItems.id, content.id)).run();
   campaignRepo.syncEntityStatus("publication", postId, "scheduled");

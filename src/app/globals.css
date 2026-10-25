@@ -159,6 +159,8 @@
   --color-jade-2: var(--jade-2);
   --color-jade-soft: var(--jade-soft);
   --color-jade-ink: var(--jade-ink);
+  /* Chữ jade dùng ở biến thể hover / group-hover (tối: --jade-fg sáng hơn để đạt AA; .text-jade thường đã có luật riêng) */
+  --color-jade-fg: var(--jade-fg);
   --color-amber: var(--amber);
   --color-amber-soft: var(--amber-soft);
   --color-brick: var(--brick);

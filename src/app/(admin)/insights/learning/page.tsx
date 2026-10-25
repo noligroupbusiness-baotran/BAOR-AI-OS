@@ -11,6 +11,7 @@ import { topicPerformance, MIN_POSTS_PER_TOPIC, MIN_VIEWS } from "@/lib/learning
 import { gatherPosts } from "@/lib/learning";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import { Segment } from "@/components/ui/segment";
+import { displayStepsIn } from "@/config/journey";
 import { ReportsView } from "@/components/reports/reports-view";
 
 export const metadata = { title: "Đo lường – BAOR AI OS" };
@@ -19,6 +20,9 @@ const TABS = [
   { key: "cai-tien", label: "Cải tiến" },
   { key: "so-lieu", label: "Số liệu" },
 ];
+
+// Đề xuất đã lưu trước đợt đổi tên (26/10/2026) còn "bước 8.1 / 8.2" và "Second Brain": chuẩn hoá lúc hiển thị.
+const shown = (s: string) => displayStepsIn(s).replace(/Second Brain/g, "Kiến thức");
 
 const targetLabel: Record<string, string> = { content: "Nội dung", second_brain: "Kiến thức", video_skill: "Skill dựng video", ads: "Quảng cáo" };
 const statusLabel: Record<string, { label: string; tone: "amber" | "jade" | "neutral" | "violet" }> = {
@@ -100,12 +104,12 @@ export default async function LearningPage({ searchParams }: { searchParams: Pro
                 <li key={p.id} className="grid gap-1.5 border-b border-border px-4 py-3 last:border-b-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <Pill tone="violet">{targetLabel[p.target] ?? p.target}</Pill>
-                    <span className="text-[13.5px] font-semibold text-ink">{p.title}</span>
+                    <span className="text-[13.5px] font-semibold text-ink">{shown(p.title)}</span>
                     <Pill tone={st.tone}>{st.label}</Pill>
                     <span className="text-[11.5px] text-ink-3">giả thuyết · tin cậy {p.confidence} · mẫu {p.sampleSize} · {formatDateTime(p.updatedAt)}</span>
                   </div>
-                  <p className="m-0 text-[12.5px] text-ink">{p.detail}</p>
-                  {p.evidence.length > 0 && <ul className="m-0 list-disc pl-5 text-[12px] text-ink-2">{p.evidence.map((e) => <li key={e}>{e}</li>)}</ul>}
+                  <p className="m-0 text-[12.5px] text-ink">{shown(p.detail)}</p>
+                  {p.evidence.length > 0 && <ul className="m-0 list-disc pl-5 text-[12px] text-ink-2">{p.evidence.map((e) => <li key={e}>{shown(e)}</li>)}</ul>}
                   {p.note && <div className="text-[12px] text-ink-2">Ghi chú OWNER: {p.note}</div>}
                   {p.status === "proposed" && (
                     <div className="flex gap-1.5">
