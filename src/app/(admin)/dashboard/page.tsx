@@ -1,111 +1,72 @@
 import Link from "next/link";
-import { AlertTriangle, CalendarClock, ListChecks, UserPlus } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { Panel, PanelHeader } from "@/components/ui/card";
-import { Pill } from "@/components/ui/pill";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PendingRow } from "@/components/dashboard/pending-row";
 import { PendingAllButton } from "@/components/dashboard/pending-all";
-import { SystemStatusBar } from "@/components/dashboard/system-status";
-import { getOverview, getPending, getSystemStatus, getTodaySchedule } from "@/lib/dashboard-data";
-import { timelineStatusLabel } from "@/lib/mock/dashboard";
-import { formatDate, cn } from "@/lib/format";
+import { getPending, getSystemStatus } from "@/lib/dashboard-data";
+import { OverviewStrip } from "@/components/dashboard/overview-strip";
+import { journeyCards } from "@/lib/brand/journey";
+import { cn } from "@/lib/format";
 
-export const metadata = { title: "Điều hành – BAOR AI OS" };
+export const metadata = { title: "Tổng quan – BAOR AI OS" };
 
-const weekdays = ["Chủ nhật", "Thứ hai", "Thứ ba", "Thứ tư", "Thứ năm", "Thứ sáu", "Thứ bảy"];
+const stateDot = { done: "bg-jade", working: "bg-sky", waiting: "bg-amber", not_started: "bg-border-2" } as const;
 
-export default function DashboardPage() {
-  const now = new Date();
-  const vnDay = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Ho_Chi_Minh", weekday: "short" }).format(now);
-  const weekday = weekdays[["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(vnDay)] ?? "";
-  const stats = getOverview();
+// Trang chính = Tổng quan (OWNER 25/10/2026, đổi từ "Hành trình"): tình hình chung (AI, kết nối, nơi dựng, sao lưu, lỗi) →
+// hành trình marketing 8 bước (sơ đồ Personal Brand System, mỗi bước một nút bấm) → việc cần làm. Đọc một trang là nắm hết.
+export default async function JourneyHome() {
+  const cards = journeyCards();
   const pending = getPending();
-  const top = pending.slice(0, 5);
-  const schedule = getTodaySchedule(5);
-  const system = getSystemStatus(stats.pendingApproval);
-
-  // 4 chỉ số quan trọng. Màu trạng thái chỉ khi có việc cần chú ý.
-  const tiles: { label: string; value: number; icon: typeof ListChecks; href: string; tone?: "amber" | "brick" }[] = [
-    { label: "Chờ tôi duyệt", value: stats.pendingApproval, icon: ListChecks, href: "#cho-toi-xu-ly", tone: stats.pendingApproval ? "amber" : undefined },
-    { label: "Lịch đăng hôm nay", value: stats.postsToday, icon: CalendarClock, href: "/publishing" },
-    { label: "Lead mới hôm nay", value: stats.leadsToday, icon: UserPlus, href: "/customers?tab=leads" },
-    { label: "Cảnh báo", value: stats.alerts, icon: AlertTriangle, href: "#tinh-trang-he-thong", tone: stats.alerts ? "brick" : undefined },
-  ];
-
+  const status = getSystemStatus(pending.length);
+  const next = cards.find((c) => c.state === "waiting") ?? cards.find((c) => c.state === "not_started");
   return (
     <>
-      <div className="mb-3.5">
-        <h1 className="text-[20px] font-bold tracking-[-0.01em] text-ink">Điều hành</h1>
-        <p className="mt-0.5 text-[12.5px] text-ink-2">{weekday}, {formatDate(now.toISOString())}</p>
-      </div>
-
-      {/* 1. Bốn chỉ số quan trọng */}
-      <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-        {tiles.map((t) => {
-          const Icon = t.icon;
-          return (
-            <Link key={t.label} href={t.href} className="card flex items-center justify-between gap-2 px-3.5 py-2.5 transition-colors hover:border-ink-3 hover:bg-ground-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-jade">
-              <div className="min-w-0">
-                <div className="truncate text-[12px] font-medium text-ink-2">{t.label}</div>
-                <div className={cn("num text-[22px] font-bold leading-tight tracking-[-0.02em]", t.tone === "brick" ? "text-brick" : t.tone === "amber" ? "text-amber" : "text-ink")}>{t.value}</div>
-              </div>
-              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-ground-2 text-ink-2"><Icon size={14} aria-hidden /></span>
-            </Link>
-          );
-        })}
-      </div>
-
-      <div className="mt-3.5 grid gap-3.5 lg:grid-cols-[2fr_1fr] lg:items-start">
-        {/* 2. Chờ tôi xử lý: tối đa 5 việc ưu tiên nhất */}
-        <Panel id="cho-toi-xu-ly" className="mt-0">
-          <PanelHeader title="Chờ tôi xử lý" sub={pending.length > 5 ? `5 việc ưu tiên nhất trong ${pending.length} việc.` : pending.length ? `${pending.length} việc đang chờ.` : "Không có việc nào."} />
-          {top.length === 0 ? (
-            <EmptyState title="Hiện không có việc nào chờ anh xử lý" hint="Khi Agent gửi nội dung, video, lịch đăng hoặc gặp lỗi, mục đó sẽ hiện ở đây." />
-          ) : (
-            <>
-              <ul className="m-0 list-none p-0">
-                {top.map((it) => (
-                  <PendingRow key={it.id} item={it} />
-                ))}
-              </ul>
-              <PendingAllButton items={pending} />
-            </>
-          )}
-        </Panel>
-
-        {/* 3. Hôm nay: tối đa 5 hoạt động gần nhất */}
-        <Panel className="mt-0">
-          <PanelHeader title="Hôm nay" sub="Hoạt động gần nhất hoặc sắp diễn ra." />
-          {schedule.length === 0 ? (
-            <EmptyState title="Hôm nay chưa có lịch" />
-          ) : (
-            <ol className="m-0 list-none p-0">
-              {schedule.map((t) => (
-                <li key={t.id} className={cn("flex gap-3 border-b border-border px-4 py-2.5 last:border-b-0", t.status === "needs_confirm" && "bg-amber-soft/40")}>
-                  <span className={cn("num w-10 shrink-0 pt-px text-[12.5px] font-semibold", t.status === "done" ? "text-ink-3" : "text-ink")}>{t.time}</span>
-                  <div className="min-w-0 flex-1">
-                    <div className={cn("line-clamp-2 text-[13px]", t.status === "done" ? "text-ink-2" : "text-ink")}>{t.title}</div>
-                    <div className="mt-0.5 flex items-center gap-2 text-[11.5px] text-ink-2">
-                      <span className="truncate">{t.platform}</span>
-                      {t.status === "needs_confirm" ? (
-                        <Pill tone="amber" className="h-[18px] px-1.5 text-[10.5px]">{timelineStatusLabel[t.status]}</Pill>
-                      ) : (
-                        <span className="text-ink-3">{timelineStatusLabel[t.status]}</span>
-                      )}
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ol>
-          )}
-          <Link href="/publishing" className="flex items-center justify-center border-t border-border px-4 py-2.5 text-[12.5px] font-medium text-jade hover:bg-ground-2 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-jade">
-            Xem toàn bộ lịch
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <h1 className="text-[22px] font-bold tracking-[-0.01em] text-ink">Tổng quan</h1>
+        {next && (
+          <Link href={next.go} className="flex h-9 items-center gap-1.5 rounded-full bg-jade px-4 text-[13px] font-semibold text-white hover:opacity-90">
+            Làm tiếp: bước {next.n} · {next.label} <ArrowRight size={15} aria-hidden />
           </Link>
-        </Panel>
+        )}
       </div>
 
-      {/* 4. Thanh tóm tắt tình trạng hệ thống */}
-      <SystemStatusBar status={system} />
+      <OverviewStrip issues={status.issues} />
+
+      <h2 className="mb-2 mt-5 text-[13px] font-semibold uppercase tracking-wide text-ink-3">Hành trình marketing</h2>
+      <ol className="m-0 grid list-none gap-3 p-0 sm:grid-cols-2 xl:grid-cols-4">
+        {cards.map((c) => (
+          <li key={c.n} className="card flex flex-col gap-2 p-4">
+            <div className="flex items-center gap-2">
+              <span className="num grid h-7 w-7 place-items-center rounded-full bg-ground-2 text-[13px] font-bold text-ink">{c.n}</span>
+              <span className="flex-1 text-[14px] font-semibold text-ink">{c.label}</span>
+              <span className={cn("h-2.5 w-2.5 rounded-full", stateDot[c.state])} aria-label={c.state} />
+            </div>
+            <div className="flex items-baseline gap-1.5">
+              <span className="num text-[28px] font-bold leading-none text-ink">{c.value}</span>
+              <span className="text-[12.5px] text-ink-2">{c.unit}</span>
+            </div>
+            <p className="line-clamp-1 min-h-[18px] text-[12px] text-ink-3">{c.note}</p>
+            <Link href={c.go} className="mt-auto flex h-9 items-center justify-center rounded-lg border border-border-2 text-[13px] font-semibold text-ink hover:bg-ground-2">
+              {c.action}
+            </Link>
+          </li>
+        ))}
+      </ol>
+
+      <Panel id="cho-toi-xu-ly">
+        <PanelHeader title="Việc cần làm" />
+        {pending.length === 0 ? (
+          <EmptyState title="Không có việc nào chờ anh" />
+        ) : (
+          <>
+            <ul className="m-0 list-none p-0">
+              {pending.slice(0, 5).map((it) => <PendingRow key={it.id} item={it} />)}
+            </ul>
+            <PendingAllButton items={pending} />
+          </>
+        )}
+      </Panel>
     </>
   );
 }

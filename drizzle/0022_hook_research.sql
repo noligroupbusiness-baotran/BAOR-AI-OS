@@ -1,0 +1,1 @@
+ALTER TABLE `hook_ideas` ADD `research_id` text;

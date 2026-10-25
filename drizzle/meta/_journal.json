@@ -8,6 +8,160 @@
       "when": 1789036606519,
       "tag": "0000_reflective_star_brand",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1789053927953,
+      "tag": "0001_campaigns",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1789055734962,
+      "tag": "0002_catalog_videos",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1789058005253,
+      "tag": "0003_router_connectors",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1789059175376,
+      "tag": "0004_people_login",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1789060603388,
+      "tag": "0005_orders",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1789060825138,
+      "tag": "0006_automation",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1789061406596,
+      "tag": "0007_insight_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1789061645437,
+      "tag": "0008_uploads",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1789104737700,
+      "tag": "0009_content_asset",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1789122329158,
+      "tag": "0010_competitors",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1789457234299,
+      "tag": "0011_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1792579499128,
+      "tag": "0012_brand_knowledge",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1792582710172,
+      "tag": "0013_versions_feedback",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1792583748010,
+      "tag": "0014_video_publishing",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1792584158434,
+      "tag": "0015_ads_engine",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1792584812785,
+      "tag": "0016_learning",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1792644439417,
+      "tag": "0017_video_comments",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1792650679661,
+      "tag": "0018_ads_reach",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1792910588207,
+      "tag": "0019_ai_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1792912377825,
+      "tag": "0020_video_library",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1792912660167,
+      "tag": "0021_hook_ideas",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1792921485778,
+      "tag": "0022_hook_research",
+      "breakpoints": true
     }
   ]
 }

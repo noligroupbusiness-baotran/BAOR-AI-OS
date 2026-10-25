@@ -1,0 +1,48 @@
+#!/bin/sh
+# BAOR: main TỰ TRIỂN KHAI production → không đẩy main từ máy. Mỗi lần đẩy:
+#  1) soát TÊN TỆP trong đúng các commit sắp đẩy (không phải cây đang làm): chặn data/, docs/brand-engine/, artifacts/, .env*
+#  2) verify nhanh (không build) trên ĐÚNG commit được đẩy: cây làm việc có thay đổi chưa commit thì verify trong worktree tạm.
+# Bằng chứng đầy đủ (build + E2E) chạy trên CI: .github/workflows/ci.yml
+zero=0000000000000000000000000000000000000000
+tips=""
+while read local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/heads/main|main)
+      echo "BAOR pre-push: không đẩy main (production). Ghép qua PR khi OWNER nói MERGE." >&2
+      exit 1 ;;
+  esac
+  [ "$local_sha" = "$zero" ] && continue
+  if [ "$remote_sha" = "$zero" ]; then
+    base=$(git merge-base "$local_sha" origin/main 2>/dev/null || git rev-list --max-parents=0 "$local_sha" | tail -1)
+    range="$base..$local_sha"
+  else
+    range="$remote_sha..$local_sha"
+  fi
+  bad=$(git diff --name-only "$range" 2>/dev/null | grep -E '^(data(-[a-z]+)?/|docs/brand-engine/|artifacts/)|(^|/)\.env($|\.)' | grep -v '^\.env\.example$')
+  if [ -n "$bad" ]; then
+    echo "BAOR pre-push: commit sắp đẩy chứa dữ liệu thật / tài liệu nội bộ (repo công khai):" >&2
+    echo "$bad" | sed 's/^/  /' >&2
+    exit 1
+  fi
+  tips="$local_sha"
+done
+[ -z "$tips" ] && exit 0
+log="${TMPDIR:-/tmp}/baor-prepush-$$.log"
+dirty=$(git status --porcelain --untracked-files=no | grep -v ' docs/brand-engine/')
+if [ -z "$dirty" ] && [ "$(git rev-parse HEAD)" = "$tips" ]; then
+  npm run -s verify -- --no-build >"$log" 2>&1
+  code=$?
+else
+  wt="${TMPDIR:-/tmp}/baor-prepush-wt-$$"
+  git worktree add -q --detach "$wt" "$tips" && ln -s "$(pwd)/node_modules" "$wt/node_modules"
+  (cd "$wt" && npm run -s verify -- --no-build) >"$log" 2>&1
+  code=$?
+  git worktree remove --force "$wt" >/dev/null 2>&1
+fi
+tail -12 "$log"
+rm -f "$log"
+if [ $code -ne 0 ]; then
+  echo "BAOR pre-push: verify đỏ trên commit sắp đẩy — sửa rồi đẩy lại (không dùng --no-verify)." >&2
+  exit 1
+fi
+exit 0

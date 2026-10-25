@@ -1,0 +1,10 @@
+#!/bin/sh
+# BAOR: repo CÔNG KHAI — chặn commit dữ liệu thật / tài liệu nội bộ / tệp môi trường (docs/BAOR_OPERATING_MODEL.md §3).
+# Cài tự động qua `npm install` (script prepare → git config core.hooksPath .githooks).
+bad=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '^(data(-[a-z]+)?/|docs/brand-engine/|artifacts/)|(^|/)\.env($|\.)' | grep -v '^\.env\.example$')
+if [ -n "$bad" ]; then
+  echo "BAOR pre-commit: không commit dữ liệu thật / tài liệu nội bộ / .env:" >&2
+  echo "$bad" | sed 's/^/  /' >&2
+  exit 1
+fi
+exit 0

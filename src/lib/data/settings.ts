@@ -36,6 +36,18 @@ export const integrations: Integration[] = [
     connected: false,
   },
   {
+    key: "youtube",
+    name: "YouTube",
+    description: "Đăng video dài, Shorts và đọc số liệu kênh.",
+    connected: false,
+  },
+  {
+    key: "website",
+    name: "Website & Google Analytics",
+    description: "Theo dõi lượt truy cập, form đăng ký và nguồn khách từ website.",
+    connected: false,
+  },
+  {
     key: "email_provider",
     name: "Nhà cung cấp email",
     description: "SMTP / Resend / SendGrid / Mailchimp để gửi email marketing.",
@@ -47,7 +59,7 @@ export const integrations: Integration[] = [
     name: "Claude API (Anthropic)",
     description: "Bộ não AI cho research, insight, viết nội dung và trả lời khách.",
     connected: true,
-    account: "Model: claude-opus-5",
+    account: "Model: claude-opus-5-5",
   },
 ];
 
@@ -87,7 +99,7 @@ export const automationSettings: AutomationSetting[] = [
   {
     key: "auto_reply",
     label: "Tự trả lời comment & inbox",
-    description: "AI trả lời theo quy tắc, chuyển người xử lý khi khiếu nại hoặc cần chốt đơn.",
+    description: "AI trả lời theo quy tắc, chuyển người xử lý khi khiếu nại hoặc khách hỏi giá.",
     enabled: true,
   },
   {

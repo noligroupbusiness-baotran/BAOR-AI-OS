@@ -1,23 +1,28 @@
 import { PageHead, Panel, PanelHeader } from "@/components/ui/card";
-import { Breadcrumb, ModuleGroups } from "@/components/shell/module-page";
 import { Pill } from "@/components/ui/pill";
 import { Button } from "@/components/ui/button";
 import { Tiles, Tile } from "@/components/ui/stat";
 import { Table, Th, Td } from "@/components/ui/table";
 import { platformLabel } from "@/components/ui/platform";
-import { approveAd, rejectAd, retryPost, saveGuardrails, toggleAd, updateBudget } from "@/lib/actions/ads";
-import { getAdGuardrails, listAds, listPosts } from "@/lib/queries";
-import { adStatusLabel, postStatusLabel } from "@/lib/labels";
+import { retryPost } from "@/lib/actions/ads";
+import { listAds, listPosts } from "@/lib/queries";
+import { postStatusLabel } from "@/lib/labels";
 import { formatNumber, formatTime, formatDate, cn } from "@/lib/format";
-import type { AdStatus, Platform, PostStatus } from "@/lib/types";
+import type { Platform, PostStatus } from "@/lib/types";
+import { CampaignTags } from "@/components/campaigns/entity-campaign";
+import { campaignRepo } from "@/lib/campaigns/repository";
+import { Pager, paginate } from "@/components/ui/pager";
+import { MonthCalendar, monthOf } from "@/components/publishing/month-calendar";
+import { Segment } from "@/components/ui/segment";
+import { VideoPostsPanel } from "@/components/publishing/video-posts-panel";
 
-export const metadata = { title: "Đăng bài & quảng cáo – BAOR AI OS" };
+export const metadata = { title: "Đăng bài – BAOR AI OS" };
 
-const input = "h-8 rounded-md border border-border-2 bg-surface px-2.5 text-[13px] text-ink outline-none focus-visible:outline-2 focus-visible:outline-jade";
 
-export default async function PublishingPage({ searchParams }: { searchParams: Promise<{ edit?: string }> }) {
-  const { edit } = await searchParams;
-  const g = getAdGuardrails();
+export default async function PublishingPage({ searchParams }: { searchParams: Promise<{ page?: string; view?: string; month?: string; video?: string }> }) {
+  const { page, view: viewParam, month: monthParam, video: focusVideo } = await searchParams;
+  const view = viewParam === "calendar" ? "calendar" : "list";
+  const month = monthOf(monthParam);
   const posts = listPosts();
   const ads = listAds().filter((a) => a.status !== "rejected");
   const queue = posts.filter((p) => p.status === "scheduled");
@@ -25,6 +30,7 @@ export default async function PublishingPage({ searchParams }: { searchParams: P
   const failed = posts.filter((p) => p.status === "failed");
   const avgReach = published.length ? Math.round(published.reduce((n, p) => n + (p.reach ?? 0), 0) / published.length) : 0;
   const spentMonth = ads.reduce((n, a) => n + a.spent, 0);
+  const postLinks = campaignRepo.linksForEntities("publication", posts.map((p) => p.id));
 
   type RowT = { ids: string[]; title: string; at: string; platforms: string[]; status: string; reach: number; error?: string | null };
   const rows = Object.values(
@@ -37,13 +43,13 @@ export default async function PublishingPage({ searchParams }: { searchParams: P
       return acc;
     }, {}),
   ).sort((a, b) => b.at.localeCompare(a.at));
+  const rowPage = paginate(rows, page);
 
   return (
     <>
-      <Breadcrumb items={[{ label: "Điều hành", href: "/dashboard" }, { label: "Đăng bài & Quảng cáo" }]} />
       <PageHead
-        title="Đăng bài & quảng cáo"
-        sub="Bài đã duyệt tự đăng đúng giờ. Bài tốt được đề xuất chạy ads, nhưng tiền chỉ tiêu khi bạn duyệt."
+        title="Đăng bài"
+        sub="Lịch đăng và bài đã đăng."
       />
 
       <Tiles>
@@ -53,20 +59,36 @@ export default async function PublishingPage({ searchParams }: { searchParams: P
         <Tile label="Lỗi đăng" value={String(failed.length)} hint={failed[0]?.error?.split(".")[0] ?? "Không có"} tone={failed.length ? "brick" : undefined} />
       </Tiles>
 
-      <Panel>
-        <PanelHeader title="Lịch đăng" sub="Mới nhất ở trên. Lên lịch bài mới ở mục Nội dung › Đã duyệt." />
+      <VideoPostsPanel focus={focusVideo} />
+
+      <div className="mt-3.5"><Segment basePath="/publishing" active={view} items={[{ key: "list", label: "Danh sách" }, { key: "calendar", label: "Lịch tháng" }]} paramName="view" /></div>
+
+      {view === "calendar" && (
+        <MonthCalendar
+          month={month}
+          hrefFor={(m) => `/publishing?view=calendar&month=${m}`}
+          posts={posts.map((p) => ({ id: `${p.contentId}::${p.id}`, title: p.title, at: p.scheduledFor, platforms: [platformLabel(p.platform as Platform)], status: p.status as PostStatus }))}
+        />
+      )}
+
+      {view === "list" && <Panel>
+        <PanelHeader title="Lịch đăng" />
         <Table>
           <thead>
             <tr><Th>Giờ</Th><Th>Bài</Th><Th>Kênh</Th><Th right>Trạng thái</Th></tr>
           </thead>
           <tbody>
             {rows.length === 0 && <tr><Td className="text-center text-ink-2">Chưa có bài nào.</Td></tr>}
-            {rows.map((r) => {
+            {rowPage.items.map((r) => {
               const st = postStatusLabel[r.status as PostStatus];
               return (
                 <tr key={r.ids.join()}>
                   <Td className="num whitespace-nowrap">{formatTime(r.at)} · {formatDate(r.at).slice(0, 5)}</Td>
-                  <Td className="font-semibold text-ink">{r.title}{r.error && <div className="text-[12px] font-normal text-brick">{r.error}</div>}</Td>
+                  <Td className="font-semibold text-ink">
+                    {r.title}
+                    {r.error && <div className={cn("text-[12px] font-normal", r.status === "failed" ? "text-brick" : "text-amber")}>{r.error}</div>}
+                    <div className="mt-1 flex flex-wrap gap-1"><CampaignTags links={r.ids.flatMap((id) => postLinks.get(id) ?? []).filter((l, i, arr) => arr.findIndex((x) => x.campaignId === l.campaignId) === i)} /></div>
+                  </Td>
                   <Td>{r.platforms.join(" · ")}</Td>
                   <Td right>
                     {r.status === "failed" ? (
@@ -80,75 +102,8 @@ export default async function PublishingPage({ searchParams }: { searchParams: P
             })}
           </tbody>
         </Table>
-      </Panel>
-
-      <Panel>
-        <PanelHeader
-          title="Quảng cáo"
-          sub={`Hạn mức ${formatNumber(g.dailyCap)} ₫/ngày · ${formatNumber(g.monthlyCap)} ₫/tháng. Tự dừng khi chi phí/lead vượt ${formatNumber(g.autoPauseCplAbove)} ₫.`}
-        />
-        <Table>
-          <thead>
-            <tr><Th>Chiến dịch</Th><Th right>Ngân sách/ngày</Th><Th right>Chi phí/lead</Th><Th right>Trạng thái</Th></tr>
-          </thead>
-          <tbody>
-            {ads.map((a) => {
-              const st = adStatusLabel[a.status as AdStatus];
-              const cpl = a.leads ? Math.round(a.spent / a.leads) : 0;
-              const editing = edit === a.id;
-              return (
-                <tr key={a.id}>
-                  <Td>
-                    <div className="font-semibold text-ink">{a.name}</div>
-                    {a.aiNote && <div className="text-[12px] text-ink-2">{a.aiNote}</div>}
-                  </Td>
-                  <Td right className="num whitespace-nowrap">
-                    {editing ? (
-                      <form action={updateBudget} className="flex justify-end gap-1.5">
-                        <input type="hidden" name="id" value={a.id} />
-                        <input name="dailyBudget" defaultValue={a.dailyBudget} className={cn(input, "w-[110px] text-right")} />
-                        <Button type="submit" variant="primary">Lưu</Button>
-                      </form>
-                    ) : (
-                      <a href={`/publishing?edit=${a.id}`} className="hover:underline">{formatNumber(a.dailyBudget)} ₫</a>
-                    )}
-                  </Td>
-                  <Td right className={cn("num whitespace-nowrap", cpl > g.autoPauseCplAbove && "text-brick")}>{cpl ? `${formatNumber(cpl)} ₫` : "—"}</Td>
-                  <Td right>
-                    <div className="flex justify-end gap-1.5">
-                      {a.status === "pending_approval" && (
-                        <>
-                          <form action={approveAd}><input type="hidden" name="id" value={a.id} /><Button variant="primary" type="submit">Duyệt chạy</Button></form>
-                          <form action={rejectAd}><input type="hidden" name="id" value={a.id} /><Button variant="ghost" type="submit">Từ chối</Button></form>
-                        </>
-                      )}
-                      {(a.status === "active" || a.status === "paused") && (
-                        <>
-                          <Pill tone={st.tone}>{st.label}</Pill>
-                          <form action={toggleAd}><input type="hidden" name="id" value={a.id} /><Button variant="ghost" type="submit">{a.status === "active" ? "Tạm dừng" : "Bật lại"}</Button></form>
-                        </>
-                      )}
-                      {a.status === "proposed" && <Pill tone={st.tone}>{st.label}</Pill>}
-                      {a.status === "ended" && <Pill tone={st.tone}>{st.label}</Pill>}
-                    </div>
-                  </Td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </Table>
-      </Panel>
-
-      <Panel>
-        <PanelHeader title="Hạn mức ngân sách" sub="AI không bao giờ vượt các mức này, kể cả khi hiệu quả tốt." />
-        <form action={saveGuardrails} className="flex flex-wrap items-end gap-3 p-4">
-          <label className="block"><span className="lbl">Tối đa / ngày (₫)</span><br /><input name="dailyCap" defaultValue={g.dailyCap} className={cn(input, "mt-1 w-[140px]")} /></label>
-          <label className="block"><span className="lbl">Tối đa / tháng (₫)</span><br /><input name="monthlyCap" defaultValue={g.monthlyCap} className={cn(input, "mt-1 w-[140px]")} /></label>
-          <label className="block"><span className="lbl">Tự dừng khi CPL vượt (₫)</span><br /><input name="autoPauseCplAbove" defaultValue={g.autoPauseCplAbove} className={cn(input, "mt-1 w-[140px]")} /></label>
-          <Button variant="primary" type="submit">Lưu hạn mức</Button>
-        </form>
-      </Panel>
-      <ModuleGroups moduleKey="publishing" />
+        <Pager page={rowPage.page} pages={rowPage.pages} total={rowPage.total} hrefFor={(p) => `/publishing?page=${p}`} label="bài" />
+      </Panel>}
     </>
   );
 }

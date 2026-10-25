@@ -1,0 +1,49 @@
+# Cổng chất lượng BAOR (docs/BAOR_OPERATING_MODEL.md §5): cùng một lệnh `npm run verify:full` như ở máy.
+# Chạy ở RANH GIỚI GHÉP (Universal Standard §17 "DO NOT WASTE REMOTE CI"): PR vào main có nhãn `merge-candidate`.
+# Phát triển hằng ngày kiểm ở máy (npm run verify, git hook pre-push). Ghép vào main = triển khai production → chỉ khi OWNER nói MERGE.
+# Không deploy, không secret, không gọi dịch vụ ngoài thật (test dùng CSDL tạm + fetch giả; E2E dùng tài khoản thử sinh ra mỗi lần).
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+    types: [labeled, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'merge-candidate')
+    # Ghim 24.04: ubuntu-latest đã lên 26.04, Playwright 1.58 chưa cài được Chromium trên đó (CI đỏ từ 25/10/2026)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Công cụ hệ thống (ffmpeg cho test video)
+        run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg
+      - run: npm ci
+      - name: Trình duyệt cho E2E
+        run: npx playwright install --with-deps chromium
+      - name: Verify đầy đủ (guardrails · typecheck · lint · security · test · build · E2E)
+        run: npm run verify:full
+      - name: Bằng chứng verify
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-evidence
+          path: |
+            artifacts/verification-evidence/
+            artifacts/e2e/report/
+            artifacts/e2e/results/
+          retention-days: 14
+          if-no-files-found: ignore
