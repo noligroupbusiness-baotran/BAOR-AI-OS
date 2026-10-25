@@ -144,7 +144,8 @@ const isHttp = (u: string) => /^https?:\/\/[^\s]+$/i.test(u);
  * Lưu nguồn, phát hiện (đã kiểm luật) và brief (nếu có) cho một nhiệm vụ. Ghi đè kết quả cũ của nhiệm vụ.
  * `allowedUrls`: khi chạy bằng AI, chỉ nhận URL thật sự xuất hiện trong kết quả tìm kiếm (chặn URL bịa).
  */
-export function saveResearchResult(taskId: string, data: ResearchResult, opts: { runner: "ai" | "import"; allowedUrls?: Set<string>; model?: string; searchCount?: number; costVnd?: number; by: string }) {
+/** `append`: cộng dồn vào chủ đề (nhiều nguồn 2.1–2.4 cho cùng một chủ đề) — không xoá nguồn / phát hiện cũ, dùng lại nguồn cùng URL. */
+export function saveResearchResult(taskId: string, data: ResearchResult, opts: { runner: "ai" | "import"; allowedUrls?: Set<string>; model?: string; searchCount?: number; costVnd?: number; by: string; append?: boolean }) {
   const parsed = ResearchResultSchema.parse(data);
   const db = getDb();
   const task = db.select().from(schema.researchTasks).where(eq(schema.researchTasks.id, taskId)).get();
@@ -152,8 +153,14 @@ export function saveResearchResult(taskId: string, data: ResearchResult, opts: {
   const dropped: string[] = [];
   const now = nowIso();
 
-  // Nguồn
+  // Nguồn (cộng dồn: nguồn cùng URL VÀ cùng loại nguồn đã có trong chủ đề thì dùng lại — khác loại thì tạo nguồn mới để nhãn đúng)
   const urlToId = new Map<string, string>();
+  const existing = opts.append ? db.select().from(schema.researchSources).where(eq(schema.researchSources.taskId, taskId)).all() : [];
+  const reuse = new Map(existing.map((e) => [`${e.url}|${e.publisher}`, e.id]));
+  for (const s of parsed.sources) {
+    const hit = reuse.get(`${s.url.trim()}|${s.publisher.slice(0, 200)}`);
+    if (hit) urlToId.set(s.url.trim(), hit);
+  }
   const sourceRows: (typeof schema.researchSources.$inferInsert & { id: string; grade: string })[] = [];
   for (const s of parsed.sources) {
     const url = s.url.trim();
@@ -170,14 +177,16 @@ export function saveResearchResult(taskId: string, data: ResearchResult, opts: {
     urlToId.set(url, id);
     sourceRows.push({ id, taskId, url, title: s.title.slice(0, 300), author: s.author.slice(0, 200), publisher: s.publisher.slice(0, 200), publishedAt: s.publishedAt && /^\d{4}(-\d{2}(-\d{2})?)?$/.test(s.publishedAt) ? s.publishedAt : null, sourceType: s.sourceType, grade: s.grade, excerpt: s.excerpt.slice(0, 300), limits: s.limits.slice(0, 500), accessedAt: now });
   }
-  const sourceRefs = sourceRows.map((s) => ({ id: s.id, grade: s.grade }));
+  const sourceRefs = [...existing.map((s) => ({ id: s.id, grade: s.grade })), ...sourceRows.map((s) => ({ id: s.id, grade: s.grade }))];
 
   // Phát hiện
   const allKnowledgeIds = [...parsed.findings.flatMap((f) => f.knowledgeIds), ...(parsed.brief?.points.flatMap((p) => p.knowledgeIds) ?? [])];
   const pages = getKnowledgePages(allKnowledgeIds);
   const pageIds = new Set(pages.map((p) => p.id));
   const normK = (ids: string[]) => ids.map((k) => k.replace(/-/g, "").toLowerCase()).filter((k) => pageIds.has(k));
-  const findingRows = parsed.findings.map((f) => {
+  // Cộng dồn: phát hiện trùng câu chữ đã có trong chủ đề thì bỏ (dán lại cùng bình luận không nhân đôi insight)
+  const had = new Set(opts.append ? db.select({ statement: schema.researchFindings.statement }).from(schema.researchFindings).where(eq(schema.researchFindings.taskId, taskId)).all().map((f) => f.statement) : []);
+  const findingRows = parsed.findings.filter((f) => !had.has(f.statement.slice(0, 1000))).map((f) => {
     const sourceIds = f.sourceUrls.map((u) => urlToId.get(u.trim())).filter((x): x is string => !!x);
     const knowledgeIds = normK(f.knowledgeIds);
     const v = verifyFinding({ statement: f.statement, classification: f.classification, sourceIds, knowledgeIds }, sourceRefs, pages);
@@ -200,12 +209,24 @@ export function saveResearchResult(taskId: string, data: ResearchResult, opts: {
   });
 
   db.transaction((tx) => {
-    tx.delete(schema.researchSources).where(eq(schema.researchSources.taskId, taskId)).run();
-    tx.delete(schema.researchFindings).where(eq(schema.researchFindings.taskId, taskId)).run();
+    if (!opts.append) {
+      tx.delete(schema.researchSources).where(eq(schema.researchSources.taskId, taskId)).run();
+      tx.delete(schema.researchFindings).where(eq(schema.researchFindings.taskId, taskId)).run();
+    }
     if (sourceRows.length) tx.insert(schema.researchSources).values(sourceRows).run();
     if (findingRows.length) tx.insert(schema.researchFindings).values(findingRows).run();
+    const prev = opts.append ? task : null;
     tx.update(schema.researchTasks)
-      .set({ status: "done", runner: opts.runner, model: opts.model ?? null, searchCount: opts.searchCount ?? 0, costVnd: opts.costVnd ?? 0, summary: parsed.summary.slice(0, 4000), error: dropped.length ? `Đã bỏ: ${dropped.slice(0, 5).join("; ")}` : null, finishedAt: now })
+      .set({
+        status: "done",
+        runner: opts.runner,
+        model: opts.model ?? prev?.model ?? null,
+        searchCount: (opts.searchCount ?? 0) + (prev?.searchCount ?? 0),
+        costVnd: (opts.costVnd ?? 0) + (prev?.costVnd ?? 0),
+        summary: (prev?.summary ? `${prev.summary}\n\n${parsed.summary}` : parsed.summary).slice(-4000),
+        error: dropped.length ? `Đã bỏ: ${dropped.slice(0, 5).join("; ")}` : null,
+        finishedAt: now,
+      })
       .where(eq(schema.researchTasks.id, taskId))
       .run();
   });
@@ -272,7 +293,7 @@ function knowledgeContext(question: string) {
 
 type RunOut = { usage: { input_tokens: number; output_tokens: number }; text: string; urls: Map<string, { title: string; pageAge: string | null }>; searches: number };
 
-export async function runResearchWithAi(taskId: string, by: string): Promise<{ ok: true; summary: string } | { ok: false; error: string }> {
+export async function runResearchWithAi(taskId: string, by: string, opts: { append?: boolean } = {}): Promise<{ ok: true; summary: string } | { ok: false; error: string }> {
   if (!aiConfigured()) return { ok: false, error: "Chưa có khóa Claude API. Vào Cài đặt › Kết nối › Claude API để nhập khóa." };
   const db = getDb();
   const task = db.select().from(schema.researchTasks).where(eq(schema.researchTasks.id, taskId)).get();
@@ -348,7 +369,7 @@ export async function runResearchWithAi(taskId: string, by: string): Promise<{ o
   }
   const vndPerSearch = 260; // ≈ 10 USD / 1.000 lượt tìm
   const cost = estimateCostVnd(r1.usage.input_tokens + (step2.res.usage?.input_tokens ?? 0), r1.usage.output_tokens + (step2.res.usage?.output_tokens ?? 0)) + r1.searches * vndPerSearch;
-  saveResearchResult(taskId, out, { runner: "ai", allowedUrls: new Set(r1.urls.keys()), model: roleSettings(roleForPurpose("research")).model, searchCount: r1.searches, costVnd: cost, by });
+  saveResearchResult(taskId, out, { runner: "ai", allowedUrls: new Set(r1.urls.keys()), model: roleSettings(roleForPurpose("research")).model, searchCount: r1.searches, costVnd: cost, by, append: opts.append });
   return { ok: true, summary: out.summary };
 }
 

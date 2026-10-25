@@ -12,8 +12,9 @@ export async function aiGenerateHooks(fd: FormData) {
   const actor = await currentActor();
   const topic = str(fd, "topic");
   if (topic.length < 4) return done("/content/hooks?tone=error", "Nhập chủ đề (ít nhất 4 ký tự)");
-  const r = await generateHooks(topic, actor.name);
-  if (!r.ok) return done(`/content/hooks?tone=error&topic=${encodeURIComponent(topic)}`, r.error);
+  const r = await generateHooks(topic, actor.name, str(fd, "research") || undefined);
+  const research = str(fd, "research");
+  if (!r.ok) return done(`/content/hooks?tone=error&topic=${encodeURIComponent(topic)}${research ? `&research=${encodeURIComponent(research)}` : ""}`, r.error);
   logActivity("ai", `AI Hook tạo ${r.count} hook cho “${topic.slice(0, 80)}”.`, "content");
   done("/content/hooks", `AI vừa tạo ${r.count} hook${r.short ? ` (thiếu ${r.short} so với 10)` : ""}${r.dropped ? ` · bỏ ${r.dropped} căn cứ không có trong ngữ cảnh` : ""}`);
 }

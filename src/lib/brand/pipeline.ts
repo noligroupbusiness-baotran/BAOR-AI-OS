@@ -63,28 +63,30 @@ export function getBrandPipeline(): BrandPipeline {
   // Second Brain không hiển thị trong app (OWNER 25/10/2026): hệ thống đọc ngầm; chỉ nhắc OWNER cấp token khi chưa tự đồng bộ.
   if (!notionConfigured()) actions.push({ stage: "Second Brain", text: "Cấp token Notion chỉ đọc để hệ thống tự đồng bộ kho tri thức 6 giờ một lần.", href: "/settings#integrations", ceo: true });
 
-  // 1. Nghiên cứu → brief
-  const tasks = db.select({ id: schema.researchTasks.id, status: schema.researchTasks.status }).from(schema.researchTasks).all();
-  const briefs = db.select({ id: schema.contentBriefs.id, taskId: schema.contentBriefs.taskId, status: schema.contentBriefs.status, contentId: schema.contentBriefs.contentId, topic: schema.contentBriefs.topic }).from(schema.contentBriefs).all();
-  const ready = briefs.filter((b) => b.status === "ready" || b.status === "used");
-  const readyNoContent = briefs.filter((b) => b.status === "ready" && !b.contentId);
+  // 1. Nghiên cứu (đơn giản): chủ đề → insight từ nền tảng → hook
+  const tasks = db.select({ id: schema.researchTasks.id, question: schema.researchTasks.question }).from(schema.researchTasks).all();
+  const findings = db.select({ taskId: schema.researchFindings.taskId }).from(schema.researchFindings).all();
+  const hooked = new Set(db.select({ researchId: schema.hookIdeas.researchId }).from(schema.hookIdeas).all().map((h) => h.researchId));
+  const withInsight = tasks.filter((t) => findings.some((f) => f.taskId === t.id));
+  const noInsight = tasks.filter((t) => !findings.some((f) => f.taskId === t.id));
+  const noHook = withInsight.filter((t) => !hooked.has(t.id));
   const ai = aiConfigured();
   const research: Stage = {
     key: "research",
     step: 1,
     name: "Nghiên cứu",
     href: "/insights/research",
-    state: tasks.length === 0 ? "not_started" : readyNoContent.length ? "waiting" : ready.length ? "done" : "working",
-    summary: tasks.length === 0 ? "Chưa có nhiệm vụ nghiên cứu." : readyNoContent.length ? `${readyNoContent.length} brief đạt kiểm chưa thành kịch bản.` : ready.length ? "Mọi brief đạt kiểm đã có kịch bản." : "Đang có nhiệm vụ chưa ra brief đạt kiểm.",
+    state: tasks.length === 0 ? "not_started" : noHook.length ? "waiting" : noInsight.length ? "working" : "done",
+    summary: tasks.length === 0 ? "Chưa có chủ đề." : noHook.length ? `${noHook.length} chủ đề có insight chưa tạo hook.` : noInsight.length ? `${noInsight.length} chủ đề chưa có insight.` : "Mọi chủ đề đã có insight và hook.",
     lines: [
-      { label: "Nhiệm vụ nghiên cứu", value: tasks.length },
-      { label: "Brief đạt kiểm", value: ready.length },
-      { label: "Brief chưa có kịch bản", value: readyNoContent.length },
+      { label: "Chủ đề", value: tasks.length },
+      { label: "Insight", value: findings.length },
+      { label: "Chủ đề chưa tạo hook", value: noHook.length },
     ],
     sample: 0,
   };
-  for (const b of readyNoContent.slice(0, 2)) actions.push({ stage: "Nghiên cứu", text: `Xem brief "${b.topic}" và bấm Tạo kịch bản nếu đồng ý thông điệp.`, href: `/insights/research/${b.taskId}#brief` });
-  if (!ai) actions.push({ stage: "Nghiên cứu", text: "Cấp Claude API key nếu muốn hệ thống tự nghiên cứu web (phát sinh chi phí theo lượt). Hiện nghiên cứu được nhập bằng tệp.", href: "/settings#integrations", ceo: true });
+  for (const t of noHook.slice(0, 2)) actions.push({ stage: "Nghiên cứu", text: `Chủ đề “${t.question.replace(/^Chủ đề: /, "")}” đã có insight — tạo 10 hook.`, href: `/insights/research/${t.id}` });
+  if (!ai) actions.push({ stage: "Nghiên cứu", text: "Cấp Claude API key nếu muốn AI Nghiên cứu phân tích bình luận và tìm kiến thức trên mạng (phát sinh chi phí theo lượt). Hiện phân tích theo luật.", href: "/settings#integrations", ceo: true });
 
   // 3. Kịch bản / nội dung
   const sampleContent = ids(seedContent, linkedRows.content);

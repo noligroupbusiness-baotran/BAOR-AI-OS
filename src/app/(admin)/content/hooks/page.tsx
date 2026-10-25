@@ -17,7 +17,7 @@ export const metadata = { title: "Bảng Hook & kịch bản – BAOR AI OS" };
 
 const basisLabel = { finding: "Nghiên cứu", knowledge: "Second Brain", insight: "Insight" } as const;
 
-export default async function HooksPage({ searchParams }: { searchParams: Promise<{ topic?: string; all?: string }> }) {
+export default async function HooksPage({ searchParams }: { searchParams: Promise<{ topic?: string; all?: string; research?: string }> }) {
   const sp = await searchParams;
   const role = roleById("hooks")!;
   const allowed = roleAllows(role);
@@ -36,7 +36,8 @@ export default async function HooksPage({ searchParams }: { searchParams: Promis
       <Panel>
         <PanelHeader title="AI tạo hook" sub={`${role.name} · ${allowed.ok ? (aiConfigured() ? "được phép gọi AI" : "chưa có khoá Claude API (Cài đặt › Kết nối)") : allowed.reason}`} action={<Link href="/settings#ai-team" className="text-[12.5px] font-semibold text-accent">Đội AI ›</Link>} />
         <form action={aiGenerateHooks} className="grid gap-2 p-4 md:grid-cols-[1fr_auto] md:items-end">
-          <Field label="Chủ đề marketing (OWNER đề xuất)">
+          {sp.research && <input type="hidden" name="research" value={sp.research} />}
+          <Field label={sp.research ? "Chủ đề (dùng insight của chủ đề nghiên cứu này)" : "Chủ đề marketing (OWNER đề xuất)"}>
             <input name="topic" required minLength={4} defaultValue={sp.topic ?? ""} placeholder="vd: chào hỏi phá băng khi gọi điện cho khách mới" className={inputClass} />
           </Field>
           <SubmitButton pendingText="AI đang viết 10 hook…">AI tạo {HOOK_COUNT} hook</SubmitButton>

@@ -11,7 +11,7 @@ export function ScriptQaPanel({ contentId, draft }: { contentId: string; draft: 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <span className={qa.ok ? "font-semibold text-jade-ink" : "font-semibold text-amber"}>{qa.ok ? "Kịch bản đạt kiểm, gửi duyệt được" : `Còn ${qa.blocking.length} lỗi phải sửa trước khi gửi duyệt`}</span>
         <span className="text-ink-2">Lời thoại khoảng <span className="num font-semibold text-ink">{qa.seconds}</span> giây</span>
-        {brief.taskId && <Link href={`/insights/research/${brief.taskId}#brief`} className="text-jade hover:underline">Xem brief và nguồn</Link>}
+        {brief.taskId && <Link href={`/insights/research/${brief.taskId}`} className="text-jade hover:underline">Xem chủ đề nghiên cứu</Link>}
       </div>
       {qa.blocking.length > 0 && (
         <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-ink">

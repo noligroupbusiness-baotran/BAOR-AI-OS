@@ -118,8 +118,8 @@ const HooksSchema = z.object({
     .describe(`đúng ${HOOK_COUNT} phần tử`),
 });
 
-export async function generateHooks(topic: string, by: string): Promise<Result<{ batchId: string; count: number; dropped: number; short: number }>> {
-  const ctx = hookContext(topic);
+export async function generateHooks(topic: string, by: string, researchId?: string): Promise<Result<{ batchId: string; count: number; dropped: number; short: number }>> {
+  const ctx = hookContext(topic, researchId);
   const gated = await gate("ideas", `AI Hook: 10 hook “${topic.slice(0, 60)}”`, (client, model) =>
     client.messages.parse({
       model,
@@ -136,7 +136,7 @@ export async function generateHooks(topic: string, by: string): Promise<Result<{
   if (!gated.ok) return gated;
   const hooks = (gated.res.parsed_output?.hooks ?? []).slice(0, HOOK_COUNT);
   if (!hooks.length) return { ok: false, error: "AI không trả về hook nào." };
-  const saved = saveHooks(topic, hooks, { source: "ai", by, allowed: ctx.basis });
+  const saved = saveHooks(topic, hooks, { source: "ai", by, allowed: ctx.basis, researchId });
   const dropped = hooks.reduce((n, h) => n + h.basisRefs.filter((r) => !ctx.basis.some((b) => `${b.kind}:${b.id}` === r)).length, 0);
   return { ok: true, batchId: saved.batchId, count: saved.ids.length, dropped, short: Math.max(0, HOOK_COUNT - saved.ids.length) };
 }

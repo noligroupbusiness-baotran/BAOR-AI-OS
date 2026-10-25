@@ -29,6 +29,7 @@ export interface HookRow {
   source: "ai" | "manual";
   status: "new" | "picked" | "rejected";
   contentId: string | null;
+  researchId: string | null;
   createdBy: string;
   createdAt: string;
 }
@@ -68,16 +69,19 @@ export interface HookContext {
   basis: HookBasis[];
 }
 
-export function hookContext(topic: string): HookContext {
+/** `researchId`: tạo hook từ một chủ đề nghiên cứu (bước 2 → 3) — chỉ dùng insight của chính chủ đề đó (kể cả insight theo luật / AI). */
+export function hookContext(topic: string, researchId?: string): HookContext {
   const db = getDb();
   // Bỏ ký tự đại diện của LIKE (% _) khỏi từ khoá chủ đề
   const words = topic.toLowerCase().replace(/[%_\\]/g, " ").split(/\s+/).filter((w) => w.length >= 3).slice(0, 6);
-  const findings = db
-    .select()
-    .from(schema.researchFindings)
-    .where(and(eq(schema.researchFindings.verifyOk, true), words.length ? or(...words.flatMap((w) => [like(schema.researchFindings.statement, `%${w}%`), like(schema.researchFindings.contentTopics, `%${w}%`)])) : undefined))
-    .limit(8)
-    .all();
+  const findings = researchId
+    ? db.select().from(schema.researchFindings).where(and(eq(schema.researchFindings.taskId, researchId), eq(schema.researchFindings.verifyOk, true))).limit(20).all()
+    : db
+        .select()
+        .from(schema.researchFindings)
+        .where(and(eq(schema.researchFindings.verifyOk, true), words.length ? or(...words.flatMap((w) => [like(schema.researchFindings.statement, `%${w}%`), like(schema.researchFindings.contentTopics, `%${w}%`)])) : undefined))
+        .limit(8)
+        .all();
   const knowledge = searchKnowledge(topic || "khách hàng", { limit: 10 }).filter((h) => usableStatus(h.page.status)).slice(0, 6);
   const insights = db.select().from(schema.insights).where(eq(schema.insights.status, "approved")).limit(8).all();
   const basis: HookBasis[] = [
@@ -112,7 +116,7 @@ export interface HookInput {
   basisRefs?: string[]; // "finding:<id>" | "knowledge:<id>" | "insight:<id>" — chỉ giữ ref có trong ngữ cảnh đã đưa
 }
 
-export function saveHooks(topic: string, items: HookInput[], opts: { source: "ai" | "manual"; by: string; allowed?: HookBasis[] }): { batchId: string; ids: string[] } {
+export function saveHooks(topic: string, items: HookInput[], opts: { source: "ai" | "manual"; by: string; allowed?: HookBasis[]; researchId?: string }): { batchId: string; ids: string[] } {
   const batchId = newId("hb");
   const now = new Date().toISOString();
   const allowed = new Map((opts.allowed ?? []).map((b) => [`${b.kind}:${b.id}`, b]));
@@ -137,6 +141,7 @@ export function saveHooks(topic: string, items: HookInput[], opts: { source: "ai
         policyIssues: JSON.stringify(policyIssues([i.hook, i.angle ?? "", ...beats].join("\n"), plats, durationSec)),
         source: opts.source,
         status: "new",
+        researchId: opts.researchId ?? null,
         createdBy: opts.by,
         createdAt: now,
       };

@@ -777,6 +777,7 @@ export const hookIdeas = sqliteTable("hook_ideas", {
   source: text("source").notNull().default("ai"), // ai | manual
   status: text("status").notNull().default("new"), // new | picked | rejected
   contentId: text("content_id"),
+  researchId: text("research_id"), // chủ đề nghiên cứu (research_tasks.id) tạo ra lô hook — nối bước 2 → 3 bằng id, không so chuỗi
   createdBy: text("created_by").notNull().default(""),
   createdAt: text("created_at").notNull(),
 });
