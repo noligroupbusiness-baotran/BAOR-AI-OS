@@ -104,12 +104,12 @@ export async function deleteUploadAction(fd: FormData) {
   await requirePermission("manager", "/settings");
   const id = str(fd, "id");
   const u = getUpload(id);
-  if (!u) return fail("/settings", "Không tìm thấy tệp");
+  if (!u) return fail("/settings#music", "Không tìm thấy tệp");
   if (u.kind === "video") {
     getDb().update(schema.videos).set({ uploadId: null }).where(eq(schema.videos.uploadId, id)).run();
   }
   deleteUpload(id);
-  done("/settings", "Đã xóa tệp");
+  done("/settings#music", "Đã xóa tệp");
 }
 
 // ---------- Dựng video tự động (Agent Edit Video theo Skill Edit video Vlog trên Second Brain) ----------

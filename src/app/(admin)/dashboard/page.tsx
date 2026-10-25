@@ -4,23 +4,26 @@ import { Panel, PanelHeader } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PendingRow } from "@/components/dashboard/pending-row";
 import { PendingAllButton } from "@/components/dashboard/pending-all";
-import { getPending } from "@/lib/dashboard-data";
+import { getPending, getSystemStatus } from "@/lib/dashboard-data";
+import { OverviewStrip } from "@/components/dashboard/overview-strip";
 import { journeyCards } from "@/lib/brand/journey";
 import { cn } from "@/lib/format";
 
-export const metadata = { title: "Hành trình marketing – BAOR AI OS" };
+export const metadata = { title: "Tổng quan – BAOR AI OS" };
 
 const stateDot = { done: "bg-jade", working: "bg-sky", waiting: "bg-amber", not_started: "bg-border-2" } as const;
 
-// Trang chính = hành trình marketing 8 bước (sơ đồ Personal Brand System): ít chữ, mỗi bước một nút bấm.
+// Trang chính = Tổng quan (OWNER 25/10/2026, đổi từ "Hành trình"): tình hình chung (AI, kết nối, nơi dựng, sao lưu, lỗi) →
+// hành trình marketing 8 bước (sơ đồ Personal Brand System, mỗi bước một nút bấm) → việc cần làm. Đọc một trang là nắm hết.
 export default async function JourneyHome() {
   const cards = journeyCards();
   const pending = getPending();
+  const status = getSystemStatus(pending.length);
   const next = cards.find((c) => c.state === "waiting") ?? cards.find((c) => c.state === "not_started");
   return (
     <>
       <div className="flex flex-wrap items-end justify-between gap-2">
-        <h1 className="text-[22px] font-bold tracking-[-0.01em] text-ink">Hành trình marketing</h1>
+        <h1 className="text-[22px] font-bold tracking-[-0.01em] text-ink">Tổng quan</h1>
         {next && (
           <Link href={next.go} className="flex h-9 items-center gap-1.5 rounded-full bg-jade px-4 text-[13px] font-semibold text-white hover:opacity-90">
             Làm tiếp: bước {next.n} · {next.label} <ArrowRight size={15} aria-hidden />
@@ -28,7 +31,10 @@ export default async function JourneyHome() {
         )}
       </div>
 
-      <ol className="m-0 mt-4 grid list-none gap-3 p-0 sm:grid-cols-2 xl:grid-cols-4">
+      <OverviewStrip issues={status.issues} />
+
+      <h2 className="mb-2 mt-5 text-[13px] font-semibold uppercase tracking-wide text-ink-3">Hành trình marketing</h2>
+      <ol className="m-0 grid list-none gap-3 p-0 sm:grid-cols-2 xl:grid-cols-4">
         {cards.map((c) => (
           <li key={c.n} className="card flex flex-col gap-2 p-4">
             <div className="flex items-center gap-2">

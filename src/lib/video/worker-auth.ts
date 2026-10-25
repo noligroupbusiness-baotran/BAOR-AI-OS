@@ -1,5 +1,5 @@
 // Khoá máy dựng: máy dựng của OWNER gọi /api/render-worker/* bằng "Authorization: Bearer <khoá>". Máy chủ chỉ lưu mã băm SHA-256
-// (Cài đặt › Máy dựng video tạo khoá, hiện ĐÚNG MỘT LẦN). Tạo khoá mới = thu hồi khoá cũ.
+// (Cài đặt › Video › Nơi dựng video tạo khoá, hiện ĐÚNG MỘT LẦN). Tạo khoá mới = thu hồi khoá cũ.
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { getSetting, setSetting } from "@/lib/admin";
 

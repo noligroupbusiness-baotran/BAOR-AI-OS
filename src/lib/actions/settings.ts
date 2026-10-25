@@ -24,7 +24,7 @@ export async function toggleAutomation(fd: FormData) {
   const key = str(fd, "key");
   const on = str(fd, "on") === "1";
   setSetting(`automation.${key}`, on ? "0" : "1");
-  done("/settings", on ? "Đã tắt" : "Đã bật");
+  done("/settings#automation", on ? "Đã tắt" : "Đã bật");
 }
 
 export async function saveBrand(fd: FormData) {
@@ -32,7 +32,7 @@ export async function saveBrand(fd: FormData) {
   setSetting("brand.name", str(fd, "name"));
   setSetting("brand.products", str(fd, "products"));
   setSetting("brand.voice", str(fd, "voice"));
-  done("/settings", "Đã lưu thương hiệu và giọng văn");
+  done("/settings#brand", "Đã lưu thương hiệu và giọng văn");
 }
 
 export async function saveAccount(fd: FormData) {
@@ -74,7 +74,7 @@ export async function saveIntegration(fd: FormData) {
   const key = str(fd, "key");
   const db = getDb();
   const row = db.select().from(schema.integrations).where(eq(schema.integrations.key, key)).get();
-  if (!row) return done("/settings", "Không tìm thấy kết nối");
+  if (!row) return done("/settings#integrations", "Không tìm thấy kết nối");
   const fields: Record<string, string> = {};
   for (const [k, v] of fd.entries()) if (k.startsWith("cfg.") && String(v).trim()) fields[k.slice(4)] = String(v).trim();
   // Giá trị bí mật được mã hóa trước khi ghi. "Đã kết nối" chỉ bật sau khi kiểm tra thật thành công.
@@ -98,6 +98,8 @@ export async function saveAiBudget(fd: FormData) {
   const n = (k: string) => Number(String(fd.get(k) ?? "").replace(/[^\d]/g, "")) || 0;
   setSetting("ai.dailyCapVnd", String(n("dailyCapVnd")));
   setSetting("ai.monthlyCapVnd", String(n("monthlyCapVnd")));
+  // Tỷ giá quy đổi giá USD của hãng AI sang VND (bỏ trống / 0 → giữ mặc định)
+  if (n("vndPerUsd") > 0) setSetting("ai.vndPerUsd", String(n("vndPerUsd")));
   done("/settings#ai", "Đã lưu trần chi phí AI");
 }
 
@@ -125,7 +127,7 @@ export async function disconnectIntegration(fd: FormData) {
   await requirePermission("admin", "/settings#integrations");
   const key = str(fd, "key");
   getDb().update(schema.integrations).set({ config: "{}", connected: false, account: null }).where(eq(schema.integrations.key, key)).run();
-  done("/settings", "Đã ngắt kết nối");
+  done("/settings#integrations", "Đã ngắt kết nối");
 }
 
 export async function resetSampleData() {
@@ -144,7 +146,7 @@ export async function clearSampleData() {
   done("/dashboard", "Đã xóa dữ liệu mẫu, giữ nguyên dữ liệu bạn tự tạo. Hệ thống sẵn sàng nhận dữ liệu thật.");
 }
 
-// Cài đặt › Máy dựng video (máy OWNER dựng cho máy chủ)
+// Cài đặt › Video › Nơi dựng video (máy OWNER dựng cho máy chủ)
 export async function setRenderModeAction(fd: FormData) {
   await requirePermission("admin", "/settings#render-worker");
   setSetting("video.renderMode", str(fd, "mode") === "remote" ? "remote" : "local");

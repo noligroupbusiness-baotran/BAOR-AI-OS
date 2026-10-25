@@ -2,6 +2,7 @@ import { and, desc, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { getSetting, setSetting } from "@/lib/admin";
 import type { RuleResult } from "@/lib/router";
+import { MODEL_IDS } from "@/lib/ai-providers";
 
 // Đội AI theo Personal Brand System (sơ đồ OWNER 25/10/2026): việc LOGIC chạy theo quy trình (không AI); việc PHI LOGIC mới gọi AI,
 // và khi gọi thì: mỗi vị trí 1 AI, mỗi AI một trần chi phí riêng, mọi chi phí AI hiện trên MỘT màn hình báo cáo chung.
@@ -19,7 +20,6 @@ export interface AiRole {
   pending?: boolean; // chưa có chỗ nào trong hệ thống gọi AI vị trí này (việc đang làm theo luật) — công tắc / trần áp dụng khi nối
 }
 
-export const CLAUDE_MODELS = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"] as const;
 
 export const AI_ROLES: AiRole[] = [
   { id: "research", name: "AI Nghiên cứu", step: "2", job: "Nghiên cứu chủ đề, lấy insight từ các nền tảng", defaultModel: "claude-opus-5-5" },
@@ -60,7 +60,7 @@ export function roleSettings(role: AiRole): RoleSettings {
   const model = getSetting(`ai.role.${role.id}.model`) ?? "";
   return {
     enabled: getSetting(`ai.role.${role.id}.enabled`) !== "0",
-    model: !role.local && (CLAUDE_MODELS as readonly string[]).includes(model) ? model : role.defaultModel,
+    model: !role.local && MODEL_IDS.includes(model) ? model : role.defaultModel,
     monthlyCapVnd: Math.max(0, Number(getSetting(`ai.role.${role.id}.monthlyCapVnd`) ?? 0) || 0),
   };
 }
@@ -70,7 +70,7 @@ export function saveRoleSettings(id: AiRoleId, s: Partial<RoleSettings>): void {
   if (!role) throw new Error(`Không có vị trí AI ${id}`);
   if (s.enabled !== undefined) setSetting(`ai.role.${id}.enabled`, s.enabled ? "1" : "0");
   if (s.model !== undefined && !role.local) {
-    if (!(CLAUDE_MODELS as readonly string[]).includes(s.model)) throw new Error(`Mô hình không hợp lệ: ${s.model}`);
+    if (!MODEL_IDS.includes(s.model)) throw new Error(`Mô hình không hợp lệ: ${s.model}`);
     setSetting(`ai.role.${id}.model`, s.model);
   }
   if (s.monthlyCapVnd !== undefined) setSetting(`ai.role.${id}.monthlyCapVnd`, String(Math.max(0, Math.round(s.monthlyCapVnd) || 0)));

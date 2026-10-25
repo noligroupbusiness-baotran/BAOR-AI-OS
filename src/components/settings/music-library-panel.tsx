@@ -4,6 +4,7 @@ import { SubmitButton } from "@/components/campaigns/submit-button";
 import { setLibraryMusicApproval } from "@/lib/actions/media";
 import { musicLibrary, sfxCount, type MusicTrack } from "@/lib/video/music-library";
 import { can, currentActor } from "@/lib/permissions";
+import { MoreOptions } from "./setting-item";
 
 // Cài đặt › Thư viện nhạc nền: bài nạp từ kho tư liệu (scripts/video/library_sync.py). OWNER nghe thử từng bài rồi duyệt;
 // bộ dựng chỉ TỰ chọn bài đã duyệt, theo loại nhạc biên tập AI chọn cho nội dung video.
@@ -30,16 +31,21 @@ export async function MusicLibraryPanel() {
     <Panel id="music-library">
       <PanelHeader
         title="Thư viện nhạc nền"
-        sub={`Nạp từ kho tư liệu (chỉ bài kho ghi ĐỦ-HỒ-SƠ, đúng sha256). Biên tập AI chọn loại nhạc hợp nội dung; bộ dựng chỉ dùng bài anh đã nghe duyệt VÀ đạt luật A5 của Phần chung (giấy phép rõ, không nhãn AI, đã tra YouTube không thấy bên thứ ba đăng lại). Không Mixkit; 552792, 241274, 136824 không dùng. Chưa có bài đạt → video dựng KHÔNG nhạc (A5.2). ${sfxCount()} SFX có giấy phép đã nạp từ kho. Hiệu ứng âm thanh khi dựng: bộ SFX anh gửi theo vai trò của Kho hiệu ứng âm thanh (whoosh chỉ 16:9), mức ≤ −19 dB dưới giọng (A6.3); thiếu vai trò nào thì dùng âm tổng hợp.`}
+        sub="Nhạc đã kiểm giấy phép. Nghe thử rồi bấm Duyệt dùng — bộ dựng chỉ tự chọn bài đã duyệt; chưa có bài nào thì video không có nhạc."
         action={<Pill tone={approved > 1 ? "jade" : "amber"}>{approved}/{tracks.length} bài đã duyệt</Pill>}
       />
       {tracks.length === 0 ? (
         <p className="p-4 text-[13px] text-ink-2">Chưa có bài nào. Chạy <code>python3 scripts/video/library_sync.py --catalog …</code> với danh mục của kho tư liệu.</p>
       ) : (
         <div className="grid gap-4 p-4">
-          <p className="m-0 text-[12px] text-ink-3">
-            “ĐỦ-HỒ-SƠ” là đội kiểm giấy phép trên trang nguồn, không phải quét Content ID: vẫn có thể bị nhận bản quyền sau này. Bài chưa duyệt mà được chọn tay → bảng kiểm P chặn đăng.
-          </p>
+          <MoreOptions label="Luật chọn nhạc và hiệu ứng âm thanh">
+            <ul className="m-0 grid list-disc gap-1 pl-5 text-[12px] text-ink-2">
+              <li>Chỉ nạp bài kho tư liệu ghi ĐỦ-HỒ-SƠ, đúng mã sha256. “ĐỦ-HỒ-SƠ” là đội kiểm giấy phép trên trang nguồn, không phải quét Content ID: vẫn có thể bị nhận bản quyền sau này.</li>
+              <li>Bộ dựng chỉ dùng bài đã duyệt VÀ đạt luật A5 của Phần chung (giấy phép rõ, không nhãn AI, đã tra YouTube không thấy bên thứ ba đăng lại). Không Mixkit; 552792, 241274, 136824 không dùng. Chưa có bài đạt → video KHÔNG nhạc (A5.2).</li>
+              <li>Bài chưa duyệt mà được chọn tay → bảng kiểm P chặn đăng.</li>
+              <li>{sfxCount()} hiệu ứng âm thanh có giấy phép đã nạp: dùng theo vai trò (whoosh chỉ 16:9), mức ≤ −19 dB dưới giọng (A6.3); thiếu vai trò nào thì dùng âm tổng hợp.</li>
+            </ul>
+          </MoreOptions>
           {[...groups.entries()].map(([g, list]) => (
             <div key={g}>
               <div className="lbl">{GENRE[g] ?? (g === "khac" ? "Khác" : g)} · {list.filter((t) => t.approved).length}/{list.length} đã duyệt</div>

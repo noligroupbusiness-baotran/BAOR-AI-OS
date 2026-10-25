@@ -4,54 +4,62 @@ import { z } from "zod";
 import { desc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { getBrand, listInsights, listPersonas } from "@/lib/queries";
-import { readIntegrationConfig } from "@/lib/connectors/config";
 import { aiBudgetAllows, recordAiCall, recordDecision } from "@/lib/router";
-import { roleAllows, roleForPurpose } from "@/lib/ai-roster";
+import { roleAllows, roleForPurpose, roleSettings } from "@/lib/ai-roster";
+import { AI_MODELS, PROVIDERS, ProviderError, clientFor, modelCostVnd, modelInfo, providerConfigured, type AiProvider } from "@/lib/ai-providers";
 import { sendAlert } from "@/lib/alerts";
 import { HOOK_COUNT, HOOK_PLATFORMS, hookContext, saveHooks } from "@/lib/content/hooks";
 import { buildCaption, captionSkill, saveCaptionDraft } from "@/lib/publishing/caption";
 
-// Bộ não AI của hệ thống. Khóa API lấy từ Cài đặt > Kết nối > Claude API, hoặc biến môi trường ANTHROPIC_API_KEY.
-// Mô hình theo từng vị trí: src/lib/ai-roster.ts (Cài đặt › Đội AI).
+// Bộ não AI của hệ thống. Mô hình theo từng vị trí: src/lib/ai-roster.ts (Cài đặt › Đội AI) — Claude, ChatGPT hoặc Grok
+// (src/lib/ai-providers.ts). Khoá API: Cài đặt › Kết nối (Claude API / OpenAI / xAI) hoặc biến môi trường.
 
 type Result<T> = ({ ok: true } & T) | { ok: false; error: string };
 
+/** Có khoá Claude (Nghiên cứu bước tìm nguồn dùng công cụ web_search riêng của Claude). */
 export function aiConfigured(): boolean {
-  return Boolean(readIntegrationConfig("claude").apiKey || process.env.ANTHROPIC_API_KEY);
+  return providerConfigured("anthropic");
 }
 
-function getClient(): Anthropic | null {
-  const apiKey = readIntegrationConfig("claude").apiKey || process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return null;
-  return new Anthropic({ apiKey });
+/** Hãng của mô hình vị trí đang dùng đã có khoá chưa (để trang hiện đúng "chưa có khoá ChatGPT / Grok / Claude"). */
+export function aiConfiguredFor(purpose: string): { ok: boolean; provider: string } {
+  const role = roleForPurpose(purpose);
+  const p = modelInfo(roleSettings(role).model)?.provider ?? "anthropic";
+  return { ok: providerConfigured(p), provider: PROVIDERS[p].label };
 }
-
-const NO_KEY = "Chưa có khóa Claude API. Vào Cài đặt > Kết nối > Claude API để nhập khóa.";
 
 // Cổng AI: mọi lần gọi mô hình đi qua đây để (1) kiểm tra công tắc "Cho phép gọi AI" + trần riêng của vị trí (Đội AI),
-// (2) kiểm tra trần ngân sách chung, (3) ghi sổ chi phí theo vị trí, (4) ghi quyết định vào bộ định tuyến với nhãn
-// "AI đề xuất, cần người duyệt". Mô hình do vị trí quyết định (Cài đặt › Đội AI), truyền vào call.
-export async function gate<T extends { usage?: { input_tokens: number; output_tokens: number } }>(purpose: string, subject: string, call: (client: Anthropic, model: string) => Promise<T>): Promise<Result<{ res: T }>> {
+// (2) kiểm tra trần ngân sách chung, (3) ghi sổ chi phí theo vị trí và giá của đúng mô hình, (4) ghi quyết định vào bộ định tuyến với
+// nhãn "AI đề xuất, cần người duyệt". Mô hình (và hãng) do vị trí quyết định (Cài đặt › Đội AI), truyền vào call.
+// opts.provider: bước chỉ chạy được trên một hãng (Nghiên cứu bước tìm nguồn dùng công cụ web_search riêng của Claude) → nếu mô hình vị trí
+// thuộc hãng khác thì bước này dùng mô hình mặc định của hãng đó (công tắc, trần, sổ chi phí vẫn tính cho vị trí).
+export async function gate<T extends { usage?: { input_tokens: number; output_tokens: number } }>(purpose: string, subject: string, call: (client: Anthropic, model: string) => Promise<T>, opts: { provider?: AiProvider } = {}): Promise<Result<{ res: T; model: string }>> {
   const role = roleForPurpose(purpose);
   const allowed = roleAllows(role);
   if (!allowed.ok) {
     recordDecision({ lane: "rule", domain: purpose === "reply" ? "reply" : purpose === "research" ? "research" : "content", subject, outcome: "không gọi AI", reason: allowed.reason, needsApproval: false });
     return { ok: false, error: allowed.reason };
   }
-  const model = allowed.value?.model ?? role.defaultModel;
-  const client = getClient();
-  if (!client) return { ok: false, error: NO_KEY };
+  let model = allowed.value?.model ?? role.defaultModel;
+  if (opts.provider && (modelInfo(model)?.provider ?? "anthropic") !== opts.provider) {
+    model = modelInfo(role.defaultModel)?.provider === opts.provider ? role.defaultModel : AI_MODELS.find((m) => m.provider === opts.provider)!.id;
+  }
+  const provider: AiProvider = modelInfo(model)?.provider ?? "anthropic";
+  const client = clientFor(provider);
+  if (!client) return { ok: false, error: `Chưa có khoá ${PROVIDERS[provider].label} cho ${role.name} (${model}). Vào Cài đặt › Kết nối để nhập, hoặc đổi mô hình ở Cài đặt › Đội AI.` };
   const budget = aiBudgetAllows();
   if (!budget.ok) {
     recordDecision({ lane: "rule", domain: "content", subject, outcome: "chặn gọi AI", reason: budget.reason, needsApproval: false });
     void sendAlert({ level: "warn", title: "AI chạm trần chi phí", text: budget.reason, href: "/settings#ai" });
-    return { ok: false, error: `${budget.reason} Nâng trần ở Cài đặt › AI Agent nếu cần.` };
+    return { ok: false, error: `${budget.reason} Nâng trần ở Cài đặt › Đội AI nếu cần.` };
   }
   try {
     const res = await call(client, model);
-    const aiCallId = recordAiCall({ purpose, role: role.id, model, inputTokens: res.usage?.input_tokens ?? 0, outputTokens: res.usage?.output_tokens ?? 0, ok: true });
+    const inputTokens = res.usage?.input_tokens ?? 0;
+    const outputTokens = res.usage?.output_tokens ?? 0;
+    const aiCallId = recordAiCall({ purpose, role: role.id, model, inputTokens, outputTokens, ok: true, costVnd: modelCostVnd(model, inputTokens, outputTokens) });
     recordDecision({ lane: "ai", domain: purpose === "reply" ? "reply" : purpose === "research" ? "research" : "content", subject, outcome: "AI đã tạo đề xuất", reason: "Thiếu dữ liệu nguồn có sẵn, dùng AI; người duyệt trước khi dùng.", sources: ["Dữ liệu trong hệ thống (Cài đặt, insight, hội thoại)", `${role.name} · ${model}`], confidence: 70, needsApproval: true, aiCallId });
-    return { ok: true, res };
+    return { ok: true, res, model };
   } catch (e) {
     recordAiCall({ purpose, role: role.id, model, inputTokens: 0, outputTokens: 0, ok: false, error: describeError(e) });
     return { ok: false, error: describeError(e) };
@@ -60,10 +68,18 @@ export async function gate<T extends { usage?: { input_tokens: number; output_to
 
 
 function describeError(e: unknown): string {
+  if (e instanceof ProviderError) {
+    const name = PROVIDERS[e.provider].label;
+    if (e.status === 401 || e.status === 403) return `Khóa ${name} không hợp lệ hoặc thiếu quyền (${e.status}): ${e.message}`;
+    if (e.status === 429) return `${name} đang quá tải hoặc hết hạn mức, thử lại sau ít phút.`;
+    return `Lỗi ${name} (${e.status}): ${e.message}`;
+  }
   if (e instanceof Anthropic.AuthenticationError) return "Khóa Claude API không hợp lệ.";
   if (e instanceof Anthropic.RateLimitError) return "Claude API đang quá tải, thử lại sau ít phút.";
   if (e instanceof Anthropic.APIError) return `Lỗi Claude API (${e.status}): ${e.message}`;
-  return "Không gọi được Claude API.";
+  if (e instanceof Error && e.name === "TimeoutError") return "Hết thời gian chờ mô hình AI trả lời.";
+  if (e instanceof Error && /parse structured output/i.test(e.message)) return `AI trả về không đúng định dạng: ${e.message.slice(0, 200)}`;
+  return "Không gọi được mô hình AI.";
 }
 
 function brandContext() {

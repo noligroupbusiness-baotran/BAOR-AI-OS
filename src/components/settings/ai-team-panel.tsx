@@ -1,60 +1,60 @@
-import Link from "next/link";
-import { Panel, PanelHeader, Rows } from "@/components/ui/card";
+import { Panel, PanelHeader } from "@/components/ui/card";
 import { Pill } from "@/components/ui/pill";
 import { Field, inputClass } from "@/components/ui/field";
 import { SubmitButton } from "@/components/campaigns/submit-button";
 import { saveAiRole } from "@/lib/actions/settings";
-import { AI_ROLES, CLAUDE_MODELS, roleSettings } from "@/lib/ai-roster";
+import { AI_ROLES, roleSettings } from "@/lib/ai-roster";
+import { AI_MODELS, PROVIDERS, modelInfo, providerConfigured, type AiProvider } from "@/lib/ai-providers";
+import { formatCurrency } from "@/lib/format";
+import { SettingItem, SettingList } from "./setting-item";
 
-// Cài đặt › Đội AI: mỗi vị trí 1 AI — công tắc "Cho phép gọi AI", mô hình, trần chi phí riêng / tháng.
+// Cài đặt › Đội AI: mỗi vị trí 1 AI — một dòng "Bật / Tắt · mô hình · trần"; bấm mới chỉnh công tắc, mô hình, trần riêng / tháng.
 export function AiTeamPanel() {
   return (
     <Panel id="ai-team">
-      <PanelHeader
-        title="Đội AI — mỗi vị trí một AI"
-        sub="Việc logic chạy theo quy trình, không gọi AI. Việc cần suy nghĩ mới gọi AI của đúng vị trí. Tắt “Cho phép gọi AI” thì vị trí đó chỉ làm phần theo luật. Trần riêng 0 = chỉ dùng trần chung."
-        action={<Link href="/reports?tab=ai" className="text-[12.5px] font-semibold text-accent">Báo cáo chi phí AI ›</Link>}
-      />
-      <Rows>
+      <PanelHeader title="Đội AI" sub="Mỗi bước một AI — chọn Claude, ChatGPT hoặc Grok. Tắt thì bước đó chỉ chạy theo luật, không tốn tiền AI." />
+      <SettingList>
         {AI_ROLES.map((role) => {
           const s = roleSettings(role);
+          const info = modelInfo(s.model);
+          const model = role.local ? "tại máy · ₫0" : info?.label ?? s.model;
+          const noKey = !role.local && info && !providerConfigured(info.provider);
           return (
-            <li key={role.id} className="px-4 py-3">
-              <form action={saveAiRole} className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+            <SettingItem
+              key={role.id}
+              title={role.name}
+              badge={role.pending ? <Pill tone="amber">Chưa nối</Pill> : !s.enabled ? <Pill>Tắt</Pill> : noKey ? <Pill tone="amber">Thiếu khoá {PROVIDERS[info.provider].label}</Pill> : <Pill tone="jade">Bật</Pill>}
+              summary={`Bước ${role.step} · ${model}${s.monthlyCapVnd ? ` · trần ${formatCurrency(s.monthlyCapVnd)}/tháng` : ""}`}
+            >
+              <p className="m-0 text-[12px] text-ink-2">{role.job}{role.pending ? " — chưa có chỗ nào gọi AI này, đang chạy theo luật." : ""}</p>
+              <form action={saveAiRole} className="flex flex-wrap items-end gap-2">
                 <input type="hidden" name="role" value={role.id} />
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold text-ink">{role.name}</span>
-                    <Pill tone="neutral">Bước {role.step}</Pill>
-                    {role.local && <Pill tone="jade">Tại máy · ₫0</Pill>}
-                    {role.pending && <Pill tone="amber">Chưa nối · đang theo luật</Pill>}
-                  </div>
-                  <p className="mt-0.5 text-[12px] text-ink-2">{role.job}</p>
-                </div>
-                <div className="flex flex-wrap items-end gap-2">
-                  <label className="flex items-center gap-1.5 pb-2 text-[12.5px] text-ink">
-                    <input type="checkbox" name="enabled" defaultChecked={s.enabled} aria-label={`Cho phép gọi AI — ${role.name}`} />
-                    Cho phép gọi AI
-                  </label>
-                  <Field label="Mô hình">
-                    {role.local ? (
-                      <input value={s.model} readOnly className={`${inputClass} w-[180px] text-ink-3`} />
-                    ) : (
-                      <select name="model" defaultValue={s.model} className={`${inputClass} w-[180px]`}>
-                        {CLAUDE_MODELS.map((m) => <option key={m} value={m}>{m}</option>)}
-                      </select>
-                    )}
-                  </Field>
-                  <Field label="Trần riêng / tháng (₫)">
-                    <input name="monthlyCapVnd" inputMode="numeric" defaultValue={s.monthlyCapVnd} className={`${inputClass} w-[130px]`} />
-                  </Field>
-                  <SubmitButton>Lưu</SubmitButton>
-                </div>
+                <label className="flex items-center gap-1.5 pb-2 text-[12.5px] text-ink">
+                  <input type="checkbox" name="enabled" defaultChecked={s.enabled} aria-label={`Cho phép gọi AI — ${role.name}`} />
+                  Cho phép gọi AI
+                </label>
+                <Field label="Mô hình">
+                  {role.local ? (
+                    <input value={s.model} readOnly className={`${inputClass} w-[180px] text-ink-3`} />
+                  ) : (
+                    <select name="model" defaultValue={s.model} className={`${inputClass} w-[240px]`}>
+                      {(Object.keys(PROVIDERS) as AiProvider[]).map((p) => (
+                        <optgroup key={p} label={`${PROVIDERS[p].label}${providerConfigured(p) ? "" : " — chưa có khoá"}`}>
+                          {AI_MODELS.filter((m) => m.provider === p).map((m) => <option key={m.id} value={m.id}>{m.label} · ${m.usdIn}/${m.usdOut} mỗi 1M token</option>)}
+                        </optgroup>
+                      ))}
+                    </select>
+                  )}
+                </Field>
+                <Field label="Trần riêng / tháng (₫)" hint="0 = dùng trần chung">
+                  <input name="monthlyCapVnd" inputMode="numeric" defaultValue={s.monthlyCapVnd} className={`${inputClass} w-[130px]`} />
+                </Field>
+                <SubmitButton>Lưu</SubmitButton>
               </form>
-            </li>
+            </SettingItem>
           );
         })}
-      </Rows>
+      </SettingList>
     </Panel>
   );
 }

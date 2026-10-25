@@ -3,7 +3,7 @@
 import { listContent, listConversations, listLeads, listPosts, pendingCounts, listAds } from "@/lib/queries";
 import { campaignRepo } from "@/lib/campaigns/repository";
 import { listVideos } from "@/lib/videos/repository";
-import { listRuns, listIntegrationStatus } from "@/lib/connectors/config";
+import { isIntegrationError, listRuns, listIntegrationStatus } from "@/lib/connectors/config";
 import { schedulerState } from "@/lib/scheduler";
 import { listAiCalls, listDecisions } from "@/lib/router";
 import { dateKey, TIME_ZONE } from "@/lib/format";
@@ -24,7 +24,7 @@ export function getOverview(): OverviewStats {
   const posts = listPosts();
   const failed = posts.filter((p) => p.status === "failed").length;
   const failedRuns = listRuns(50).filter((r) => r.startedAt >= since24h() && r.finishedAt && !r.ok && r.kind !== "check").length;
-  const badIntegrations = listIntegrationStatus().filter((i) => i.lastCheckOk === false).length;
+  const badIntegrations = listIntegrationStatus().filter(isIntegrationError).length;
   return {
     pendingApproval: getPending().filter((p) => p.kind !== "customer" && p.kind !== "workflow").length,
     postsToday: posts.filter((p) => dateKey(p.scheduledFor) === today).length,
@@ -139,7 +139,7 @@ export function getSystemStatus(pendingCount: number): SystemStatus {
   const issues: string[] = [];
   for (const a of agents) if (a.status === "error" || a.status === "paused") issues.push(`${a.name}: ${a.task}`);
   for (const p of listPosts()) if (p.status === "failed") issues.push(`Đăng bài thất bại: “${p.title}”${p.error ? ` · ${p.error}` : ""}`);
-  for (const i of listIntegrationStatus()) if (i.lastCheckOk === false && i.lastError) issues.push(`${i.name}: ${i.lastError}`);
+  for (const i of listIntegrationStatus()) if (isIntegrationError(i)) issues.push(`${i.name}: ${i.lastError}`);
   const severe = agents.some((a) => a.status === "error") || listPosts().some((p) => p.status === "failed");
   return {
     level: severe ? "error" : issues.length ? "warn" : "ok",

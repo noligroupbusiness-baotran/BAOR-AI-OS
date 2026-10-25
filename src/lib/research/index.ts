@@ -7,8 +7,8 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { getDb, schema } from "@/db";
 import { aiConfigured, gate } from "@/lib/ai";
-import { roleForPurpose, roleSettings } from "@/lib/ai-roster";
 import { estimateCostVnd } from "@/lib/router";
+import { modelCostVnd } from "@/lib/ai-providers";
 import { getKnowledgePages, searchKnowledge } from "@/lib/knowledge";
 import { recordContentVersion } from "@/lib/content/versions";
 import { buildShootingScript, maxSecondsFromGoal, scriptQa, type ScriptQa } from "@/lib/content/shooting-script";
@@ -303,7 +303,7 @@ export async function runResearchWithAi(taskId: string, by: string, opts: { appe
   const kc = knowledgeContext(task.question);
   const maxSearches = 8;
 
-  // Bước 1: tìm và đọc nguồn ngoài (công cụ web_search chạy phía Anthropic)
+  // Bước 1: tìm và đọc nguồn ngoài (công cụ web_search chạy phía Anthropic — ghim Claude dù vị trí chọn hãng khác)
   const step1 = await gate<RunOut>("research", `Nghiên cứu: ${task.question.slice(0, 80)}`, async (client, model) => {
     const messages: Anthropic.Beta.BetaMessageParam[] = [
       { role: "user", content: `Câu hỏi nghiên cứu: ${task.question}\nMục tiêu sử dụng: ${task.purpose}\n\nTri thức nội bộ liên quan (Second Brain):\n${kc.text}\n\nHãy tìm nguồn ngoài, rồi viết báo cáo: kết luận, các quan điểm khác nhau, giới hạn bằng chứng, độ tin cậy, góc ứng dụng và chủ đề content đề xuất. Mỗi ý dẫn nguồn.` },
@@ -334,7 +334,7 @@ export async function runResearchWithAi(taskId: string, by: string, opts: { appe
       messages.push({ role: "assistant", content: res.content });
     }
     return { usage, text, urls, searches };
-  });
+  }, { provider: "anthropic" }); // web_search chỉ có ở Claude: vị trí chọn ChatGPT / Grok thì bước này vẫn chạy Claude
   if (!step1.ok) {
     db.update(schema.researchTasks).set({ status: "error", error: step1.error }).where(eq(schema.researchTasks.id, taskId)).run();
     return step1;
@@ -368,8 +368,10 @@ export async function runResearchWithAi(taskId: string, by: string, opts: { appe
     return { ok: false, error: "AI không trả về hồ sơ hợp lệ." };
   }
   const vndPerSearch = 260; // ≈ 10 USD / 1.000 lượt tìm
-  const cost = estimateCostVnd(r1.usage.input_tokens + (step2.res.usage?.input_tokens ?? 0), r1.usage.output_tokens + (step2.res.usage?.output_tokens ?? 0)) + r1.searches * vndPerSearch;
-  saveResearchResult(taskId, out, { runner: "ai", allowedUrls: new Set(r1.urls.keys()), model: roleSettings(roleForPurpose("research")).model, searchCount: r1.searches, costVnd: cost, by, append: opts.append });
+  // Chi phí theo giá của đúng mô hình từng bước (bước 1 có thể là Claude, bước 2 là mô hình vị trí) — khớp sổ ai_calls
+  const costOf = (m: string, i: number, o: number) => modelCostVnd(m, i, o) ?? estimateCostVnd(i, o);
+  const cost = costOf(step1.model, r1.usage.input_tokens, r1.usage.output_tokens) + costOf(step2.model, step2.res.usage?.input_tokens ?? 0, step2.res.usage?.output_tokens ?? 0) + r1.searches * vndPerSearch;
+  saveResearchResult(taskId, out, { runner: "ai", allowedUrls: new Set(r1.urls.keys()), model: step1.model === step2.model ? step2.model : `${step1.model} + ${step2.model}`, searchCount: r1.searches, costVnd: cost, by, append: opts.append });
   return { ok: true, summary: out.summary };
 }
 

@@ -44,7 +44,7 @@ test("tắt “Cho phép gọi AI” → cổng AI từ chối TRƯỚC khi gọ
   assert.ok(router.listDecisions(5).some((d) => d.lane === "rule" && d.outcome === "không gọi AI"));
   roster.saveRoleSettings("hooks", { enabled: true });
   const r2 = await ai.gate("ideas", "thử", async () => ({ usage: { input_tokens: 1, output_tokens: 1 } }));
-  assert.match(r2.ok ? "" : r2.error, /Chưa có khóa Claude API/, "bật lại thì đi tiếp tới bước khoá API");
+  assert.match(r2.ok ? "" : r2.error, /Chưa có khoá Claude/, "bật lại thì đi tiếp tới bước khoá API");
 });
 
 test("trần riêng của vị trí: chạm trần thì chặn vị trí đó, vị trí khác vẫn được gọi", () => {
@@ -85,17 +85,18 @@ test("báo cáo chung: chi phí theo từng AI, bản ghi cũ (không có role) 
 test("cổng AI truyền ĐÚNG mô hình của vị trí vào lần gọi và ghi sổ theo vị trí → tính vào trần riêng", async () => {
   process.env.ANTHROPIC_API_KEY = "sk-test-khong-goi-that";
   try {
-    roster.saveRoleSettings("assistant", { model: "claude-haiku-5-5", monthlyCapVnd: 3000 });
+    roster.saveRoleSettings("assistant", { model: "claude-opus-5-5", monthlyCapVnd: 3000 });
     let used = "";
     const r = await ai.gate("assistant", "thử", async (_client, model) => {
       used = model;
-      return { usage: { input_tokens: 4000, output_tokens: 1000 } }; // ≈ 3.600 ₫ theo giá mặc định
+      return { usage: { input_tokens: 20000, output_tokens: 5000 } }; // Opus 5.5 $4/$20 → 0,18 USD ≈ 4.680 ₫ (tỷ giá mặc định)
     });
     assert.equal(r.ok, true);
-    assert.equal(used, "claude-haiku-5-5");
+    assert.equal(used, "claude-opus-5-5");
     const last = roster.recentAiCalls(1)[0];
     assert.equal(last.role, "assistant");
-    assert.equal(last.model, "claude-haiku-5-5");
+    assert.equal(last.model, "claude-opus-5-5");
+    assert.equal(last.costVnd, Math.round(0.18 * 26_000), "ghi sổ theo giá của đúng mô hình");
     assert.equal(roster.roleAllows(roster.roleById("assistant")!).ok, false, "lượt gọi qua cổng phải tính vào trần riêng");
   } finally {
     delete process.env.ANTHROPIC_API_KEY;

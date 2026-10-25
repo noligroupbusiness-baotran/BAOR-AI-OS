@@ -4,7 +4,7 @@
 //
 // Chạy:  npm run render-worker            (chạy tay)
 //        npm run render-worker:install    (cài chạy nền, tự bật khi đăng nhập máy — macOS LaunchAgent)
-// Cấu hình: ~/.baor/render-worker.env (lệnh dán sẵn ở Cài đặt › Máy dựng video › Tạo khoá) hoặc .env.render-worker ở gốc repo — không commit
+// Cấu hình: ~/.baor/render-worker.env (lệnh dán sẵn ở Cài đặt › Video › Nơi dựng video › Tạo khoá) hoặc .env.render-worker ở gốc repo — không commit
 //   BAOR_REMOTE_URL=https://mkt.baor.vn
 //   BAOR_WORKER_KEY=bw_...            (hiện một lần khi tạo)
 //   BAOR_WORKER_NAME=may-bao          (tuỳ chọn)
@@ -105,7 +105,7 @@ async function waitConfig(bad = ""): Promise<ReturnType<typeof readConfig>> {
   let said = "";
   for (;;) {
     const c = readConfig();
-    const why = !/^https?:\/\//.test(c.base) || !c.key ? `Chưa có cấu hình máy dựng (${ENV_FILES[0]}). Tạo khoá ở Cài đặt › Máy dựng video rồi dán lệnh vào Terminal — máy dựng tự nhận.` : c.key === bad ? "Khoá máy dựng sai / đã bị thu hồi. Tạo khoá mới ở Cài đặt › Máy dựng video — máy dựng tự nhận khoá mới." : "";
+    const why = !/^https?:\/\//.test(c.base) || !c.key ? `Chưa có cấu hình máy dựng (${ENV_FILES[0]}). Tạo khoá ở Cài đặt › Video › Nơi dựng video rồi dán lệnh vào Terminal — máy dựng tự nhận.` : c.key === bad ? "Khoá máy dựng sai / đã bị thu hồi. Tạo khoá mới ở Cài đặt › Video › Nơi dựng video — máy dựng tự nhận khoá mới." : "";
     if (!why) return c;
     if (why !== said) log((said = why));
     await sleep(60_000);

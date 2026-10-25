@@ -80,6 +80,8 @@ export interface Connector {
   channels: string[];
   /** Trường cấu hình cần nhập; secret = mã hóa khi lưu. */
   fields: { key: string; label: string; secret?: boolean; hint?: string }[];
+  /** Chưa có adapter thật (chỉ lưu khoá): giao diện hiện "Đã lưu khoá" / "Chưa kết nối" thay vì "Lỗi"; ghi chú hiện khi mở mục. */
+  pending?: string;
   check(ctx: ConnectorContext): Promise<CheckResult>;
   /** Số liệu tổng của tài khoản trong khoảng ngày (để cập nhật mục tiêu kênh). */
   metrics?(ctx: ConnectorContext, since: string, until: string): Promise<MetricSnapshot[]>;

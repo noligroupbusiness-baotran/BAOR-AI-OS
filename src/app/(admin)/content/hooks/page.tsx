@@ -8,7 +8,7 @@ import { platformLabel } from "@/components/ui/platform";
 import { addManualHook, aiGenerateHooks, pickHookAction, rejectHookAction } from "@/lib/actions/hooks";
 import { HOOK_COUNT, HOOK_PLATFORMS, listHooks, type HookRow } from "@/lib/content/hooks";
 import { roleAllows, roleById } from "@/lib/ai-roster";
-import { aiConfigured } from "@/lib/ai";
+import { aiConfiguredFor } from "@/lib/ai";
 import { formatDateTime, cn } from "@/lib/format";
 import type { Platform } from "@/lib/types";
 
@@ -32,7 +32,7 @@ export default async function HooksPage({ searchParams }: { searchParams: Promis
       />
 
       <Panel>
-        <PanelHeader title="AI tạo hook" sub={`${role.name} · ${allowed.ok ? (aiConfigured() ? "được phép gọi AI" : "chưa có khoá Claude API (Cài đặt › Kết nối)") : allowed.reason}`} action={<Link href="/settings#ai-team" className="text-[12.5px] font-semibold text-accent">Đội AI ›</Link>} />
+        <PanelHeader title="AI tạo hook" sub={`${role.name} · ${allowed.ok ? (aiConfiguredFor("ideas").ok ? "được phép gọi AI" : `chưa có khoá ${aiConfiguredFor("ideas").provider} (Cài đặt › Kết nối)`) : allowed.reason}`} action={<Link href="/settings#ai-team" className="text-[12.5px] font-semibold text-accent">Đội AI ›</Link>} />
         <form action={aiGenerateHooks} className="grid gap-2 p-4 md:grid-cols-[1fr_auto] md:items-end">
           {sp.research && <input type="hidden" name="research" value={sp.research} />}
           <Field label={sp.research ? "Chủ đề (dùng insight của chủ đề nghiên cứu này)" : "Chủ đề marketing (OWNER đề xuất)"}>

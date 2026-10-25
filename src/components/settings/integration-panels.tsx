@@ -1,12 +1,15 @@
-import { Panel, PanelHeader, Rows } from "@/components/ui/card";
+import Link from "next/link";
+import { Panel, PanelHeader } from "@/components/ui/card";
+import { MoreOptions, SettingItem, SettingList, SettingSection } from "./setting-item";
 import { Pill } from "@/components/ui/pill";
 import { Button } from "@/components/ui/button";
 import { Field, FormNotice, inputClass } from "@/components/ui/field";
 import { SubmitButton } from "@/components/campaigns/submit-button";
-import { listIntegrationStatus, listRuns, maskedIntegrationConfig } from "@/lib/connectors/config";
+import { STALE_CLAUDE_NOTE, listIntegrationStatus, listRuns, maskedIntegrationConfig } from "@/lib/connectors/config";
 import { connectorFor } from "@/lib/connectors/registry";
 import { disconnectIntegration, runBackgroundNow, saveAiBudget, saveIntegration } from "@/lib/actions/settings";
-import { domainLabel, getAiBudget, laneLabel, listAiCalls, listDecisions } from "@/lib/router";
+import { domainLabel, getAiBudget, laneLabel, listDecisions } from "@/lib/router";
+import { vndPerUsd } from "@/lib/ai-providers";
 import { schedulerState } from "@/lib/scheduler";
 import { getLeadWebhookKey, getMetaVerifyToken, publicBaseUrl } from "@/lib/webhooks";
 import { formatCurrency, formatDateTime, cn } from "@/lib/format";
@@ -18,6 +21,8 @@ const PRIMARY: Record<string, string[]> = {
   meta_ads: ["accessToken", "adAccountId"],
   notion: ["token"],
   claude: ["apiKey"],
+  openai: ["apiKey"],
+  xai: ["apiKey"],
   instagram: ["igUserId"],
   tiktok: ["accessToken"],
   youtube: ["accessToken"],
@@ -26,107 +31,159 @@ const PRIMARY: Record<string, string[]> = {
   website: ["siteUrl"],
 };
 
+const AI_ORDER = ["claude", "openai", "xai", "notion"];
+
+// Nhóm nền tảng cho dễ tìm; khoá lạ rơi vào "Khác".
+const SECTIONS: { title: string; keys: (k: string) => boolean }[] = [
+  { title: "Đăng bài & tin nhắn", keys: (k) => k.startsWith("facebook_page") || ["instagram", "tiktok", "youtube", "zalo_oa"].includes(k) },
+  { title: "Quảng cáo", keys: (k) => k === "meta_ads" },
+  { title: "AI & tri thức", keys: (k) => AI_ORDER.includes(k) },
+  { title: "Website & email", keys: (k) => k === "website" || k === "email_provider" },
+];
+
 export function IntegrationsPanel() {
-  const integrations = listIntegrationStatus();
-  const base = publicBaseUrl();
+  const all = listIntegrationStatus();
+  // Fanpage phụ: hiện trang đã dùng + MỘT ô "Thêm fanpage" (thay vì 3 dòng trống)
+  const extra = all.filter((i) => /^facebook_page_\d+$/.test(i.key));
+  const used = new Set(extra.filter((i) => i.connected || i.lastCheckedAt).map((i) => i.key));
+  const nextFree = extra.find((i) => !used.has(i.key))?.key;
+  // Fanpage phụ nằm TRONG mục Facebook Page (trang đã dùng + một ô "Thêm fanpage"), không thành dòng riêng
+  const extraShown = extra.filter((i) => used.has(i.key) || i.key === nextFree);
+  const integrations = all.filter((i) => !/^facebook_page_\d+$/.test(i.key));
+  const groups = [...SECTIONS, { title: "Khác", keys: (k: string) => !SECTIONS.some((g) => g.keys(k)) }]
+    .map((g) => ({ title: g.title, items: integrations.filter((i) => g.keys(i.key)).sort((a, b) => AI_ORDER.indexOf(a.key) - AI_ORDER.indexOf(b.key)) }))
+    .filter((g) => g.items.length > 0);
   return (
     <Panel id="integrations">
-      <PanelHeader title="Kết nối API" sub="Dán khoá rồi bấm Lưu — hệ thống tự kiểm tra. Khoá được mã hoá, không hiện lại." />
-      <Rows>
-        {integrations.map((i) => {
-          const connector = connectorFor(i.key);
-          const fields = connector?.fields ?? [];
-          const pk = PRIMARY[i.key.startsWith("facebook_page") ? "facebook_page" : i.key] ?? fields.filter((f) => f.secret).map((f) => f.key);
-          const primary = fields.filter((f) => pk.includes(f.key));
-          const more = fields.filter((f) => !pk.includes(f.key));
-          const masked = maskedIntegrationConfig(i.key);
-          return (
-            <li key={i.key} id={i.key} className="scroll-mt-20 px-4 py-3">
-              <form action={saveIntegration} className="grid gap-2">
-                <input type="hidden" name="key" value={i.key} />
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-semibold text-ink">{i.name}</span>
-                  {i.connected ? <Pill tone="jade">Đã kết nối{i.account ? ` · ${i.account}` : ""}</Pill> : i.lastCheckOk === false ? <Pill tone="brick">Lỗi</Pill> : <Pill>Chưa kết nối</Pill>}
-                  {!i.connected && i.lastError && <span className="truncate text-[11.5px] text-brick">{i.lastError}</span>}
-                </div>
-                <div className="grid gap-2 md:grid-cols-[1fr_1fr_auto] md:items-center">
-                  {primary.map((f) => (
-                    <input key={f.key} name={`cfg.${f.key}`} type={f.secret ? "password" : "text"} aria-label={f.label} defaultValue={f.secret ? "" : masked[f.key] ?? ""} placeholder={masked[f.key] ? `${f.label}: đã có ${masked[f.key]}` : f.label} className={inputClass} autoComplete={f.secret ? "new-password" : "off"} data-1p-ignore data-lpignore="true" />
-                  ))}
-                  {primary.length === 1 && <span className="hidden md:block" />}
-                  <SubmitButton pendingText="Đang kiểm tra…">Lưu</SubmitButton>
-                </div>
-                {(more.length > 0 || i.key === "facebook_page" || i.key === "website" || i.connected) && (
-                  <details className="text-[12.5px]">
-                    <summary className="cursor-pointer text-ink-3">Thêm</summary>
-                    <div className="mt-2 grid gap-2 md:grid-cols-2">
-                      <Field label="Tên hiển thị"><input name="account" defaultValue={i.account ?? ""} className={inputClass} /></Field>
-                      {more.map((f) => (
-                        <Field key={f.key} label={f.label} hint={f.hint}>
-                          <input name={`cfg.${f.key}`} type={f.secret ? "password" : "text"} defaultValue={f.secret ? "" : masked[f.key] ?? ""} placeholder={masked[f.key] ? `đã có ${masked[f.key]}` : ""} className={inputClass} autoComplete={f.secret ? "new-password" : "off"} data-1p-ignore data-lpignore="true" />
-                        </Field>
-                      ))}
-                      {i.key === "facebook_page" && (
-                        <div className="md:col-span-2">
-                          <FormNotice tone="info">Webhook Messenger: <code className="text-ink">{base}/api/webhooks/meta</code> · Verify Token <code className="text-ink">{getMetaVerifyToken()}</code></FormNotice>
-                        </div>
-                      )}
-                      {i.key === "website" && (
-                        <div className="md:col-span-2">
-                          <FormNotice tone="info">Lead từ website: POST <code className="text-ink">{base}/api/webhooks/lead</code> · header <code className="text-ink">x-baor-key: {getLeadWebhookKey()}</code></FormNotice>
-                        </div>
-                      )}
-                    </div>
-                  </details>
-                )}
-              </form>
-              {(i.connected || i.lastCheckedAt) && (
-                <form action={disconnectIntegration} className="mt-1">
-                  <input type="hidden" name="key" value={i.key} />
-                  <Button variant="ghost" type="submit">Ngắt kết nối</Button>
-                </form>
-              )}
-            </li>
-          );
-        })}
-      </Rows>
+      <PanelHeader title="Kết nối" sub="Bấm vào nền tảng, dán API rồi Lưu — hệ thống tự kiểm tra. Khoá được mã hoá." />
+      <SettingList>
+        {groups.map((g) => (
+          <div key={g.title}>
+            <SettingSection title={g.title} />
+            {g.items.map((i) => <IntegrationItem key={i.key} i={i} extras={i.key === "facebook_page" ? extraShown : []} nextFree={nextFree} />)}
+          </div>
+        ))}
+      </SettingList>
     </Panel>
   );
 }
 
-// Cài đặt › AI Agent: trần chi phí và sổ gọi AI.
+type IntegrationRow = ReturnType<typeof listIntegrationStatus>[number];
+
+function statusBadge(i: IntegrationRow) {
+  const connector = connectorFor(i.key);
+  const hasKey = Object.keys(maskedIntegrationConfig(i.key)).length > 0;
+  return i.connected ? (
+    <Pill tone="jade">Đã kết nối{i.account ? ` · ${i.account}` : ""}</Pill>
+  ) : connector?.pending || i.lastError === STALE_CLAUDE_NOTE ? (
+    hasKey ? <Pill tone="jade">Đã lưu khoá</Pill> : <Pill>Chưa kết nối</Pill>
+  ) : i.lastCheckOk === false ? (
+    <Pill tone="brick">Lỗi</Pill>
+  ) : (
+    <Pill>Chưa kết nối</Pill>
+  );
+}
+
+function IntegrationItem({ i, extras, nextFree }: { i: IntegrationRow; extras: IntegrationRow[]; nextFree?: string }) {
+  const more = extras.filter((x) => x.key !== nextFree);
+  const add = extras.find((x) => x.key === nextFree);
+  return (
+    <SettingItem id={i.key} title={i.name} badge={statusBadge(i)} summary={more.length ? `+ ${more.length} fanpage khác` : undefined}>
+      <IntegrationBody i={i} />
+      {more.map((x) => (
+        <div key={x.key} id={x.key} className="grid scroll-mt-20 gap-2 rounded-md border border-border p-3">
+          <div className="flex flex-wrap items-center gap-2"><span className="font-semibold text-ink">{x.name}</span>{statusBadge(x)}</div>
+          <IntegrationBody i={x} />
+        </div>
+      ))}
+      {add && (
+        <details key={add.key} id={add.key} className="group/add scroll-mt-20 rounded-md border border-dashed border-border-2">
+          <summary className="cursor-pointer list-none px-3 py-2 text-[12.5px] font-semibold text-accent [&::-webkit-details-marker]:hidden">+ Thêm fanpage</summary>
+          <div className="grid gap-2 px-3 pb-3"><IntegrationBody i={add} /></div>
+        </details>
+      )}
+    </SettingItem>
+  );
+}
+
+function IntegrationBody({ i }: { i: IntegrationRow }) {
+  const base = publicBaseUrl();
+  const connector = connectorFor(i.key);
+  const fields = connector?.fields ?? [];
+  const pk = PRIMARY[i.key.startsWith("facebook_page") ? "facebook_page" : i.key] ?? fields.filter((f) => f.secret).map((f) => f.key);
+  const primary = fields.filter((f) => pk.includes(f.key));
+  const more = fields.filter((f) => !pk.includes(f.key));
+  const masked = maskedIntegrationConfig(i.key);
+  return (
+    <>
+      {connector?.pending && <p className="m-0 text-[12px] text-ink-3">Có thể lưu khoá trước — kết nối thật với nền tảng này sẽ được mở sau. {connector.pending}</p>}
+      {!i.connected && !connector?.pending && i.lastError && i.lastError !== STALE_CLAUDE_NOTE && <FormNotice tone="error">{i.lastError}</FormNotice>}
+      <form action={saveIntegration} className="grid gap-2">
+        <input type="hidden" name="key" value={i.key} />
+        <div className="grid gap-2 md:grid-cols-[1fr_1fr_auto] md:items-center">
+          {primary.map((f) => (
+            <input key={f.key} name={`cfg.${f.key}`} type={f.secret ? "password" : "text"} aria-label={f.label} defaultValue={f.secret ? "" : masked[f.key] ?? ""} placeholder={masked[f.key] ? `${f.label}: đã có ${masked[f.key]}` : f.label} className={inputClass} autoComplete={f.secret ? "new-password" : "off"} data-1p-ignore data-lpignore="true" />
+          ))}
+          {primary.length === 1 && <span className="hidden md:block" />}
+          <SubmitButton pendingText="Đang kiểm tra…">Lưu</SubmitButton>
+        </div>
+        {(more.length > 0 || i.key === "facebook_page" || i.key === "website" || i.connected) && (
+          <MoreOptions label="Thêm thông tin">
+            <div className="grid gap-2 md:grid-cols-2">
+              <Field label="Tên hiển thị"><input name="account" defaultValue={i.account ?? ""} className={inputClass} /></Field>
+              {more.map((f) => (
+                <Field key={f.key} label={f.label} hint={f.hint}>
+                  <input name={`cfg.${f.key}`} type={f.secret ? "password" : "text"} defaultValue={f.secret ? "" : masked[f.key] ?? ""} placeholder={masked[f.key] ? `đã có ${masked[f.key]}` : ""} className={inputClass} autoComplete={f.secret ? "new-password" : "off"} data-1p-ignore data-lpignore="true" />
+                </Field>
+              ))}
+              {i.key === "facebook_page" && (
+                <div className="md:col-span-2">
+                  <FormNotice tone="info">Webhook Messenger: <code className="text-ink">{base}/api/webhooks/meta</code> · Verify Token <code className="text-ink">{getMetaVerifyToken()}</code></FormNotice>
+                </div>
+              )}
+              {i.key === "website" && (
+                <div className="md:col-span-2">
+                  <FormNotice tone="info">Lead từ website: POST <code className="text-ink">{base}/api/webhooks/lead</code> · header <code className="text-ink">x-baor-key: {getLeadWebhookKey()}</code></FormNotice>
+                </div>
+              )}
+            </div>
+          </MoreOptions>
+        )}
+      </form>
+      {(i.connected || i.lastCheckedAt) && (
+        <form action={disconnectIntegration}>
+          <input type="hidden" name="key" value={i.key} />
+          <Button variant="ghost" type="submit">Ngắt kết nối</Button>
+        </form>
+      )}
+    </>
+  );
+}
+
+// Cài đặt › Đội AI: tổng chi AI (hôm nay / tháng) + trần chung. Từng lần gọi AI xem ở Báo cáo › Chi phí AI.
 export function AiBudgetPanel() {
   const b = getAiBudget();
-  const calls = listAiCalls(8);
   const pct = b.dailyCapVnd ? Math.min(100, Math.round((b.spentTodayVnd / b.dailyCapVnd) * 100)) : 0;
+  const pctMonth = b.monthlyCapVnd ? Math.min(100, Math.round((b.spentMonthVnd / b.monthlyCapVnd) * 100)) : 0;
   return (
     <Panel id="ai">
-      <PanelHeader title="Trần chi phí AI" sub="Mọi lần gọi Claude đều ghi sổ. Chạm trần thì hệ thống từ chối gọi AI cho tới ngày / tháng sau." />
-      <div className="grid gap-3 p-4 md:grid-cols-[1fr_auto] md:items-end">
-        <dl className="grid grid-cols-2 gap-3 text-[13px] sm:grid-cols-4">
-          <div><dt className="lbl">Hôm nay</dt><dd className={cn("num mt-0.5 font-bold", pct >= 100 ? "text-brick" : pct >= 80 ? "text-amber" : "text-ink")}>{formatCurrency(b.spentTodayVnd)}</dd><dd className="text-[11.5px] text-ink-3">{b.callsToday} lần gọi · {pct}% trần ngày</dd></div>
-          <div><dt className="lbl">Tháng này</dt><dd className="num mt-0.5 font-bold text-ink">{formatCurrency(b.spentMonthVnd)}</dd><dd className="text-[11.5px] text-ink-3">trần {formatCurrency(b.monthlyCapVnd)}</dd></div>
+      <PanelHeader
+        title="Chi tiêu AI"
+        sub="Tổng tiền gọi AI. Chạm trần thì AI tạm dừng tới ngày / tháng sau."
+        action={<Link href="/reports?tab=ai" className="text-[12.5px] font-semibold text-accent">Xem chi tiết ›</Link>}
+      />
+      <div className="grid gap-4 p-4 md:grid-cols-[1fr_auto] md:items-end">
+        <dl className="m-0 grid grid-cols-2 gap-3">
+          <div><dt className="lbl">Hôm nay</dt><dd className={cn("num m-0 mt-0.5 text-[20px] font-bold", pct >= 100 ? "text-brick" : pct >= 80 ? "text-amber" : "text-ink")}>{formatCurrency(b.spentTodayVnd)}</dd><dd className="m-0 text-[11.5px] text-ink-3">{b.callsToday} lần gọi · {pct}% trần ngày</dd></div>
+          <div><dt className="lbl">Tháng này</dt><dd className={cn("num m-0 mt-0.5 text-[20px] font-bold", pctMonth >= 100 ? "text-brick" : pctMonth >= 80 ? "text-amber" : "text-ink")}>{formatCurrency(b.spentMonthVnd)}</dd><dd className="m-0 text-[11.5px] text-ink-3">{pctMonth}% trần tháng {formatCurrency(b.monthlyCapVnd)}</dd></div>
         </dl>
         <form action={saveAiBudget} className="flex flex-wrap items-end gap-2">
           <Field label="Trần / ngày (₫)"><input name="dailyCapVnd" inputMode="numeric" defaultValue={b.dailyCapVnd} className={`${inputClass} w-[130px]`} /></Field>
           <Field label="Trần / tháng (₫)"><input name="monthlyCapVnd" inputMode="numeric" defaultValue={b.monthlyCapVnd} className={`${inputClass} w-[140px]`} /></Field>
+          <Field label="Tỷ giá (₫ / USD)" hint="Quy đổi giá hãng AI"><input name="vndPerUsd" inputMode="numeric" defaultValue={vndPerUsd()} className={`${inputClass} w-[110px]`} /></Field>
           <SubmitButton>Lưu trần</SubmitButton>
         </form>
       </div>
-      {calls.length > 0 && (
-        <ul className="m-0 list-none border-t border-border p-0">
-          {calls.map((c) => (
-            <li key={c.id} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 border-b border-border px-4 py-2 text-[12px] last:border-b-0">
-              <span className="num text-ink-3">{formatDateTime(c.at)}</span>
-              <span className="font-medium text-ink">{c.purpose}</span>
-              <span className="text-ink-2">{c.model}</span>
-              <span className="num text-ink-2">{c.inputTokens}/{c.outputTokens} token</span>
-              <span className="num ml-auto font-semibold text-ink">{formatCurrency(c.costVnd)}</span>
-              {!c.ok && <Pill tone="brick">{c.error ?? "lỗi"}</Pill>}
-            </li>
-          ))}
-        </ul>
-      )}
     </Panel>
   );
 }
@@ -140,14 +197,16 @@ export function SystemLogPanel() {
     <Panel id="syslog">
       <PanelHeader
         title="Nhật ký hệ thống"
-        sub={s.running ? `Bộ chạy nền đang hoạt động · lần chạy ${s.lastTickAt ? formatDateTime(s.lastTickAt) : "chưa có"}${s.lastResult ? ` · ${s.lastResult}` : ""}` : "Bộ chạy nền chưa khởi động trong tiến trình này."}
+        sub={s.running ? `Chạy nền đang hoạt động · lần gần nhất ${s.lastTickAt ? formatDateTime(s.lastTickAt) : "chưa có"}` : "Chạy nền chưa khởi động."}
         action={
           <form action={runBackgroundNow}>
             <SubmitButton variant="soft" pendingText="Đang chạy…">Chạy ngay</SubmitButton>
           </form>
         }
       />
-      <div className="grid md:grid-cols-2">
+      <div className="border-t border-border px-4 py-3">
+      <MoreOptions label={`Xem nhật ký (${runs.length} lần đồng bộ · ${decisions.length} quyết định)`}>
+      <div className="grid rounded-md border border-border md:grid-cols-2">
         <div className="border-b border-border md:border-b-0 md:border-r">
           <h3 className="px-4 pt-3 text-[11.5px] font-semibold uppercase tracking-wide text-ink-3">Đồng bộ và webhook</h3>
           {runs.length === 0 ? (
@@ -183,6 +242,8 @@ export function SystemLogPanel() {
             </ul>
           )}
         </div>
+      </div>
+      </MoreOptions>
       </div>
     </Panel>
   );

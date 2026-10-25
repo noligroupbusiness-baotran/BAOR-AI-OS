@@ -93,6 +93,14 @@ OWNER 25/10/2026: "ngưng edit video" — KHÔNG xếp hàng / dựng lại vide
    J. XONG (commit kế) — Chỉ marketing (OWNER 25/10 "không bán hàng gì trên này"): XOÁ khỏi code đơn hàng, doanh thu, ROAS, sản phẩm / bảng giá,
       so giá đối thủ, trả lời giá tự động (reply_price → chuyển người tư vấn). GIỮ lead. Bảng products / orders GIỮ trong CSDL (đánh dấu
       DEPRECATED, không migration DROP — xoá bảng là quyết định riêng của OWNER); liên kết order / revenue cũ bị lọc khi đọc.
+   K. XONG 72ad052 — Máy dựng cài một lệnh (npm run render-worker:install, LaunchAgent); trang Tạo khoá hiện lệnh dán Terminal (~/.baor/render-worker.env).
+      Đã cài trên máy OWNER 25/10 (vn.baor.render-worker, đang chờ khoá — tạo trên mkt.baor.vn sau MERGE).
+   L. XONG (commit kế) — Cài đặt gọn (OWNER 25/10 "lộn xộn khó hiểu"): 6 nhóm nút (Kết nối · Thương hiệu · Video · Đội AI · Tự động · Hệ thống),
+      mỗi mục một dòng gập; liên kết cũ /settings#mục mở đúng nhóm; lưu xong giữ nhóm (redirect kèm ?tab=, test tĩnh chốt). "Hành trình" → "Tổng quan":
+      tình hình chung (chi tiêu AI, kết nối, nơi dựng, sao lưu, lỗi) + 8 bước + việc cần làm.
+   M. XONG (commit kế) — Đội AI nhiều hãng: Claude / ChatGPT (OpenAI) / Grok (xAI) cho từng vị trí (Responses API, giá chính thức đọc 25/10/2026
+      trong src/lib/ai-providers.ts — hãng đổi giá thì sửa ở đó); chi phí ghi theo giá từng mô hình × tỷ giá (Cài đặt › Đội AI); kiểm khoá thật
+      (GET /v1/models). Nghiên cứu bước tìm nguồn (web_search) luôn chạy Claude. CHƯA gọi thật ChatGPT / Grok (chưa có khoá).
    CHỜ OWNER: khoá Meta / Google / YouTube / TikTok (đăng bài + quảng cáo 7.2–7.5), hồ sơ cá nhân Facebook (6.2.1.1).
 2. Skill ESV + Skill Edit Video Ngang v0.1.r2 — XONG phần Phần chung A (4255aca, ff638df): nhạc A5 (chưa có bài đạt → KHÔNG nhạc),
    SFX OWNER theo vai trò, cắt lặng A11.4 (+ bảo vệ khoảng có từ), xem trước 720p, số A13, ảnh theo mô tả nội dung A4.1.
@@ -103,7 +111,8 @@ OWNER 25/10/2026: "ngưng edit video" — KHÔNG xếp hàng / dựng lại vide
 3. Nợ đã ghi (không chặn): script_align "Lan"→"Lành" khi kịch bản viết hoa tên khác; negated_before dừng ở "thì" có thể sót
    phủ định mệnh đề sau; mỗi video mới gọi mô hình ~6–8 phút; khôi phục plan.prev-* chưa có nút trong app;
    gắn lại kịch bản không gỡ liên kết chiến dịch kế thừa từ kịch bản cũ; E2E music-library chập chờn (1 lần đỏ, chạy lại xanh);
-   máy dựng: các P3 phản biện 9042beb; lên lịch 2 lần riêng cùng Page ID có thể trùng bài; các P3 phản biện nghiên cứu (49c69ba).
+   máy dựng: các P3 phản biện 9042beb; parse JSON lỗi sau khi hãng đã tính tiền → sổ ghi 0 token (đếm thiếu trần, có từ trước);
+   requirePermission(...,"/settings") không neo khi bị từ chối quyền; lên lịch 2 lần riêng cùng Page ID có thể trùng bài; các P3 phản biện nghiên cứu (49c69ba).
 4. Sau mỗi nhóm được nghiệm thu: cập nhật docs/brand-engine/BAOR-BRAND-ENGINE-IMPLEMENTATION-PROGRESS.md (công thức chấm cố định, chỉ tính bằng chứng mới).
 <!-- NEXT:END -->
 

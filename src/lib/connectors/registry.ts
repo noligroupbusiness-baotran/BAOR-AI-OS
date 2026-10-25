@@ -2,12 +2,14 @@
 import type { Connector } from "./types";
 import { facebookPageConnector, metaAdsConnector } from "./meta";
 import { notionConnector } from "@/lib/knowledge/notion";
+import { claudeKeyConnector, openaiKeyConnector, xaiKeyConnector } from "./ai-keys";
 
 // Nền tảng chưa có adapter thật: vẫn khai báo trường cấu hình để lưu khóa, nhưng "Kiểm tra kết nối" báo rõ.
 const pending = (key: string, channels: string[], fields: Connector["fields"], note: string): Connector => ({
   key,
   channels,
   fields,
+  pending: note,
   async check() {
     return { ok: false, message: note };
   },
@@ -30,7 +32,9 @@ export const connectors: Connector[] = [
   pending("website", ["website_seo"], [{ key: "siteUrl", label: "Địa chỉ website", hint: "https://tenmien.com" }, { key: "gaPropertyId", label: "GA4 Property ID" }], "Adapter GA4 chưa xây; form website có thể gửi lead qua webhook /api/webhooks/lead ngay."),
   pending("email_provider", ["email"], [{ key: "smtpUrl", label: "SMTP URL", secret: true, hint: "smtp://user:pass@host:587" }, { key: "from", label: "Tên và email gửi", hint: "BAOR <hello@tenmien.com>" }], "Gửi email thật chưa bật; cần nhà cung cấp SMTP."),
   notionConnector,
-  pending("claude", [], [{ key: "apiKey", label: "API key", secret: true, hint: "sk-ant-..." }], "Khóa Claude được kiểm tra khi gọi AI lần đầu."),
+  claudeKeyConnector,
+  openaiKeyConnector,
+  xaiKeyConnector,
 ];
 
 export function connectorFor(key: string): Connector | undefined {

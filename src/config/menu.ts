@@ -17,7 +17,6 @@ import {
   FlaskConical,
   Sparkles,
   Archive,
-  Route,
   Target,
 } from "lucide-react";
 
@@ -43,7 +42,7 @@ export interface MenuItem {
 }
 
 export const menu: MenuItem[] = [
-  { key: "dashboard", href: "/dashboard", label: "Hành trình", description: "Hành trình marketing 8 bước: mỗi bước một nút bấm.", icon: Route, group: "ops", hotkey: "1" },
+  { key: "dashboard", href: "/dashboard", label: "Tổng quan", description: "Tình hình chung (chi tiêu AI, kết nối, dựng video, sao lưu, lỗi) và hành trình marketing 8 bước.", icon: LayoutDashboard, group: "ops", hotkey: "1" },
   { key: "research", href: "/insights/research", label: "1–2 · Chủ đề & insight", description: "Chủ đề → insight từ nhóm Facebook, YouTube, Facebook, social.", icon: FlaskConical, group: "brand", hotkey: "2" },
   { key: "content", href: "/content/hooks", label: "3 · Hook & kịch bản", description: "10 hook mỗi lần, kịch bản video ngắn.", icon: FileText, group: "brand", hotkey: "3", also: ["/content"] },
   { key: "video-studio", href: "/video-studio", label: "4 · Quay & edit video", description: "Tải video, AI edit theo skill.", icon: Clapperboard, group: "brand", hotkey: "4" },

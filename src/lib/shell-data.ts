@@ -2,7 +2,7 @@
 import { desc, eq, gte } from "drizzle-orm";
 import { envIssues } from "@/lib/env-check";
 import { getDb, schema } from "@/db";
-import { listIntegrationStatus, listRuns, readIntegrationConfig } from "@/lib/connectors/config";
+import { isIntegrationError, listIntegrationStatus, listRuns, readIntegrationConfig } from "@/lib/connectors/config";
 import { connectorCapabilities } from "@/lib/connectors/sync";
 import { schedulerState } from "@/lib/scheduler";
 import { getAiBudget, listDecisions } from "@/lib/router";
@@ -26,7 +26,7 @@ export function getHealth(): Health {
   const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
   const failed = listRuns(50).filter((r) => r.startedAt >= since && r.finishedAt && !r.ok);
   const issues: string[] = [];
-  for (const i of integrations) if (i.lastCheckOk === false && i.lastError) issues.push(`${i.name}: ${i.lastError}`);
+  for (const i of integrations) if (isIntegrationError(i)) issues.push(`${i.name}: ${i.lastError}`);
   // Token sắp hết hạn (nhập tay ở Cài đặt › Kết nối).
   const today = new Date().toISOString().slice(0, 10);
   const soon = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
@@ -79,7 +79,7 @@ export function getNotifications(): NotificationItem[] {
     if (c.status === "active" && c.endDate === today) out.push({ id: `cpend:${c.id}`, group: "due", type: "Chiến dịch", text: `“${c.name}” kết thúc hôm nay. Cần chốt kết quả.`, at: `${today}T08:00:00+07:00`, href: `/campaigns/${c.id}?tab=results` });
     if (c.status === "approved" && c.startDate <= today) out.push({ id: `cpstart:${c.id}`, group: "due", type: "Chiến dịch", text: `“${c.name}” đã tới ngày bắt đầu nhưng chưa kích hoạt.`, at: `${c.startDate}T08:00:00+07:00`, href: `/campaigns/${c.id}` });
   }
-  for (const i of listIntegrationStatus()) if (i.lastCheckOk === false && i.lastError) out.push({ id: `int:${i.key}:${i.lastCheckedAt}`, group: "error", type: "Kết nối", text: `${i.name}: ${i.lastError}`, at: i.lastCheckedAt ?? new Date().toISOString(), href: `/settings#${i.key}` });
+  for (const i of listIntegrationStatus()) if (isIntegrationError(i)) out.push({ id: `int:${i.key}:${i.lastCheckedAt}`, group: "error", type: "Kết nối", text: `${i.name}: ${i.lastError}`, at: i.lastCheckedAt ?? new Date().toISOString(), href: `/settings#${i.key}` });
   const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
   for (const r of listRuns(30)) if (r.startedAt >= since && r.finishedAt && !r.ok && r.kind !== "check") out.push({ id: `run:${r.id}`, group: "error", type: "Đồng bộ", text: `${r.integrationKey} · ${r.kind}: ${r.message}`, at: r.startedAt, href: "/settings#syslog" });
 

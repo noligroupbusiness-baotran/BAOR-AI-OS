@@ -3,7 +3,7 @@
 #   npm run render-worker:install     cài / cài lại
 #   npm run render-worker:uninstall   gỡ
 #   npm run render-worker:status      tình trạng + nhật ký gần nhất
-# Khoá KHÔNG nằm trong script: máy dựng đọc ~/.baor/render-worker.env (lệnh dán sẵn ở Cài đặt › Máy dựng video › Tạo khoá).
+# Khoá KHÔNG nằm trong script: máy dựng đọc ~/.baor/render-worker.env (lệnh dán sẵn ở Cài đặt › Video › Nơi dựng video › Tạo khoá).
 set -euo pipefail
 
 LABEL="vn.baor.render-worker"
@@ -89,4 +89,4 @@ launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
 launchctl bootstrap "$DOMAIN" "$PLIST"
 sleep 2
 echo "Đã cài máy dựng chạy nền ($LABEL) — tự bật khi đăng nhập máy. Nhật ký: $LOG"
-[ -f "$HOME/.baor/render-worker.env" ] || echo "Còn thiếu khoá: Cài đặt › Máy dựng video › Tạo khoá trên mkt.baor.vn → dán lệnh hiện ra vào Terminal. Máy dựng tự nhận, không cần cài lại."
+[ -f "$HOME/.baor/render-worker.env" ] || echo "Còn thiếu khoá: Cài đặt › Video › Nơi dựng video › Tạo khoá trên mkt.baor.vn → dán lệnh hiện ra vào Terminal. Máy dựng tự nhận, không cần cài lại."

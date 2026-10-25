@@ -18,7 +18,7 @@ export async function SecondBrainPanel() {
     <Panel id="second-brain">
       <PanelHeader
         title="Second Brain (Notion)"
-        sub={`${s.lastSyncedAt ? `Đồng bộ lúc ${formatDateTime(s.lastSyncedAt)}` : "Chưa đồng bộ"} · ${s.total} trang (${usable} dùng được, ${s.byStatus.DRAFT ?? 0} nháp). ${token ? "Tự đồng bộ 6 giờ một lần; sửa skill trên Notion xong bấm Đồng bộ ngay để áp dụng liền." : "Chưa có token Notion (Kết nối › Notion) nên chưa tự đồng bộ."}`}
+        sub={`${s.lastSyncedAt ? `Đồng bộ lúc ${formatDateTime(s.lastSyncedAt)}` : "Chưa đồng bộ"} · ${usable}/${s.total} trang dùng được. ${token ? "Tự đồng bộ 6 giờ một lần." : "Chưa tự đồng bộ — cần token Notion ở Kết nối."}`}
         action={can(actor, "manager") && token ? <form action={syncKnowledgeNow}><SubmitButton pendingText="Đang đọc Notion…">Đồng bộ ngay</SubmitButton></form> : undefined}
       />
       {can(actor, "admin") && !token && (

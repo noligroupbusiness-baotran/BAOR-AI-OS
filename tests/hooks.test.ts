@@ -56,7 +56,7 @@ test("AI tạo hook: qua Đội AI — tắt thì không gọi, thiếu khoá th
   assert.match(off.ok ? "" : off.error, /TẮT/);
   roster.saveRoleSettings("hooks", { enabled: true });
   const noKey = await ai.generateHooks("chào hỏi phá băng", "OWNER");
-  assert.match(noKey.ok ? "" : noKey.error, /khóa Claude API/);
+  assert.match(noKey.ok ? "" : noKey.error, /Chưa có khoá Claude/);
 });
 
 test("chọn hook → tạo kịch bản đang viết mang hook + dàn ý; chọn lại không tạo trùng; bỏ hook", () => {

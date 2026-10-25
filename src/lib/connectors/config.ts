@@ -3,6 +3,7 @@ import { desc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { decryptSecret, encryptSecret, maskSecret } from "@/lib/secrets";
 import { EXTRA_FANPAGES, connectorFor, fanpageKey } from "./registry";
+import { AI_KEY_ROWS } from "./ai-keys";
 import type { ConnectorContext } from "./types";
 
 export function readIntegrationConfig(key: string): Record<string, string> {
@@ -48,7 +49,11 @@ export function setIntegrationStatus(key: string, patch: { connected?: boolean; 
 export function ensureFanpageRows(): void {
   getDb()
     .insert(schema.integrations)
-    .values(EXTRA_FANPAGES.map((n) => ({ key: fanpageKey(n), name: `Facebook Fanpage ${n}`, description: "Thêm một fanpage để đăng video (Page ID + token riêng của trang).", connected: false, account: null, config: "{}" })))
+    .values([
+      ...EXTRA_FANPAGES.map((n) => ({ key: fanpageKey(n), name: `Facebook Fanpage ${n}`, description: "Thêm một fanpage để đăng video (Page ID + token riêng của trang).", connected: false, account: null, config: "{}" })),
+      // Khoá ChatGPT / Grok cho Đội AI (thêm 25/10/2026 — CSDL cũ chưa có dòng)
+      ...AI_KEY_ROWS.map((r) => ({ ...r, connected: false, account: null, config: "{}" })),
+    ])
     .onConflictDoNothing()
     .run();
 }
@@ -87,4 +92,12 @@ export function finishRun(id: string, ok: boolean, message: string, items = 0) {
 
 export function listRuns(limit = 30) {
   return getDb().select().from(schema.syncRuns).orderBy(desc(schema.syncRuns.startedAt)).limit(limit).all();
+}
+
+/** Kết quả kiểm cũ của Claude từ khi chưa có bước kiểm khoá thật (trước 25/10/2026) — không phải lỗi; bấm Lưu để kiểm lại. */
+export const STALE_CLAUDE_NOTE = "Khóa Claude được kiểm tra khi gọi AI lần đầu.";
+
+/** Lỗi kết nối THẬT cần người xử lý: bỏ nền tảng chưa có kết nối thật (chỉ lưu khoá) và kết quả kiểm cũ của Claude. */
+export function isIntegrationError(i: { key: string; lastCheckOk: boolean | null; lastError: string | null }): boolean {
+  return i.lastCheckOk === false && !!i.lastError && !connectorFor(i.key)?.pending && i.lastError !== STALE_CLAUDE_NOTE;
 }

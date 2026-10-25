@@ -16,8 +16,8 @@ export function PeoplePanel({ editing }: { editing?: string }) {
   return (
     <Panel id="people">
       <PanelHeader
-        title="Nhân sự và phân quyền"
-        sub="Người phụ trách chiến dịch, mục tiêu kênh, nội dung và chăm sóc khách. Chỉ nhân sự đang hoạt động mới được phân công mới."
+        title="Nhân sự"
+        sub="Người phụ trách chiến dịch, nội dung và chăm sóc khách; quyền đăng nhập."
         action={<div className="flex items-center gap-2">{items.length > 5 && <ListFilter target="people" placeholder="Lọc tên, vai trò, email…" />}{editing !== "new" && <LinkButton href="/settings?person=new#people" variant="primary">Thêm nhân sự</LinkButton>}</div>}
       />
       {editing === "new" && <PersonForm />}
@@ -82,7 +82,7 @@ function PersonForm({ person }: { person?: PersonRecord }) {
       </Field>
       <div className="flex gap-2 md:col-span-2">
         <SubmitButton pendingText="Đang lưu…">{person ? "Lưu thay đổi" : "Thêm nhân sự"}</SubmitButton>
-        <LinkButton href="/settings#people" variant="ghost">Hủy</LinkButton>
+        <LinkButton href="/settings?tab=he-thong#people" variant="ghost">Hủy</LinkButton>
       </div>
     </form>
   );

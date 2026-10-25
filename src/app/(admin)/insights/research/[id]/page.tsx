@@ -11,7 +11,7 @@ import { getResearchTask } from "@/lib/research";
 import { SOCIAL_KINDS } from "@/lib/research/social";
 import { topicInsights } from "@/lib/research/topic";
 import { roleAllows, roleById, roleSettings } from "@/lib/ai-roster";
-import { aiConfigured } from "@/lib/ai";
+import { aiConfiguredFor } from "@/lib/ai";
 import { currentActor, can } from "@/lib/permissions";
 
 export const metadata = { title: "Chủ đề nghiên cứu – BAOR AI OS" };
@@ -27,7 +27,8 @@ export default async function TopicPage({ params }: { params: Promise<{ id: stri
   const role = roleById("research")!;
   const enabled = roleSettings(role).enabled;
   const ai = roleAllows(role);
-  const aiReady = ai.ok && aiConfigured();
+  const key = aiConfiguredFor("research");
+  const aiReady = ai.ok && key.ok;
   const back = `/insights/research/${id}`;
   const groups = new Map<string, typeof insights>();
   for (const i of insights) groups.set(i.source, [...(groups.get(i.source) ?? []), i]);
@@ -69,7 +70,7 @@ export default async function TopicPage({ params }: { params: Promise<{ id: stri
             {aiReady ? (
               <label className="flex items-center gap-1.5 text-[12.5px] text-ink"><input type="checkbox" name="ai" defaultChecked /> AI Nghiên cứu phân tích thêm (tính phí AI)</label>
             ) : (
-              <span className="text-[12px] text-ink-3">Phân tích theo luật (AI {enabled ? (aiConfigured() ? ai.reason : "chưa có khoá Claude") : "đang tắt"})</span>
+              <span className="text-[12px] text-ink-3">Phân tích theo luật (AI {enabled ? (key.ok ? ai.reason : `chưa có khoá ${key.provider}`) : "đang tắt"})</span>
             )}
           </div>
         </form>

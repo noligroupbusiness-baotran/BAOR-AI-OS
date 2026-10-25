@@ -16,8 +16,8 @@ export function FaqPanel({ editing }: { editing?: string }) {
   return (
     <Panel id="faq">
       <PanelHeader
-        title="Câu trả lời chuẩn cho khách"
-        sub="Tin nhắn chứa đủ các từ khóa của một câu sẽ được trả lời ngay bằng câu đã duyệt, không gọi AI. Càng nhiều câu chuẩn, càng ít chi phí AI."
+        title="Câu trả lời mẫu"
+        sub="Khách nhắn đúng từ khoá → trả lời ngay bằng câu đã duyệt, không tốn tiền AI."
         action={<div className="flex items-center gap-2">{items.length > 5 && <ListFilter target="faq" placeholder="Lọc câu hỏi, từ khóa…" />}{editing !== "new" && <LinkButton href="/settings?faq=new#faq" variant="primary">Thêm câu trả lời</LinkButton>}</div>}
       />
       {editing === "new" && <FaqForm />}
@@ -60,7 +60,7 @@ function FaqForm({ faq }: { faq?: Faq }) {
       <Field label="Câu trả lời" required className="md:col-span-2"><textarea name="answer" required rows={3} defaultValue={faq?.answer ?? ""} className={textareaClass} placeholder="Viết theo giọng thương hiệu, kết bằng lời mời để lại số điện thoại." /></Field>
       <div className="flex gap-2 md:col-span-2">
         <SubmitButton pendingText="Đang lưu…">{faq ? "Lưu thay đổi" : "Thêm câu trả lời"}</SubmitButton>
-        <LinkButton href="/settings#faq" variant="ghost">Hủy</LinkButton>
+        <LinkButton href="/settings?tab=thuong-hieu#faq" variant="ghost">Hủy</LinkButton>
       </div>
     </form>
   );
