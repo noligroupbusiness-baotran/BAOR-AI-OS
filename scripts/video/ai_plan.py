@@ -271,15 +271,18 @@ def usable_asset(x):
     return bool(str(x.get("license", "")).strip()) and not x.get("exclude")
 
 
-def pick_broll(lib, sents, by_id, diagrams, dur, rejected):
+def pick_broll(lib, sents, by_id, diagrams, dur, rejected, topic=""):
     """Minh hoạ: mô hình chọn ảnh theo mô tả thư viện (chỉ ảnh / clip có giấy phép), rồi KIỂM RIÊNG từng lựa chọn."""
     broll = []
     if not lib:
         return broll
     catalog = "\n".join(f"#{i}: {asset_text(x)}" for i, x in enumerate(lib))
+    want = max(1, min(6, round(dur / 40)))  # khoảng 1 ảnh / 40 giây; bước kiểm lần 2 vẫn loại ảnh không hợp
     user = (f"Thư viện ảnh / clip minh hoạ (chỉ được chọn số trong danh sách):\n{catalog}\n\nLời nói:\n{sent_block(sents)}\n\n"
-            "Chọn tối đa 6 chỗ mà một ảnh trong thư viện minh hoạ ĐÚNG NGHĨA câu nói (đúng đối tượng / bối cảnh được nói tới). "
-            "Không chọn nếu chỉ trùng chữ mà khác nghĩa. Không chọn câu trong 3 giây đầu.")
+            f"Chọn khoảng {want} chỗ (tối đa 6) mà một ảnh trong thư viện minh hoạ ĐÚNG NGHĨA câu nói: cảnh trong ảnh là đúng việc / "
+            "đối tượng / bối cảnh câu đang nói (ví dụ câu về gọi điện tư vấn khách ↔ ảnh nhân sự đeo tai nghe tư vấn; câu về đội "
+            "ngũ ↔ ảnh tập thể nhân sự). Không chọn nếu chỉ trùng chữ mà khác nghĩa (câu về gặp khách uống cà phê ↔ ảnh tiệc liên "
+            "hoan là SAI). Không có chỗ nào hợp thật thì trả danh sách rỗng. Không chọn câu trong 3 giây đầu.")
     picks = llm([{"role": "system", "content": "Bạn là biên tập viên hình ảnh, rất khắt khe về việc ảnh khớp nghĩa câu nói."}, {"role": "user", "content": user}], BROLL_SCHEMA, max_tokens=900).get("picks", [])
     used, last = set(), -1e9
     for p in sorted(picks, key=lambda p: by_id.get(p.get("sid"), {"t0": 1e9})["t0"]):
@@ -293,9 +296,13 @@ def pick_broll(lib, sents, by_id, diagrams, dur, rejected):
         if it["file"] in used or t1 - t0 < 1.2 or t0 - last < 6 or any(dd["t0"] - 0.3 <= t0 <= dd["t1"] for dd in diagrams if dd["type"] in ("steps", "compare", "arrow", "mechanism")):
             rejected.append({"kind": "broll", "file": it["file"], "reason": "trùng ảnh / quá sát minh hoạ trước / trùng sơ đồ / sát đầu-cuối"})
             continue
+        # Kiểm có NGỮ CẢNH: câu trước + câu sau + chủ đề video (một câu cụt đứng riêng làm bước kiểm loại cả cặp hợp lý)
+        ctx = " ".join(by_id[k]["text"] for k in (s["id"] - 1, s["id"], s["id"] + 1) if k in by_id)
         chk = llm([{"role": "system", "content": "Trả lời khắt khe, tiếng Việt."},
-                   {"role": "user", "content": f"Câu nói: “{s['text']}”\nẢnh: {asset_text(it)}\n"
-                                               "Ảnh này có minh hoạ ĐÚNG NGHĨA câu nói không (không chỉ trùng chữ)? Ví dụ: câu về 'mời ly cà phê gặp khách' thì ảnh tiệc liên hoan là KHÔNG hợp."}],
+                   {"role": "user", "content": (f"Chủ đề video: {topic[:300]}\n" if topic else "") + f"Đoạn đang nói: “{ctx}”\nẢnh hiện lúc câu: “{s['text']}”\n"
+                                               f"Ảnh: {asset_text(it)}\n"
+                                               "Ảnh này có minh hoạ ĐÚNG việc / bối cảnh đoạn đang nói không (không chỉ trùng chữ)? Ví dụ: đoạn về gọi điện tư vấn khách ↔ ảnh nhân sự tư vấn qua điện thoại là HỢP; "
+                                               "đoạn về 'mời ly cà phê gặp khách' ↔ ảnh tiệc liên hoan là KHÔNG hợp."}],
                   CHECK_SCHEMA, max_tokens=200)
         if not chk.get("fit"):
             rejected.append({"kind": "broll", "file": it["file"], "reason": f"kiểm lần 2: không hợp — {chk.get('reason', '')[:140]}"})
@@ -535,7 +542,7 @@ def plan(words, dur, library=None, content_hint="", log=print, music_genres=None
     broll = []
     lib = [x for x in (library or []) if usable_asset(x)]
     try:
-        broll = pick_broll(lib, sents, by_id, diagrams, dur, rejected)
+        broll = pick_broll(lib, sents, by_id, diagrams, dur, rejected, " ".join(x for x in summaries if x))
     except Exception as ex:  # bước ảnh lỗi → không có ảnh, kế hoạch chữ / sơ đồ vẫn giữ
         broll = []
         rejected.append({"kind": "broll", "reason": f"bước chọn ảnh lỗi, bỏ qua: {str(ex)[:120]}"})
