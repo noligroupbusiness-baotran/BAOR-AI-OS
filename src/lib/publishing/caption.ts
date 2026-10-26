@@ -1,6 +1,7 @@
 // Bài đăng theo skill (Personal Brand System 6.1: "tự viết bài phù hợp với từng tên hook, nội dung video, theo skill trong Second Brain").
 // Phần LOGIC (không AI): tìm skill viết content trong Second Brain, dựng caption theo cấu trúc skill từ kịch bản đã duyệt, kiểm luật.
 // Phần AI (tuỳ chọn, qua Đội AI "AI Viết bài đăng"): src/lib/ai.ts › generateCaption — bản nháp lưu lại, OWNER sửa trước khi lên lịch.
+import { spokenScriptText } from "@/lib/content/vlog-script";
 import { eq } from "drizzle-orm";
 import { getDb, getSqlite, schema } from "@/db";
 import { getSetting, setSetting } from "@/lib/admin";
@@ -117,5 +118,6 @@ export function scriptTextFor(videoId: string): string {
   const db = getDb();
   const v = db.select().from(schema.videos).where(eq(schema.videos.id, videoId)).get();
   const c = v?.contentId ? db.select().from(schema.contentItems).where(eq(schema.contentItems.id, v.contentId)).get() : undefined;
-  return [c?.title, c?.hook, c?.draft, c?.outline].filter(Boolean).join("\n");
+  // Chỉ lời nói của kịch bản — không khối KINH NGHIỆM (câu trả lời thô của OWNER) để số / tên riêng trong đó không thành "có trong kịch bản"
+  return [c?.title, c?.hook, spokenScriptText(c?.draft ?? ""), c?.outline].filter(Boolean).join("\n");
 }

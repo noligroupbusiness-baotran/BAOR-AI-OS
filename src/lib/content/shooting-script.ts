@@ -39,6 +39,12 @@ export const OWNER_MARK = "[OWNER KỂ:";
 /** Nhận dấu OWNER bất kể hoa thường, khoảng trắng, dạng Unicode, có dấu hay không ("KỂ", "KE", "kể"). */
 const OWNER_RE = /\[\s*owner\s+k[eểêềếệễ]\s*:/iu;
 const OWNER_RE_G = /\[\s*owner\s+k[eểêềếệễ]\s*:/giu;
+/** Chỗ trống trong lời nói, nhận lỏng như OWNER_RE: "[OWNER KỂ: …]", "[owner ke: …]", "(chèn …)", "[…]" / "[...]". */
+export const PLACEHOLDER_RE = /\[\s*owner\s+k[eểêềếệễ]\s*:[^\]]*\]|\(\s*ch[eè]n\b[^)]*\)|\[\s*(?:…|\.{2,})\s*\]/giu;
+/** Bỏ mọi chỗ trống khỏi một câu nói (lời đọc thật cho bộ dựng / script.txt). */
+export function stripPlaceholders(s: string): string {
+  return s.normalize("NFC").replace(PLACEHOLDER_RE, " ").replace(/[ \t]+/g, " ").replace(/\s+([.,!?…;:])/gu, "$1").trim();
+}
 const DEFAULT_MAX_SECONDS = 90;
 /** Tốc độ nói giảng giải rõ ràng: khoảng 4,5 âm tiết mỗi giây (tiếng Việt tách âm tiết bằng dấu cách). */
 const SYLLABLES_PER_SECOND = 4.5;

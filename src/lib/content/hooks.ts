@@ -5,8 +5,9 @@ import { getDb, schema } from "@/db";
 import { searchKnowledge } from "@/lib/knowledge";
 import { usableStatus } from "@/lib/knowledge/types";
 import { VLOG_MAX_SEC, vlogTemplate } from "./formats";
-import { cleanBeats } from "./vlog-script";
+import { FIRST_PERSON_CLAIM, cleanBeats } from "./vlog-script";
 import { policyIssues } from "./policy";
+import { experienceSuggestions } from "./owner-experience";
 
 export const HOOK_COUNT = 10; // sơ đồ OWNER: "mỗi lần gọi trả về 10 kết quả"
 // OWNER 26/10: "content viết ra nên là dạng vlog chia sẻ dưới 1 phút" (trước: dưới 3 phút). Chỉ áp cho hook / kịch bản MỚI:
@@ -18,7 +19,12 @@ export interface HookBasis {
   kind: "finding" | "knowledge" | "insight";
   id: string;
   label: string;
+  /** Tư liệu kinh nghiệm OWNER (Case Study / [OWNER] / N1–N2 / OWNER_VIEW) — hook kể chuyện riêng chỉ được dựa vào loại này. */
+  owner?: boolean;
 }
+
+/** Hook chưa dựa trên tư liệu kinh nghiệm OWNER → vlog chia sẻ cần OWNER kể chuyện thật (nhãn "cần chuyện thật"). */
+export const needsRealStory = (basis: HookBasis[]) => !basis.some((b) => b.owner);
 
 export interface HookRow {
   id: string;
@@ -64,15 +70,20 @@ export function hookContext(topic: string, researchId?: string): HookContext {
         .all();
   const knowledge = searchKnowledge(topic || "khách hàng", { limit: 10 }).filter((h) => usableStatus(h.page.status)).slice(0, 6);
   const insights = db.select().from(schema.insights).where(eq(schema.insights.status, "approved")).limit(8).all();
+  // Tư liệu kinh nghiệm OWNER (SK-KNW-01: kinh nghiệm là nguồn sự thật) — có thì hook kể chuyện riêng được phép, chỉ đúng chi tiết trong đó
+  const owner = experienceSuggestions(topic, { researchId, limit: 4 });
+  const ownerKeys = new Set(owner.map((o) => `${o.kind}:${o.id}`));
   const basis: HookBasis[] = [
-    ...findings.map((f) => ({ kind: "finding" as const, id: f.id, label: f.statement.slice(0, 120) })),
-    ...knowledge.map((h) => ({ kind: "knowledge" as const, id: h.page.id, label: h.page.title })),
+    ...findings.map((f) => ({ kind: "finding" as const, id: f.id, label: f.statement.slice(0, 120), ...(ownerKeys.has(`finding:${f.id}`) ? { owner: true } : {}) })),
+    ...knowledge.map((h) => ({ kind: "knowledge" as const, id: h.page.id, label: h.page.title, ...(ownerKeys.has(`knowledge:${h.page.id}`) ? { owner: true } : {}) })),
     ...insights.map((i) => ({ kind: "insight" as const, id: i.id, label: i.title })),
   ];
+  for (const o of owner) if (!basis.some((b) => b.kind === o.kind && b.id === o.id)) basis.push({ kind: o.kind, id: o.id, label: o.title.slice(0, 120), owner: true });
   const text = [
     `Phát hiện nghiên cứu đã kiểm (bước 2):\n${findings.map((f) => `- [finding:${f.id}] (${f.classification}) ${f.statement}${f.application ? ` — ứng dụng: ${f.application}` : ""}`).join("\n") || "(chưa có phát hiện khớp chủ đề)"}`,
     `Second Brain (ACTIVE / VERIFIED):\n${knowledge.map((h) => `- [knowledge:${h.page.id}] ${h.page.title}: ${h.page.body.slice(0, 600)}`).join("\n") || "(chưa có trang khớp)"}`,
     `Insight khách hàng đã duyệt:\n${insights.map((i) => `- [insight:${i.id}] ${i.title}: ${i.detail}`).join("\n") || "(chưa có)"}`,
+    `KINH NGHIỆM THẬT CỦA OWNER (Second Brain [OWNER] / Case Study / Quan điểm OWNER):\n${owner.map((o) => `- [${o.kind}:${o.id}] (${o.tag}${o.draft ? " · nháp" : ""}) ${o.title}: ${o.snippet}`).join("\n") || "(KHÔNG CÓ — không viết hook kể trải nghiệm riêng)"}`,
   ].join("\n\n");
   return { text, basis };
 }
@@ -102,6 +113,9 @@ export function saveHooks(topic: string, items: HookInput[], opts: { source: "ai
   const allowed = new Map((opts.allowed ?? []).map((b) => [`${b.kind}:${b.id}`, b]));
   const rows = items
     .filter((i) => i.hook.trim())
+    // Hook AI kể trải nghiệm riêng ngôi thứ nhất mà không dựa trên tư liệu OWNER → BỎ (không chỉ gắn nhãn): hệ thống không bịa chuyện.
+    // Hook OWNER nhập tay là lời của chính anh — giữ.
+    .filter((i) => opts.source !== "ai" || !FIRST_PERSON_CLAIM.test(i.hook) || (i.basisRefs ?? []).some((r) => allowed.get(r)?.owner))
     .map((i) => {
       const platforms = (i.platforms ?? []).filter((p) => (HOOK_PLATFORMS as readonly string[]).includes(p));
       const plats = platforms.length ? platforms : [...HOOK_PLATFORMS];

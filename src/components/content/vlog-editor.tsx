@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { Check, ChevronDown, CircleAlert, RotateCcw, Sparkles, UserRound, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,9 @@ import { AiBlocked } from "@/components/ui/ai-blocked";
 import { InfoTip } from "@/components/ui/info-tip";
 import { aiWriteDraft, submitForReview } from "@/lib/actions/content";
 import { VLOG_MAX_SEC } from "@/lib/content/formats";
-import { PATH_STAGES, VLOG_CARDS, isMetaNote, serializeVlog, stageInfo, vlogChecks, vlogTimeline, type PathStage, type VlogCard, type VlogDoc, type VlogKey } from "@/lib/content/vlog-script";
+import { PATH_STAGES, VLOG_CARDS, experienceChecks, fillFromExperience, isMetaNote, serializeVlog, stageInfo, vlogChecks, vlogTimeline, type PathStage, type VlogCard, type VlogDoc, type VlogKey } from "@/lib/content/vlog-script";
+import { CONTENT_SKILL, emptyExperience, hasExperience, interviewQuestions, sceneHash, type ExperienceRef, type ExperienceSuggestion, type OwnerExperience, type Pronouns } from "@/lib/content/experience";
+import { ExperienceGate, ExperiencePanel, type ExperiencePanelHandle } from "@/components/content/experience-panel";
 import type { AiReadiness } from "@/lib/ai";
 import { cn } from "@/lib/format";
 
@@ -28,12 +30,56 @@ export interface BasisChip {
 
 const basisLabel = { finding: "Nghiên cứu", knowledge: "Kiến thức", insight: "Insight" } as const;
 
-export function VlogEditor({ initial, fallbackHook, defaultStage, ready, basis, beats }: { initial: VlogDoc; fallbackHook: string; defaultStage: PathStage; ready: AiReadiness; basis: BasisChip[]; beats: string[] }) {
-  const [doc, setDoc] = useState<VlogDoc>(() => ({ ...initial, cards: initial.cards.map((c, i) => (i === 0 && !c.speech.trim() && fallbackHook ? { ...c, speech: fallbackHook } : c)) }));
+export interface ExperienceProps {
+  topic: string;
+  suggestions: ExperienceSuggestion[];
+  refStatus: Record<string, string>;
+  skillUrl: string | null;
+  pronouns: Pronouns;
+  /** OWNER / quản lý: được sửa câu trả lời, nguồn, góc và xác nhận chuyện. */
+  canEdit: boolean;
+  /** Trạng thái "Cần OWNER xác nhận" ở MÁY CHỦ (owner-review.ts) cho bản đã lưu — không nằm trong chữ. */
+  review: OwnerReviewView;
+}
+
+export interface OwnerReviewView {
+  items: string[];
+  confirmedBy: string | null;
+  confirmedAt: string | null;
+  /** Mã nội dung của bản đã lưu lúc xác nhận — chữ đang soạn khác mã này thì phải xác nhận lại. */
+  hash: string | null;
+}
+
+// Gợi ý trong ô Lời nói theo SK-KNW-01 khi đã có chuyện thật (Hook → Real situation + Common mistake → BAOR observation + Why + Better approach → Lesson + CTA)
+const expHint = (k: VlogKey, p: Pronouns) =>
+  ({ hook: `Khoảnh khắc thật: “Lần đầu…, ${p.self}…” · ≤ 15 chữ`, story: "Tình huống thật + sai lầm phổ biến", value: `Điều ${p.self} thấy + vì sao + cách tốt hơn`, end: `Bài học một câu + hỏi ${p.audience}` })[k];
+
+export function VlogEditor({ initial, fallbackHook, defaultStage, ready, basis, beats, exp: ex }: { initial: VlogDoc; fallbackHook: string; defaultStage: PathStage; ready: AiReadiness; basis: BasisChip[]; beats: string[]; exp: ExperienceProps }) {
+  const [doc, setDoc] = useState<VlogDoc>(() => ({
+    ...initial,
+    // Chưa có khối kinh nghiệm: hỏi 2 câu đầu theo chủ đề (INTERVIEW MODE — mỗi lần 1–2 câu)
+    experience: initial.experience ?? { ...emptyExperience(), qa: interviewQuestions(ex.topic).map((q) => ({ q, a: "" })) },
+    cards: initial.cards.map((c, i) => (i === 0 && !c.speech.trim() && fallbackHook ? { ...c, speech: fallbackHook } : c)),
+  }));
+  const experience = doc.experience ?? emptyExperience();
+  // Trang đã tích còn sống? (máy chủ gửi trạng thái; "DEAD" = đã gỡ / ARCHIVED / không còn là tư liệu OWNER; trang vừa tích từ gợi ý = sống)
+  const live = (r: ExperienceRef) => (ex.refStatus[`${r.kind}:${r.id}`] ?? "LIVE") !== "DEAD";
+  const haveExp = hasExperience(experience, live);
+  // Xác nhận gắn với chữ 4 cảnh của bản đã lưu: sửa chữ sau khi xác nhận → phải xác nhận lại (máy chủ cũng kiểm lúc gửi duyệt / duyệt)
+  const hash = useMemo(() => sceneHash(doc.cards), [doc.cards]);
+  const confirmedNow = !!ex.review.confirmedBy && ex.review.hash === hash;
+  const confirmNeeded = ex.review.items.length > 0 && !confirmedNow;
+  const [expOpen, setExpOpen] = useState(() => !hasExperience(initial.experience, live));
+  const [gate, setGate] = useState(false);
+  const panel = useRef<ExperiencePanelHandle>(null);
   const stage = doc.stage ?? defaultStage;
   const draft = useMemo(() => serializeVlog(doc), [doc]);
   const time = vlogTimeline(doc);
   const checks = vlogChecks(doc);
+  const draftRefs = experience.refs.filter((r) => (ex.refStatus[`${r.kind}:${r.id}`] ?? ex.suggestions.find((s) => s.kind === r.kind && s.id === r.id)?.status) === "DRAFT").length;
+  const skillChecks = experienceChecks(doc, ex.pronouns, { draftRefs, live, review: { items: ex.review.items, valid: confirmedNow } });
+  const skillOk = skillChecks.filter((k) => k.ok).length;
+  const craftOk = checks.filter((k) => k.ok).length;
   const filled = doc.cards.every((c) => c.speech.trim());
   const { pending, data } = useFormStatus();
   const aiScene = pending ? data?.get("scene") : null; // "" = cả kịch bản, "<cảnh>" = viết lại một cảnh, "save" / "submit" = lưu / gửi duyệt
@@ -43,6 +89,18 @@ export function VlogEditor({ initial, fallbackHook, defaultStage, ready, basis, 
   const pickScene = (key: VlogKey | "" | "save" | "submit") => (e: React.MouseEvent<HTMLButtonElement>) => {
     const input = e.currentTarget.form?.elements.namedItem("scene");
     if (input instanceof HTMLInputElement) input.value = key;
+  };
+  const setExperience = (e: OwnerExperience) => setDoc((d) => ({ ...d, experience: e }));
+  // Chưa có chuyện thật: "AI viết kịch bản" mở 3 câu hỏi trước (không gửi); "Viết khung trước" mới gửi
+  const gateAi = (e: React.MouseEvent<HTMLButtonElement>) => {
+    if (!haveExp) {
+      e.preventDefault();
+      setExpOpen(true);
+      setGate(true);
+      requestAnimationFrame(() => panel.current?.focus());
+      return;
+    }
+    pickScene("")(e);
   };
   const setCard = (key: VlogKey, patch: Partial<VlogCard>) => setDoc((d) => ({ ...d, cards: d.cards.map((c) => (c.key === key ? { ...c, ...patch } : c)) }));
   const cleanBeats = beats.filter((b) => !isMetaNote(b));
@@ -60,6 +118,31 @@ export function VlogEditor({ initial, fallbackHook, defaultStage, ready, basis, 
       <input type="hidden" name="stage" value={stage} />
       {/* Cảnh cần AI viết lại: nút gán ngay trước khi gửi (nút có formAction là server action thì React dùng thuộc tính name riêng) */}
       <input type="hidden" name="scene" defaultValue="none" />
+
+      <ExperiencePanel
+        ref={panel}
+        value={experience}
+        onChange={setExperience}
+        topic={ex.topic}
+        suggestions={ex.suggestions}
+        refStatus={ex.refStatus}
+        skillUrl={ex.skillUrl}
+        open={expOpen}
+        onOpenChange={setExpOpen}
+        onFill={() => setDoc((d) => fillFromExperience(d, stage, ex.pronouns))}
+        review={ex.review}
+        confirmedNow={confirmedNow}
+        canEdit={ex.canEdit}
+        gate={
+          gate && !haveExp ? (
+            <ExperienceGate>
+              <Button type="submit" size="sm" variant="outline" formAction={aiWriteDraft} onClick={pickScene("")} disabled={aiOff} loading={aiScene === ""} className="h-7 min-h-0 px-2 text-[12px]" title="Viết hook, bài học, kết; cảnh Câu chuyện chờ anh kể">
+                Viết khung trước
+              </Button>
+            </ExperienceGate>
+          ) : null
+        }
+      />
 
       {/* Cho ai (STP) · chặng khách 5A · AI viết */}
       <div className="flex flex-wrap items-end gap-2">
@@ -110,7 +193,7 @@ export function VlogEditor({ initial, fallbackHook, defaultStage, ready, basis, 
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button type="submit" size="md" variant={filled ? "soft" : "primary"} icon={Sparkles} formAction={aiWriteDraft} onClick={pickScene("")} disabled={aiOff} loading={aiScene === ""} title="Viết đủ 4 cảnh trong một lần gọi AI Nội dung">
+          <Button type="submit" size="md" variant={filled ? "soft" : "primary"} icon={Sparkles} formAction={aiWriteDraft} onClick={gateAi} disabled={aiOff} loading={aiScene === ""} title={haveExp ? "Bóc tách chuyện của anh rồi viết đủ 4 cảnh (một lần gọi AI)" : "Vlog chia sẻ cần chuyện thật của anh"}>
             {aiScene === "" ? "AI đang viết…" : "AI viết kịch bản"}
           </Button>
           <AiBlocked ready={ready} />
@@ -140,7 +223,7 @@ export function VlogEditor({ initial, fallbackHook, defaultStage, ready, basis, 
           // Dòng lạ / Căn cứ / ghi chú ngoài 3 trường: luôn thấy và sửa được ở "Ghi chú khác" (không ẩn chữ của OWNER)
           const extraOpen = !!(c.visual || c.onScreen || c.extra.length);
           const metaNotes = c.notes.filter(isMetaNote).length;
-          const hint = def.key === "end" ? `Mời ${stageInfo(stage).cta.replace(/^mời /, "")}` : def.hint;
+          const hint = haveExp ? expHint(def.key, ex.pronouns) : def.key === "story" ? "Chờ chuyện thật của anh — trả lời ở trên" : def.key === "end" ? `Mời ${stageInfo(stage).cta.replace(/^mời /, "")}` : def.hint;
           return (
             <li key={def.key} className="rounded-lg border border-border bg-surface p-3" data-scene={def.key}>
               <div className="flex items-center gap-2">
@@ -207,22 +290,48 @@ export function VlogEditor({ initial, fallbackHook, defaultStage, ready, basis, 
         })}
       </ol>
 
-      {/* Kiểm nhanh theo công thức */}
-      <div className="flex flex-wrap items-center gap-1.5 text-[11.5px]">
+      {/* Kiểm chất lượng: skill của OWNER (SK-KNW-01) trước; luật nghề Kotler / Ogilvy chỉ hiện mục chưa đạt */}
+      <div className="flex flex-wrap items-center gap-1.5 text-[11.5px]" data-testid="skill-checks">
         <span className="inline-flex items-center gap-1 text-ink-3">
-          Công thức
-          <InfoTip label="Công thức viết">
-            <b>Nói gì</b> — theo nguyên lý marketing của Philip Kotler (lấy khách hàng làm trung tâm): Hook = nỗi đau của khách bằng lời của khách · Câu chuyện = tình huống của khách · Giá trị = MỘT lợi ích khách nhận được · Kết = một lời mời đúng chặng 5A.
-            <br />
-            <b>Viết thế nào</b> — theo phong cách copywriting của David Ogilvy: một ý lớn, hook như tiêu đề (cụ thể, có lợi ích), dữ kiện thay tính từ, không nói quá, câu ngắn, một lý do để tin, lời mời trung thực.
+          {CONTENT_SKILL.code}
+          <InfoTip label={CONTENT_SKILL.label}>
+            <b>{CONTENT_SKILL.label}</b> — Quality check trước khi dùng: kinh nghiệm thật của BAOR, đã xác nhận, không biến kinh nghiệm thành sự thật chung, có ví dụ thật, bài học áp dụng được, có góc nhìn BAOR, không chung chung, không có phần AI tự thêm.
           </InfoTip>
         </span>
-        {checks.map((k) => (
-          <span key={k.key} title={k.ok ? undefined : k.why} className={cn("inline-flex h-5 items-center gap-1 rounded-full px-2 font-semibold", k.ok ? "bg-jade-soft text-jade-ink" : "bg-amber-soft text-amber")}>
-            {k.ok ? <Check size={11} aria-hidden /> : <CircleAlert size={11} aria-hidden />}
-            {k.label}
-          </span>
-        ))}
+        <span className={cn("num inline-flex h-5 items-center gap-1 rounded-full px-2 font-semibold", skillOk === skillChecks.length ? "bg-jade-soft text-jade-ink" : "bg-ground-2 text-ink-2")} title={skillChecks.filter((k) => k.ok).map((k) => k.label).join(" · ")}>
+          <Check size={11} aria-hidden />
+          {skillOk}/{skillChecks.length}
+        </span>
+        {skillChecks
+          .filter((k) => !k.ok)
+          .map((k) => (
+            <span key={k.key} title={k.why} className="inline-flex h-5 items-center gap-1 rounded-full bg-amber-soft px-2 font-semibold text-amber">
+              <CircleAlert size={11} aria-hidden />
+              {k.label}
+            </span>
+          ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5 text-[11.5px]" data-testid="craft-checks">
+        <span className="inline-flex items-center gap-1 text-ink-3">
+          Kotler · Ogilvy
+          <InfoTip label="Luật nghề">
+            Luật nghề phụ, sau skill của anh. <b>Nói gì</b> — theo nguyên lý marketing của Philip Kotler (lấy khách hàng làm trung tâm): một nhóm khách, MỘT giá trị khách nhận được, một lời mời đúng chặng 5A.
+            <br />
+            <b>Viết thế nào</b> — theo phong cách copywriting của David Ogilvy: một ý lớn, hook như tiêu đề (cụ thể), dữ kiện thay tính từ, không nói quá, câu ngắn, lời mời trung thực.
+          </InfoTip>
+        </span>
+        <span className={cn("num inline-flex h-5 items-center gap-1 rounded-full px-2 font-semibold", craftOk === checks.length ? "bg-jade-soft text-jade-ink" : "bg-ground-2 text-ink-2")} title={checks.filter((k) => k.ok).map((k) => k.label).join(" · ")}>
+          <Check size={11} aria-hidden />
+          {craftOk}/{checks.length}
+        </span>
+        {checks
+          .filter((k) => !k.ok)
+          .map((k) => (
+            <span key={k.key} title={k.why} className="inline-flex h-5 items-center gap-1 rounded-full bg-amber-soft px-2 font-semibold text-amber">
+              <CircleAlert size={11} aria-hidden />
+              {k.label}
+            </span>
+          ))}
       </div>
 
       {(basis.length > 0 || cleanBeats.length > 0) && (
@@ -254,7 +363,7 @@ export function VlogEditor({ initial, fallbackHook, defaultStage, ready, basis, 
 
       <div className="flex flex-wrap gap-2">
         <Button type="submit" onClick={pickScene("save")} disabled={pending} loading={aiScene === "save"}>Lưu nháp</Button>
-        <Button type="submit" variant={filled ? "primary" : "outline"} formAction={submitForReview} onClick={pickScene("submit")} disabled={pending} loading={aiScene === "submit"}>Gửi duyệt</Button>
+        <Button type="submit" variant={filled && !confirmNeeded ? "primary" : "outline"} formAction={submitForReview} onClick={pickScene("submit")} disabled={pending || confirmNeeded} loading={aiScene === "submit"} title={confirmNeeded ? "Cần anh xác nhận chuyện trước khi gửi duyệt" : undefined}>Gửi duyệt</Button>
       </div>
     </div>
   );

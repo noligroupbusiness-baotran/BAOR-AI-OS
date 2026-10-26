@@ -90,6 +90,8 @@ export interface SearchOptions {
   area?: string;
   includeArchived?: boolean;
   limit?: number;
+  /** Khớp bất kỳ từ nào ngay (không thử khớp đủ mọi từ trước) — dùng khi cần độ phủ rộng rồi tự xếp lại (gợi ý chuyện thật). */
+  anyWord?: boolean;
 }
 
 /**
@@ -110,7 +112,7 @@ export function searchKnowledge(q: string, opts: SearchOptions = {}): KnowledgeH
       )
       .all(...(opts.area ? [match, opts.area] : [match])) as (Record<string, unknown> & { score: number; snip: string })[];
   let rows: ReturnType<typeof run> = [];
-  const and = ftsQuery(q, "and");
+  const and = opts.anyWord ? "" : ftsQuery(q, "and");
   if (and) rows = run(and);
   if (rows.length === 0) {
     const or = ftsQuery(q, "or");
