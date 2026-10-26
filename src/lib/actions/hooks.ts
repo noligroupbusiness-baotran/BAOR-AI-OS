@@ -22,7 +22,7 @@ export async function aiGenerateHooks(fd: FormData) {
   const r = await generateHooks(topic, actor.name, research || undefined);
   if (!r.ok) return done(back ? withQuery(back, "tone", "error") : `/content/hooks?tone=error&topic=${encodeURIComponent(topic)}${research ? `&research=${encodeURIComponent(research)}` : ""}`, r.error);
   logActivity("ai", `AI Hook tạo ${r.count} hook cho “${topic.slice(0, 80)}”.`, "content");
-  done(back || (research ? `/content/hooks?research=${encodeURIComponent(research)}` : "/content/hooks"), `AI vừa tạo ${r.count} hook${r.short ? ` (thiếu ${r.short} so với 10)` : ""}${r.dropped ? ` · bỏ ${r.dropped} căn cứ không có trong ngữ cảnh` : ""}`);
+  done(back || (research ? `/content/hooks?research=${encodeURIComponent(research)}` : "/content/hooks"), `AI vừa tạo ${r.count} hook${r.short ? ` (thiếu ${r.short} so với 10)` : ""}${r.dropped ? ` · bỏ ${r.dropped} căn cứ không có trong ngữ cảnh` : ""}${r.meta ? ` · bỏ ${r.meta} ghi chú nội bộ` : ""}`);
 }
 
 export async function addManualHook(fd: FormData) {

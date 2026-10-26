@@ -10,6 +10,7 @@ import { requirePermission, currentActor } from "@/lib/permissions";
 import { getSetting } from "@/lib/admin";
 import { deleteUpload, saveUpload } from "@/lib/uploads";
 import { imageBriefTemplate, kindOf, scriptTemplate } from "@/lib/content/formats";
+import { PATH_STAGES, VLOG_CARDS } from "@/lib/content/vlog-script";
 import { briefForContent, rebuildScriptFromBrief } from "@/lib/research";
 import { getContentVersion, recordContentVersion } from "@/lib/content/versions";
 import { rewriteViolations } from "@/lib/content/shooting-script";
@@ -171,10 +172,14 @@ export async function aiWriteDraft(fd: FormData) {
   const before = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, id)).get()!;
   recordContentVersion(id, { hook: before.hook, draft: before.draft ?? "", reason: "save", by: actor.name });
   // Nội dung từ brief: AI chỉ được đổi câu chữ (không đổi dấu OWNER, nguồn, căn cứ, không thêm số).
-  const result = await writeDraft(id, brief ? BRIEF_REWRITE_RULES : undefined, brief ? (d) => rewriteViolations(before.draft ?? "", d) : undefined);
+  // Trình soạn thẻ cảnh (vlog): "Viết lại" một cảnh gửi scene=<cảnh>; chặng khách 5A OWNER chọn gửi stage=<chặng>
+  const scene = VLOG_CARDS.find((c) => c.key === str(fd, "scene"));
+  const stage = PATH_STAGES.find((p) => p.key === str(fd, "stage"))?.key;
+  const result = await writeDraft(id, brief ? BRIEF_REWRITE_RULES : undefined, brief ? (d) => rewriteViolations(before.draft ?? "", d) : undefined, { scene: scene?.key, stage });
   if (!result.ok) return done(`/content?tab=mine&open=${id}&tone=error`, result.error);
-  recordContentVersion(id, { hook: before.hook, draft: result.draft, reason: "ai", by: `AI (${actor.name} yêu cầu)` });
-  done(`/content?tab=mine&open=${id}`, "AI đã viết bản nháp, bạn sửa rồi gửi duyệt");
+  const after = db.select({ hook: schema.contentItems.hook }).from(schema.contentItems).where(eq(schema.contentItems.id, id)).get();
+  recordContentVersion(id, { hook: after?.hook ?? before.hook, draft: result.draft, reason: "ai", by: `AI (${actor.name} yêu cầu)` });
+  done(`/content?tab=mine&open=${id}`, scene ? `AI đã viết lại cảnh ${scene.label}` : "AI đã viết bản nháp, bạn sửa rồi gửi duyệt");
 }
 
 const BRIEF_REWRITE_RULES = [

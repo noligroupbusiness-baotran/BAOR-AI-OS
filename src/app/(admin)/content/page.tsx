@@ -40,8 +40,20 @@ import { isDryRun } from "@/lib/publishing/guards";
 import { SamplePill } from "@/components/ui/sample";
 import { isSample } from "@/lib/sample";
 import { hookOrigins } from "@/lib/content/priority";
+import { ScoreTip } from "@/components/ui/score-tip";
+import { VlogEditor } from "@/components/content/vlog-editor";
+import { parseVlogDraft } from "@/lib/content/vlog-script";
+import { contentHookScores, scriptContext } from "@/lib/content/script-context";
+import { aiReadiness } from "@/lib/ai";
 
 export const metadata = { title: "Nội dung – BAOR AI OS" };
+
+/** Khoá dựng lại trình soạn thẻ khi bản nháp trên máy chủ đổi (AI viết, khôi phục phiên bản) — state trong trình duyệt không giữ bản cũ. */
+function draftKey(s: string): string {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return `${s.length}-${h >>> 0}`;
+}
 
 const input = "h-8 w-full rounded-md border border-border-2 bg-surface px-2.5 text-[13px] text-ink outline-none focus-visible:outline-2 focus-visible:outline-jade";
 
@@ -70,6 +82,9 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
   const links = campaignRepo.linksForEntities("content", list.map((c) => c.id));
   // Kịch bản sinh từ hook → chủ đề gốc ở bước 1 (nối ngược 2 → 1)
   const origins = hookOrigins(list.map((c) => c.id));
+  // Điểm ưu tiên: điểm AI đề xuất (ý tưởng) hoặc điểm hook gốc ở bước 2; không có thì không hiện (bỏ "★ 0")
+  const hookScores = contentHookScores(list.map((c) => c.id));
+  const draftReady = aiReadiness("draft");
   // Kênh lên lịch đăng: đọc từ Cài đặt › Kết nối, đánh dấu kênh chưa kết nối.
   const connected = new Map(listIntegrationStatus().map((i) => [i.key, i.connected]));
   // Chỉ kênh nhận bài chữ (TikTok / YouTube chỉ nhận video, Instagram cần ảnh / video): src/lib/publishing/text.ts
@@ -168,12 +183,19 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
             const ins = insights.find((i) => i.id === c.insightId);
             const st = contentStatusLabel[c.status as ContentStatus];
             const isOpen = opened === c.id;
+            const editing = isOpen && (c.status === "in_progress" || c.status === "review");
+            const brief = editing && kindOf(c.format) === "script" ? briefForContent(c.id) : null;
+            // Kịch bản vlog (không từ brief, không khung cũ 5 cảnh) → soạn bằng 4 thẻ cảnh; còn lại giữ ô chữ như cũ
+            const vlog = editing && kindOf(c.format) === "script" && !brief ? parseVlogDraft(c.draft ?? "") : null;
+            const sctx = vlog ? scriptContext(c.id) : null;
             return (
               <li key={c.id} className={cn("border-b border-border last:border-b-0", isOpen && "bg-jade-soft/30")}>
                 <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-4 py-2.5">
                   <span className="flex items-center gap-3">
                     <span className="w-3 text-[12px] font-semibold text-ink-3">{idx + 1}</span>
-                    <Score value={c.score ?? 0} />
+                    <span className="flex w-10 justify-center">
+                      {c.score != null ? <Score value={c.score} /> : hookScores.has(c.id) ? <ScoreTip score={hookScores.get(c.id)!.score} reasons={hookScores.get(c.id)!.reasons} kind="hook" /> : null}
+                    </span>
                   </span>
                   <div className="min-w-0">
                     <Link href={href(`/content?tab=${tab}&open=${c.id}`)} className="font-semibold text-ink hover:underline">{c.title}</Link>
@@ -229,6 +251,18 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
                   <div className="border-t border-border px-4 py-3">
                     <form id={`draft-${c.id}`} action={saveDraft} className="grid gap-3">
                       <input type="hidden" name="id" value={c.id} />
+                      {vlog && sctx ? (
+                        <VlogEditor
+                          key={draftKey(c.draft ?? "")}
+                          initial={vlog}
+                          fallbackHook={c.hook}
+                          defaultStage={sctx.stage}
+                          ready={draftReady}
+                          basis={sctx.basis.map((b) => ({ kind: b.kind, label: b.label, href: b.href }))}
+                          beats={sctx.beats}
+                        />
+                      ) : (
+                      <>
                       <label className="block">
                         <span className="lbl">{kindOf(c.format) === "image" ? "Thông điệp trên ảnh" : "Hook"}</span>
                         <input name="hook" defaultValue={c.hook} className={cn(input, "mt-1")} />
@@ -244,7 +278,7 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
                         />
                       </label>
                       {kindOf(c.format) === "caption" && <CaptionHelper formId={`draft-${c.id}`} />}
-                      {kindOf(c.format) === "script" && (briefForContent(c.id) ? <ScriptHelper formId={`draft-${c.id}`} duration={false} format="legacy" /> : <ScriptHelper formId={`draft-${c.id}`} />)}
+                      {kindOf(c.format) === "script" && (brief ? <ScriptHelper formId={`draft-${c.id}`} duration={false} format="legacy" /> : <ScriptHelper formId={`draft-${c.id}`} />)}
                       {kindOf(c.format) === "script" && <ScriptQaPanel contentId={c.id} draft={c.draft ?? ""} />}
                       {kindOf(c.format) === "image" && (
                         <div className="rounded-md border border-border bg-ground px-3 py-2 text-[12px] text-ink-2">
@@ -260,9 +294,11 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
                         <Button type="submit">Lưu nháp</Button>
                         <Button type="submit" variant="primary" formAction={submitForReview}>Gửi duyệt</Button>
                         <Button type="submit" variant="soft" formAction={aiWriteDraft}>AI viết nháp</Button>
-                        {(kindOf(c.format) === "script" || kindOf(c.format) === "image") && !briefForContent(c.id) && <Button type="submit" variant="ghost" formAction={insertTemplate}>Chèn khung mẫu</Button>}
-                        {kindOf(c.format) === "script" && briefForContent(c.id) && <Button type="submit" variant="ghost" formAction={rebuildFromBrief}>Dựng lại từ brief</Button>}
+                        {(kindOf(c.format) === "script" || kindOf(c.format) === "image") && !brief && <Button type="submit" variant="ghost" formAction={insertTemplate}>Chèn khung mẫu</Button>}
+                        {kindOf(c.format) === "script" && brief && <Button type="submit" variant="ghost" formAction={rebuildFromBrief}>Dựng lại từ brief</Button>}
                       </div>
+                      </>
+                      )}
                     </form>
                     {(() => {
                       const versions = listContentVersions(c.id);
