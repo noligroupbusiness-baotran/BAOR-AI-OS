@@ -10,6 +10,8 @@
 //   BAOR_WORKER_NAME=may-bao          (tuỳ chọn)
 //   DATA_DIR=/đường/dẫn/data          (tuỳ chọn, mặc định ./data của repo)
 // Chưa có khoá / khoá bị thu hồi: máy dựng chờ và đọc lại cấu hình mỗi phút (không thoát) — dán khoá mới là tự nhận.
+// Khi rảnh: gửi danh mục tư liệu trên máy này lên máy chủ (mỗi 10 phút, khi kho đổi, hoặc ngay khi web có quyết định duyệt nhạc
+// chờ áp — header x-baor-decisions của lệnh claim) và áp quyết định duyệt vào manifest máy này (scripts/video/owner-catalog.mts).
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -17,6 +19,7 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { importDrop } from "../../src/lib/video/drop-import.js";
+import { catalogSignature, syncCatalog } from "./owner-catalog.mjs";
 
 export interface Spec {
   videoId: string;
@@ -121,6 +124,40 @@ function maybeImport(dataDir: string) {
   }
 }
 
+// Danh mục tư liệu máy OWNER → máy chủ. Chu kỳ 10 phút; kho đổi (dấu nhanh, kiểm mỗi phút) hoặc có quyết định duyệt chờ → gửi
+// ngay. Lỗi → nghỉ 2 phút (không dồn yêu cầu; máy chủ cũng giới hạn tần suất).
+const CATALOG_EVERY_MS = 10 * 60_000;
+let lastCatalog = 0;
+let lastCatalogFail = 0;
+let lastSig = "";
+let lastSigCheck = 0;
+export async function maybeSyncCatalog(ctx: { base: string; headers: Record<string, string>; dataDir: string }, decisionsHint = 0, now = Date.now()): Promise<boolean> {
+  if (now - lastCatalogFail < 2 * 60_000) return false;
+  let due = now - lastCatalog >= CATALOG_EVERY_MS || decisionsHint > 0;
+  if (!due && now - lastSigCheck >= 60_000) {
+    lastSigCheck = now;
+    due = catalogSignature(ctx.dataDir) !== lastSig;
+  }
+  if (!due) return false;
+  lastCatalog = now;
+  const sig = catalogSignature(ctx.dataDir);
+  try {
+    const r = await syncCatalog({ ...ctx, log });
+    if (!r.ok) {
+      lastCatalogFail = now;
+      log(`Đồng bộ danh mục tư liệu lỗi (${r.status}): ${r.error}`);
+      return false;
+    }
+    lastSig = sig;
+    if (r.previewsSent || r.applied || r.failed) log(`Danh mục tư liệu: ${r.items} mục · gửi ${r.previewsSent} tệp xem trước · áp ${r.applied} quyết định duyệt${r.failed ? ` · ${r.failed} không áp được` : ""}`);
+    return true;
+  } catch (e) {
+    lastCatalogFail = now;
+    log("Đồng bộ danh mục tư liệu lỗi:", e instanceof Error ? e.message : e);
+    return false;
+  }
+}
+
 /** Chờ tới khi có cấu hình hợp lệ (đọc lại mỗi phút); `bad` = khoá vừa bị máy chủ từ chối → chờ khoá KHÁC. */
 async function waitConfig(bad = ""): Promise<ReturnType<typeof readConfig>> {
   let said = "";
@@ -142,6 +179,7 @@ async function main() {
 
   for (;;) {
     let spec: Spec | null = null;
+    let decisionsHint = 0;
     try {
       const r = await fetch(`${base}/api/render-worker/claim`, { method: "POST", headers });
       if (r.status === 401) {
@@ -151,12 +189,14 @@ async function main() {
         log(`Đã nhận khoá mới — máy dựng “${name}” → ${base}`);
         continue;
       }
+      decisionsHint = Number(r.headers.get("x-baor-decisions")) || 0;
       if (r.status === 200) spec = (await r.json()) as Spec;
     } catch (e) {
       log("Không gọi được máy chủ:", e instanceof Error ? e.message : e);
     }
     if (!spec) {
       maybeImport(dataDir);
+      await maybeSyncCatalog({ base, headers, dataDir }, decisionsHint);
       await sleep(20_000);
       continue;
     }

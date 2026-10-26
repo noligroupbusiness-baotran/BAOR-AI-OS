@@ -14,8 +14,8 @@ function useMounted() {
   );
 }
 
-// Hộp thoại đơn giản, đóng bằng Esc hoặc bấm nền, có nhãn trợ năng.
-export function Dialog({ open, onClose, title, children, footer }: { open: boolean; onClose: () => void; title: string; children: React.ReactNode; footer?: React.ReactNode }) {
+// Hộp thoại đơn giản, đóng bằng Esc hoặc bấm nền, có nhãn trợ năng. `top`: nổi trên cả ô xem lớn (lightbox z-80) của Tư liệu.
+export function Dialog({ open, onClose, title, children, footer, top }: { open: boolean; onClose: () => void; title: string; children: React.ReactNode; footer?: React.ReactNode; top?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const mounted = useMounted();
   useEffect(() => {
@@ -27,7 +27,7 @@ export function Dialog({ open, onClose, title, children, footer }: { open: boole
   }, [open, onClose]);
   if (!open || !mounted) return null;
   return createPortal(
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div className={cn("fixed inset-0 flex items-center justify-center bg-black/40 p-4", top ? "z-[90]" : "z-[70]")} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div ref={ref} role="dialog" aria-modal="true" aria-labelledby="dlg-title" className={cn("card w-full max-w-[420px] p-5")}>
         <div className="flex items-start justify-between gap-3">
           <h2 id="dlg-title" className="text-[14px] font-bold text-ink">{title}</h2>

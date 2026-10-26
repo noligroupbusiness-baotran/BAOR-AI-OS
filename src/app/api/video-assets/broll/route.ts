@@ -4,7 +4,10 @@ import { streamToFile } from "@/lib/video/stream-to-file";
 import { getCurrentUser } from "@/lib/auth";
 import { actorFor, can } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
-import { brollDir } from "@/lib/video/jobs";
+import { brollDir, brollFilePath } from "@/lib/video/jobs";
+import { mediaResponse } from "@/lib/media-response";
+import { serverThumb } from "@/lib/video/thumb-cache";
+import { sameOrigin } from "@/lib/same-origin";
 
 // Thêm clip vào thư viện B-roll (CP03). Nhận thân yêu cầu dạng luồng (loại khỏi proxy như api/video-sources).
 // Bắt buộc ghi giấy phép và từ khoá: clip không có giấy phép thì không vào thư viện.
@@ -16,9 +19,7 @@ const EXT = new Set([".mp4", ".mov", ".m4v", ".webm"]);
 export async function POST(req: Request) {
   const user = await getCurrentUser();
   if (!user) return Response.json({ ok: false, error: "Chưa đăng nhập" }, { status: 401 });
-  const origin = req.headers.get("origin");
-  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
-  if (!origin || !host || new URL(origin).host !== host) return Response.json({ ok: false, error: "Nguồn yêu cầu không hợp lệ" }, { status: 403 });
+  if (!sameOrigin(req)) return Response.json({ ok: false, error: "Nguồn yêu cầu không hợp lệ" }, { status: 403 });
   const actor = actorFor(user.email);
   if (!can(actor, "manager")) return Response.json({ ok: false, error: "Cần quyền quản lý" }, { status: 403 });
 
@@ -51,16 +52,20 @@ export async function POST(req: Request) {
   return Response.json({ ok: true, file, size: w.size });
 }
 
-const IMG_TYPES: Record<string, string> = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp" };
-
-/** Ảnh trong thư viện minh hoạ (xem thu nhỏ ở bảng biên tập). Chỉ ảnh, chỉ trong thư mục thư viện, cần đăng nhập. */
+/** Xem ảnh / clip trong thư viện B-roll (trang Tư liệu, bảng biên tập). Chỉ đọc, cần đăng nhập, chỉ đuôi ảnh / video, chỉ trong
+ *  thư mục thư viện (chặn "..", đường dẫn tuyệt đối, liên kết tượng trưng ra ngoài — src/lib/video/safe-path.ts). Clip có Range.
+ *  `thumb=1`: ảnh thu nhỏ JPEG (ảnh lỗi tạo → trả ảnh gốc; clip lỗi tạo → 404). */
 export async function GET(req: Request) {
   const user = await getCurrentUser();
   if (!user) return new Response("Chưa đăng nhập", { status: 401 });
-  const rel = new URL(req.url).searchParams.get("file") ?? "";
-  const dir = path.resolve(brollDir());
-  const full = path.resolve(dir, rel);
-  const type = IMG_TYPES[path.extname(full).toLowerCase()];
-  if (!type || !full.startsWith(dir + path.sep) || !fs.existsSync(full)) return new Response("Không tìm thấy", { status: 404 });
-  return new Response(fs.readFileSync(full), { headers: { "Content-Type": type, "Cache-Control": "private, max-age=3600" } });
+  const q = new URL(req.url).searchParams;
+  const f = brollFilePath(q.get("file") ?? "");
+  if (!f) return new Response("Không tìm thấy", { status: 404 });
+  if (q.get("thumb") === "1") {
+    // Ảnh thu nhỏ ≤ 480 px (ảnh) / khung hình (clip), tạo lần đầu rồi dùng cache (src/lib/video/thumb-cache.ts)
+    const t = await serverThumb(f.path, f.type.startsWith("video/"));
+    if (t) return mediaResponse(req, t, "image/jpeg");
+    if (f.type.startsWith("video/")) return new Response("Chưa tạo được ảnh thu nhỏ", { status: 404 });
+  }
+  return mediaResponse(req, f.path, f.type);
 }

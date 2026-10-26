@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { actorFor } from "@/lib/permissions";
 import { uploadsDir } from "@/lib/uploads";
 import { EXT_MIME, MAX_SOURCE_BYTES as MAX_BYTES, newUploadId, registerSource } from "@/lib/video/source-intake";
+import { sameOrigin } from "@/lib/same-origin";
 
 // Thêm nguồn quay thô cho Video Studio. Nhận thân yêu cầu dạng luồng, ghi thẳng xuống đĩa:
 // không qua bộ đệm 10 MB của proxy (đường dẫn này loại khỏi matcher trong src/proxy.ts), không nạp cả tệp vào bộ nhớ.
@@ -15,9 +16,7 @@ export async function POST(req: Request) {
   const user = await getCurrentUser();
   if (!user) return Response.json({ ok: false, error: "Chưa đăng nhập" }, { status: 401 });
   // Chống gửi chéo trang: chỉ nhận yêu cầu từ chính giao diện hệ thống.
-  const origin = req.headers.get("origin");
-  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
-  if (!origin || !host || new URL(origin).host !== host) return Response.json({ ok: false, error: "Nguồn yêu cầu không hợp lệ" }, { status: 403 });
+  if (!sameOrigin(req)) return Response.json({ ok: false, error: "Nguồn yêu cầu không hợp lệ" }, { status: 403 });
   const actor = actorFor(user.email);
 
   const url = new URL(req.url);

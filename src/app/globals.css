@@ -35,17 +35,18 @@
   --on-brick: #ffffff;
   --page-glow: none;
 
-  /* Bảng màu nhóm chức năng: 8 màu + xám (sáng: sắc độ 600–800 để đọc trên nền ngà; tối: 300–400 rực trên nền xanh rừng) */
-  --tone-blue: #1d4ed8;
-  --tone-cyan: #155e75;
-  --tone-violet: #6d28d9;
-  --tone-pink: #9d174d;
-  --tone-orange: #9a3412;
-  --tone-emerald: #065f46;
-  --tone-yellow: #854d0e;
-  --tone-indigo: #4338ca;
-  --tone-red: #991b1b;
-  --tone-slate: #52525b;
+  /* Bảng màu nhóm chức năng: 8 màu + xám (OWNER 26/10: "icon màu sắc tươi hơn" — sáng: sắc độ ~600 bão hoà, icon ≥ 3:1 trên chip nền ngà;
+     tối: sắc độ 400 rực trên nền xanh rừng) */
+  --tone-blue: #2563eb;
+  --tone-cyan: #0284a8;
+  --tone-violet: #7c3aed;
+  --tone-pink: #db2777;
+  --tone-orange: #cc430e;
+  --tone-emerald: #038a5e;
+  --tone-yellow: #a86f00;
+  --tone-indigo: #4f46e5;
+  --tone-red: #dc2626;
+  --tone-slate: #64748b;
 
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --sidebar-w: 240px;
@@ -86,16 +87,16 @@
   --input-bg: #18281e;
   --on-brick: #1a0505;
   --page-glow: radial-gradient(640px circle at 0% 0%, rgba(30, 122, 75, 0.22), transparent 62%), radial-gradient(560px circle at 100% 100%, rgba(183, 121, 31, 0.13), transparent 62%);
-  --tone-blue: #93c5fd;
+  --tone-blue: #60a5fa;
   --tone-cyan: #22d3ee;
-  --tone-violet: #c4b5fd;
-  --tone-pink: #f9a8d4;
+  --tone-violet: #a78bfa;
+  --tone-pink: #f472b6;
   --tone-orange: #fb923c;
   --tone-emerald: #34d399;
   --tone-yellow: #facc15;
-  --tone-indigo: #a5b4fc;
-  --tone-red: #fca5a5;
-  --tone-slate: #d4d4d8;
+  --tone-indigo: #818cf8;
+  --tone-red: #f87171;
+  --tone-slate: #cbd5e1;
   color-scheme: dark;
   background: #0f1a14;
 }
@@ -130,16 +131,16 @@
     --input-bg: #18281e;
     --on-brick: #1a0505;
     --page-glow: radial-gradient(640px circle at 0% 0%, rgba(30, 122, 75, 0.22), transparent 62%), radial-gradient(560px circle at 100% 100%, rgba(183, 121, 31, 0.13), transparent 62%);
-    --tone-blue: #93c5fd;
+    --tone-blue: #60a5fa;
     --tone-cyan: #22d3ee;
-    --tone-violet: #c4b5fd;
-    --tone-pink: #f9a8d4;
+    --tone-violet: #a78bfa;
+    --tone-pink: #f472b6;
     --tone-orange: #fb923c;
     --tone-emerald: #34d399;
     --tone-yellow: #facc15;
-    --tone-indigo: #a5b4fc;
-    --tone-red: #fca5a5;
-    --tone-slate: #d4d4d8;
+    --tone-indigo: #818cf8;
+    --tone-red: #f87171;
+    --tone-slate: #cbd5e1;
     color-scheme: dark;
     background: #0f1a14;
   }
@@ -371,19 +372,19 @@ body {
     flex-shrink: 0;
     border-radius: 7px;
     color: var(--chip, var(--ink-2));
-    background: color-mix(in srgb, var(--chip, var(--ink-3)) 16%, transparent);
-    border: 1px solid color-mix(in srgb, var(--chip, var(--ink-3)) 25%, transparent);
+    background: color-mix(in srgb, var(--chip, var(--ink-3)) 18%, transparent);
+    border: 1px solid color-mix(in srgb, var(--chip, var(--ink-3)) 32%, transparent);
     transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease;
   }
   /* Bản gọn cho thanh bên: không viền, icon vẫn đủ màu */
   .chip-quiet {
-    background: color-mix(in srgb, var(--chip, var(--ink-3)) 14%, transparent);
+    background: color-mix(in srgb, var(--chip, var(--ink-3)) 16%, transparent);
     border-color: transparent;
   }
   /* Rê chuột: nền chip đậm hơn */
   .group:hover .chip,
   .chip-host:hover .chip {
-    background: color-mix(in srgb, var(--chip, var(--ink-3)) 24%, transparent);
+    background: color-mix(in srgb, var(--chip, var(--ink-3)) 20%, transparent);
   }
   /* Icon nhúc nhẹ khi rê chuột lên mục chứa nó */
   .group:hover .chip > svg,

@@ -7,8 +7,10 @@ import { SubmitButton } from "@/components/campaigns/submit-button";
 import { runAutoEditNow, saveAutoEdit } from "@/lib/actions/media";
 import { inboxDir, pendingInbox, toolCheck } from "@/lib/video/auto-edit";
 import { engineLabel, brollDir, brollLibrary, editSettings } from "@/lib/video/jobs";
+import type { AssetEntry } from "@/lib/video/asset-catalog";
 import { listUploads } from "@/lib/uploads";
 import { BrollDrop } from "@/components/video/broll-drop";
+import { BrollGallery, type GalleryItem } from "@/components/assets/broll-gallery";
 import { MoreOptions } from "./setting-item";
 
 // Cài đặt › Video › Cách dựng video: luật dựng cố định theo skill; ở đây chỉ chỉnh từ khoá nhấn, sửa chữ nghe sai, nhạc nền
@@ -85,35 +87,62 @@ export function AutoEditPanel() {
   );
 }
 
-// Tư liệu › B-roll (OWNER 26/10/2026: chuyển từ Cài đặt › Video sang trang Tư liệu, giữ nguyên nội dung).
-export function BrollPanel() {
-  const broll = brollLibrary();
-  const usable = broll.filter((b) => b.exists && b.license.trim() && b.keywords.length);
+// Tư liệu › Ảnh / B-roll (OWNER 26/10/2026): lưới ảnh thu nhỏ + xem lớn (src/components/assets/broll-gallery.tsx) trên danh mục
+// hợp nhất (listAssetCatalog: máy chủ + máy của anh). Đường dẫn tệp, giấy phép, thư mục chỉ nằm trong ô xem lớn / (i).
+// Ảnh máy chủ: lưới tải bản thu nhỏ ≤ 480 px (?thumb=1, cache DATA_DIR/preview-cache/server), ô xem lớn mới tải ảnh gốc.
+// Chủ đề = thư mục nguồn trên Drive (HINH-ANH/<chủ đề>) nếu có, không thì tiền tố tên tệp; clip = "Clip quay".
+function topicOf(e: AssetEntry, driveSource: string): string {
+  if (e.media === "video") return "Clip quay";
+  const parts = driveSource.replace(/^Drive:\s*/i, "").split("/");
+  let t = ((parts[0] === "HINH-ANH" ? parts[1] : "") ?? "").replace(/^ẢNH\s+/i, "").trim();
+  if (t && t === t.toUpperCase()) t = t.split(/\s+/).map((w, i) => (w.length <= 2 ? w : i === 0 ? w[0] + w.slice(1).toLowerCase() : w.toLowerCase())).join(" ");
+  if (!t) {
+    const stem = e.file.split("/").pop()?.split("_")[0] ?? "";
+    t = stem && stem !== e.file.split("/").pop() ? stem.replace(/-/g, " ").replace(/^./, (c) => c.toUpperCase()) : "";
+  }
+  return t || e.tags[0] || "Khác";
+}
+
+export function BrollPanel({ entries, ownerSynced, isOwner = false }: { entries: AssetEntry[]; ownerSynced: boolean; isOwner?: boolean }) {
+  const broll = entries.filter((e) => e.type === "broll" && (e.media === "image" || e.media === "video"));
+  const drive = new Map(brollLibrary().map((b) => [`broll/${b.file}`, b.source]));
+  const items: GalleryItem[] = broll.map((e) => {
+    const usable = e.status === "ready" && e.tags.length > 0;
+    const server = e.source === "server";
+    const raw = server ? `/api/video-assets/broll?file=${encodeURIComponent(e.file.replace(/^broll\//, ""))}` : null;
+    return {
+      id: e.id,
+      file: e.file,
+      kind: e.media === "video" ? "video" : "image",
+      keywords: e.tags,
+      license: e.license,
+      desc: e.desc,
+      topic: topicOf(e, server ? (drive.get(e.file) ?? "") : ""),
+      usable,
+      status: e.status === "ready" && !e.tags.length ? "Thiếu từ khoá" : e.statusLabel,
+      thumbUrl: raw ? `${raw}&thumb=1` : e.thumbUrl,
+      previewUrl: raw ?? e.previewUrl,
+      origin: e.source,
+      pendingDecision: !!e.pendingDecision,
+    };
+  });
+  const usable = items.filter((it) => it.usable).length;
+  const clips = items.filter((it) => it.kind === "video").length;
   return (
     <Panel id="broll">
       <PanelHeader
         title="Ảnh / B-roll"
-        sub={`${usable.length}/${broll.length} clip dùng được`}
+        sub={`${items.length - clips} ảnh · ${clips} clip`}
         icon={Film}
         tone="indigo"
-        info="Clip được chèn 2,5 giây khi lời nói nhắc đúng từ khoá, không chèn ở 3 giây đầu. Clip thiếu giấy phép hoặc từ khoá không bao giờ được dùng."
+        info={<>Ảnh / clip được chèn khi lời nói nhắc đúng từ khoá (không chèn ở 3 giây đầu). Mục thiếu giấy phép hoặc từ khoá không bao giờ được dùng.<br />Thư mục máy chủ: <code className="break-all">{brollDir()}</code></>}
+        action={<Pill tone={usable === items.length ? "jade" : "amber"}>{usable}/{items.length} dùng được</Pill>}
       />
       <div className="grid gap-3 px-4 py-3">
-          {broll.length > 0 && (
-            <ul className="m-0 grid list-none gap-1 p-0 text-[12px]">
-              {broll.slice(0, 12).map((b) => (
-                <li key={b.file} className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-ground px-2.5 py-1.5">
-                  <span className="font-medium text-ink">{b.file}</span>
-                  <span className="text-ink-2">{b.keywords.join(", ") || "chưa có từ khoá"}</span>
-                  <Pill tone={b.exists && b.license.trim() && b.keywords.length ? "jade" : "brick"}>{!b.exists ? "thiếu tệp" : b.license.trim() ? (b.keywords.length ? "dùng được" : "thiếu từ khoá") : "chưa có giấy phép"}</Pill>
-                  {b.license && <span className="text-ink-3">{b.license}</span>}
-                </li>
-              ))}
-            </ul>
-          )}
-          {broll.length > 12 && <div className="text-[12px] text-ink-3">… và {broll.length - 12} mục khác trong manifest.json</div>}
+        {items.length > 0 ? <BrollGallery items={items} showOrigin={ownerSynced} canDelete={isOwner} /> : <p className="m-0 text-[12.5px] text-ink-3">Chưa có ảnh / clip.</p>}
+        <MoreOptions label="Thêm clip B-roll">
           <BrollDrop />
-          <div className="text-[11px] text-ink-3">Thư mục: <code className="break-all">{brollDir()}</code></div>
+        </MoreOptions>
       </div>
     </Panel>
   );

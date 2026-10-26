@@ -169,6 +169,20 @@
       "when": 1792943038125,
       "tag": "0023_post_target_page",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1792984815166,
+      "tag": "0024_remote_assets",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1792986132419,
+      "tag": "0025_remote_assets_removed_idx",
+      "breakpoints": true
     }
   ]
 }

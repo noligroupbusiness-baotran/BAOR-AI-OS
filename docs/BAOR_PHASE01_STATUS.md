@@ -132,6 +132,12 @@ OWNER 25/10/2026 (tối): edit video LẠI ("edit lại đi") — lệnh "ngưng
           (FAQ / luật tự động).
       - SAU KHI TRIỂN KHAI: OWNER bấm "Đăng xuất mọi thiết bị" một lần (phiên cấp cho bản ghi nhân sự trùng email OWNER trước đây
         không phân biệt được với phiên OWNER).
+   Q. XONG (commit kế, OWNER 26/10 "tư liệu … tôi đâu trực tiếp xem được" + "làm đi"): trang Tư liệu nhìn / nghe trực tiếp (lưới
+      ảnh thu nhỏ do máy chủ tự tạo + lightbox, nghe thử nhạc / hiệu ứng, giấy phép vào (i)); máy dựng trên Mac OWNER đồng bộ DANH
+      MỤC tư liệu lên mkt.baor.vn (ảnh thu nhỏ ≤ 60 KB, nghe thử ≤ 30 s; KHÔNG gửi tệp gốc) ~10 phút / lần; OWNER duyệt nhạc trên web,
+      máy dựng áp quyết định về manifest Mac (luật duyệt một nguồn music-rules.ts, kiểm ở cả hai đầu). Migration 0024 / 0025 (chỉ thêm
+      bảng / chỉ mục). Phản biện bảo mật 3 vòng (P1 vượt trần cỡ tệp bằng khoá prototype + DoS bộ nhớ đã vá; bảng tự dọn; rò giữ chỗ).
+      SAU KHI GHÉP: OWNER cài lại máy dựng (`npm run render-worker:install`) để bật đồng bộ.
    CHỜ OWNER: khoá Meta / Google / YouTube / TikTok (đăng bài + quảng cáo 7.2–7.5), hồ sơ cá nhân Facebook (6.2.1.1).
 2. Skill ESV + Skill Edit Video Ngang v0.1.r2 — XONG phần Phần chung A (4255aca, ff638df): nhạc A5 (chưa có bài đạt → KHÔNG nhạc),
    SFX OWNER theo vai trò, cắt lặng A11.4 (+ bảo vệ khoảng có từ), xem trước 720p, số A13, ảnh theo mô tả nội dung A4.1.
@@ -162,6 +168,9 @@ OWNER 25/10/2026 (tối): edit video LẠI ("edit lại đi") — lệnh "ngưng
    - 16:9: ngang.face_track giải mã cả nguồn vào một mảng (~0,5 MB / khung ở 2 khung/s) → RAM tăng theo thời lượng (10 phút ≈ 0,6 GB);
      nên dò mặt theo từng khung. (Bộ đệm phụ đề đã sửa 26/10: 4K 9:16 120 s 1559 → 184 MB, khung hình không đổi.)
    - Máy dựng: các P3 phản biện 9042beb; nghiên cứu: các P3 phản biện 49c69ba.
+   - Đồng bộ danh mục máy OWNER: bộ đếm dung lượng xem trước theo từng tiến trình (nhiều tiến trình → trần N×512 MB); PUT treo giữ chỗ
+     tới requestTimeout của Node; máy chủ bị chiếm có thể duyệt bài hợp lệ đang chờ (không duyệt được bài cấm — máy Mac kiểm lại);
+     clip B-roll của máy OWNER chỉ có ảnh xem trước; tư liệu thả vào chưa nhận không có xem trước.
    ĐÃ DỌN 26/10 (đêm, commit kế): kiểm lại trang ngay lúc gửi + giành quyền BEGIN IMMEDIATE (chống trùng nhiều tiến trình);
    bài "verifying" không kẹt (bỏ cuộc 24 h → cần kiểm trang, tính là lỗi mơ hồ); SQLITE_BUSY không làm hỏng cả lượt; phủ định:
    "đâu phải / có phải … đâu / đâu còn / làm gì còn / lấy đâu ra / không phải ai … thì cũng / không chỉ (động từ)" + không coi

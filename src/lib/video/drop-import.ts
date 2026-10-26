@@ -6,12 +6,9 @@
 import fs from "node:fs";
 import path from "node:path";
 
-export const DROP_KINDS = {
-  "anh-broll": { label: "Ảnh & B-roll", exts: [".jpg", ".jpeg", ".png", ".webp", ".mp4", ".mov", ".m4v"] },
-  nhac: { label: "Nhạc nền", exts: [".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"] },
-  "hieu-ung-am-thanh": { label: "Hiệu ứng âm thanh", exts: [".mp3", ".wav", ".m4a", ".aac", ".ogg"] },
-} as const;
-export type DropKind = keyof typeof DROP_KINDS;
+import { DROP_KINDS, type DropKind } from "./drop-kinds";
+
+export { DROP_KINDS, type DropKind };
 
 export const LICENSE_FILE = "GIAY-PHEP.txt";
 const GUIDE_FILE = "HUONG-DAN.txt";
@@ -114,7 +111,7 @@ const slug = (s: string) =>
     .replace(/^-|-$/g, "")
     .toLowerCase();
 /** Tên an toàn, giữ đuôi; tên toàn chữ không Latin (vd 日本.mp3) → "tep-<số>" thay vì tệp ẩn ".mp3". */
-const safeName = (s: string) => {
+export const safeName = (s: string) => {
   const ext = path.extname(s).toLowerCase().replace(/[^.a-z0-9]/g, "");
   const base = slug(s.slice(0, s.length - path.extname(s).length));
   return `${base || `tep-${Date.now().toString(36)}`}${ext}`;
@@ -171,8 +168,11 @@ function walk(dir: string, out: string[] = []): string[] {
 
 const vnDate = (d: Date) => `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
 
-/** Nhận tệp trong thư mục thả vào thư viện của bộ dựng. Chạy lại nhiều lần an toàn; tệp chưa đủ điều kiện ở yên chỗ cũ. */
-export function importDrop(dataDir: string, now = new Date()): DropReport {
+/** Nhận tệp trong thư mục thả vào thư viện của bộ dựng. Chạy lại nhiều lần an toàn; tệp chưa đủ điều kiện ở yên chỗ cũ.
+ *  `opts.fresh`: đường dẫn tuyệt đối của tệp CHÍNH máy chủ vừa ghi xong (nút "Tải lên", src/lib/video/asset-upload.ts) — chỉ những
+ *  tệp này được bỏ qua bước chờ ổn định SETTLE_MS (đã ghi trọn, không còn đang chép). Mọi tệp khác và mọi luật khác giữ nguyên. */
+export function importDrop(dataDir: string, now = new Date(), opts: { fresh?: readonly string[] } = {}): DropReport {
+  const fresh = new Set((opts.fresh ?? []).map((f) => path.resolve(f)));
   const root = ensureDropFolders(dataDir);
   const assets = path.join(dataDir, "video-assets");
   const report: DropReport = { at: now.toISOString(), imported: [], waiting: [] };
@@ -213,7 +213,7 @@ export function importDrop(dataDir: string, now = new Date()): DropReport {
           report.waiting.push({ kind, file: rel, reason: `không phải loại tệp của ngăn ${DROP_KINDS[kind].label}` });
           continue;
         }
-        if (now.getTime() - fs.statSync(file).mtimeMs < SETTLE_MS) {
+        if (!fresh.has(path.resolve(file)) && now.getTime() - fs.statSync(file).mtimeMs < SETTLE_MS) {
           report.waiting.push({ kind, file: rel, reason: "đang chép — nhận ở lần sau" });
           continue;
         }

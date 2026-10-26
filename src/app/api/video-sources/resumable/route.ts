@@ -1,6 +1,7 @@
 import { getCurrentUser } from "@/lib/auth";
 import { actorFor } from "@/lib/permissions";
 import { appendChunk, openSession, sessionInfo } from "@/lib/video/resumable";
+import { sameOrigin } from "@/lib/same-origin";
 
 // Tải video gốc NỐI TIẾP được: POST mở phiên (hoặc tìm lại phiên cũ theo dấu vân tay tệp), PUT gửi từng khúc tại đúng
 // vị trí, GET hỏi đã nhận bao nhiêu byte. Đường dẫn nằm dưới api/video-sources → loại khỏi proxy (không đệm 10 MB).
@@ -11,9 +12,7 @@ async function guard(req: Request) {
   if (!user) return { error: Response.json({ ok: false, error: "Chưa đăng nhập" }, { status: 401 }) };
   // Chống gửi chéo trang: chỉ nhận yêu cầu từ chính giao diện hệ thống (GET chỉ đọc vị trí, vẫn cần đăng nhập).
   if (req.method !== "GET") {
-    const origin = req.headers.get("origin");
-    const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
-    if (!origin || !host || new URL(origin).host !== host) return { error: Response.json({ ok: false, error: "Nguồn yêu cầu không hợp lệ" }, { status: 403 }) };
+    if (!sameOrigin(req)) return { error: Response.json({ ok: false, error: "Nguồn yêu cầu không hợp lệ" }, { status: 403 }) };
   }
   return { actor: actorFor(user.email) };
 }
