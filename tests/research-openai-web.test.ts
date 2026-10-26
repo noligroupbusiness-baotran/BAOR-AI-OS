@@ -106,7 +106,10 @@ test("vị trí Nghiên cứu chọn ChatGPT → bước tìm web gọi tool web
   const [s1, s2] = seen;
   assert.equal((s1.init.headers as Record<string, string>).authorization, "Bearer sk-openai-test-khong-goi-that");
   assert.equal(s1.body.model, "gpt-6-luna");
-  assert.deepEqual(s1.body.tools, [{ type: "web_search" }]);
+  // Thị trường Việt Nam (OWNER 26/10): vị trí gần đúng VN cho tool web_search (developers.openai.com/api/docs/guides/tools-web-search)
+  assert.deepEqual(s1.body.tools, [{ type: "web_search", user_location: { type: "approximate", country: "VN", timezone: "Asia/Ho_Chi_Minh" } }]);
+  assert.match(String(s1.body.instructions), /Thị trường: Việt Nam/);
+  assert.match(JSON.stringify(s1.body.input), /site:facebook\.com|tiếng Việt/);
   assert.deepEqual(s1.body.include, ["web_search_call.action.sources"], "lấy đủ nguồn đã tìm, không chỉ nguồn được trích");
   assert.equal(s1.body.max_tool_calls, 8);
   assert.equal(s1.body.text, undefined, "bước tìm web không ép JSON");

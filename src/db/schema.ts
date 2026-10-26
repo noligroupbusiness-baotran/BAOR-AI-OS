@@ -669,6 +669,8 @@ export const researchFindings = sqliteTable(
     confidence: text("confidence").notNull().default("medium"), // high | medium | low
     verifyOk: integer("verify_ok", { mode: "boolean" }).notNull().default(false),
     verifyNotes: text("verify_notes").notNull().default("[]"),
+    // approved = dùng được cho hook; pending = AI tự nghiên cứu đề xuất, chờ OWNER duyệt (không tự duyệt)
+    reviewStatus: text("review_status").notNull().default("approved"),
   },
   (t) => [index("research_findings_task_idx").on(t.taskId)],
 );

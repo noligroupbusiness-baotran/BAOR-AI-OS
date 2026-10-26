@@ -74,12 +74,13 @@ export function hookContext(topic: string, researchId?: string): HookContext {
   const db = getDb();
   // Bỏ ký tự đại diện của LIKE (% _) khỏi từ khoá chủ đề
   const words = topic.toLowerCase().replace(/[%_\\]/g, " ").split(/\s+/).filter((w) => w.length >= 3).slice(0, 6);
+  // Chỉ insight đã duyệt: đề xuất của AI tự nghiên cứu (chờ duyệt) không vào hook cho tới khi OWNER duyệt
   const findings = researchId
-    ? db.select().from(schema.researchFindings).where(and(eq(schema.researchFindings.taskId, researchId), eq(schema.researchFindings.verifyOk, true))).limit(20).all()
+    ? db.select().from(schema.researchFindings).where(and(eq(schema.researchFindings.taskId, researchId), eq(schema.researchFindings.verifyOk, true), eq(schema.researchFindings.reviewStatus, "approved"))).limit(20).all()
     : db
         .select()
         .from(schema.researchFindings)
-        .where(and(eq(schema.researchFindings.verifyOk, true), words.length ? or(...words.flatMap((w) => [like(schema.researchFindings.statement, `%${w}%`), like(schema.researchFindings.contentTopics, `%${w}%`)])) : undefined))
+        .where(and(eq(schema.researchFindings.verifyOk, true), eq(schema.researchFindings.reviewStatus, "approved"), words.length ? or(...words.flatMap((w) => [like(schema.researchFindings.statement, `%${w}%`), like(schema.researchFindings.contentTopics, `%${w}%`)])) : undefined))
         .limit(8)
         .all();
   const knowledge = searchKnowledge(topic || "khách hàng", { limit: 10 }).filter((h) => usableStatus(h.page.status)).slice(0, 6);

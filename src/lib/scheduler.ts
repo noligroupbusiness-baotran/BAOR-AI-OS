@@ -1,5 +1,5 @@
 // Bộ chạy nền trong tiến trình Next.js (khởi động từ src/instrumentation.ts).
-// Mỗi phút: đăng bài đến giờ. Mỗi giờ: đồng bộ số liệu kênh, luật CPL. Mỗi ngày: dọn nhật ký cũ. Một tiến trình = một lịch.
+// Mỗi phút: đăng bài đến giờ. Mỗi giờ: đồng bộ số liệu kênh, luật CPL, tự nghiên cứu chủ đề. Mỗi ngày: dọn nhật ký cũ. Một tiến trình = một lịch.
 import { publishDuePosts, syncChannelMetrics } from "@/lib/connectors/sync";
 import { runScheduledRules } from "@/lib/automation/engine";
 import { sendAlert } from "@/lib/alerts";
@@ -11,6 +11,7 @@ import { getSetting, setSetting } from "@/lib/admin";
 import { publishDueVideoPosts, syncVideoPostMetrics, verifyPublishingPosts } from "@/lib/publishing/video";
 import { autoOptimize, enforceAuthorization, proposeFromVideoPosts, syncAdInsights } from "@/lib/ads/engine";
 import { refreshProposals } from "@/lib/learning";
+import { kickAutoResearch } from "@/lib/research/auto";
 
 const g = globalThis as unknown as { __baorScheduler?: { timer: NodeJS.Timeout; lastHourly: number; lastDaily: number }; __baorTickRunning?: boolean };
 
@@ -82,6 +83,14 @@ async function tickBody() {
         setSetting("knowledge.lastAutoSync", new Date(now).toISOString());
         const kb = await syncSecondBrain();
         parts.push(`Kiến thức: ${kb.ok ? "đồng bộ xong" : "lỗi đồng bộ"}`); // chữ hiển thị (25/10: ẩn tên Second Brain khỏi giao diện)
+      }
+      // Tự nghiên cứu: chạy TÁCH RỜI (không giữ lượt mỗi phút — đăng bài đến giờ vẫn chạy), tối đa 1 chủ đề / giờ, 2 chủ đề / ngày (chung với
+      // chủ đề mới tạo); thiếu khoá / AI tắt → lặng lẽ bỏ qua (src/lib/research/auto.ts)
+      try {
+        const ar = kickAutoResearch(new Date(now));
+        if (ar.started) parts.push(ar.started);
+      } catch (e) {
+        parts.push(`tự nghiên cứu lỗi: ${e instanceof Error ? e.message : e}`);
       }
     }
     // Mỗi ngày: dọn nhật ký cũ và tệp mồ côi theo chính sách lưu trữ.

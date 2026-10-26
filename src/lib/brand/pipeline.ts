@@ -67,7 +67,7 @@ export function getBrandPipeline(): BrandPipeline {
 
   // 1. Nghiên cứu (đơn giản): chủ đề → insight từ nền tảng → hook
   const tasks = db.select({ id: schema.researchTasks.id, question: schema.researchTasks.question }).from(schema.researchTasks).all();
-  const findings = db.select({ taskId: schema.researchFindings.taskId }).from(schema.researchFindings).all();
+  const findings = db.select({ taskId: schema.researchFindings.taskId }).from(schema.researchFindings).where(eq(schema.researchFindings.reviewStatus, "approved")).all(); // chỉ insight đã duyệt
   const hooked = new Set(db.select({ researchId: schema.hookIdeas.researchId }).from(schema.hookIdeas).all().map((h) => h.researchId));
   const withInsight = tasks.filter((t) => findings.some((f) => f.taskId === t.id));
   const noInsight = tasks.filter((t) => !findings.some((f) => f.taskId === t.id));
