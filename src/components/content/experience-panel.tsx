@@ -52,36 +52,48 @@ export const ExperiencePanel = forwardRef<ExperiencePanelHandle, Props>(function
   const filled = answered > 0 || liveRefs > 0;
   const confirm = review.items.length > 0;
 
+  // Thu gọn: MỘT dòng ("Chuyện thật · 2 trả lời · Đã xác nhận") hoặc nút "Kể chuyện thật" khi chưa có; mở: khung đầy đủ như cũ
+  const confirmBox = confirm && (!confirmedNow || open);
   return (
-    <section className={cn("rounded-lg border bg-surface", filled ? "border-border" : "border-amber/50")} aria-label="Kinh nghiệm của anh" data-testid="experience-panel">
-      <div className="flex items-center gap-2 px-3 py-2">
-        <button type="button" onClick={() => onOpenChange(!open)} aria-expanded={open} className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left">
-          <UserRound size={15} className="shrink-0 text-violet" aria-hidden />
-          <span className="whitespace-nowrap font-semibold text-ink">Kinh nghiệm của anh</span>
-          {filled ? (
-            <span className="inline-flex h-5 items-center gap-1 whitespace-nowrap rounded-full bg-jade-soft px-2 text-[11px] font-semibold text-jade-ink">
-              <Check size={11} aria-hidden />
-              <span className="num">{answered}</span> trả lời{liveRefs ? <> · <span className="num">{liveRefs}</span> nguồn</> : null}
+    <section className={cn(open && "rounded-lg border bg-surface", open && (filled ? "border-border" : "border-amber/50"))} aria-label="Chuyện thật của anh" data-testid="experience-panel">
+      <div className={cn("flex items-center gap-2", open && "px-3 py-2")}>
+        {open || filled ? (
+          <button type="button" onClick={() => onOpenChange(!open)} aria-expanded={open} className="flex min-w-0 cursor-pointer items-center gap-1.5 rounded text-left text-[12.5px] focus-visible:outline-2 focus-visible:outline-jade">
+            <UserRound size={14} className="shrink-0 text-violet" aria-hidden />
+            <span className="whitespace-nowrap font-semibold text-ink">Chuyện thật</span>
+            <span className="min-w-0 truncate text-ink-3">
+              {filled ? (
+                <>
+                  {" · "}<span className="num">{answered}</span> trả lời{liveRefs ? <> · <span className="num">{liveRefs}</span> nguồn</> : null}
+                  {confirm && confirmedNow && <span className="font-semibold text-jade-ink"> · Đã xác nhận</span>}
+                </>
+              ) : (
+                <span className="font-semibold text-amber"> · chưa có</span>
+              )}
             </span>
-          ) : (
-            <span className="inline-flex h-5 items-center whitespace-nowrap rounded-full bg-amber-soft px-2 text-[11px] font-semibold text-amber">cần chuyện thật</span>
-          )}
-          <ChevronDown size={14} className={cn("ml-auto shrink-0 text-ink-3 transition-transform", open && "rotate-180")} aria-hidden />
-        </button>
-        <InfoTip label={CONTENT_SKILL.label} className="h-5 w-5">
-          <b>{CONTENT_SKILL.label}</b> — kinh nghiệm thật của anh là nguồn sự thật; content chỉ là đầu ra. Hệ thống hỏi 1–2 câu mỗi lần, AI bóc tách chuyện rồi mới viết, không bao giờ tự thêm trải nghiệm.
-          {skillUrl && (
-            <>
-              <br />
-              <a href={skillUrl} target="_blank" rel="noreferrer" className="font-semibold text-sky hover:underline">Mở skill trong Second Brain ›</a>
-            </>
-          )}
-        </InfoTip>
+            <ChevronDown size={14} className={cn("shrink-0 text-ink-3 transition-transform", open && "rotate-180")} aria-hidden />
+          </button>
+        ) : (
+          <Button type="button" size="sm" variant="outline" icon={UserRound} onClick={() => onOpenChange(true)} aria-expanded={false} className="h-7 min-h-0 px-2.5 text-[12.5px]">
+            Kể chuyện thật
+          </Button>
+        )}
+        {open && (
+          <InfoTip label={CONTENT_SKILL.label} className="ml-auto h-5 w-5">
+            <b>{CONTENT_SKILL.label}</b> — kinh nghiệm thật của anh là nguồn sự thật; content chỉ là đầu ra. Hệ thống hỏi 1–2 câu mỗi lần, AI bóc tách chuyện rồi mới viết, không bao giờ tự thêm trải nghiệm.
+            {skillUrl && (
+              <>
+                <br />
+                <a href={skillUrl} target="_blank" rel="noreferrer" className="font-semibold text-sky hover:underline">Mở skill trong Second Brain ›</a>
+              </>
+            )}
+          </InfoTip>
+        )}
       </div>
 
-      {/* AI viết chi tiết ngoài chuyện của anh → luôn thấy (kể cả khi bảng thu gọn), chặn gửi duyệt tới khi anh tích xác nhận */}
-      {confirm && (
-        <div className="mx-3 mb-2 grid gap-1 rounded-md bg-amber-soft px-2.5 py-1.5 text-[12.5px] text-amber" data-testid="owner-confirm">
+      {/* AI viết chi tiết ngoài chuyện của anh → chưa xác nhận thì LUÔN thấy (kể cả khi thu gọn), chặn gửi duyệt tới khi anh tích xác nhận */}
+      {confirmBox && (
+        <div className={cn("mb-2 mt-1.5 grid gap-1 rounded-md bg-amber-soft px-2.5 py-1.5 text-[12.5px] text-amber", open && "mx-3 mt-0")} data-testid="owner-confirm">
           <span className="inline-flex items-start gap-1.5 font-semibold">
             <CircleAlert size={13} className="mt-0.5 shrink-0" aria-hidden />
             <span>{confirmedNow ? "Chi tiết ngoài chuyện" : "Cần anh xác nhận"}: {review.items.slice(0, 4).join(", ")}</span>
@@ -151,8 +163,8 @@ export const ExperiencePanel = forwardRef<ExperiencePanelHandle, Props>(function
               </select>
             </label>
             {answered > 0 && (
-              <Button type="button" size="sm" variant="ghost" icon={Wand2} onClick={onFill} title="Điền câu trả lời của anh vào thẻ còn trống (không AI)" className="ml-auto h-7 min-h-0 px-2 text-[12px]">
-                Điền vào thẻ
+              <Button type="button" size="sm" variant="ghost" icon={Wand2} onClick={onFill} title="Điền câu trả lời của anh vào đoạn còn trống (không AI)" className="ml-auto h-7 min-h-0 px-2 text-[12px]">
+                Điền vào kịch bản
               </Button>
             )}
           </div>

@@ -262,6 +262,7 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
                         <VlogEditor
                           key={draftKey(c.draft ?? "")}
                           initial={vlog}
+                          raw={c.draft ?? ""}
                           fallbackHook={c.hook}
                           defaultStage={sctx.stage}
                           ready={draftReady}

@@ -738,3 +738,75 @@ export function draftHash(draft: string): string {
   const doc = draft.trim() ? parseVlogDraft(draft) : null;
   return sceneHash(doc ? doc.cards : [{ speech: draftTold(draft), onScreen: "" }]);
 }
+
+// ---------- Một ô chữ duy nhất (OWNER 26/10: "phải viết thành 1 ô duy nhất chỉ nội dung thôi") ----------
+// Trình soạn hiện lời nói 4 cảnh thành các đoạn cách nhau MỘT dòng trống (Hook · Câu chuyện · Bài học · Kết). Cảnh trống ở giữa / đầu
+// giữ chỗ bằng một dòng trống nữa, nên sửa một đoạn không làm các đoạn sau dồn sang cảnh khác. Hình ảnh / Chữ trên màn hình / Ý chính /
+// Gợi ý OWNER / ghi chú vẫn gắn đúng cảnh (chỉ đổi lời nói). Lời nói đọc từ bản chữ không có dòng trống (parseVlogDraft bỏ), nên
+// textToSpeeches(speechesToText(x)) trả lại đúng x.
+
+/** Lời nói 4 cảnh → chữ trong ô (bỏ cảnh trống ở cuối; cảnh trống ở đầu / giữa = thêm một dòng trống). */
+export function speechesToText(speeches: string[]): string {
+  const list = [...speeches];
+  while (list.length && !list.at(-1)?.trim()) list.pop();
+  // Dòng trống TRONG một lời nói (VD câu trả lời nhiều đoạn được "Điền vào kịch bản") gộp thành một xuống dòng — nếu không, lần gõ sau
+  // tách nó thành hai đoạn và dồn chữ sang cảnh sau
+  return list.map((s) => s.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).join("\n")).join("\n\n");
+}
+
+/**
+ * Chữ trong ô → lời nói 4 cảnh theo đoạn: đoạn 1 = Hook, 2 = Câu chuyện, 3 = Bài học, 4…n = Kết (nối bằng xuống dòng).
+ * Đoạn = các dòng liền nhau; giữa hai đoạn 1–2 dòng trống là ranh giới thường, mỗi 2 dòng trống thêm = một cảnh trống
+ * (đầu ô: mỗi 2 dòng trống = một cảnh trống). Thiếu đoạn thì các cảnh sau để trống.
+ */
+export function textToSpeeches(text: string, count = VLOG_CARDS.length): string[] {
+  const paras: string[] = [];
+  let cur: string[] = [];
+  let blanks = 0;
+  for (const raw of (text ?? "").split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) {
+      blanks++;
+      continue;
+    }
+    if (cur.length && blanks) {
+      paras.push(cur.join("\n"));
+      cur = [];
+      for (let k = 0; k < Math.floor((blanks - 1) / 2); k++) paras.push("");
+    } else if (!cur.length && !paras.length) for (let k = 0; k < Math.floor(blanks / 2); k++) paras.push("");
+    blanks = 0;
+    cur.push(line);
+  }
+  if (cur.length) paras.push(cur.join("\n"));
+  const out = paras.slice(0, count - 1);
+  const rest = paras.slice(count - 1).filter((p) => p.trim());
+  out.push(rest.join("\n"));
+  while (out.length < count) out.push("");
+  return out.slice(0, count);
+}
+
+/** Ghi chữ trong ô vào đúng lời nói từng cảnh; mọi trường khác của cảnh giữ nguyên. */
+export function applyScriptText(doc: VlogDoc, text: string): VlogDoc {
+  const sp = textToSpeeches(text, doc.cards.length);
+  return { ...doc, cards: doc.cards.map((c, i) => (c.speech === sp[i] ? c : { ...c, speech: sp[i] ?? "" })) };
+}
+
+/**
+ * Bản chữ trình soạn gửi đi. Chưa sửa gì VÀ lúc mở không tự điền lời nói nào (VD hook dự phòng khi Hook đã lưu trống) → gửi lại đúng
+ * bản đã lưu (byte-identical, không chuẩn hoá lại); còn lại ghi từ thẻ cảnh. Mã xác nhận phía trình duyệt phải tính bằng
+ * draftHash(chính bản này) — đúng chữ máy chủ băm khi lưu / xác nhận.
+ */
+export function editorDraft(raw: string, saved: VlogDoc, current: VlogDoc, untouched: boolean): string {
+  const sameSpeech = saved.cards.length === current.cards.length && saved.cards.every((c, i) => c.speech === current.cards[i].speech);
+  return untouched && sameSpeech && raw.trim() ? raw : serializeVlog(current);
+}
+
+/** Lời nói có đoạn dời sang cảnh khác (xoá / thêm cả một đoạn ở giữa) → ghi chú quay ẩn của cảnh có thể không còn khớp lời. */
+export function scenesShifted(prev: string[], next: string[]): boolean {
+  for (let i = 0; i < Math.min(prev.length, next.length) - 1; i++) {
+    const up = !!next[i].trim() && next[i] === prev[i + 1] && next[i] !== prev[i];
+    const down = !!prev[i].trim() && next[i + 1] === prev[i] && next[i + 1] !== prev[i + 1];
+    if (up || down) return true;
+  }
+  return false;
+}

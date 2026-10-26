@@ -56,3 +56,5 @@ export function nextThemeMode(mode: ThemeMode): ThemeMode {
   return mode === "system" ? "light" : mode === "light" ? "dark" : "system";
 }
 export const themeModeLabel: Record<ThemeMode, string> = { light: "Sáng", dark: "Tối", system: "Theo hệ thống" };
+// Trình soạn vlog một ô: dòng nhắc "Đoạn 1: Hook · …" — ẩn sau lần dùng đầu.
+export const vlogHintStore = createLocalStore<"show" | "hidden">("baor.vlogParaHint", "show");
