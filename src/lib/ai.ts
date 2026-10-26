@@ -250,16 +250,16 @@ const IdeasSchema = z.object({
 });
 
 // Bảng Hook (Personal Brand System bước 3): 10 hook / lần (schema KHÔNG ép min/max — mô hình trả 9 / 11 thì parse vẫn đạt, sổ chi phí
-// ghi đúng token; cắt còn 10, thiếu thì báo; nền tảng lạ do saveHooks lọc), video ngắn < 3 phút, bám căn cứ đưa vào (phát hiện nghiên cứu đã kiểm,
+// ghi đúng token; cắt còn 10, thiếu thì báo; nền tảng lạ do saveHooks lọc), vlog chia sẻ < 1 phút (OWNER 26/10), bám căn cứ đưa vào (phát hiện nghiên cứu đã kiểm,
 // Second Brain, insight đã duyệt) — ref căn cứ ngoài danh sách bị bỏ; luật ngôn từ theo nền tảng kiểm lại bằng luật khi lưu.
 const HooksSchema = z.object({
   hooks: z
     .array(
       z.object({
-        hook: z.string().describe("câu mở đầu 3 giây đầu, nói thành lời"),
+        hook: z.string().describe("câu mở đầu 3 giây đầu, nói thành lời, tối đa 12-15 chữ; không kể trải nghiệm / con số riêng của OWNER nếu căn cứ không có"),
         angle: z.string().describe("góc tiếp cận / vì sao người xem dừng lại"),
-        beats: z.array(z.string()).describe("dàn ý kịch bản 3-6 nhịp"),
-        durationSec: z.number().int().describe("độ dài dự kiến, giây, tối đa 180"),
+        beats: z.array(z.string()).describe("đúng 3 nhịp: (1) câu chuyện / trải nghiệm thật, (2) MỘT bài học cụ thể, (3) kết nhẹ, CTA mềm"),
+        durationSec: z.number().int().describe("độ dài dự kiến, giây, tối đa 60"),
         platforms: z.array(z.string()).describe(`trong: ${HOOK_PLATFORMS.join(", ")}`),
         basisRefs: z.array(z.string()).describe("ref căn cứ dạng finding:<id> / knowledge:<id> / insight:<id>, chỉ lấy từ ngữ cảnh"),
       }),
@@ -274,11 +274,15 @@ export async function generateHooks(topic: string, by: string, researchId?: stri
       model,
       max_tokens: 16000,
       system:
-        "Bạn là biên tập viên video ngắn cho thương hiệu cá nhân Việt Nam. Viết hook nói thành lời, tự nhiên, cụ thể; mỗi hook một góc khác nhau. " +
+        "Bạn là biên tập viên vlog chia sẻ cho thương hiệu cá nhân Việt Nam. Định dạng: vlog chia sẻ ngôi thứ nhất, dưới 60 giây (~130–160 từ lời thoại), " +
+        "cấu trúc: hook 3 giây → câu chuyện / trải nghiệm thật → MỘT bài học cụ thể → kết nhẹ (CTA mềm như hỏi ý kiến, lưu lại; không chào bán). " +
+        "Hook nói thành lời, tự nhiên, cụ thể, tối đa 12–15 chữ; mỗi hook một góc khác nhau. Không viết giọng bán hàng, không khẳng định quá lời. " +
+        "Ngôi thứ nhất chỉ để dẫn dắt (\"mình hay thấy…\", \"nhiều bạn hỏi mình…\"); trải nghiệm riêng, kết quả, số tiền, con số của OWNER chỉ được dùng khi có trong căn cứ " +
+        "(tri thức [OWNER] / Second Brain) — không có thì KHÔNG viết (\"mình từng mất 5 triệu…\" là bịa), dàn ý ghi \"[OWNER KỂ: …]\" để OWNER tự kể. Câu chuyện dựa trên bình luận / insight khách. " +
         "Chỉ dựa trên căn cứ được đưa (phát hiện nghiên cứu, Second Brain, insight); không bịa số liệu, giá, công dụng. " +
         "Tuân chính sách nền tảng: không khẳng định tuyệt đối (100%, cam kết, đảm bảo), không tuyên bố chữa bệnh / giảm cân cụ thể, " +
-        "không khẳng định thuộc tính cá nhân người xem (\"bạn đang béo / nợ…\"), không hứa thu nhập. Video dưới 3 phút.",
-      messages: [{ role: "user", content: `${brandContext()}\n\n${ctx.text}\n\nChủ đề OWNER đề xuất: ${topic}\n\nViết đúng ${HOOK_COUNT} hook kèm dàn ý kịch bản ngắn.` }],
+        "không khẳng định thuộc tính cá nhân người xem (\"bạn đang béo / nợ…\"), không hứa thu nhập. Vlog dưới 1 phút.",
+      messages: [{ role: "user", content: `${brandContext()}\n\n${ctx.text}\n\nChủ đề OWNER đề xuất: ${topic}\n\nViết đúng ${HOOK_COUNT} hook vlog chia sẻ dưới 1 phút, mỗi hook kèm dàn ý 3 nhịp (chuyện · bài học · kết).` }],
       output_config: { format: zodOutputFormat(HooksSchema) },
     }),
   );
@@ -375,6 +379,14 @@ export async function generateIdeas(n = 5): Promise<Result<{ count: number }>> {
   }
 }
 
+// Kịch bản mới = vlog chia sẻ < 1 phút (OWNER 26/10); kịch bản quay sinh từ brief nghiên cứu giữ khung 5 cảnh cũ (luật kiểm CP02 dựa trên khung đó).
+const VLOG_SCRIPT_FORMAT =
+  "reel / story / script = kịch bản VLOG CHIA SẺ ngôi thứ nhất, dưới 60 giây (~130–160 từ lời thoại, giọng kể tự nhiên, không giọng bán hàng), đúng 4 cảnh " +
+  "1. HOOK (0–3s), 2. CÂU CHUYỆN (3–25s), 3. BÀI HỌC (25–50s), 4. KẾT (50–60s); mỗi cảnh có ba dòng Hình ảnh / Lời thoại / Chữ trên màn hình. " +
+  "Câu chuyện dựa trên hook, dàn ý và insight được đưa; không bịa trải nghiệm riêng, số liệu hay kết quả — giữ nguyên mọi dòng 'Gợi ý OWNER: [OWNER KỂ: …]' để OWNER tự kể. " +
+  "Bài học: MỘT điều cụ thể làm được ngay. Kết: nhẹ nhàng, CTA mềm (hỏi người xem đã gặp chưa, lưu lại), không chào bán";
+const BRIEF_SCRIPT_FORMAT = "reel / story / script = kịch bản video 15–60 giây theo 5 cảnh Hook (0–3s), Vấn đề, Giải pháp, Bằng chứng, Kêu gọi, mỗi cảnh có ba dòng Hình ảnh / Lời thoại / Chữ trên màn hình";
+
 export function draftPurpose(format: string): "draft" | "caption" {
   return format === "reel" || format === "story" || format === "script" ? "draft" : "caption";
 }
@@ -390,13 +402,15 @@ export async function writeDraft(contentId: string, briefRules?: string, validat
       model,
       max_tokens: 16000,
       system:
-        "Bạn viết nội dung mạng xã hội tiếng Việt cho fanpage. Viết bản nháp hoàn chỉnh, đúng định dạng: post = bài đăng có hook, thân, CTA; article = bài dài có tiêu đề phụ; carousel = từng slide đánh số; reel / story / script = kịch bản video 15–60 giây theo 5 cảnh Hook (0–3s), Vấn đề, Giải pháp, Bằng chứng, Kêu gọi, mỗi cảnh có ba dòng Hình ảnh / Lời thoại / Chữ trên màn hình; caption = caption ngắn dưới 125 ký tự ở câu đầu, có CTA, tối đa 5 hashtag; image = bản mô tả ảnh cho thiết kế (thông điệp trên ảnh tối đa 8 từ, chủ thể, bố cục, màu, phong cách, điều cấm). Không dùng emoji quá nhiều. Hệ thống chỉ làm marketing (không chào bán, không nêu giá); không bịa công dụng. Trả về chỉ nội dung nháp, không giải thích.",
+        "Bạn viết nội dung mạng xã hội tiếng Việt cho fanpage. Viết bản nháp hoàn chỉnh, đúng định dạng: post = bài đăng có hook, thân, CTA; article = bài dài có tiêu đề phụ; carousel = từng slide đánh số; " +
+        (briefRules ? BRIEF_SCRIPT_FORMAT : VLOG_SCRIPT_FORMAT) +
+        "; caption = caption ngắn dưới 125 ký tự ở câu đầu, có CTA, tối đa 5 hashtag; image = bản mô tả ảnh cho thiết kế (thông điệp trên ảnh tối đa 8 từ, chủ thể, bố cục, màu, phong cách, điều cấm). Không dùng emoji quá nhiều. Hệ thống chỉ làm marketing (không chào bán, không nêu giá); không bịa công dụng. Trả về chỉ nội dung nháp, không giải thích.",
       messages: [
         {
           role: "user",
           content: briefRules
             ? `${briefRules}\n\nKịch bản quay hiện có (giữ nguyên cấu trúc cảnh, các dòng Căn cứ và mục NGUỒN):\n${item.draft ?? ""}`
-            : `${brandContext()}\n\nViết nháp cho:\nTiêu đề: ${item.title}\nĐịnh dạng: ${item.format}\nHook: ${item.hook}\nDàn ý: ${item.outline}`,
+            : `${brandContext()}\n\nViết nháp cho:\nTiêu đề: ${item.title}\nĐịnh dạng: ${item.format}\nHook: ${item.hook}\nDàn ý: ${item.outline}${draftPurpose(item.format) === "draft" && item.draft?.trim() ? `\n\nBản nháp / khung hiện có (giữ các dòng Gợi ý OWNER):\n${item.draft.slice(0, 6000)}` : ""}`,
         },
       ],
     }),

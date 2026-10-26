@@ -27,7 +27,7 @@ before(async () => {
   roster.saveRoleSettings("hooks", { model: "claude-sonnet-5-5" }); // ca dưới thử đường Claude (mô hình giả); mặc định từ 26/10 là ChatGPT
 });
 
-test("luật ngôn từ: tuyệt đối / chữa bệnh / giảm cân / thuộc tính cá nhân (chỉ Meta) / thu nhập / quá 3 phút", () => {
+test("luật ngôn từ: tuyệt đối / chữa bệnh / giảm cân / thuộc tính cá nhân (chỉ Meta) / thu nhập / quá 1 phút (vlog)", () => {
   const all = ["facebook", "tiktok"];
   assert.match(hooks.policyIssues("Cam kết hiệu quả 100%", all).join(), /tuyệt đối/);
   assert.match(hooks.policyIssues("sản phẩm chữa khỏi mất ngủ", all).join(), /chữa/);
@@ -35,7 +35,9 @@ test("luật ngôn từ: tuyệt đối / chữa bệnh / giảm cân / thuộc 
   assert.match(hooks.policyIssues("Bạn đang béo lên mỗi ngày?", ["facebook"]).join(), /thuộc tính cá nhân/);
   assert.equal(hooks.policyIssues("Bạn đang béo lên mỗi ngày?", ["tiktok"]).length, 0, "luật thuộc tính cá nhân là của Meta");
   assert.match(hooks.policyIssues("thu nhập 30 triệu mỗi tháng", all).join(), /thu nhập/);
-  assert.match(hooks.policyIssues("ok", all, 200).join(), /vượt 3 phút/);
+  assert.equal(hooks.MAX_SHORT_SEC, 60, "OWNER 26/10: vlog chia sẻ dưới 1 phút");
+  assert.match(hooks.policyIssues("ok", all, 90).join(), /vượt 1 phút/);
+  assert.equal(hooks.policyIssues("ok", all, 60).length, 0, "đúng 60 giây vẫn đạt");
   assert.equal(hooks.policyIssues("Ba câu chào hỏi giúp khách bớt đề phòng", all, 60).length, 0);
   assert.equal(hooks.policyIssues("Số 10 khách gọi lại", all).length, 0, "“số 10” không phải “số 1”");
 });
@@ -71,6 +73,9 @@ test("chọn hook → tạo kịch bản đang viết mang hook + dàn ý; chọ
   assert.equal(c.status, "in_progress");
   assert.equal(c.hook, "Ba câu đầu tiên quyết định khách có nghe tiếp");
   assert.deepEqual(JSON.parse(c.outline), ["mở", "giữa", "chốt"]);
+  // Kịch bản mới = khung vlog chia sẻ < 1 phút, hook ở cảnh 1, chỗ câu chuyện thật để OWNER kể (không viết thay)
+  assert.match(c.draft ?? "", /1\. HOOK \(0–3s\)[\s\S]*Lời thoại: Ba câu đầu tiên quyết định khách có nghe tiếp/);
+  assert.match(c.draft ?? "", /2\. CÂU CHUYỆN[\s\S]*\[OWNER KỂ:[\s\S]*3\. BÀI HỌC[\s\S]*4\. KẾT/);
   hooks.rejectHook(r.ids[1]);
   hooks.rejectHook(r.ids[0]);
   const rows = hooks.listHooks();

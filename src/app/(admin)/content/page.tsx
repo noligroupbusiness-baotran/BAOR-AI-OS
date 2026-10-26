@@ -39,6 +39,7 @@ import { InfoTip } from "@/components/ui/info-tip";
 import { isDryRun } from "@/lib/publishing/guards";
 import { SamplePill } from "@/components/ui/sample";
 import { isSample } from "@/lib/sample";
+import { hookOrigins } from "@/lib/content/priority";
 
 export const metadata = { title: "Nội dung – BAOR AI OS" };
 
@@ -67,6 +68,8 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
   const insights = listInsights();
   const opened = open ?? (tab === "mine" ? list[0]?.id : undefined);
   const links = campaignRepo.linksForEntities("content", list.map((c) => c.id));
+  // Kịch bản sinh từ hook → chủ đề gốc ở bước 1 (nối ngược 2 → 1)
+  const origins = hookOrigins(list.map((c) => c.id));
   // Kênh lên lịch đăng: đọc từ Cài đặt › Kết nối, đánh dấu kênh chưa kết nối.
   const connected = new Map(listIntegrationStatus().map((i) => [i.key, i.connected]));
   // Chỉ kênh nhận bài chữ (TikTok / YouTube chỉ nhận video, Instagram cần ảnh / video): src/lib/publishing/text.ts
@@ -179,7 +182,14 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
                       {isSample("content", c.id) && <SamplePill />}
                       {tab !== "proposed" && st && <Pill tone={st.tone}>{st.label}</Pill>}
                       <Pill tone="sky">{contentFormatLabel[c.format] ?? c.format}</Pill>
-                      {c.pillar && <Pill tone="violet">{c.pillar}</Pill>}
+                      {(() => {
+                        const o = origins.get(c.id);
+                        return o?.topicId ? (
+                          <Link href={`/insights/research/${o.topicId}`} title="Mở chủ đề gốc">
+                            <Pill tone="violet" className="hover:underline">Chủ đề › {(o.topic || c.pillar).slice(0, 40)}</Pill>
+                          </Link>
+                        ) : c.pillar ? <Pill tone="violet">{c.pillar}</Pill> : null;
+                      })()}
                       {ins && <Pill>{ins.title}</Pill>}
                       {c.source === "ai" && <Pill tone="violet">AI</Pill>}
                       {c.scheduledFor && <Pill className="num">{formatDateTime(c.scheduledFor)}</Pill>}
@@ -234,7 +244,7 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
                         />
                       </label>
                       {kindOf(c.format) === "caption" && <CaptionHelper formId={`draft-${c.id}`} />}
-                      {kindOf(c.format) === "script" && <ScriptHelper formId={`draft-${c.id}`} />}
+                      {kindOf(c.format) === "script" && (briefForContent(c.id) ? <ScriptHelper formId={`draft-${c.id}`} duration={false} format="legacy" /> : <ScriptHelper formId={`draft-${c.id}`} />)}
                       {kindOf(c.format) === "script" && <ScriptQaPanel contentId={c.id} draft={c.draft ?? ""} />}
                       {kindOf(c.format) === "image" && (
                         <div className="rounded-md border border-border bg-ground px-3 py-2 text-[12px] text-ink-2">

@@ -7,7 +7,7 @@ import { importKnowledgeSnapshot, type KnowledgeSnapshot } from "@/lib/knowledge
 import { getResearchTask } from "@/lib/research";
 import { done } from "./common";
 import { SOCIAL_KINDS, detectPlatform, type SocialKind } from "@/lib/research/social";
-import { addSourceToTopic, analyzeLink, approveInsight, createTopic, deleteInsight, lastLinkKey, researchAiOn, runPainResearch } from "@/lib/research/topic";
+import { addSourceToTopic, analyzeLink, approveInsight, createTopic, deleteInsight, findTopicByName, lastLinkKey, researchAiOn, runPainResearch } from "@/lib/research/topic";
 import { autoQuotaLeft, autoReadiness, autoResearchTopic, setAutoResearch } from "@/lib/research/auto";
 import { setSetting } from "@/lib/admin";
 
@@ -48,6 +48,9 @@ const topicOf = (t: NonNullable<ReturnType<typeof getResearchTask>>) => t.task.q
 // 1. OWNER đề xuất chủ đề → AI tự tìm nỗi đau khách ngay (đề xuất chờ duyệt) nếu đã có khoá + AI Nghiên cứu bật
 export async function createTopicAction(fd: FormData) {
   const actor = await requirePermission("manager", "/insights/research");
+  // Trùng tên (bỏ dấu, hoa thường) → mở chủ đề cũ, không tạo thêm
+  const existing = findTopicByName(str(fd, "topic"));
+  if (existing) return done(`/insights/research/${existing}`, "Chủ đề này đã có — đã mở chủ đề cũ");
   let id: string;
   try {
     id = createTopic(str(fd, "topic"), actor.name);

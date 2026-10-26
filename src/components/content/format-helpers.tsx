@@ -1,7 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { CAPTION_LIMITS, captionCheck, scriptCheck, SCRIPT_SCENES } from "@/lib/content/formats";
+import { CAPTION_LIMITS, captionCheck, scriptCheck, VLOG_MAX_SEC } from "@/lib/content/formats";
 import { cn } from "@/lib/format";
 
 // Trợ giúp theo định dạng, chạy ngay trong trình duyệt, theo luật (đếm ký tự, hashtag, cảnh).
@@ -48,23 +48,37 @@ export function CaptionHelper({ formId }: { formId: string }) {
   );
 }
 
-export function ScriptHelper({ formId }: { formId: string }) {
+/** `duration`: hiện ước tính thời lượng lời thoại và cảnh báo khi quá 1 phút (kịch bản từ brief đã có bảng kiểm riêng). */
+export function ScriptHelper({ formId, duration = true, format }: { formId: string; duration?: boolean; format?: "vlog" | "legacy" }) {
   const text = useDraft(formId);
-  const c = scriptCheck(text);
+  const c = scriptCheck(text, { format });
+  const n = c.defs.length;
   return (
     <div className="rounded-md border border-border bg-ground px-3 py-2 text-[12px]">
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
+        {c.format === "vlog" && <span className="mr-0.5 font-semibold text-ink-2">Vlog &lt; 1 phút</span>}
         {c.scenes.map((s, i) => {
-          const def = SCRIPT_SCENES[i];
+          const def = c.defs[i];
           return (
             <span key={s.name} title={`${def.seconds}: ${def.goal}`} className={cn("rounded-full border px-2 py-0.5", s.present ? "border-jade/40 bg-jade-soft text-jade-ink" : "border-border-2 text-ink-3")}>
               {i + 1}. {s.name} <span className="num text-[10.5px]">{def.seconds}</span>
             </span>
           );
         })}
+        {duration && c.words > 0 && (
+          <span className={cn("num ml-auto rounded-full px-2 py-0.5 font-semibold", c.tooLong ? "bg-amber-soft text-amber" : "bg-jade-soft text-jade-ink")} title={`${c.words} từ lời thoại, tốc độ nói vlog bình thường`}>
+            ~{c.seconds}s
+          </span>
+        )}
       </div>
-      <div className={cn("mt-1.5", c.missing.length ? "text-amber" : "text-jade")}>
-        {c.missing.length ? `Còn thiếu cảnh: ${c.missing.join(", ")}.` : c.hasSpeech ? "Đủ 5 cảnh và đã có lời thoại." : "Đủ 5 cảnh, chưa điền lời thoại."}
+      <div className={cn("mt-1.5", c.missing.length || (duration && c.tooLong) ? "text-amber" : "text-jade")}>
+        {c.missing.length
+          ? `Còn thiếu cảnh: ${c.missing.join(", ")}.`
+          : duration && c.tooLong
+            ? `Lời thoại ~${c.seconds} giây (${c.words} từ) — dài hơn ${VLOG_MAX_SEC} giây, nên cắt còn ~160 từ.`
+            : c.hasSpeech
+              ? `Đủ ${n} cảnh và đã có lời thoại.`
+              : `Đủ ${n} cảnh, chưa điền lời thoại.`}
       </div>
     </div>
   );
