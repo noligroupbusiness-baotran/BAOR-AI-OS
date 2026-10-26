@@ -35,6 +35,16 @@ Quản trị vào **Cài đặt › Nhân sự**, đặt mật khẩu mới cho 
 sqlite3 data/baor.db "UPDATE security_accounts SET totp_enabled=0, totp_secret=NULL, backup_codes='[]', session_version=session_version+1 WHERE email='nguoi@baor.vn';"
 ```
 
+Quên mật khẩu quản trị hoặc mất cả điện thoại lẫn mã dự phòng: dùng `scripts/reset-admin.mjs` (thuần Node, không cần tsx),
+ghi mật khẩu mới dạng băm, tắt hai lớp, thu hồi mọi phiên, in mật khẩu một lần:
+
+```bash
+# máy dev
+npm run reset-admin -- ten@email.vn
+# VPS (chạy trong container, CSDL nằm ở volume /app/data)
+cd /opt/baor-ai-os && docker compose cp scripts/reset-admin.mjs app:/tmp/reset-admin.mjs && docker compose exec app node /tmp/reset-admin.mjs ten@email.vn
+```
+
 Với chính tài khoản Quản trị bị mất cả hai: cùng lệnh trên với email quản trị, chạy trên VPS. Đây là thao tác thuộc nhóm 4 điểm cần CEO.
 
 ## 3. Phiên đăng nhập và thu hồi

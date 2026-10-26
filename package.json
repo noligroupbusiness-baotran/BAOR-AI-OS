@@ -21,7 +21,8 @@
     "render-worker": "tsx scripts/video/render-worker.mts",
     "render-worker:install": "bash scripts/video/install-render-worker.sh install",
     "render-worker:uninstall": "bash scripts/video/install-render-worker.sh uninstall",
-    "render-worker:status": "bash scripts/video/install-render-worker.sh status"
+    "render-worker:status": "bash scripts/video/install-render-worker.sh status",
+    "reset-admin": "node scripts/reset-admin.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.124.0",
