@@ -123,8 +123,16 @@ test("từ chối danh mục sai: đường dẫn lạ / sai loại / trùng, sh
 
 test("đồng bộ thật từ máy dựng: đủ loại tư liệu, xem trước nhỏ đúng chuẩn, KHÔNG gửi tệp gốc, không lộ driveId, chỉ ghi preview-cache", async () => {
   const snap = fs.readdirSync(VA, { recursive: true }).map(String).sort();
+  // App chạy cùng DATA_DIR trên máy OWNER để ảnh nhỏ của nó ở preview-cache/server (thư mục con) — lượt dọn không được đụng vào
+  // (26/10: rmSync thư mục ném EISDIR làm hỏng cả lượt đồng bộ); tệp xem trước cũ của máy dựng thì vẫn dọn
+  const pc = path.join(MAC, "preview-cache");
+  fs.mkdirSync(path.join(pc, "server"), { recursive: true });
+  fs.writeFileSync(path.join(pc, "server", "app-thumb.jpg"), "x");
+  fs.writeFileSync(path.join(pc, "cu-khong-dung.jpg"), "x");
   sent.length = 0;
   const r = await oc.syncCatalog(ctx());
+  assert.ok(fs.existsSync(path.join(pc, "server", "app-thumb.jpg")), "thư mục con của app giữ nguyên");
+  assert.ok(!fs.existsSync(path.join(pc, "cu-khong-dung.jpg")), "tệp xem trước không còn dùng bị dọn");
   assert.ok(r.ok, JSON.stringify(r));
   const s = rc.ownerMacStatus();
   assert.equal(s.count, 7, JSON.stringify(s));

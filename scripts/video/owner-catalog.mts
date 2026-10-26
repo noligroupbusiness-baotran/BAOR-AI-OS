@@ -231,7 +231,12 @@ export async function buildCatalog(ctx: CatalogCtx): Promise<BuiltCatalog> {
   cache.save();
   // Dọn tệp xem trước không còn dùng
   const keep = new Set([...previews.values()].map((p) => path.basename(p)));
-  for (const f of fs.readdirSync(pdir)) if (f !== "hashes.json" && !keep.has(f) && !f.endsWith(".tmp")) fs.rmSync(path.join(pdir, f), { force: true });
+  // Chỉ dọn TỆP của máy dựng: preview-cache/ còn chứa thư mục con của app chạy cùng DATA_DIR (preview-cache/server — ảnh nhỏ của
+  // thumb-cache.ts); rmSync một thư mục ném EISDIR và làm hỏng cả lượt đồng bộ (gặp thật 26/10 khi máy OWNER chạy cả app lẫn máy dựng)
+  for (const d of fs.readdirSync(pdir, { withFileTypes: true })) {
+    if (!d.isFile() || d.name === "hashes.json" || keep.has(d.name) || d.name.endsWith(".tmp")) continue;
+    fs.rmSync(path.join(pdir, d.name), { force: true });
+  }
   const hash = createHash("sha256").update(JSON.stringify(items)).digest("hex");
   return { items, previews, hash };
 }

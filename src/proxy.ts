@@ -14,12 +14,20 @@ export async function proxy(request: NextRequest) {
 
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   const user = token ? await verifySessionToken(token) : null;
-  if (!user && DEV_AUTO_LOGIN) {
-    const url = request.nextUrl.clone();
-    if (pathname.startsWith("/login")) url.pathname = "/dashboard";
-    const res = NextResponse.redirect(url);
-    res.cookies.set(SESSION_COOKIE, await createSessionToken(DEV_AUTO_LOGIN), { httpOnly: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 7 });
-    return res;
+  if (DEV_AUTO_LOGIN) {
+    // Cấp lại phiên khi cookie thiếu, thuộc email khác (vd tài khoản thử cũ sau khi đổi email quản trị bằng reset-admin) hoặc mang
+    // phiên bản phiên cũ (reset-admin / đổi mật khẩu thu hồi mọi phiên) — trước đây token sv cũ qua được bước kiểm chữ ký ở đây rồi
+    // bị trang đẩy về /login, kẹt ở trang đăng nhập (26/10). Import động: chỉ chạy khi dev, bản production không đụng CSDL ở proxy.
+    // Muốn thử tài khoản khác khi chạy dev: bỏ DEV_AUTO_LOGIN_EMAIL khỏi .env.local.
+    const { sessionVersionFor } = await import("@/lib/security");
+    const sv = sessionVersionFor(DEV_AUTO_LOGIN);
+    if (!user || user.email.trim().toLowerCase() !== DEV_AUTO_LOGIN || user.sv !== sv) {
+      const url = request.nextUrl.clone();
+      if (pathname.startsWith("/login")) url.pathname = "/dashboard";
+      const res = NextResponse.redirect(url);
+      res.cookies.set(SESSION_COOKIE, await createSessionToken(DEV_AUTO_LOGIN, sv), { httpOnly: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 7 });
+      return res;
+    }
   }
   if (pathname === "/login" || pathname.startsWith("/login/")) return NextResponse.next();
   if (!user) {

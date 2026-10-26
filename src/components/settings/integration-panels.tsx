@@ -29,7 +29,7 @@ const PRIMARY: Record<string, string[]> = {
   xai: ["apiKey"],
   instagram: ["igUserId"],
   tiktok: ["accessToken"],
-  youtube: ["accessToken"],
+  youtube: ["apiKey"],
   zalo_oa: ["accessToken"],
   email_provider: ["smtpUrl"],
   website: ["siteUrl"],

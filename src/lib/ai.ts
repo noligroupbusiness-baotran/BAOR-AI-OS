@@ -24,7 +24,7 @@ export function aiConfigured(): boolean {
 /**
  * Hãng chạy bước tìm web của một vị trí (Nghiên cứu bước tìm nguồn): hãng của mô hình vị trí nếu BAOR đã nối công cụ tìm web của hãng
  * đó (Claude, ChatGPT — WEB_SEARCH_PROVIDERS), ngược lại (Grok) → Claude. Dùng chung cho gate(…, { provider }), kiểm khoá trước khi chạy
- * và trạng thái nút "AI tìm kiến thức trên mạng" — ba chỗ luôn khớp nhau.
+ * và trạng thái nút "AI tìm nỗi đau khách" (phần web) — ba chỗ luôn khớp nhau.
  */
 export function webSearchProvider(purpose: string): AiProvider {
   const role = roleForPurpose(purpose);

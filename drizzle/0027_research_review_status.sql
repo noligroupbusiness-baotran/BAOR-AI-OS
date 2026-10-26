@@ -1,0 +1,1 @@
+ALTER TABLE `research_findings` ADD `review_status` text DEFAULT 'approved' NOT NULL;

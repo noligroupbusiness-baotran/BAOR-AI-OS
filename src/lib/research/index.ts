@@ -178,7 +178,8 @@ const isHttp = (u: string) => /^https?:\/\/[^\s]+$/i.test(u);
  * `allowedUrls`: khi chạy bằng AI, chỉ nhận URL thật sự xuất hiện trong kết quả tìm kiếm (chặn URL bịa).
  */
 /** `append`: cộng dồn vào chủ đề (nhiều nguồn 2.1–2.4 cho cùng một chủ đề) — không xoá nguồn / phát hiện cũ, dùng lại nguồn cùng URL. */
-export function saveResearchResult(taskId: string, data: ResearchResult, opts: { runner: "ai" | "import"; allowedUrls?: Set<string>; model?: string; searchCount?: number; costVnd?: number; by: string; append?: boolean }) {
+/** `pending`: AI tự nghiên cứu đề xuất → phát hiện chờ OWNER duyệt (không vào hook khi chưa duyệt). `dedupe`: bỏ cả phát hiện GẦN trùng. */
+export function saveResearchResult(taskId: string, data: ResearchResult, opts: { runner: "ai" | "import"; allowedUrls?: Set<string>; model?: string; searchCount?: number; costVnd?: number; by: string; append?: boolean; pending?: boolean; dedupe?: boolean }) {
   const parsed = ResearchResultSchema.parse(data);
   const db = getDb();
   const task = db.select().from(schema.researchTasks).where(eq(schema.researchTasks.id, taskId)).get();
@@ -219,7 +220,17 @@ export function saveResearchResult(taskId: string, data: ResearchResult, opts: {
   const normK = (ids: string[]) => ids.map((k) => k.replace(/-/g, "").toLowerCase()).filter((k) => pageIds.has(k));
   // Cộng dồn: phát hiện trùng câu chữ đã có trong chủ đề thì bỏ (dán lại cùng bình luận không nhân đôi insight)
   const had = new Set(opts.append ? db.select({ statement: schema.researchFindings.statement }).from(schema.researchFindings).where(eq(schema.researchFindings.taskId, taskId)).all().map((f) => f.statement) : []);
-  const findingRows = parsed.findings.filter((f) => !had.has(f.statement.slice(0, 1000))).map((f) => {
+  // Tự nghiên cứu: bỏ cả câu GẦN trùng (đổi số đếm, đổi dấu câu, khác vài chữ) so với insight đã có và với nhau trong cùng lượt
+  const kept: string[][] = opts.dedupe ? [...had].map(insightTokens) : [];
+  const fresh = parsed.findings.filter((f) => {
+    if (had.has(f.statement.slice(0, 1000))) return false;
+    if (!opts.dedupe) return true;
+    const t = insightTokens(f.statement);
+    if (kept.some((k) => nearDuplicate(k, t))) return false;
+    kept.push(t);
+    return true;
+  });
+  const findingRows = fresh.map((f) => {
     const sourceIds = f.sourceUrls.map((u) => urlToId.get(u.trim())).filter((x): x is string => !!x);
     const knowledgeIds = normK(f.knowledgeIds);
     const v = verifyFinding({ statement: f.statement, classification: f.classification, sourceIds, knowledgeIds }, sourceRefs, pages);
@@ -238,6 +249,7 @@ export function saveResearchResult(taskId: string, data: ResearchResult, opts: {
       confidence: f.confidence,
       verifyOk: v.ok,
       verifyNotes: JSON.stringify(lost > 0 ? [...v.notes, `Bỏ ${lost} tham chiếu không xác minh được`] : v.notes),
+      reviewStatus: opts.pending ? "pending" : "approved",
     };
   });
 
@@ -265,7 +277,8 @@ export function saveResearchResult(taskId: string, data: ResearchResult, opts: {
   });
 
   let briefId: string | null = null;
-  if (parsed.brief) {
+  // Đề xuất chờ duyệt (tự nghiên cứu) KHÔNG ghi đè brief của chủ đề: brief chỉ dựng từ nội dung OWNER đã chạy / duyệt
+  if (parsed.brief && !opts.pending) {
     const b = parsed.brief;
     const points: BriefPoint[] = b.points.map((p) => ({
       text: p.text,
@@ -277,6 +290,29 @@ export function saveResearchResult(taskId: string, data: ResearchResult, opts: {
     briefId = saveBrief({ taskId, topic: b.topic, goal: b.goal, audience: b.audience, keyMessage: b.keyMessage, angle: b.angle, points, gaps: b.gaps, by: opts.by }, sourceRefs, pages);
   }
   return { sources: sourceRows.length, findings: findingRows.length, verified: findingRows.filter((f) => f.verifyOk).length, dropped, briefId };
+}
+
+/** Chữ của insight để so trùng: bỏ dấu, chữ thường, bỏ số / dấu câu / ngoặc kép. */
+export function insightTokens(s: string): string[] {
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/gi, "d")
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 1);
+}
+
+/** Gần trùng: cùng chuỗi chữ sau chuẩn hoá, hoặc tập từ trùng ≥ 80 % (Jaccard). */
+export function nearDuplicate(a: string[], b: string[]): boolean {
+  if (!a.length || !b.length) return false;
+  if (a.join(" ") === b.join(" ")) return true;
+  const A = new Set(a);
+  const B = new Set(b);
+  let inter = 0;
+  for (const w of A) if (B.has(w)) inter++;
+  return inter / (A.size + B.size - inter) >= 0.8;
 }
 
 export function saveBrief(b: { taskId: string | null; topic: string; goal: string; audience: string; keyMessage: string; angle: string; points: BriefPoint[]; gaps: string[]; by: string }, sources: { id: string; grade: string }[], pages: KnowledgePage[]): string {
@@ -306,10 +342,25 @@ export function buildBriefDeterministic(taskId: string, meta: { topic: string; g
 
 // ---------------------------------------------------------------- chạy bằng AI (tìm web phía hãng: ChatGPT hoặc Claude)
 
-const RESEARCH_SYSTEM = `Bạn là nhà nghiên cứu cho thương hiệu cá nhân Trần Thanh Bảo (đào tạo, bán hàng, tư duy kinh doanh, edit video).
-Nhiệm vụ: trả lời câu hỏi nghiên cứu bằng nguồn bên ngoài đáng tin, đối chiếu với tri thức nội bộ (Second Brain) được cung cấp.
+/** Thị trường mặc định của Nghiên cứu (OWNER 26/10: insight phải sát nhu cầu thị trường Việt Nam, lời khách tự nói). */
+export const RESEARCH_MARKET = { name: "Việt Nam", country: "VN", timezone: "Asia/Ho_Chi_Minh" } as const;
+/** Vị trí gần đúng cho công cụ tìm web của hãng (Claude web_search user_location; ChatGPT web_search user_location). */
+export const RESEARCH_USER_LOCATION = { type: "approximate" as const, country: RESEARCH_MARKET.country, timezone: RESEARCH_MARKET.timezone };
+
+export const RESEARCH_SYSTEM = `Bạn là nhà nghiên cứu cho thương hiệu cá nhân Trần Thanh Bảo (đào tạo, bán hàng, tư duy kinh doanh, edit video).
+Thị trường: ${RESEARCH_MARKET.name}. Khán giả là người Việt; insight phải sát nhu cầu thị trường Việt Nam.
+Nhiệm vụ: tìm NỖI ĐAU, MONG MUỐN, PHẢN ĐỐI, CÂU HỎI của khách hàng Việt bằng CHÍNH LỜI HỌ, rồi đối chiếu với tri thức nội bộ (Second Brain) được cung cấp.
+Cách tìm (bắt buộc):
+- Câu tìm bằng TIẾNG VIỆT, theo cách khách hàng tự gõ (vd "bán hàng online mãi không ra đơn", "chạy quảng cáo cháy tiền", "bị bom hàng").
+- Lắng nghe nơi khách tự nói: bài / bình luận CÔNG KHAI đã được công cụ tìm kiếm lập chỉ mục — dùng site:facebook.com, site:tiktok.com,
+  site:instagram.com, site:threads.net, site:youtube.com kèm từ khoá tiếng Việt; diễn đàn Việt (voz.vn, tinhte.vn, webtretho.com, otofun.net,
+  spiderum.com), hỏi đáp, blog. Không đăng nhập, không đọc nhóm kín.
+- Số liệu thị trường: ưu tiên nguồn Việt Nam — Bộ Công Thương / Cục Thương mại điện tử và Kinh tế số, VECOM (Chỉ số TMĐT), Metric.vn,
+  iPrice, Cốc Cốc, Decision Lab, Q&Me, báo Việt (VnExpress, Tuổi Trẻ, Thanh Niên, CafeF…).
+- Nguồn nước ngoài CHỈ dùng khi không có dữ liệu Việt Nam; khi dùng, mở đầu phát hiện bằng "[Nước ngoài]" và nêu giới hạn khi áp vào Việt Nam.
 Quy tắc:
-- Ưu tiên nguồn gốc: tổ chức chính thức, nghiên cứu, sách/giáo trình, chuyên gia có tên. Ghi rõ khi nguồn là blog hay quảng cáo.
+- Với lời khách: trích ngắn (≤ 20 chữ) đúng chữ họ dùng, ghi rõ URL bài / bình luận và nền tảng; không ghi tên, không ghi tài khoản người viết.
+- Ưu tiên nguồn gốc: tổ chức chính thức, nghiên cứu, chuyên gia có tên. Ghi rõ khi nguồn là blog hay quảng cáo.
 - Ghi ngày công bố chỉ khi trang ghi rõ. Không đoán tác giả, ngày, số liệu.
 - Không chép nguyên văn dài; tóm ý bằng lời của bạn.
 - Tách rõ sự thật có bằng chứng, giả thuyết, quan sát. Nêu quan điểm trái chiều và giới hạn của bằng chứng.
@@ -330,9 +381,14 @@ function researchProviders(): AiProvider[] {
   return [...new Set<AiProvider>([webSearchProvider("research"), step2])];
 }
 
+/** Lời nhắc bước tìm nguồn (dùng chung cho Claude và ChatGPT). */
+export function researchPrompt(question: string, purpose: string, knowledge: string): string {
+  return `Thị trường: ${RESEARCH_MARKET.name}\nCâu hỏi nghiên cứu: ${question}\nMục tiêu sử dụng: ${purpose}\n\nTri thức nội bộ liên quan (Second Brain):\n${knowledge}\n\nHãy tìm bằng tiếng Việt: (1) lời khách hàng Việt tự nói về nỗi đau / mong muốn / phản đối / câu hỏi quanh chủ đề trên Facebook, TikTok, Instagram, Threads, YouTube (bài công khai), diễn đàn và blog Việt; (2) số liệu thị trường Việt Nam. Rồi viết báo cáo: các nỗi đau nổi bật kèm trích ngắn lời khách + URL + nền tảng, kết luận, quan điểm khác nhau, giới hạn bằng chứng, độ tin cậy, góc ứng dụng và chủ đề content đề xuất. Mỗi ý dẫn nguồn; ý dựa trên nguồn nước ngoài ghi "[Nước ngoài]".`;
+}
+
 type RunOut = { usage: { input_tokens: number; output_tokens: number }; text: string; urls: Map<string, { title: string; pageAge: string | null }>; searches: number };
 
-export async function runResearchWithAi(taskId: string, by: string, opts: { append?: boolean } = {}): Promise<{ ok: true; summary: string } | { ok: false; error: string }> {
+export async function runResearchWithAi(taskId: string, by: string, opts: { append?: boolean; pending?: boolean } = {}): Promise<{ ok: true; summary: string } | { ok: false; error: string }> {
   // Khoá của ĐÚNG hãng sẽ gọi: bước 1 (tìm web — webSearchProvider) + bước 2 (mô hình vị trí). Công tắc / trần: gate() kiểm và ghi lỗi
   for (const p of researchProviders()) {
     if (!providerConfigured(p)) return { ok: false, error: `Chưa có khoá ${PROVIDERS[p].label}. Vào Cài đặt › Kết nối để nhập khoá, hoặc đổi mô hình ở Cài đặt › Đội AI.` };
@@ -361,7 +417,7 @@ export async function runResearchWithAi(taskId: string, by: string, opts: { appe
   }
 }
 
-async function runResearchSteps(taskId: string, task: typeof schema.researchTasks.$inferSelect, by: string, opts: { append?: boolean }): Promise<{ ok: true; summary: string } | { ok: false; error: string }> {
+async function runResearchSteps(taskId: string, task: typeof schema.researchTasks.$inferSelect, by: string, opts: { append?: boolean; pending?: boolean }): Promise<{ ok: true; summary: string } | { ok: false; error: string }> {
   const db = getDb();
   const kc = knowledgeContext(task.question);
   const maxSearches = 8;
@@ -369,10 +425,10 @@ async function runResearchSteps(taskId: string, task: typeof schema.researchTask
   // Bước 1: tìm và đọc nguồn ngoài bằng công cụ tìm web PHÍA HÃNG. Vị trí chọn ChatGPT → tool web_search của Responses API; chọn Claude
   // → web_search của Anthropic; chọn Grok (chưa nối tìm web) → Claude (webSearchProvider). Công tắc, trần, sổ chi phí vẫn của vị trí.
   const searchProvider = webSearchProvider("research");
-  const prompt = `Câu hỏi nghiên cứu: ${task.question}\nMục tiêu sử dụng: ${task.purpose}\n\nTri thức nội bộ liên quan (Second Brain):\n${kc.text}\n\nHãy tìm nguồn ngoài, rồi viết báo cáo: kết luận, các quan điểm khác nhau, giới hạn bằng chứng, độ tin cậy, góc ứng dụng và chủ đề content đề xuất. Mỗi ý dẫn nguồn.`;
+  const prompt = researchPrompt(task.question, task.purpose, kc.text);
   const step1 = await gate<RunOut>("research", `Nghiên cứu: ${task.question.slice(0, 80)}`, async (client, model) => {
     if (modelInfo(model)?.provider === "openai") {
-      const r = await compatWebSearch(client, { model, max_tokens: 16000, system: RESEARCH_SYSTEM, prompt, maxSearches });
+      const r = await compatWebSearch(client, { model, max_tokens: 16000, system: RESEARCH_SYSTEM, prompt, maxSearches, country: RESEARCH_MARKET.country, timezone: RESEARCH_MARKET.timezone });
       if (r.stop_reason === "refusal") throw new Error("Mô hình từ chối nhiệm vụ nghiên cứu này.");
       const urls = new Map<string, { title: string; pageAge: string | null }>([...r.sources].map(([u, title]) => [u, { title, pageAge: null }]));
       return { usage: r.usage, text: r.text, urls, searches: r.searches };
@@ -389,7 +445,7 @@ async function runResearchSteps(taskId: string, task: typeof schema.researchTask
         betas: ["server-side-fallback-2026-07-01"],
         fallbacks: "default",
         system: RESEARCH_SYSTEM,
-        tools: [{ type: "web_search_20260209", name: "web_search", max_uses: maxSearches }],
+        tools: [{ type: "web_search_20260209", name: "web_search", max_uses: maxSearches, user_location: RESEARCH_USER_LOCATION }],
         messages,
       });
       usage.input_tokens += res.usage.input_tokens;
@@ -427,7 +483,7 @@ async function runResearchSteps(taskId: string, task: typeof schema.researchTask
       max_tokens: 16000,
       system: `${RESEARCH_SYSTEM}\nChỉ dùng URL trong danh sách được cung cấp. knowledgeIds chỉ lấy từ id trang Second Brain đã cho. Không thêm brief nếu không đủ căn cứ.`,
       messages: [
-        { role: "user", content: `Câu hỏi: ${task.question}\nMục tiêu: ${task.purpose}\n\nURL đã tìm được:\n${urlList}\n\nTrang Second Brain:\n${kc.hits.map((h) => `- id ${h.page.id}: ${h.page.title} (${h.page.status}, ${h.page.labels.join(" ")})`).join("\n") || "(không có)"}\n\nBáo cáo nghiên cứu:\n${r1.text.slice(0, 60000)}\n\nHãy lập hồ sơ: summary, sources (chỉ nguồn thật sự dùng), findings (mỗi phát hiện một phân loại), và brief cho một kịch bản video ngắn nếu đủ căn cứ.` },
+        { role: "user", content: `Câu hỏi: ${task.question}\nMục tiêu: ${task.purpose}\n\nURL đã tìm được:\n${urlList}\n\nTrang Second Brain:\n${kc.hits.map((h) => `- id ${h.page.id}: ${h.page.title} (${h.page.status}, ${h.page.labels.join(" ")})`).join("\n") || "(không có)"}\n\nBáo cáo nghiên cứu:\n${r1.text.slice(0, 60000)}\n\nHãy lập hồ sơ cho thị trường ${RESEARCH_MARKET.name}: summary, sources (chỉ nguồn thật sự dùng; publisher của bài / bình luận mạng xã hội là tên nền tảng: Facebook, TikTok, Instagram, Threads, YouTube, tên diễn đàn), findings (mỗi phát hiện một phân loại; lời khách tự nói → OBSERVATION kèm trích ngắn và URL; phát hiện chỉ dựa trên nguồn nước ngoài → statement mở đầu "[Nước ngoài]"), và brief cho một kịch bản video ngắn nếu đủ căn cứ.` },
       ],
       output_config: { format: zodOutputFormat(ResearchResultSchema) },
     }),
@@ -444,7 +500,7 @@ async function runResearchSteps(taskId: string, task: typeof schema.researchTask
   // Chi phí = đúng số đã ghi sổ ai_calls: hai bước qua cổng AI (giá theo mô hình hãng THỰC SỰ chạy — bước 1 Claude bật fallbacks "default",
   // ChatGPT trả response.model, nên có thể khác mô hình yêu cầu) + phí tìm web ghi riêng ở trên.
   const cost = step1.costVnd + step2.costVnd + searchCostVnd;
-  saveResearchResult(taskId, out, { runner: "ai", allowedUrls: new Set(r1.urls.keys()), model: step1.servedModel === step2.servedModel ? step2.servedModel : `${step1.servedModel} + ${step2.servedModel}`, searchCount: r1.searches, costVnd: cost, by, append: opts.append });
+  saveResearchResult(taskId, out, { runner: "ai", allowedUrls: new Set(r1.urls.keys()), model: step1.servedModel === step2.servedModel ? step2.servedModel : `${step1.servedModel} + ${step2.servedModel}`, searchCount: r1.searches, costVnd: cost, by, append: opts.append, pending: opts.pending, dedupe: opts.pending });
   return { ok: true, summary: out.summary };
 }
 
@@ -507,7 +563,8 @@ export interface TopicSuggestion {
  */
 export function suggestTopics(limit = 8): TopicSuggestion[] {
   const db = getDb();
-  const findings = db.select({ id: schema.researchFindings.id, knowledgeIds: schema.researchFindings.knowledgeIds, topics: schema.researchFindings.contentTopics, ok: schema.researchFindings.verifyOk }).from(schema.researchFindings).all();
+  // Chỉ insight đã duyệt (đề xuất của tự nghiên cứu chưa duyệt không gợi ý chủ đề)
+  const findings = db.select({ id: schema.researchFindings.id, knowledgeIds: schema.researchFindings.knowledgeIds, topics: schema.researchFindings.contentTopics, ok: schema.researchFindings.verifyOk }).from(schema.researchFindings).where(eq(schema.researchFindings.reviewStatus, "approved")).all();
   const usedPages = new Set(findings.flatMap((f) => arr(f.knowledgeIds)));
   const taken = new Set(
     [...db.select({ t: schema.contentBriefs.topic }).from(schema.contentBriefs).all().map((r) => r.t), ...db.select({ t: schema.contentItems.title }).from(schema.contentItems).all().map((r) => r.t)].map((t) => t.toLowerCase()),

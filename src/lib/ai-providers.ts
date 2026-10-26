@@ -137,8 +137,9 @@ interface CompatParams {
   system?: string | { type: string; text?: string }[];
   messages: Msg[];
   output_config?: { format?: { type: string; schema?: unknown; parse?: (s: string) => unknown } | null } | null;
-  /** Bật tool tìm web của Responses API (chỉ ChatGPT — xem WEB_SEARCH_PROVIDERS); maxCalls → max_tool_calls. */
-  web_search?: { maxCalls: number };
+  /** Bật tool tìm web của Responses API (chỉ ChatGPT — xem WEB_SEARCH_PROVIDERS); maxCalls → max_tool_calls. country → user_location
+   * (vị trí gần đúng, mã ISO 2 chữ — developers.openai.com/api/docs/guides/tools-web-search); allowedDomains → filters.allowed_domains. */
+  web_search?: { maxCalls: number; country?: string; timezone?: string; allowedDomains?: string[] };
 }
 
 const asText = (c: Msg["content"] | CompatParams["system"]): string => (typeof c === "string" ? c : (c ?? []).map((b) => b.text ?? "").join("\n"));
@@ -161,6 +162,15 @@ interface ResponsesBody {
   error?: { message?: string } | null;
 }
 
+/** Tool web_search của Responses API: vị trí người dùng gần đúng (Nghiên cứu: Việt Nam) + lọc tên miền khi đọc đúng một trang. */
+export function webSearchTool(w: NonNullable<CompatParams["web_search"]>): Record<string, unknown> {
+  return {
+    type: "web_search",
+    ...(w.country ? { user_location: { type: "approximate", country: w.country, ...(w.timezone ? { timezone: w.timezone } : {}) } } : {}),
+    ...(w.allowedDomains?.length ? { filters: { allowed_domains: w.allowedDomains.slice(0, 100) } } : {}),
+  };
+}
+
 async function callResponses(provider: AiProvider, p: CompatParams, fetchImpl: typeof fetch) {
   const key = providerKey(provider);
   if (!key) throw new ProviderError(provider, 401, `Chưa có khoá ${PROVIDERS[provider].label}. Vào Cài đặt › Kết nối để nhập.`);
@@ -174,7 +184,7 @@ async function callResponses(provider: AiProvider, p: CompatParams, fetchImpl: t
     ...(format?.schema ? { text: { format: { type: "json_schema", name: "ket_qua", schema: format.schema, strict: false } } } : {}),
     // Tool tìm web: "web_search" (bản mới, không dùng web_search_preview cũ); include để nhận ĐỦ nguồn đã tìm, không chỉ nguồn được trích;
     // max_tool_calls chặn số lượt (mỗi lượt tính phí)
-    ...(p.web_search ? { tools: [{ type: "web_search" }], include: ["web_search_call.action.sources"], max_tool_calls: p.web_search.maxCalls } : {}),
+    ...(p.web_search ? { tools: [webSearchTool(p.web_search)], include: ["web_search_call.action.sources"], max_tool_calls: p.web_search.maxCalls } : {}),
   };
   if (p.web_search && provider !== "openai") throw new ProviderError(provider, 400, `${PROVIDERS[provider].label}: chưa nối công cụ tìm web.`);
   const r = await fetchImpl(`${PROVIDERS[provider].base}/responses`, {
@@ -244,8 +254,8 @@ export function compatClient(provider: Exclude<AiProvider, "anthropic">, fetchIm
  * (đã bọc đồng hồ: token ghi sổ ai_calls theo vị trí + giá mô hình thực chạy, công tắc / trần đã kiểm). Phí mỗi lượt tìm ghi riêng
  * ở chỗ gọi bằng webSearchFeeVnd. Hãng chạy vòng tìm → đọc → trả lời phía máy chủ trong MỘT phản hồi (không có pause_turn như Claude).
  */
-export async function compatWebSearch(client: Anthropic, p: { model: string; max_tokens: number; system: string; prompt: string; maxSearches: number }): Promise<WebSearchResult> {
-  const params: CompatParams = { model: p.model, max_tokens: p.max_tokens, system: p.system, messages: [{ role: "user", content: p.prompt }], web_search: { maxCalls: p.maxSearches } };
+export async function compatWebSearch(client: Anthropic, p: { model: string; max_tokens: number; system: string; prompt: string; maxSearches: number; country?: string; timezone?: string; allowedDomains?: string[] }): Promise<WebSearchResult> {
+  const params: CompatParams = { model: p.model, max_tokens: p.max_tokens, system: p.system, messages: [{ role: "user", content: p.prompt }], web_search: { maxCalls: p.maxSearches, country: p.country, timezone: p.timezone, allowedDomains: p.allowedDomains } };
   const res = (await client.messages.create(params as never)) as unknown as Partial<WebSearchResult> & { model: string; usage: WebSearchResult["usage"]; stop_reason: string };
   if (!(res.sources instanceof Map)) throw new Error("Client không phải bộ chuyển đổi ChatGPT — không chạy được tìm web.");
   return { model: res.model, usage: res.usage, stop_reason: res.stop_reason, text: res.text ?? "", sources: res.sources, searches: res.searches ?? 0 };
