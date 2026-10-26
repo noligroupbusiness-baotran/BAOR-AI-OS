@@ -25,7 +25,7 @@ import { IMAGE_SPECS, kindLabel, kindOf, type ContentKind } from "@/lib/content/
 import { CaptionHelper, ScriptHelper } from "@/components/content/format-helpers";
 import { ScriptQaPanel } from "@/components/content/script-qa";
 import { fileUrl, getUpload } from "@/lib/uploads";
-import { countContent, listContent, listInsights } from "@/lib/queries";
+import { countContent, getBrand, listContent, listInsights } from "@/lib/queries";
 import { contentFormatLabel, contentStatusLabel } from "@/lib/labels";
 import { formatDateTime, cn } from "@/lib/format";
 import type { ContentStatus } from "@/lib/types";
@@ -45,6 +45,9 @@ import { VlogEditor } from "@/components/content/vlog-editor";
 import { parseVlogDraft } from "@/lib/content/vlog-script";
 import { contentHookScores, scriptContext } from "@/lib/content/script-context";
 import { aiReadiness } from "@/lib/ai";
+import { pronounsFromVoice } from "@/lib/content/experience";
+import { ownerReviewView } from "@/lib/content/owner-review";
+import { can, currentActor, isOwner } from "@/lib/permissions";
 
 export const metadata = { title: "Nội dung – BAOR AI OS" };
 
@@ -85,6 +88,10 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
   // Điểm ưu tiên: điểm AI đề xuất (ý tưởng) hoặc điểm hook gốc ở bước 2; không có thì không hiện (bỏ "★ 0")
   const hookScores = contentHookScores(list.map((c) => c.id));
   const draftReady = aiReadiness("draft");
+  const pronouns = pronounsFromVoice(getBrand().voice);
+  // Câu trả lời kinh nghiệm là nguồn sự thật: chỉ OWNER / quản lý sửa (máy chủ cũng chặn khi lưu)
+  const actor = await currentActor();
+  const canEditStory = isOwner(actor) || can(actor, "manager");
   // Kênh lên lịch đăng: đọc từ Cài đặt › Kết nối, đánh dấu kênh chưa kết nối.
   const connected = new Map(listIntegrationStatus().map((i) => [i.key, i.connected]));
   // Chỉ kênh nhận bài chữ (TikTok / YouTube chỉ nhận video, Instagram cần ảnh / video): src/lib/publishing/text.ts
@@ -260,6 +267,7 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
                           ready={draftReady}
                           basis={sctx.basis.map((b) => ({ kind: b.kind, label: b.label, href: b.href }))}
                           beats={sctx.beats}
+                          exp={{ topic: sctx.topic, suggestions: sctx.experience, refStatus: sctx.refStatus, skillUrl: sctx.skill?.url ?? null, pronouns, canEdit: canEditStory, review: ownerReviewView(c.id, c.draft ?? "") }}
                         />
                       ) : (
                       <>

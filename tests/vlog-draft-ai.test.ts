@@ -84,7 +84,12 @@ test("AI viết kịch bản (thẻ cảnh): MỘT lần gọi qua AI Nội dung
   assert.ok(b.system.includes(vs.stageInfo("act").cta), "lời mời đúng chặng Làm");
   const row = draftOf("ct_vlog_ai");
   const doc = vs.parseVlogDraft(row.draft ?? "")!;
-  assert.deepEqual(doc.cards.map((c) => c.speech), [OUT.hook.speech, OUT.story.speech, OUT.value.speech, OUT.end.speech]);
+  // Chưa có chuyện thật (khối KINH NGHIỆM trống) → chỉ viết KHUNG: cảnh Câu chuyện không nhận lời AI; dấu [OWNER KỂ: …] AI đặt giữa câu
+  // được dời ra dòng Gợi ý OWNER (luật 26/10: không bao giờ có chỗ trống trong lời nói)
+  assert.deepEqual(doc.cards.map((c) => c.speech), [OUT.hook.speech, "", OUT.value.speech, OUT.end.speech]);
+  assert.ok(doc.cards[1].ownerHints.includes("[OWNER KỂ: lần đầu anh gọi khách]"));
+  assert.ok(doc.cards.every((c) => !c.speech.includes("[OWNER KỂ")));
+  assert.match(b.system, /để TRỐNG lời nói cảnh này/);
   assert.equal(doc.segment, OUT.segment);
   assert.equal(doc.stage, "act");
   assert.equal(row.hook, OUT.hook.speech, "cột hook theo câu hook mới");

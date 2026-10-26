@@ -114,7 +114,7 @@ export function scoreHooks(rows: HookRow[], opts: { byName?: TopicLookup; now?: 
   const scored = rows.map((h) => {
     const fs = h.basis.filter((b) => b.kind === "finding").map((b) => ins.get(b.id)?.score).filter((n): n is number => n !== undefined);
     const existingSets = made.filter((c) => c.id !== h.contentId).flatMap((c) => c.sets);
-    const ownerBasis = h.basis.some((b) => b.kind === "knowledge" || b.label.startsWith("[OWNER]"));
+    const ownerBasis = h.basis.some((b) => b.owner || b.kind === "knowledge" || b.label.startsWith("[OWNER]"));
     const s = scoreHook({ hook: h.hook, angle: h.angle, durationSec: h.durationSec, policyIssues: h.policyIssues, basisInsightScore: fs.length ? Math.max(...fs) : null, hasBasis: h.basis.length > 0, existingSets, ownerBasis });
     return { ...h, score: s.score, reasons: s.reasons, top: false, topicId: hookTopicId(h, byName) };
   });

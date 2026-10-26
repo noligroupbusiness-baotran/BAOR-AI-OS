@@ -6,7 +6,9 @@ import { campaignRepo } from "@/lib/campaigns/repository";
 import { getKnowledgePages } from "@/lib/knowledge";
 import { scoreHooks, topicIdsByName, hookTopicId } from "./priority";
 import { hooksByContent, type HookBasis } from "./hooks";
-import { cleanBeats, stageFromGoal, type PathStage } from "./vlog-script";
+import { cleanBeats, parseVlogDraft, stageFromGoal, type PathStage } from "./vlog-script";
+import { contentSkillPage, experienceSources, experienceSuggestions } from "./owner-experience";
+import { experienceText, type ExperienceSuggestion, type OwnerExperience } from "./experience";
 
 const json = <T>(s: string | null | undefined, d: T): T => {
   try {
@@ -29,6 +31,14 @@ export interface ScriptContext {
   stage: PathStage;
   /** Chữ căn cứ đầy đủ cho AI (phát hiện + ứng dụng, trang Second Brain, insight). */
   basisText: string;
+  /** Chủ đề / hook để hỏi phỏng vấn và tìm chuyện thật. */
+  topic: string;
+  /** Gợi ý chuyện thật của OWNER từ Second Brain (≤ 3) — chỉ dùng khi OWNER tích. */
+  experience: ExperienceSuggestion[];
+  /** Skill viết content của OWNER (SK-KNW-01) — link Notion nếu đã đồng bộ. */
+  skill: { url: string; status: string } | null;
+  /** Trạng thái (ACTIVE / VERIFIED / DRAFT / DEAD = đã gỡ, không còn là tư liệu OWNER) của trang đã tích trong bản nháp — "kind:id" → trạng thái. */
+  refStatus: Record<string, string>;
 }
 
 /** Mục tiêu nội dung từ chiến dịch đã gắn: mục tiêu kênh (kiểu thực thi, mục tiêu, chỉ số) hoặc mục tiêu chiến dịch. */
@@ -67,6 +77,12 @@ export function scriptContext(contentId: string): ScriptContext {
   ].join("\n");
 
   const goalText = contentGoalText(contentId);
+  const topic = [item?.hook, item?.title !== item?.hook ? item?.title : "", item?.pillar, hookRow?.topic].filter(Boolean).join(" · ");
+  const skill = contentSkillPage();
+  const refs = parseVlogDraft(item?.draft ?? "")?.experience?.refs ?? [];
+  // Trang đã tích nhưng đã gỡ / ARCHIVED / không còn là tư liệu OWNER → "DEAD" (không tính là chuyện thật, hiện cảnh báo)
+  const live = new Map(experienceSources(refs).map((x) => [`${x.ref.kind}:${x.ref.id}`, x.status]));
+  const refStatus = Object.fromEntries(refs.map((r) => [`${r.kind}:${r.id}`, live.get(`${r.kind}:${r.id}`) ?? "DEAD"]));
   return {
     basis: basis.map((b) => ({ ...b, href: href(b) })),
     beats: cleanBeats(json<string[]>(item?.outline, [])).beats,
@@ -74,6 +90,10 @@ export function scriptContext(contentId: string): ScriptContext {
     goalText,
     stage: stageFromGoal(goalText),
     basisText,
+    topic,
+    experience: experienceSuggestions(topic, { researchId: hookRow?.researchId }),
+    skill: skill ? { url: skill.url, status: skill.status } : null,
+    refStatus,
   };
 }
 
@@ -85,4 +105,10 @@ export function contentHookScores(contentIds: string[]): Map<string, { score: nu
   if (!rows.length) return out;
   for (const h of scoreHooks(rows)) if (h.contentId) out.set(h.contentId, { score: h.score, reasons: h.reasons });
   return out;
+}
+
+/** Nguồn để kiểm "chi tiết ngoài chuyện" (máy chủ): câu trả lời + trang OWNER còn sống (tiêu đề, nội dung) + nhãn trang đã tích + căn cứ kịch bản. */
+export function reviewSourceText(contentId: string, exp: OwnerExperience | undefined): string {
+  const refs = exp?.refs ?? [];
+  return [experienceText(exp), ...experienceSources(refs).flatMap((x) => [x.title, x.body]), ...refs.map((r) => r.label), scriptContext(contentId).basisText].join("\n");
 }

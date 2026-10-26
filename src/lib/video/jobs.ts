@@ -16,7 +16,7 @@ import skillJson from "../../../scripts/video/skill-vlog.json";
 import { isJobFile, type Aspect, type Framing, type JobProgress, type VideoJob, type VideoQuality, type VideoReport } from "./job-types";
 import { addVideoFeedback } from "./feedback";
 import { campaignRepo } from "@/lib/campaigns/repository";
-import { parseShootingScript } from "@/lib/content/shooting-script";
+import { parseShootingScript, stripPlaceholders } from "@/lib/content/shooting-script";
 import { roleAllows, roleById } from "@/lib/ai-roster";
 import { skillChangeNote } from "./skill-freshness";
 import { libraryFile } from "./safe-path";
@@ -233,7 +233,8 @@ export function scriptSpeech(contentId: string | null, max = 20_000): string {
   const c = getDb().select({ draft: schema.contentItems.draft, status: schema.contentItems.status }).from(schema.contentItems).where(eq(schema.contentItems.id, contentId)).get();
   // Kịch bản nháp / bị bỏ duyệt sau khi gắn: KHÔNG được sửa chữ hay dẫn biên tập AI (kiểm cả lúc dựng, không chỉ lúc gắn)
   if (!c || !APPROVED_SCRIPT.includes(c.status)) return "";
-  const speech = parseShootingScript(c?.draft ?? "").scenes.map((s) => s.speech.replace(/\[[SK]\d+\]/g, "").trim()).filter(Boolean).join(" ");
+  // Bỏ ký hiệu nguồn [S#] / [K#] và mọi chỗ trống còn sót ("[OWNER KỂ: …]", "(chèn …)", "[…]") — script.txt là lời đọc thật
+  const speech = parseShootingScript(c?.draft ?? "").scenes.map((s) => stripPlaceholders(s.speech.replace(/\[[SK]\d+\]/g, "")).trim()).filter(Boolean).join(" ");
   return speech.replace(/\s+/g, " ").slice(0, max);
 }
 

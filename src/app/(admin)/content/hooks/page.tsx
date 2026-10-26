@@ -6,7 +6,7 @@ import { Field, inputClass } from "@/components/ui/field";
 import { SubmitButton } from "@/components/campaigns/submit-button";
 import { platformLabel } from "@/components/ui/platform";
 import { addManualHook, aiGenerateHooks, pickHookAction, rejectHookAction } from "@/lib/actions/hooks";
-import { HOOK_COUNT, HOOK_PLATFORMS, hookStubs, listHooks } from "@/lib/content/hooks";
+import { HOOK_COUNT, HOOK_PLATFORMS, hookStubs, listHooks, needsRealStory } from "@/lib/content/hooks";
 import { scoreHooks, topicIdsByName, hookTopicId, type ScoredHook } from "@/lib/content/priority";
 import { getResearchTask } from "@/lib/research";
 import { roleById } from "@/lib/ai-roster";
@@ -138,6 +138,13 @@ export default async function HooksPage({ searchParams }: { searchParams: Promis
                           {h.top && <TopPick />}
                           <span className={cn("num text-[12px]", h.durationSec > 60 ? "text-amber" : "text-ink-2")}>~{h.durationSec}s</span>
                           {h.status === "picked" && <Pill tone="jade">{h.contentId ? "Đã có kịch bản" : "Đã chọn"}</Pill>}
+                          {needsRealStory(h.basis) ? (
+                            <span title="Chưa có tư liệu kinh nghiệm của anh — vlog cần anh kể chuyện thật">
+                              <Pill tone="amber">cần chuyện thật</Pill>
+                            </span>
+                          ) : (
+                            <Pill tone="violet">Chuyện của anh</Pill>
+                          )}
                         </div>
                         {h.angle && <p className="mt-0.5 text-[12.5px] text-ink-2">{h.angle}</p>}
                         {h.beats.length > 0 && (

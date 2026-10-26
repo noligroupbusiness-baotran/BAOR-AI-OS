@@ -70,7 +70,7 @@ export function vlogTemplate(input: { title?: string; hook?: string; beats?: str
   return (
     `${head}Dạng: vlog chia sẻ, nói ngôi thứ nhất · dưới ${VLOG_MAX_SEC} giây · ~130–160 từ lời thoại\n\n` +
     `1. HOOK (0–3s)\nHình ảnh: cận mặt, nói thẳng vào camera\nLời thoại: ${input.hook?.trim() ?? ""}\n${claim ? `${OWNER_CHECK}\n` : ""}Chữ trên màn hình: \n\n` +
-    `2. CÂU CHUYỆN (3–25s)\nHình ảnh: \n${note(story)}Gợi ý OWNER: [OWNER KỂ: một lần mình gặp đúng chuyện này — ở đâu, chuyện gì, mình thấy thế nào]\nLời thoại: \nChữ trên màn hình: \n\n` +
+    `2. CÂU CHUYỆN (3–25s)\nHình ảnh: \n${note(story)}Gợi ý OWNER: [OWNER KỂ: một lần anh gặp đúng chuyện này — lúc đó thế nào, anh đã làm gì, sai ở đâu, kết quả ra sao]\nLời thoại: \nChữ trên màn hình: \n\n` +
     `3. BÀI HỌC (25–50s)\nHình ảnh: \n${note(lesson)}Lời thoại: \nChữ trên màn hình: \n\n` +
     `4. KẾT (50–60s)\nHình ảnh: \n${end ? `Ý chính: ${end}\n` : ""}Lời thoại: \nChữ trên màn hình: \n\n` +
     "Nhạc nền: (chọn trong Cài đặt › Kho nhạc)\nGhi chú dựng: "
