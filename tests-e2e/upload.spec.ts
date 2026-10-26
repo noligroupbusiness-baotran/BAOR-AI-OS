@@ -3,7 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { test, expect } from "@playwright/test";
-import { login, trackErrors } from "./helpers";
+import { ACTION_MS, hydrated, login, trackErrors } from "./helpers";
 import { E2E } from "./env";
 
 test("tải lên theo khúc, đứt mạng ở khúc 2 vẫn tải tiếp xong và tạo video", async ({ page }) => {
@@ -25,8 +25,10 @@ test("tải lên theo khúc, đứt mạng ở khúc 2 vẫn tải tiếp xong v
   const before = await page.locator("li a").filter({ hasText: "e2e upload resume" }).count();
   const file = path.join(E2E.dataDir, "e2e-upload-resume.mp4");
   fs.copyFileSync(src, file);
-  await page.locator('input[type="file"]').setInputFiles(file);
-  await expect(page.getByTestId("upload-note")).toContainText(/đang thử tiếp/);
+  const input = page.locator('input[type="file"]');
+  await hydrated(input); // onChange gắn sau hydrate: chọn tệp sớm hơn thì không tải
+  await input.setInputFiles(file);
+  await expect(page.getByTestId("upload-note")).toContainText(/đang thử tiếp/, { timeout: ACTION_MS }); // khúc 1 PUT xong mới tới khúc 2 bị đứt
   await expect(page.getByText(/Đã nhận — chọn khung hình/)).toBeVisible({ timeout: 30_000 });
   expect(aborted).toBe(true);
   expect(puts).toBeGreaterThan(Math.ceil(size / (64 * 1024)));

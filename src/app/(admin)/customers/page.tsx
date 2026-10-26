@@ -20,23 +20,41 @@ import { platformLabel } from "@/components/ui/platform";
 import type { LeadStage, Platform } from "@/lib/types";
 import { CampaignTags, LinkToCampaignForm } from "@/components/campaigns/entity-campaign";
 import { campaignRepo } from "@/lib/campaigns/repository";
+import { SamplePill } from "@/components/ui/sample";
+import { isSample, splitSample } from "@/lib/sample";
+import { CampaignFilterChip } from "@/components/campaigns/campaign-filter-chip";
+import { readCampaignContext, withCampaignContext } from "@/lib/campaigns/context";
+import { campaignFilterFor, keepInCampaign } from "@/lib/campaigns/filter";
 
-export const metadata = { title: "Khách hàng & email – BAOR AI OS" };
+export const metadata = { title: "Lead – BAOR AI OS" };
 
 const stages: LeadStage[] = ["new", "contacted", "qualified", "won", "lost"];
 
-export default async function CustomersPage({ searchParams }: { searchParams: Promise<{ tab?: string; conv?: string; suggest?: string; link?: string; add?: string; page?: string; lead?: string; segment?: string }> }) {
-  const { tab = "inbox", conv, suggest, link, add, page, segment: segmentKey } = await searchParams;
+export default async function CustomersPage({ searchParams }: { searchParams: Promise<{ tab?: string; conv?: string; suggest?: string; link?: string; add?: string; page?: string; lead?: string; segment?: string; campaign?: string; goal?: string }> }) {
+  const sp = await searchParams;
+  const { conv, suggest, link, add, page, segment: segmentKey } = sp;
+  // Mở từ chiến dịch (?campaign=&goal=): chỉ hiện lead đã gắn chiến dịch đó (mở thẳng tab Lead).
+  const ctx = readCampaignContext(sp);
+  const filter = campaignFilterFor(ctx, "lead");
+  // Menu "Lead" (OWNER duyệt) mở thẳng tab Lead; liên kết tới một hội thoại (?conv= / ?suggest=) mới mở Hộp thư.
+  const tab = sp.tab ?? (conv || suggest ? "inbox" : "leads");
+  const keep = (path: string) => withCampaignContext(path, ctx);
   await currentActor();
   const convs = listConversations();
   const selected = convs.find((c) => c.id === conv) ?? convs[0];
-  const leads = listLeads();
+  const leads = keepInCampaign(listLeads(), filter);
   const segments = allSegments(leads);
   const selectedSegment = segments.find((s) => s.key === segmentKey) ?? null;
   const rules = listRules();
   const seqs = listEmailSequences();
-  const needHuman = convs.filter((c) => c.needsHuman).length;
-  const won = leads.filter((l) => l.stage === "won").length;
+  // Số thật không lẫn số mẫu: phần mẫu hiện riêng, nhãn "Mẫu" (kiểm toán 26/10).
+  const convSplit = splitSample("conversation", convs);
+  const leadSplit = splitSample("lead", leads);
+  const seqSplit = splitSample("sequence", seqs.filter((s) => s.active));
+  const needHuman = convSplit.real.filter((c) => c.needsHuman).length;
+  const needHumanSample = convSplit.sample.filter((c) => c.needsHuman).length;
+  const won = leadSplit.real.filter((l) => l.stage === "won").length;
+  const subs = (list: typeof seqs) => list.reduce((n, s) => n + s.subscribers, 0);
   const leadsShown = tab === "leads" && selectedSegment ? selectedSegment.leads : leads;
   const leadPage = paginate(leadsShown, page);
   const leadLinks = campaignRepo.linksForEntities("lead", leadPage.items.map((l) => l.id));
@@ -44,26 +62,28 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
 
   return (
     <>
-      <Breadcrumb items={[{ label: "Điều hành", href: "/dashboard" }, { label: "Khách hàng" }]} />
+      <Breadcrumb items={[{ label: "Tổng quan", href: "/dashboard" }, { label: "Lead" }]} />
       <PageHead
-        title="Khách hàng & email"
+        title="Lead"
         sub="AI trả lời bình luận và inbox theo giọng của bạn, tạo lead, và chuyển cho bạn khi khách cần tư vấn trực tiếp."
       />
 
+      <CampaignFilterChip filter={filter} missing={!!ctx.campaignId && !filter} clearHref={`/customers?tab=${tab}`} />
+
       <Tiles>
-        <Tile label="Hội thoại" value={String(convs.length)} hint="Từ inbox và bình luận" />
-        <Tile label="Cần bạn" value={String(needHuman)} hint="Khách chờ tư vấn / gọi lại" tone={needHuman ? "amber" : undefined} />
-        <Tile label="Lead" value={String(leads.length)} hint={`${won} đã mua`} />
-        <Tile label="Chuỗi email đang chạy" value={String(seqs.filter((s) => s.active).length)} hint={`${formatNumber(seqs.reduce((n, s) => n + s.subscribers, 0))} người trong chuỗi`} />
+        <Tile label="Hội thoại" value={String(convSplit.real.length)} hint="Từ inbox và bình luận" sample={convSplit.sample.length ? `${convSplit.sample.length} hội thoại` : undefined} />
+        <Tile label="Cần bạn" value={String(needHuman)} hint="Khách chờ tư vấn / gọi lại" tone={needHuman ? "amber" : undefined} sample={needHumanSample ? `${needHumanSample} hội thoại` : undefined} />
+        <Tile label={filter ? "Lead gắn chiến dịch" : "Lead"} value={String(leadSplit.real.length)} hint={`${won} đã chuyển đổi`} sample={leadSplit.sample.length ? `${leadSplit.sample.length} lead` : undefined} />
+        <Tile label="Chuỗi email đang chạy" value={String(seqSplit.real.length)} hint={`${formatNumber(subs(seqSplit.real))} người trong chuỗi`} sample={seqSplit.sample.length ? `${seqSplit.sample.length} chuỗi · ${formatNumber(subs(seqSplit.sample))} người` : undefined} />
       </Tiles>
 
       <div className="mt-3.5">
         <Segment
-          basePath="/customers"
+          basePath={keep("/customers")}
           active={tab}
           items={[
-            { key: "inbox", label: `Hộp thư · ${convs.length}` },
             { key: "leads", label: `Lead · ${leads.length}` },
+            { key: "inbox", label: `Hộp thư · ${convs.length}` },
             { key: "segments", label: "Phân data" },
             { key: "rules", label: `Quy tắc trả lời · ${rules.length}` },
             { key: "email", label: `Email · ${seqs.length}` },
@@ -81,7 +101,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
               return (
                 <Link key={c.id} href={`/customers?tab=inbox&conv=${c.id}`} className={cn("block border-b border-border px-3.5 py-2.5", active && "bg-jade-soft")}>
                   <div className="flex justify-between gap-2 font-semibold text-ink">
-                    <span className="truncate">{c.leadName}</span>
+                    <span className="flex min-w-0 items-center gap-1.5"><span className="truncate">{c.leadName}</span>{isSample("conversation", c.id) && <SamplePill />}</span>
                     {last && <time className="num text-[11px] font-normal text-ink-3">{formatTime(last.at)}</time>}
                   </div>
                   <div className="mt-px truncate text-[12px] text-ink-2">{last?.text}</div>
@@ -133,7 +153,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
 
       {tab === "leads" && add === "1" && (
         <Panel>
-          <PanelHeader title="Thêm khách hàng" sub="Lead nhập tay (khách ghé quầy, gọi điện, giới thiệu). Có số điện thoại thì vào giai đoạn “Đã liên hệ”." />
+          <PanelHeader title="Thêm lead" sub="Lead nhập tay (khách ghé quầy, gọi điện, giới thiệu). Có số điện thoại thì vào giai đoạn “Đã liên hệ”." />
           <form action={createLead} className="grid gap-3 p-4 md:grid-cols-2">
             <Field label="Tên khách" required><input name="name" required className={inputClass} /></Field>
             <Field label="Số điện thoại"><input name="phone" inputMode="tel" className={inputClass} /></Field>
@@ -167,7 +187,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
             <Field label="Nhãn (phân cách bằng dấu phẩy)"><input name="tags" className={inputClass} placeholder="gội 39K, văn phòng" /></Field>
             <Field label="Nhu cầu / ghi chú" className="md:col-span-2"><input name="message" className={inputClass} placeholder="VD: Muốn đặt lịch gội thứ 7" /></Field>
             <div className="flex gap-2 md:col-span-2">
-              <SubmitButton pendingText="Đang lưu…">Thêm khách hàng</SubmitButton>
+              <SubmitButton pendingText="Đang lưu…">Thêm lead</SubmitButton>
               <LinkButton href="/customers?tab=leads" variant="ghost">Hủy</LinkButton>
             </div>
           </form>
@@ -176,13 +196,14 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
 
       {tab === "leads" && (
         <Panel>
-          <PanelHeader title={selectedSegment ? `Nhóm: ${selectedSegment.label}` : "Danh sách lead"} sub={selectedSegment ? `${selectedSegment.rule} ${selectedSegment.leads.length} khách.` : "Mỗi lead ghi nhận đến từ chiến dịch, mục tiêu kênh và bài đăng / quảng cáo nào. Đổi giai đoạn bằng ô chọn."} action={selectedSegment ? <LinkButton href="/customers?tab=leads">Xem tất cả</LinkButton> : add === "1" ? undefined : <LinkButton href="/customers?tab=leads&add=1" variant="primary">Thêm khách hàng</LinkButton>} />
+          <PanelHeader title={selectedSegment ? `Nhóm: ${selectedSegment.label}` : "Danh sách lead"} sub={selectedSegment ? `${selectedSegment.rule} ${selectedSegment.leads.length} khách.` : "Mỗi lead ghi nhận đến từ chiến dịch, mục tiêu kênh và bài đăng / quảng cáo nào. Đổi giai đoạn bằng ô chọn."} action={selectedSegment ? <LinkButton href="/customers?tab=leads">Xem tất cả</LinkButton> : add === "1" ? undefined : <LinkButton href="/customers?tab=leads&add=1" variant="primary">Thêm lead</LinkButton>} />
           <Table>
             <thead><tr><Th>Khách</Th><Th>Nguồn</Th><Th>Chiến dịch</Th><Th>Tin nhắn cuối</Th><Th>Liên hệ</Th><Th right>Giai đoạn</Th></tr></thead>
             <tbody>
+              {leadPage.items.length === 0 && <tr><Td className="text-center text-ink-2">{filter ? "Chiến dịch chưa có lead." : "Chưa có lead."}</Td></tr>}
               {leadPage.items.map((l) => (
                 <tr key={l.id}>
-                  <Td className="font-semibold text-ink">{l.name}<div className="mt-0.5 flex flex-wrap gap-1">{l.tags.map((t) => <Pill key={t}>#{t}</Pill>)}</div></Td>
+                  <Td className="font-semibold text-ink">{l.name}<div className="mt-0.5 flex flex-wrap gap-1">{isSample("lead", l.id) && <SamplePill />}{l.tags.map((t) => <Pill key={t}>#{t}</Pill>)}</div></Td>
                   <Td>{platformLabel(l.platform as Platform)} · {leadSourceLabel[l.source] ?? l.source}</Td>
                   <Td>
                     <div className="flex flex-wrap items-center gap-1.5">
@@ -205,7 +226,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
               ))}
             </tbody>
           </Table>
-          <Pager page={leadPage.page} pages={leadPage.pages} total={leadPage.total} hrefFor={(p) => `/customers?tab=leads&page=${p}${selectedSegment ? `&segment=${encodeURIComponent(selectedSegment.key)}` : ""}`} label="lead" />
+          <Pager page={leadPage.page} pages={leadPage.pages} total={leadPage.total} hrefFor={(p) => keep(`/customers?tab=leads&page=${p}${selectedSegment ? `&segment=${encodeURIComponent(selectedSegment.key)}` : ""}`)} label="lead" />
         </Panel>
       )}
 
@@ -217,7 +238,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
             {(["care", "sales", "channel", "tag"] as const).map((g) => {
               const items = segments.filter((s) => s.group === g);
               if (!items.length) return null;
-              const title = g === "care" ? "Hành trình chăm sóc" : g === "sales" ? "Mua hàng" : g === "channel" ? "Theo kênh" : "Theo thẻ";
+              const title = g === "care" ? "Hành trình chăm sóc" : g === "sales" ? "Chuyển đổi" : g === "channel" ? "Theo kênh" : "Theo thẻ";
               return (
                 <div key={g} className="border-t border-border first:border-t-0">
                   <div className="px-4 pt-3 text-[11px] font-semibold uppercase tracking-wide text-ink-3">{title}</div>
@@ -310,7 +331,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
             <tbody>
               {seqs.map((s) => (
                 <tr key={s.id}>
-                  <Td><b>{s.name}</b> · {s.steps} email</Td>
+                  <Td><b>{s.name}</b> · {s.steps} email{isSample("sequence", s.id) && <span className="ml-1.5 align-middle"><SamplePill /></span>}</Td>
                   <Td>{s.trigger}</Td>
                   <Td right className="num">{formatNumber(s.subscribers)}</Td>
                   <Td right className="num">{Math.round(s.openRate)}%</Td>

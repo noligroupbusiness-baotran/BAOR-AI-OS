@@ -24,7 +24,7 @@ export function RenameTitle({ id, title, back, initialOpen }: { id: string; titl
             {title}
           </span>
         </h1>
-        <button type="button" onClick={() => setEditing(true)} className="inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-full border border-border-2 bg-surface px-2.5 text-[12px] font-medium text-ink hover:border-jade hover:text-jade focus-visible:outline-2 focus-visible:outline-jade">
+        <button type="button" onClick={() => setEditing(true)} className="inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-full border border-border-2 bg-surface px-2.5 text-[12px] font-medium text-ink hover:border-jade hover:text-jade-fg focus-visible:outline-2 focus-visible:outline-jade">
           <Pencil size={12} aria-hidden /> Đổi tên
         </button>
       </div>

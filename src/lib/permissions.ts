@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
-import { getAdminEmail } from "@/lib/admin";
+import { getAdminEmail, isAdminEmail } from "@/lib/admin";
 import { catalogRepo, permissionLabel, type Permission } from "@/lib/catalog/repository";
 import { withToast } from "@/lib/actions/common";
 
@@ -31,6 +31,11 @@ export async function currentActor(): Promise<Actor> {
   const u = await getCurrentUser();
   if (!u) redirect("/login");
   return actorFor(u.email);
+}
+
+/** OWNER = tài khoản quản trị chính (email quản trị ở .env / Cài đặt), khác nhân sự được cấp quyền "Quản trị". */
+export function isOwner(actor: Pick<Actor, "email">): boolean {
+  return isAdminEmail(actor.email);
 }
 
 export function can(actor: Pick<Actor, "permission">, level: Permission): boolean {

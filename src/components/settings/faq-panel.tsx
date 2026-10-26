@@ -1,7 +1,9 @@
+import { MessagesSquare } from "lucide-react";
 import { Panel, PanelHeader } from "@/components/ui/card";
+import { SwitchSubmit } from "@/components/ui/switch";
 import { ListFilter } from "@/components/ui/list-filter";
 import { Pill } from "@/components/ui/pill";
-import { Button, LinkButton } from "@/components/ui/button";
+import { LinkButton } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Field, inputClass, textareaClass } from "@/components/ui/field";
 import { SubmitButton } from "@/components/campaigns/submit-button";
@@ -17,12 +19,15 @@ export function FaqPanel({ editing }: { editing?: string }) {
     <Panel id="faq">
       <PanelHeader
         title="Câu trả lời mẫu"
-        sub="Khách nhắn đúng từ khoá → trả lời ngay bằng câu đã duyệt, không tốn tiền AI."
-        action={<div className="flex items-center gap-2">{items.length > 5 && <ListFilter target="faq" placeholder="Lọc câu hỏi, từ khóa…" />}{editing !== "new" && <LinkButton href="/settings?faq=new#faq" variant="primary">Thêm câu trả lời</LinkButton>}</div>}
+        sub="Trả lời ngay, không tốn AI"
+        icon={MessagesSquare}
+        tone="orange"
+        info="Khách nhắn đúng từ khoá → trả lời ngay bằng câu đã duyệt, không tốn tiền AI."
+        action={<div className="flex items-center gap-2">{items.length > 5 && <ListFilter target="faq" placeholder="Lọc câu hỏi, từ khóa…" />}{editing !== "new" && <LinkButton href="/settings?faq=new#faq" variant="primary">Thêm</LinkButton>}</div>}
       />
       {editing === "new" && <FaqForm />}
       {items.length === 0 && editing !== "new" ? (
-        <EmptyState title="Chưa có câu trả lời chuẩn" hint="Thêm giờ mở cửa, địa chỉ, chính sách đổi trả… để hệ thống trả lời tự động." />
+        <EmptyState title="Chưa có câu trả lời mẫu" />
       ) : (
         <ul className="m-0 list-none p-0">
           {items.map((f) => (
@@ -35,11 +40,11 @@ export function FaqPanel({ editing }: { editing?: string }) {
                     <span className="num text-[11px] text-ink-3">{f.hits} lần dùng</span>
                     {!f.active && <Pill>Đang tắt</Pill>}
                   </div>
-                  <p className="mt-0.5 text-[12.5px] text-ink-2">{f.answer}</p>
+                  <p className="mt-0.5 line-clamp-2 text-[12.5px] text-ink-2">{f.answer}</p>
                 </div>
-                <div className="flex gap-1.5">
+                <div className="flex items-center gap-2.5">
                   {current?.id !== f.id && <LinkButton href={`/settings?faq=${f.id}#faq`}>Sửa</LinkButton>}
-                  <form action={toggleFaqAction}><input type="hidden" name="id" value={f.id} /><Button type="submit" variant="ghost">{f.active ? "Tắt" : "Bật"}</Button></form>
+                  <form action={toggleFaqAction} className="flex items-center"><input type="hidden" name="id" value={f.id} /><SwitchSubmit on={f.active} label={f.active ? `Tắt “${f.question}”` : `Bật “${f.question}”`} /></form>
                 </div>
               </div>
               {current?.id === f.id && <FaqForm faq={current} />}

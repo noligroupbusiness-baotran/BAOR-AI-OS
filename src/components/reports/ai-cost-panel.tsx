@@ -5,6 +5,7 @@ import { Table, Th, Td } from "@/components/ui/table";
 import { getAiBudget } from "@/lib/router";
 import { recentAiCalls, roleSpendThisMonth } from "@/lib/ai-roster";
 import { formatCurrency, formatDateTime, formatNumber, cn } from "@/lib/format";
+import { displayStepOf } from "@/config/journey";
 
 // Báo cáo › Chi phí AI: MỘT màn hình chung cho mọi AI (Personal Brand System — "Tất cả các chi phí AI hiển thị thành màn hình
 // báo cáo chung: [Tên AI] – chi phí gọi"). Mỗi vị trí 1 AI, trần riêng, công tắc "Cho phép gọi AI" ở Cài đặt › Đội AI.
@@ -31,7 +32,7 @@ export function AiCostPanel() {
               return (
                 <tr key={role.id}>
                   <Td><div className="font-semibold text-ink">{role.name}</div><div className="text-[11.5px] text-ink-3">{role.job}</div></Td>
-                  <Td className="num">{role.step}</Td>
+                  <Td className="num">{displayStepOf(role.step)}</Td>
                   <Td className="text-[12px]">{settings.model}</Td>
                   <Td>{settings.enabled ? <Pill tone="jade">Bật</Pill> : <Pill tone="neutral">Tắt</Pill>}</Td>
                   <Td right className="num">{formatNumber(n)}{failed > 0 && <span className="text-brick"> · {failed} lỗi</span>}</Td>

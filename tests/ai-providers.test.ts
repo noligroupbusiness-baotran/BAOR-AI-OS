@@ -115,6 +115,28 @@ test("Đội AI: vị trí chọn được mô hình ChatGPT / Grok; mô hình l
   assert.throws(() => roster.saveRoleSettings("caption", { model: "gpt-khong-co" }), /không hợp lệ/);
 });
 
+test("ChatGPT / Grok: mô hình THỰC chạy (response.model của Responses API) được truyền lên → sổ ghi + tính giá theo nó, đuôi ngày bỏ", async () => {
+  const res = await providers.compatClient("xai", fakeFetch(200, okBody("x", { model: "grok-4.3" }))).messages.create({ model: "grok-4.7", max_tokens: 10, messages: [{ role: "user", content: "x" }] });
+  assert.equal(res.model, "grok-4.3");
+  const none = await providers.compatClient("xai", fakeFetch(200, okBody("x"))).messages.create({ model: "grok-4.7", max_tokens: 10, messages: [{ role: "user", content: "x" }] });
+  assert.equal(none.model, "grok-4.7", "hãng không trả model → mô hình yêu cầu");
+
+  roster.saveRoleSettings("caption", { enabled: true, model: "grok-4.7" });
+  globalThis.fetch = fakeFetch(200, okBody("Caption", { model: "grok-4.3" }));
+  const r = await ai.gate("caption", "Grok chạy mô hình khác", (client, model) => client.messages.create({ model, max_tokens: 100, messages: [{ role: "user", content: "x" }] }));
+  assert.ok(r.ok);
+  const cheaper = providers.modelCostVnd("grok-4.3", 1200, 300)!;
+  assert.notEqual(cheaper, providers.modelCostVnd("grok-4.7", 1200, 300), "hai mô hình khác giá — test có nghĩa");
+  const last = router.listAiCalls(1)[0];
+  assert.equal(last.model, "grok-4.3 (yêu cầu grok-4.7)");
+  assert.equal(last.costVnd, cheaper);
+
+  globalThis.fetch = fakeFetch(200, okBody("Caption", { model: "grok-4.7-2026-10-01" }));
+  await ai.gate("caption", "Grok bản chụp có ngày", (client, model) => client.messages.create({ model, max_tokens: 100, messages: [{ role: "user", content: "x" }] }));
+  const dated = router.listAiCalls(1)[0];
+  assert.deepEqual([dated.model, dated.costVnd], ["grok-4.7", providers.modelCostVnd("grok-4.7", 1200, 300)]);
+});
+
 test("cổng AI: vị trí dùng Grok → gọi xAI, ghi sổ đúng mô hình + giá; thiếu khoá ChatGPT → không gọi, báo đúng hãng", async () => {
   roster.saveRoleSettings("caption", { enabled: true, model: "grok-4.7" });
   const seen: Seen[] = [];

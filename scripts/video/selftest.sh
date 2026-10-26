@@ -312,3 +312,239 @@ assert any(x.startswith("colorchannelmixer=rr=1.0") for x in f2), f"ám lạnh: 
 assert f3 == [], f"cảnh ấm bình thường không được chỉnh: {f3} {n3}"
 print(f"SELFTEST CÂN MÀU ĐẠT: tối+xanh lá {f1}; lạnh {f2}; ấm giữ nguyên")
 P
+
+# --- 4K vẽ GỐC (OWNER 26/10/2026): lớp chữ / sơ đồ / khung trích dẫn, FS-06, vệt sáng dựng thẳng ở 2160x3840 — trước đây là bản 1080
+# phóng ×2 (mềm). Đo "chi tiết vượt 1080" = |I − phóng×2(thu÷2(I))| trung bình trên điểm ảnh biên: ảnh 1080 phóng lên gần như không có
+# phần này. (1) Đơn vị: chữ vàng / phụ đề / nhãn / icon vẽ ở RQ=2 phải cùng bố cục với RQ=1 (thu về khớp) mà sắc hơn hẳn bản RQ=1 phóng.
+# (2) Dựng thật clip 4K tổng hợp (nền gradient trơn — chi tiết đo được chỉ đến từ lớp vẽ) và đo trên bản chính.
+cat > "$W/sharp.py" <<'P'
+import subprocess
+import numpy as np
+from PIL import Image
+def hf(a):
+    a = np.asarray(a, np.float32)
+    h, w = a.shape
+    im = Image.fromarray(a)
+    rt = np.asarray(im.resize((w // 2, h // 2), Image.BOX).resize((w // 2 * 2, h // 2 * 2), Image.LANCZOS), np.float32)
+    a = a[:h // 2 * 2, :w // 2 * 2]
+    gy, gx = np.gradient(a)
+    edge = np.hypot(gx, gy) > 20
+    return float(np.abs(a - rt)[edge].mean()) if edge.sum() > 50 else 0.0
+def grab(path, t, box):
+    x0, y0, x1, y1 = box
+    b = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{t:.3f}", "-i", path, "-frames:v", "1", "-vf", f"crop={x1 - x0}:{y1 - y0}:{x0}:{y0}:exact=1,format=gray",
+                        "-f", "rawvideo", "-pix_fmt", "gray", "-"], capture_output=True).stdout
+    return np.frombuffer(b, np.uint8).reshape(y1 - y0, x1 - x0)
+P
+python3 - "$HERE" "$W" <<'P'
+import sys; sys.path.insert(0, sys.argv[1]); sys.path.insert(0, sys.argv[2])
+import numpy as np
+from PIL import Image, ImageFilter
+import esv_render as E
+from sharp import hf
+fsub = lambda: E.font("Times New Roman Italic.ttf", 66 * E.SS * E.RQ)
+unit = {"words": [{"text": x} for x in "Lắng nghe khách hàng trước khi tư vấn".split()]}
+mk = {"chữ vàng": lambda: E.render_gold("LẮNG NGHE", 150)[0], "phụ đề": lambda: E.draw_subtitle(unit, 2, fsub())[0],
+      "nhãn": lambda: E.label_img("Chăm sóc khách hàng", 66), "icon": lambda: E.ring_icon(42, "tick")}
+rows = []
+for name, f in mk.items():
+    E.RQ = 1; a = f()
+    E.RQ = 2; b = f()
+    E.RQ = 1
+    # gấp đôi cỡ (± 1 % — cỡ chữ ×2 làm tròn khác nhau vài px ở mép trong suốt)
+    assert all(abs(q2 - 2 * q1) <= max(4, 0.01 * 2 * q1) for q1, q2 in zip(a.size, b.size)), f"{name}: RQ=2 phải gấp đôi cỡ: {a.size} → {b.size}"
+    # cùng bố cục: hộp nét (alpha > 40) của bản RQ=2 ÷ 2 lệch ≤ 2 px so với RQ=1; ảnh thu về (làm mềm 1,5 px) gần như trùng
+    bb1 = a.getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox()
+    bb2 = b.getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox()
+    assert all(abs(v2 / 2 - v1) <= 2 for v1, v2 in zip(bb1, bb2)), f"{name}: hộp nét lệch: {bb1} vs {bb2} ÷ 2"
+    soft = lambda im: np.asarray(im.getchannel("A").filter(ImageFilter.GaussianBlur(1.5)), np.float32)
+    lay = float(np.abs(soft(b.resize(a.size, Image.BOX)) - soft(a)).mean())
+    assert lay < 6.0, f"{name}: RQ=2 thu về phải khớp bố cục RQ=1 (lệch alpha {lay:.1f})"
+    g2 = np.asarray(b.convert("LA").getchannel("L"), np.float32) * np.asarray(b.getchannel("A"), np.float32) / 255
+    g1 = np.asarray(a.convert("LA").getchannel("L"), np.float32) * np.asarray(a.getchannel("A"), np.float32) / 255
+    up = np.asarray(Image.fromarray(g1).resize(b.size, Image.LANCZOS), np.float32)
+    s2, s1 = hf(g2), hf(up)
+    assert s2 > 1.5 * s1, f"{name}: vẽ gốc 4K phải sắc hơn bản 1080 phóng ×2 (lanczos) ≥ 1,5 lần (chi tiết {s2:.1f} vs {s1:.1f})"
+    rows.append(f"{name} {s1:.1f}→{s2:.1f}")
+print("SELFTEST 4K VẼ GỐC (đơn vị) ĐẠT: chi tiết vượt 1080 (phóng ×2 → vẽ gốc): " + "; ".join(rows))
+P
+ffmpeg -v error -y -f lavfi -i "gradients=s=2160x3840:r=30:d=8:speed=0.03:c0=0x303846:c1=0x6a5a40:x0=0:y0=0:x1=2160:y1=3840" \
+  -f lavfi -i "sine=frequency=200:duration=8" -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest "$W/sharp4k.mp4"
+python3 - "$W/sharp4k-words.json" <<'P'
+import json, sys
+toks = "lắng nghe khách hàng là kỹ năng quan trọng nhất của người tư vấn bán hàng mỗi ngày".split()
+ws, t = [], 0.3
+for k in range(18):
+    ws.append({"start": round(t, 2), "end": round(t + 0.32, 2), "text": toks[k % len(toks)] + ("." if k % 6 == 5 else ""), "p": 0.9})
+    t += 0.42 if k % 6 != 5 else 0.7
+json.dump(ws, open(sys.argv[1], "w"), ensure_ascii=False)
+P
+cat > "$W/plan-sharp.json" <<'J'
+{"by": "selftest", "content": "hướng dẫn", "emphasis": [{"t": 0.8, "text": "LẮNG NGHE", "style": "fade"}],
+ "diagrams": [{"type": "fs06", "t0": 2.4, "t1": 4.6}, {"type": "compare", "t0": 2.5, "t1": 4.6, "wrong": {"t": 2.6, "text": "nói nhiều", "strike": 3.0}, "right": [{"t": 3.3, "text": "nghe nhiều"}]},
+  {"type": "leak", "t0": 4.4}, {"type": "quote", "t0": 5.0, "t1": 7.6, "text": "lắng nghe trước, tư vấn sau"}]}
+J
+BAOR_LLM_URL=http://127.0.0.1:9 DATA_DIR="$W/data" python3 "$HERE/esv_render.py" --input "$W/sharp4k.mp4" --job-dir "$W/esv-sharp4k" --plan "$W/plan-sharp.json" \
+  --words "$W/sharp4k-words.json" --no-music --no-sfx --quality 4k 2>"$W/esv-sharp4k.log" | tail -1
+python3 - "$W" "$W/esv-sharp4k" <<'P'
+import json, sys; sys.path.insert(0, sys.argv[1])
+from sharp import grab, hf
+d = sys.argv[2]
+r = json.load(open(f"{d}/report.json"))
+qa = {q["id"]: q for q in r["qa"]}
+assert (r["output"]["width"], r["output"]["height"]) == (2160, 3840), r["output"]
+bad = [k for k in "ABEGHI" if qa[k]["status"] != "pass"]
+assert not bad, f"4K vẽ gốc: bảng kiểm chưa đạt {bad}: {[qa[k] for k in bad]}"
+# F / T ghi theo độ phân giải thật (không còn toạ độ thiết kế 1080 cho bản 4K)
+assert qa["F"]["status"] == "pass" and "logo rộng 680 tại (152,214)" in qa["F"]["detail"] and "@2160x3840" in qa["F"]["detail"], qa["F"]["detail"]
+assert "y3200 @2160x3840" in qa["T"]["detail"], qa["T"]["detail"]
+m = f"{d}/master.mp4"
+# (lúc, vùng @4K, ngưỡng): ngưỡng ~ 2× mức đo được của bản cũ (1080 phóng ×2) trên đúng clip này
+cases = [("phụ đề", 1.6, (180, 3000, 1980, 3232), 14.0), ("chữ nhấn", 1.6, (200, 2560, 1960, 2830), 12.0), ("so sánh", 4.0, (160, 2240, 1400, 2700), 12.0),
+         ("trích dẫn", 7.2, (160, 2240, 2000, 2700), 14.0), ("FS-06 viền khung", 3.5, (1190, 200, 1290, 1720), 10.0), ("vệt sáng", 6.0, (0, 600, 2160, 2000), 10.0)]
+rows, low = [], []
+for name, t, box, thr in cases:
+    v = hf(grab(m, t, box))
+    rows.append(f"{name} {v:.1f}")
+    if v < thr:
+        low.append(f"{name} {v:.1f} < {thr}")
+assert not low, f"4K chưa sắc (giống 1080 phóng ×2): {low}"
+print(f"SELFTEST 4K VẼ GỐC (bản chính) ĐẠT: chi tiết vượt 1080 trên biên — {'; '.join(rows)}; F/T ghi @2160x3840")
+P
+
+# --- Zoom (OWNER 26/10/2026 "zoom còn thưa"): clip 36 s nói liên tục, 3 chữ nhấn, nhịp VỪA. Trước: 3 zoom (12 s / lần — chỉ zoom ở chữ
+# nhấn, lấp trống chỉ thử đầu câu). Nay: punch-in nhẹ trong cửa sổ chữ nhấn + lấp trống tới mốc sớm nhất hợp lệ → ≈ 1 zoom / 6–8 s,
+# vẫn giãn cách ≥ hồ sơ giữa mọi zoom, không zoom nào trùm lên nhau, xong trước cuối video.
+ffmpeg -v error -y -f lavfi -i "testsrc2=s=1080x1920:r=30:d=36" -f lavfi -i "sine=frequency=220:duration=36" -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest "$W/zoom36.mp4"
+python3 - "$W/zoom36-words.json" <<'P'
+import json, sys
+toks = "hôm nay mình nói về cách mở đầu cuộc gọi khi gọi điện thoại cho khách hàng hãy giới thiệu bạn là ai sau đó nhắc lại nguồn thông tin khách đã để lại lắng nghe khách hàng là kỹ năng quan trọng nhất".split()
+ws, t, k = [], 0.4, 0
+while t < 35.2:
+    ws.append({"start": round(t, 2), "end": round(t + 0.32, 2), "text": toks[k % len(toks)] + ("." if k % 7 == 6 else ""), "p": 0.9})
+    t += 0.42 if k % 7 != 6 else 0.8
+    k += 1
+json.dump(ws, open(sys.argv[1], "w"), ensure_ascii=False)
+P
+cat > "$W/plan-zoom.json" <<'J'
+{"by": "selftest", "content": "hướng dẫn", "emphasis": [{"t": 6.0, "text": "Mở đầu", "style": "blur"}, {"t": 17.0, "text": "LẮNG NGHE", "style": "shine"},
+ {"t": 28.0, "text": "Khách hàng", "style": "fade"}], "diagrams": [], "broll": []}
+J
+BAOR_LLM_URL=http://127.0.0.1:9 DATA_DIR="$W/data" python3 "$HERE/esv_render.py" --input "$W/zoom36.mp4" --job-dir "$W/esv-zoom36" --plan "$W/plan-zoom.json" \
+  --words "$W/zoom36-words.json" --no-music --no-sfx 2>"$W/esv-zoom36.log" | tail -1
+python3 - "$HERE" "$W/esv-zoom36" <<'P'
+import json, sys; sys.path.insert(0, sys.argv[1])
+import esv_render as E
+r = json.load(open(f"{sys.argv[2]}/report.json"))
+qa = {q["id"]: q["status"] for q in r["qa"]}
+bad = [k for k in "ABCDEGHI" if qa.get(k) != "pass"]
+assert not bad, f"zoom 36 s: bảng kiểm chưa đạt {bad}"
+z = r["zoom"]
+ev, dur, gap = sorted(z["events"], key=lambda x: x["t"]), r["output"]["seconds"], E.ZOOM_PROFILES[z["profile"]][3]
+assert z["profile"] == "VUA", z["profile"]
+assert z["count"] >= 5 and z["secPerZoom"] <= 8.0, f"mục tiêu ≈ 1 zoom / 6–8 s: {z['count']} zoom, {z['secPerZoom']} s / lần"
+for a, b in zip(ev, ev[1:]):
+    assert b["t"] - E._zoom_end(a) >= gap - 1e-6, f"giãn cách hồ sơ {gap}s bị vi phạm: {a} → {b}"
+    if b["kind"].startswith("fill"):
+        assert b["t"] - a["t"] >= 6.0 - 1e-6, f"zoom lấp trống phải cách zoom trước ≥ 6 s (tính từ lúc bắt đầu): {a['t']} → {b['t']}"
+assert all(E._zoom_end(x) <= dur - 0.5 for x in ev), "zoom phải xong trước cuối video 0,5 s"
+emp = [e["t"] for e in r["emphasis"]]
+assert all(any(x["kind"] == "punch" and abs(x["t"] - (t - 0.1)) < 1e-3 for x in ev) for t in emp), f"mỗi chữ nhấn có punch-in đồng bộ: {ev}"
+assert all(x["level"] <= 1.05 for x in ev if x["kind"] in ("punch", "fill-punch")), "punch-in phải nhẹ (≤ ×1,05)"
+cap = r["captions"]
+assert 0 < cap["subCacheMax"] <= cap["maxWordsPerUnit"] + 1, f"bộ đệm phụ đề chỉ được giữ ảnh của cụm đang hiện: {cap}"
+print(f"SELFTEST ZOOM 36 s ĐẠT: {z['count']} zoom ({z['secPerZoom']} s / lần, trống dài nhất {z['longestNoZoomSec']} s; trước sửa: 3 zoom, 12 s / lần) — "
+      + ", ".join(f"{x['t']:.1f}s {x['kind']}" for x in ev))
+P
+
+# --- Bộ đệm phụ đề (phản biện P2-1): trước đây giữ ảnh MỌI từ cả video (16:9 4K 120 s: 2,8 GB RAM, ngoại suy 10 phút ≈ 15 GB).
+# Nay chỉ giữ ảnh của cụm đang hiện → bộ nhớ đỉnh KHÔNG tăng theo số từ: video dài gấp 4 lần cùng mức đỉnh (ảnh cỡ phụ đề 4K 2160×400).
+python3 - "$HERE" <<'P'
+import sys, tracemalloc; sys.path.insert(0, sys.argv[1])
+import numpy as np
+import esv_render as E
+def peak(n_units, words=6):
+    units = [{"words": [{"text": f"w{k}"} for k in range(words)]} for _ in range(n_units)]
+    cache = {}
+    tracemalloc.start()
+    for u in units:            # khung theo thời gian: mỗi cụm, mỗi từ đang đọc (và −1 giữa hai từ) vài khung liền
+        for hl in [-1] + list(range(words)):
+            for _ in range(3):
+                E.sub_image(cache, u, hl, lambda: (np.ones((400, 2160, 4), np.uint8), 1430))  # cỡ ảnh phụ đề 4K; numpy để tracemalloc đếm được
+    _, pk = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    return pk / 2 ** 20, cache["_max"]
+(p20, m20), (p80, m80) = peak(20), peak(80)
+assert m20 == m80 == 7, f"giữ cùng lúc tối đa (từ + 1) ảnh của MỘT cụm: {m20}, {m80}"
+assert p80 < 1.15 * p20 + 4, f"bộ nhớ đỉnh tăng theo số từ: 20 cụm {p20:.0f} MB → 80 cụm {p80:.0f} MB"
+print(f"SELFTEST BỘ ĐỆM PHỤ ĐỀ ĐẠT: đỉnh {p20:.0f} MB (120 từ) / {p80:.0f} MB (480 từ), giữ tối đa {m80} ảnh (cũ: giữ mọi từ → ~{480 * 2160 * 400 * 4 / 2 ** 20:.0f} MB)")
+P
+
+# --- "AI biên tập lại" cùng lời nói: esv_render giữ kế hoạch cũ và truyền prev cho ai_plan → lần 2 KHÔNG gọi lại bước phân tích cấu trúc.
+# Mô hình GIẢ chạy ở 127.0.0.1 (cổng ngẫu nhiên, trả JSON đúng khuôn từng bước, đếm lượt gọi) — không gọi llama-server thật.
+cat > "$W/fake_llm.py" <<'P'
+import json, re, sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+LOG = sys.argv[1]
+class H(BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+    def _send(self, obj):
+        b = json.dumps(obj).encode()
+        self.send_response(200); self.send_header("Content-Type", "application/json"); self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b)
+    def do_GET(self):
+        self._send({"status": "ok"} if self.path.startswith("/health") else {"model_path": "/models/fake-selftest.gguf"})
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        props = set(body["response_format"]["json_schema"]["schema"].get("properties", {}))
+        text = body["messages"][-1]["content"]
+        m = re.search(r"\[(\d+)\] \([\d.]+s\) (\S+) (\S+)", text)
+        ns = [int(x) for x in re.findall(r"(?m)^(\d+)\. ", text)]
+        if "key_ideas" in props:
+            kind, out = "analyze", {"topic": "lắng nghe khách hàng", "key_ideas": [], "lists": [], "contrasts": [], "cause_effect": [], "sections": []}
+        elif "emphasis" in props:
+            kind, out = "plan", {"summary": "lắng nghe", "diagrams": [], "emphasis": ([{"sid": int(m.group(1)), "phrase": f"{m.group(2)} {m.group(3)}", "why": ""}] if m else [])}
+        elif "verdicts" in props:
+            kind, out = "judge", {"verdicts": [{"n": n, "score": 4, "reason": "ok"} for n in ns]}
+        elif "fixes" in props:
+            kind, out = "repair", {"fixes": []}
+        elif "picks" in props:
+            kind, out = "broll", {"picks": []}
+        elif "checks" in props:
+            kind, out = "check", {"checks": []}
+        else:
+            kind, out = "music", {"mood": "acoustic", "why": "ấm"}
+        open(LOG, "a").write(kind + "\n")
+        self._send({"choices": [{"message": {"content": json.dumps(out, ensure_ascii=False)}}]})
+srv = HTTPServer(("127.0.0.1", 0), H)
+open(LOG + ".port", "w").write(str(srv.server_address[1]))
+srv.serve_forever()
+P
+rm -f "$W/fake_llm.log" "$W/fake_llm.log.port"
+python3 "$W/fake_llm.py" "$W/fake_llm.log" & FAKE=$!
+trap 'kill $FAKE 2>/dev/null || true' EXIT
+for _ in $(seq 50); do [ -s "$W/fake_llm.log.port" ] && break; python3 -c "import time; time.sleep(0.1)"; done
+LLM="http://127.0.0.1:$(cat "$W/fake_llm.log.port")"
+ffmpeg -v error -y -i "$W/zoom36.mp4" -t 8 -c copy "$W/ai8.mp4"
+python3 -c "import json,sys; w=json.load(open(sys.argv[1])); json.dump([x for x in w if x['end'] < 7.6], open(sys.argv[2], 'w'), ensure_ascii=False)" "$W/zoom36-words.json" "$W/ai8-words.json"
+BAOR_LLM_URL="$LLM" DATA_DIR="$W/data" python3 "$HERE/esv_render.py" --input "$W/ai8.mp4" --job-dir "$W/esv-ai1" --words "$W/ai8-words.json" --ai-plan --no-music --no-sfx 2>"$W/esv-ai1.log" | tail -1
+cp "$W/fake_llm.log" "$W/fake_llm.run1"; : > "$W/fake_llm.log"
+BAOR_LLM_URL="$LLM" DATA_DIR="$W/data" python3 "$HERE/esv_render.py" --input "$W/ai8.mp4" --job-dir "$W/esv-ai2" --words "$W/ai8-words.json" --plan "$W/esv-ai1/plan.json" --ai-plan --no-music --no-sfx 2>"$W/esv-ai2.log" | tail -1
+cp "$W/fake_llm.log" "$W/fake_llm.run2"; : > "$W/fake_llm.log"
+BAOR_AI_REANALYZE=1 BAOR_LLM_URL="$LLM" DATA_DIR="$W/data" python3 "$HERE/esv_render.py" --input "$W/ai8.mp4" --job-dir "$W/esv-ai3" --words "$W/ai8-words.json" --plan "$W/esv-ai1/plan.json" --ai-plan --no-music --no-sfx 2>"$W/esv-ai3.log" | tail -1
+cp "$W/fake_llm.log" "$W/fake_llm.run3"
+kill $FAKE 2>/dev/null || true; wait $FAKE 2>/dev/null || true; trap - EXIT
+python3 - "$W" <<'P'
+import json, sys
+W = sys.argv[1]
+p1, p2, p3 = (json.load(open(f"{W}/esv-ai{k}/plan.json")) for k in (1, 2, 3))
+seen = [open(f"{W}/fake_llm.run{k}").read().split() for k in (1, 2, 3)]
+calls = lambda p: (p.get("ai") or {}).get("calls", {}).get("analyze", {}).get("calls", 0)
+for k, p in enumerate((p1, p2, p3), 1):
+    assert str(p.get("by", "")).startswith("Biên tập AI"), f"lần {k}: kế hoạch phải do biên tập AI (mô hình giả) lập: {p.get('by')}"
+assert calls(p1) >= 1 and seen[0].count("analyze") == calls(p1), f"lần 1 phải phân tích: {p1['ai']['calls']} / máy chủ thấy {seen[0]}"
+assert calls(p2) == 0 and "analyze" not in seen[1] and p2["ai"]["analysisReused"], f"lần 2 cùng lời nói phải DÙNG LẠI phân tích: {p2['ai']['calls']} / {seen[1]}"
+assert calls(p3) == calls(p1) and p3["ai"]["analysisReused"] is False, f"BAOR_AI_REANALYZE=1 phải phân tích lại: {p3['ai']['calls']}"
+assert len(seen[1]) < len(seen[0]), f"lần 2 phải gọi mô hình ít hơn: {seen[0]} → {seen[1]}"
+print(f"SELFTEST AI DÙNG LẠI PHÂN TÍCH ĐẠT: lần 1 {len(seen[0])} lượt gọi ({calls(p1)} phân tích), lần 2 {len(seen[1])} lượt (0 phân tích, dùng lại), ép làm lại {len(seen[2])} lượt")
+P

@@ -5,7 +5,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Activity, Bell, ChevronDown, Keyboard, KeyRound, LayoutDashboard, LogOut, Menu, Monitor, Moon, Plus, PanelsTopLeft, Search, Sparkles, Sun, User } from "lucide-react";
 import { themeModeLabel, type ThemeMode } from "@/lib/client-store";
-import { createActions, findMenuByPath } from "@/config/menu";
+import { createActions, findMenuByPath, menu } from "@/config/menu";
+import { IconChip } from "@/components/ui/icon-chip";
 import { logoutAction } from "@/app/login/actions";
 import { cn, formatDateTime } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -86,7 +87,7 @@ export function Topbar({ user, unread, isDark, themeMode, health, logos, viewOnl
         </button>
       )}
       {viewOnly && (
-        <Link href="/dashboard" className="flex shrink-0 items-center" aria-label="BAOR AI OS, về Điều hành">
+        <Link href="/dashboard" className="flex shrink-0 items-center" aria-label="BAOR AI OS, về Tổng quan">
           <BrandMark logos={logos} />
         </Link>
       )}
@@ -132,12 +133,12 @@ export function Topbar({ user, unread, isDark, themeMode, health, logos, viewOnl
               <ChevronDown size={14} aria-hidden />
             </Button>
             {createOpen && (
-              <div role="menu" className="card absolute right-0 top-[calc(100%+6px)] z-50 w-[250px] p-1.5">
+              <div role="menu" className="card appear appear--pop absolute right-0 top-[calc(100%+6px)] z-50 w-[250px] p-1.5 [animation-duration:.35s]">
                 {createActions.map((a) => {
-                  const Icon = a.icon;
+                  const tone = menu.find((m) => m.key === a.moduleKey)?.tone;
                   return (
-                    <Link key={a.key} role="menuitem" href={a.href} onClick={() => setCreateOpen(false)} className="flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[13px] text-ink hover:bg-ground-2 focus-visible:outline-2 focus-visible:outline-jade">
-                      <Icon size={16} className="text-ink-3" aria-hidden />
+                    <Link key={a.key} role="menuitem" href={a.href} onClick={() => setCreateOpen(false)} className="group flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[13px] text-ink hover:bg-ground-2 focus-visible:outline-2 focus-visible:outline-jade">
+                      <IconChip icon={a.icon} tone={tone} size="xs" />
                       <span className="flex-1">{a.label}</span>
                       {a.note && <span className="text-[10.5px] text-ink-3">{a.note}</span>}
                     </Link>
@@ -161,7 +162,7 @@ export function Topbar({ user, unread, isDark, themeMode, health, logos, viewOnl
                 <dt>Kết nối</dt><dd className="num text-ink">{health.connectedCount}/{health.realCount} nền tảng có adapter</dd>
                 <dt>Bộ chạy nền</dt><dd className="text-ink">{health.schedulerRunning ? `đang chạy · ${health.lastTickAt ? formatDateTime(health.lastTickAt) : "chờ lần đầu"}` : "chưa chạy"}</dd>
                 <dt>AI hôm nay</dt><dd className="num text-ink">{health.aiSpentPct}% trần ngày</dd>
-                <dt>Lỗi 24h</dt><dd className="num text-ink">{health.failedRuns24h} lần đồng bộ lỗi</dd>
+                <dt>Lỗi 24h</dt><dd className="num text-ink">{health.failedRuns24h} lần chạy lỗi</dd>
               </dl>
               {health.issues.length > 0 && (
                 <ul className="mt-2 list-disc space-y-0.5 pl-4 text-ink">
@@ -178,7 +179,7 @@ export function Topbar({ user, unread, isDark, themeMode, health, logos, viewOnl
 
         <button type="button" onClick={onOpenNotifications} aria-label={`Thông báo${unread ? `, ${unread} chưa đọc` : ""}`} className={cn(iconBtn, "relative")}>
           <Bell size={18} />
-          {unread > 0 && <span className="num absolute right-1 top-1 grid h-4 min-w-4 place-items-center rounded-full bg-brick px-1 text-[10px] font-bold text-white">{unread > 99 ? "99+" : unread}</span>}
+          {unread > 0 && <span className="num absolute right-1 top-1 grid h-4 min-w-4 place-items-center rounded-full bg-brick px-1 text-[10px] font-bold text-[var(--on-brick)]">{unread > 99 ? "99+" : unread}</span>}
         </button>
 
         <button type="button" onClick={onOpenAssistant} aria-label="Mở Trợ lý AI" className={cn(iconBtn, "text-violet hover:text-violet")}>

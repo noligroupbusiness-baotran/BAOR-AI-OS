@@ -1,16 +1,17 @@
 import { Bot, Clapperboard, Palette, Plug, ShieldCheck, Zap, type LucideIcon } from "lucide-react";
+import type { GroupTone } from "./menu";
 
 // Cài đặt gọn theo nhóm (OWNER 25/10/2026: "giao diện quá lộn xộn… làm đơn giản lại"): 6 nút, mỗi lần chỉ hiện một nhóm.
 // Liên kết cũ dạng /settings#<mục> (≈130 chỗ trong app, cả redirect của server action) vẫn đúng: mở nhóm chứa phần tử
 // có id đó rồi cuộn tới (src/components/settings/settings-tabs.tsx). ?tab=<nhóm> chọn nhóm từ máy chủ (không nháy).
 export const SETTINGS_GROUPS = [
-  { id: "ket-noi", label: "Kết nối", hint: "Ô API của từng nền tảng", icon: Plug },
-  { id: "thuong-hieu", label: "Thương hiệu", hint: "Nhận diện, logo, câu trả lời chuẩn", icon: Palette },
-  { id: "video", label: "Video", hint: "Nơi dựng, nhạc, dựng tự động", icon: Clapperboard },
-  { id: "ai", label: "Đội AI", hint: "Bật / tắt AI, trần chi phí", icon: Bot },
-  { id: "tu-dong", label: "Tự động", hint: "Việc tự chạy, cảnh báo", icon: Zap },
-  { id: "he-thong", label: "Hệ thống", hint: "Tài khoản, nhân sự, sao lưu", icon: ShieldCheck },
-] as const satisfies readonly { id: string; label: string; hint: string; icon: LucideIcon }[];
+  { id: "ket-noi", label: "Kết nối", hint: "Ô API của từng nền tảng", icon: Plug, tone: "blue" },
+  { id: "thuong-hieu", label: "Thương hiệu", hint: "Nhận diện, câu trả lời mẫu", icon: Palette, tone: "orange" },
+  { id: "video", label: "Video", hint: "Nơi dựng, cách dựng", icon: Clapperboard, tone: "pink" },
+  { id: "ai", label: "Đội AI", hint: "Bật / tắt AI, trần chi phí", icon: Bot, tone: "violet" },
+  { id: "tu-dong", label: "Tự động", hint: "Việc tự chạy, quy tắc", icon: Zap, tone: "yellow" },
+  { id: "he-thong", label: "Hệ thống", hint: "Tài khoản, nhân sự, sao lưu", icon: ShieldCheck, tone: "slate" },
+] as const satisfies readonly { id: string; label: string; hint: string; icon: LucideIcon; tone: GroupTone }[];
 
 export type SettingsGroupId = (typeof SETTINGS_GROUPS)[number]["id"];
 
@@ -19,19 +20,20 @@ export function isSettingsGroup(v: unknown): v is SettingsGroupId {
 }
 
 /** Neo (#id của khối) → nhóm. Neo động của từng kết nối (#<khoá kết nối>) không có ở đây → nhóm mặc định "Kết nối". */
+/** Mục đã chuyển sang trang Tư liệu (/assets, OWNER 26/10/2026): liên kết cũ /settings#<mục> mở thẳng /assets#<mục>. */
+export const ASSET_ANCHORS = ["app-logo", "music", "music-library", "tha-vao", "broll"] as const;
+
 export const SETTINGS_ANCHORS: Record<string, SettingsGroupId> = {
   integrations: "ket-noi",
   brand: "thuong-hieu",
-  "app-logo": "thuong-hieu",
   faq: "thuong-hieu",
   "render-worker": "video",
   "auto-edit": "video",
-  music: "video",
-  "music-library": "video",
-  "tha-vao": "video",
   "ai-team": "ai",
   ai: "ai",
   automation: "tu-dong",
+  rules: "tu-dong",
+  "rules-test": "tu-dong",
   alerts: "tu-dong",
   account: "he-thong",
   people: "he-thong",

@@ -34,6 +34,11 @@ import { CampaignTags, LinkToCampaignForm } from "@/components/campaigns/entity-
 import { campaignRepo } from "@/lib/campaigns/repository";
 import { readCampaignContext, withCampaignContext } from "@/lib/campaigns/context";
 import { listIntegrationStatus } from "@/lib/connectors/config";
+import { minScheduleLocal, textPlatforms, textScheduleBlock, textScheduleBlockShort } from "@/lib/publishing/text";
+import { InfoTip } from "@/components/ui/info-tip";
+import { isDryRun } from "@/lib/publishing/guards";
+import { SamplePill } from "@/components/ui/sample";
+import { isSample } from "@/lib/sample";
 
 export const metadata = { title: "Nội dung – BAOR AI OS" };
 
@@ -64,13 +69,11 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
   const links = campaignRepo.linksForEntities("content", list.map((c) => c.id));
   // Kênh lên lịch đăng: đọc từ Cài đặt › Kết nối, đánh dấu kênh chưa kết nối.
   const connected = new Map(listIntegrationStatus().map((i) => [i.key, i.connected]));
-  const publishTargets: [string, string, boolean][] = [
-    ["facebook", "Facebook", connected.get("facebook_page") === true],
-    ["instagram", "Instagram", connected.get("instagram") === true],
-    ["tiktok", "TikTok", connected.get("tiktok") === true],
-    ["youtube", "YouTube", connected.get("youtube") === true],
-    ["zalo", "Zalo OA", connected.get("zalo_oa") === true],
-  ];
+  // Chỉ kênh nhận bài chữ (TikTok / YouTube chỉ nhận video, Instagram cần ảnh / video): src/lib/publishing/text.ts
+  const publishTargets: [string, string, boolean][] = textPlatforms().map(([v, ch]) => [v, ch.label, connected.get(ch.key) === true]);
+  const dryRun = isDryRun();
+  // Không chọn được giờ đã qua (giờ VN); máy chủ kiểm lại lúc lên lịch
+  const minWhen = minScheduleLocal();
   const back = href(`/content?tab=${tab}${opened ? `&open=${opened}` : ""}`);
 
   return (
@@ -149,7 +152,8 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
       <Panel>
         <PanelHeader
           title={tab === "proposed" ? "Đáng làm nhất hôm nay" : tab === "mine" ? "Bàn làm việc của bạn" : "Đã duyệt và đã đăng"}
-          sub={tab === "proposed" ? "Xếp theo tín hiệu thật từ khách." : tab === "mine" ? "Bấm vào bài để soạn." : "Bài đã duyệt chờ xếp lịch, bài đã lên lịch sẽ tự đăng."}
+          sub={tab === "proposed" ? "Xếp theo tín hiệu từ khách." : tab === "mine" ? "Bấm vào bài để soạn." : "Bài đã duyệt chờ xếp lịch, bài đã lên lịch sẽ tự đăng."}
+          tags={list.some((c) => isSample("content", c.id)) ? <SamplePill title="Danh sách có dữ liệu mẫu" /> : undefined}
         />
         <Rows>
           {list.length === 0 && (
@@ -172,6 +176,7 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
                     <Link href={href(`/content?tab=${tab}&open=${c.id}`)} className="font-semibold text-ink hover:underline">{c.title}</Link>
                     {c.hook && <div className="mt-px truncate text-[12px] text-ink-2">{c.hook}</div>}
                     <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {isSample("content", c.id) && <SamplePill />}
                       {tab !== "proposed" && st && <Pill tone={st.tone}>{st.label}</Pill>}
                       <Pill tone="sky">{contentFormatLabel[c.format] ?? c.format}</Pill>
                       {c.pillar && <Pill tone="violet">{c.pillar}</Pill>}
@@ -304,13 +309,21 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
                   </div>
                 )}
 
-                {isOpen && c.status === "approved" && (
+                {isOpen && c.status === "approved" && textScheduleBlock(c.format) && (
+                  <div className="flex items-center gap-1 border-t border-border px-4 py-3 text-[12px] text-ink-2">
+                    {textScheduleBlockShort(c.format)}
+                    <InfoTip label="Vì sao chưa lên lịch được">{textScheduleBlock(c.format)}</InfoTip>
+                  </div>
+                )}
+
+                {isOpen && c.status === "approved" && !textScheduleBlock(c.format) && (
                   <div className="border-t border-border px-4 py-3">
+                    {dryRun && <Pill tone="violet" className="mb-2">Chế độ thử · không đăng thật</Pill>}
                     <form action={scheduleContent} className="grid gap-3 md:grid-cols-[auto_1fr_auto] md:items-end">
                       <input type="hidden" name="id" value={c.id} />
                       <label className="block">
                         <span className="lbl">Giờ đăng (giờ VN)</span>
-                        <input type="datetime-local" name="when" required className={cn(input, "mt-1")} />
+                        <input type="datetime-local" name="when" required min={minWhen} className={cn(input, "mt-1")} />
                       </label>
                       <div>
                         <span className="lbl">Kênh</span>

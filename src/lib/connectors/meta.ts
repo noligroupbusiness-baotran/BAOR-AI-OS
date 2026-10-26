@@ -9,6 +9,17 @@ export const GRAPH = "https://graph.facebook.com/v21.0";
 /** Đăng video theo hướng dẫn Video API hiện hành (Resumable Upload API → /{page-id}/videos), bản v26.0. */
 export const GRAPH_VIDEO = "https://graph.facebook.com/v26.0";
 
+/** Mọi lời gọi Graph có hạn chờ: một yêu cầu treo không được giữ bộ chạy nền (mỗi phút) mãi mãi. */
+export const GRAPH_TIMEOUT_MS = 30_000;
+/** Bước tải tệp video lên (tệp lớn) được chờ lâu hơn. */
+export const GRAPH_UPLOAD_TIMEOUT_MS = 15 * 60_000;
+
+/** Gắn hạn chờ vào yêu cầu (giữ signal sẵn có nếu có). */
+export function withTimeout(init: RequestInit | undefined, ms: number): RequestInit {
+  const t = AbortSignal.timeout(ms);
+  return { ...init, signal: init?.signal ? AbortSignal.any([init.signal, t]) : t };
+}
+
 type GraphError = { error?: { message?: string; code?: number; type?: string; is_transient?: boolean } };
 
 function describe(e: unknown, fallback: string): string {
@@ -23,7 +34,7 @@ function describe(e: unknown, fallback: string): string {
 async function graph<T>(ctx: ConnectorContext, path: string, params: Record<string, string>, init?: RequestInit): Promise<T> {
   const url = new URL(`${GRAPH}/${path}`);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-  const res = await ctx.fetch(url.toString(), init);
+  const res = await ctx.fetch(url.toString(), withTimeout(init, GRAPH_TIMEOUT_MS));
   const json = (await res.json()) as T & GraphError;
   if (!res.ok || json.error) throw json;
   return json;
@@ -113,17 +124,15 @@ export async function publishPageVideo(ctx: ConnectorContext, req: VideoPublishR
     start.searchParams.set("file_length", String(req.fileSize));
     start.searchParams.set("file_type", "video/mp4");
     start.searchParams.set("access_token", userToken);
-    const r1 = await ctx.fetch(start.toString(), { method: "POST" });
+    const r1 = await ctx.fetch(start.toString(), withTimeout({ method: "POST" }, GRAPH_TIMEOUT_MS));
     const j1 = await readJson<{ id?: string }>(r1);
     if (!r1.ok || j1.error || !j1.id?.startsWith("upload:")) throw j1;
 
     const body = Readable.toWeb(fs.createReadStream(req.filePath)) as unknown as ReadableStream<Uint8Array>;
-    const r2 = await ctx.fetch(`${GRAPH_VIDEO}/${j1.id}`, {
-      method: "POST",
-      headers: { Authorization: `OAuth ${userToken}`, file_offset: "0", "Content-Length": String(req.fileSize) },
-      body,
-      duplex: "half",
-    } as RequestInit);
+    const r2 = await ctx.fetch(
+      `${GRAPH_VIDEO}/${j1.id}`,
+      withTimeout({ method: "POST", headers: { Authorization: `OAuth ${userToken}`, file_offset: "0", "Content-Length": String(req.fileSize) }, body, duplex: "half" } as RequestInit, GRAPH_UPLOAD_TIMEOUT_MS),
+    );
     const j2 = await readJson<{ h?: string }>(r2);
     if (!r2.ok || j2.error || !j2.h) throw j2;
 
@@ -132,7 +141,7 @@ export async function publishPageVideo(ctx: ConnectorContext, req: VideoPublishR
     let r3: Response;
     let j3: { id?: string } & GraphError;
     try {
-      r3 = await ctx.fetch(`${GRAPH_VIDEO}/${pageId}/videos`, { method: "POST", body: form });
+      r3 = await ctx.fetch(`${GRAPH_VIDEO}/${pageId}/videos`, withTimeout({ method: "POST", body: form }, GRAPH_TIMEOUT_MS));
       j3 = await readJson<{ id?: string }>(r3);
     } catch (e) {
       return { ok: false, ambiguous: true, message: `Đã gửi lệnh đăng nhưng không nhận được phản hồi (${e instanceof Error ? e.message : e}). Kiểm tra trang trước khi thử lại.` };
@@ -147,6 +156,42 @@ export async function publishPageVideo(ctx: ConnectorContext, req: VideoPublishR
     return { ok: true, externalId: j3.id, message: `Meta nhận video (mã ${j3.id}), đang xác minh.` };
   } catch (e) {
     return { ok: false, message: describe(e, "Đăng video thất bại.") };
+  }
+}
+
+/** Bài CHỮ lên trang: POST /{page-id}/feed. Đã gửi lệnh đăng mà lỗi mạng / hết hạn chờ / phản hồi hỏng / 5xx / lỗi tạm / 200 không
+ *  có mã bài → MƠ HỒ (Meta có thể đã tạo bài): không tự thử lại. Có mã bài chưa phải "đã đăng": phải đọc lại (verifyPagePost). */
+export async function publishPagePost(ctx: ConnectorContext, req: PublishRequest): Promise<PublishResult> {
+  const { pageId, pageToken } = ctx.config;
+  if (req.platform !== "facebook") return { ok: false, message: `Connector Facebook Page không đăng lên ${req.platform}.` };
+  if (!pageId || !pageToken) return { ok: false, message: "Thiếu Page ID hoặc Page Access Token." };
+  const body = new URLSearchParams({ message: req.message, access_token: pageToken });
+  let res: Response;
+  let j: { id?: string } & GraphError;
+  try {
+    res = await ctx.fetch(`${GRAPH}/${pageId}/feed`, withTimeout({ method: "POST", body }, GRAPH_TIMEOUT_MS));
+    j = await readJson<{ id?: string }>(res);
+  } catch (e) {
+    return { ok: false, ambiguous: true, message: `Đã gửi lệnh đăng nhưng không nhận được phản hồi (${e instanceof Error ? e.message : e}). Kiểm tra trang trước khi thử lại.` };
+  }
+  if (j.error?.message?.startsWith("Phản hồi không phải JSON")) return { ok: false, ambiguous: true, message: `${j.error.message}. Kiểm tra trang trước khi thử lại.` };
+  if (res.status >= 500 || j.error?.is_transient || j.error?.code === 1 || j.error?.code === 2 || (res.ok && !j.error && !j.id)) {
+    return { ok: false, ambiguous: true, message: `${describe(j, `Meta trả HTTP ${res.status} sau khi đã gửi lệnh đăng`)}. Bài có thể đã lên: kiểm tra trang trước khi thử lại.` };
+  }
+  if (!res.ok || j.error || !j.id) return { ok: false, message: describe(j, "Đăng bài thất bại.") };
+  return { ok: true, externalId: j.id, message: `Meta nhận bài (mã ${j.id}), đang xác minh.` };
+}
+
+/** Đọc lại bài chữ trên trang: chỉ coi là đã đăng khi có permalink_url và bài không ở trạng thái chưa công khai. */
+export async function verifyPagePost(ctx: ConnectorContext, externalId: string): Promise<VerifyPostResult> {
+  try {
+    const p = await graph<{ id: string; permalink_url?: string; created_time?: string; is_published?: boolean }>(ctx, externalId, { fields: "id,permalink_url,created_time,is_published", access_token: ctx.config.pageToken });
+    if (p.is_published === false) return { ok: false, message: "Bài trên Meta chưa công khai." };
+    if (!p.permalink_url) return { ok: false, message: "Meta chưa trả đường dẫn bài." };
+    const permalink = p.permalink_url.startsWith("http") ? p.permalink_url : `https://www.facebook.com${p.permalink_url}`;
+    return { ok: true, permalink, publishedAt: p.created_time, message: "Đã đọc lại bài trên Facebook." };
+  } catch (e) {
+    return { ok: false, message: describe(e, "Không đọc lại được bài.") };
   }
 }
 
@@ -210,19 +255,10 @@ export const facebookPageConnector: Connector = {
       { metric: "engagement", value: sumInsight(res, "page_post_engagements"), since, until },
     ];
   },
-  async publish(ctx, req: PublishRequest): Promise<PublishResult> {
-    const { pageId, pageToken } = ctx.config;
-    if (req.platform !== "facebook") return { ok: false, message: `Connector Facebook Page không đăng lên ${req.platform}.` };
-    try {
-      const body = new URLSearchParams({ message: req.message, access_token: pageToken });
-      const res = await graph<{ id: string }>(ctx, `${pageId}/feed`, {}, { method: "POST", body });
-      return { ok: true, externalId: res.id, message: `Đã đăng lên Facebook (${res.id}).` };
-    } catch (e) {
-      return { ok: false, message: describe(e, "Đăng bài thất bại.") };
-    }
-  },
+  publish: publishPagePost,
   publishVideo: publishPageVideo,
   verifyPost: verifyPageVideo,
+  verifyFeedPost: verifyPagePost,
   postMetrics: pageVideoMetrics,
   parseWebhook: parseMessengerWebhook,
 };

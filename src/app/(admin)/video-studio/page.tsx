@@ -28,7 +28,7 @@ import { comparableVersions, listComments, verifyComments } from "@/lib/video/re
 import { listContent } from "@/lib/queries";
 import { fileUrl } from "@/lib/uploads";
 import { listVideos, type VideoRecord } from "@/lib/videos/repository";
-import { brollLibrary, editSettings, jobVersions, latestJob, planBackups, readEditorPlan, readReport, type JobView } from "@/lib/video/jobs";
+import { brollLibrary, editSettings, isStoppedJob, jobVersions, latestJob, planBackups, readEditorPlan, readReport, type JobView } from "@/lib/video/jobs";
 import { blockersForVideo } from "@/lib/video/approval";
 import { qaLabel, qaTone } from "@/lib/video/job-types";
 import { feedbackLabel, listVideoFeedback, type FeedbackKind } from "@/lib/video/feedback";
@@ -68,14 +68,20 @@ function facts(v: VideoRecord, jv: JobView | null, canApprove: boolean) {
   const report = jv?.job.status === "done" ? jv.report : null;
   const hasPreview = !!report && !!jv?.files.includes("preview.mp4");
   const canRerender = !!jv && !running && !setup && (v.status === "review" || v.status === "needs_changes" || v.status === "editing" || error);
+  const stopped = error && isStoppedJob(jv?.job);
+  // Chưa có tệp video (video mẫu / chưa dựng xong lần nào): máy chủ chặn Gửi kiểm tra / Duyệt ("Video chưa có tệp") → không hiện nút
+  // bấm được, hiện nút vô hiệu kèm lý do. Đang dựng / dựng lỗi vẫn theo nút Dừng / Dựng lại như cũ.
+  const noFile = !v.uploadId && !running && !setup && !(error && canRerender) && v.status !== "approved";
   // Người có quyền phê duyệt: MỘT nút "Duyệt" đi thẳng tới Kho (OWNER 25/10: "đạt rồi tại sao còn phải gửi duyệt")
-  const primary: "setup" | "stop" | "rerender" | "send_review" | "send_approval" | "approve" | "wait" | "schedule" = setup
+  const primary: "setup" | "stop" | "rerender" | "nofile" | "send_review" | "send_approval" | "approve" | "wait" | "schedule" = setup
     ? "setup"
     : running
       ? "stop"
       : error && canRerender
         ? "rerender"
-        : v.status === "editing"
+        : noFile
+          ? "nofile"
+          : v.status === "editing"
           ? "send_review"
           : v.status === "needs_changes"
             ? canApprove && hasPreview
@@ -95,10 +101,14 @@ function facts(v: VideoRecord, jv: JobView | null, canApprove: boolean) {
     ? { label: "Chờ chọn khung", tone: "amber" }
     : running
       ? { label: jv!.job.status === "queued" ? "Chờ dựng" : "Đang dựng", tone: "sky" }
-      : error
-        ? { label: "Dựng lỗi", tone: "brick" }
-        : videoStatusLabel[v.status];
-  return { running, setup, error, report, hasPreview, canRerender, primary, state };
+      : stopped
+        ? { label: "Đã dừng", tone: "neutral" }
+        : error
+          ? { label: "Dựng lỗi", tone: "brick" }
+          : !jv && !v.uploadId && v.status === "editing"
+            ? { label: "Chưa có tệp", tone: "neutral" } // "Đang dựng" chỉ khi có bản dựng thật (video mẫu không có job)
+            : videoStatusLabel[v.status];
+  return { running, setup, error, report, hasPreview, canRerender, noFile, primary, state };
 }
 
 type Facts = ReturnType<typeof facts>;
@@ -117,6 +127,8 @@ function PrimaryAction({ v, f, back, openHref, size = "md", wide }: { v: VideoRe
       return <ConfirmAction action={transitionVideo} fields={{ id: v.id, kind: "send_review", back }} label="Gửi kiểm tra" title="Chuyển video sang chờ kiểm tra?" message="Dùng khi bản dựng đã xong và bạn muốn xem bản này." confirmLabel="Gửi kiểm tra" variant="primary" size={size} />;
     case "send_approval":
       return <ConfirmAction action={transitionVideo} fields={{ id: v.id, kind: "send_approval", back }} label="Gửi duyệt" title="Gửi video đi phê duyệt?" message="Video sẽ hiện ở Chờ phê duyệt của chiến dịch đã gắn." confirmLabel="Gửi duyệt" variant="primary" size={size} />;
+    case "nofile":
+      return <Button type="button" variant="outline" size={size} disabled className={w} title="Video chưa có tệp: thêm video gốc để dựng hoặc tải bản dựng lên trước khi gửi kiểm tra / duyệt">Chưa có tệp</Button>;
     case "wait":
       return <Button type="button" variant="outline" size={size} disabled className={w} title="Chờ người có quyền phê duyệt">Chờ duyệt</Button>;
     case "approve": {
@@ -151,7 +163,7 @@ function SecondaryActions({ v, jv, f, back, listBack, openHref, detail, prevPlan
   const item = (key: string, node: ReactNode, where: ReactNode[]) => where.push(<span key={key} className="contents">{node}</span>);
   const mv = detail ? "outline" : "ghost";
   if (!detail) item("rename", <LinkButton href={`${openHref}&rename=1`} variant="ghost" className="justify-start">Đổi tên</LinkButton>, more);
-  if (!f.running && !f.setup && (v.status === "editing" || v.status === "needs_changes") && f.primary !== "send_review")
+  if (!f.running && !f.setup && !f.error && !f.noFile && !!v.uploadId && (v.status === "editing" || v.status === "needs_changes") && f.primary !== "send_review")
     item("send", <ConfirmAction action={transitionVideo} fields={{ id: v.id, kind: "send_review", back }} label="Gửi kiểm tra" title="Chuyển video sang chờ kiểm tra?" message="Dùng khi bản dựng đã xong và bạn muốn xem bản này." confirmLabel="Gửi kiểm tra" variant="ghost" />, more);
   if (f.canRerender && jv && f.primary !== "rerender")
     item("rr", <ConfirmAction action={rerenderVideoAction} fields={{ id: v.id, back }} label="Dựng lại" title="Dựng lại từ video gốc?" message="Tạo bản mới, bản cũ vẫn giữ. Dùng lại lời đã nghe nếu có." confirmLabel="Dựng lại" variant={mv} />, shown);
@@ -320,7 +332,7 @@ export default async function VideoStudioPage({ searchParams }: { searchParams: 
           <EmptyState title={linkedIds ? "Chiến dịch này chưa có video" : "Chưa có video ở mục này"} hint="Quay theo kịch bản đã duyệt rồi bấm “Thêm video gốc”." />
         </div>
       ) : (
-        <ul id="video-grid" data-size="large" className="m-0 mt-3.5 grid list-none gap-3.5 p-0 sm:grid-cols-2 2xl:grid-cols-3 data-[size=small]:grid-cols-2 data-[size=small]:gap-2.5 sm:data-[size=small]:grid-cols-3 lg:data-[size=small]:grid-cols-4 2xl:data-[size=small]:grid-cols-5">
+        <ul id="video-grid" data-size="large" className="stagger appear-kids m-0 mt-3.5 grid list-none gap-3.5 p-0 sm:grid-cols-2 2xl:grid-cols-3 data-[size=small]:grid-cols-2 data-[size=small]:gap-2.5 sm:data-[size=small]:grid-cols-3 lg:data-[size=small]:grid-cols-4 2xl:data-[size=small]:grid-cols-5">
           {list.map((v) => (
             <VideoCard key={v.id} v={v} jv={jobs.get(v.id) ?? null} back={back} openHref={openHrefOf(v.id)} canApprove={canApprove} />
           ))}

@@ -73,10 +73,10 @@ export const triggerLabel: Record<Trigger, { label: string; hint: string; kind: 
 export const actionLabel: Record<Action, { label: string; hint: string; spends?: boolean; legacy?: boolean }> = {
   reply_faq: { label: "Trả lời bằng câu chuẩn trong kho FAQ", hint: "Chỉ khi tin nhắn khớp một câu hỏi trong Cài đặt › Câu trả lời chuẩn." },
   reply_price: { label: "(cũ) Hỏi giá → chuyển người tư vấn", hint: "Hệ thống chỉ làm marketing, không báo giá.", legacy: true },
-  mark_needs_human: { label: "Chuyển cho người xử lý", hint: "Không trả lời tự động, đưa vào Chờ tôi xử lý." },
+  mark_needs_human: { label: "Chuyển cho người xử lý", hint: "Không trả lời tự động, đánh dấu “Cần bạn”." },
   set_stage: { label: "Đổi giai đoạn lead", hint: "VD: có số điện thoại → Đã liên hệ." },
   tag_lead: { label: "Gắn nhãn cho lead", hint: "VD: hỏi giá, gọi lại." },
-  notify: { label: "Tạo thông báo cho người quản lý", hint: "Hiện ở Điều hành và chuông thông báo." },
+  notify: { label: "Tạo thông báo cho người quản lý", hint: "Hiện ở Tổng quan và chuông thông báo." },
   propose_ad: { label: "Đề xuất chạy quảng cáo", hint: "Tạo quảng cáo ở trạng thái chờ duyệt, không tự chi tiền.", spends: true },
   pause_ad: { label: "Tạm dừng quảng cáo", hint: "Dừng chi tiền ngay, ghi lý do." },
   request_approval: { label: "Tạo yêu cầu phê duyệt", hint: "Đưa vào tab Chờ phê duyệt của chiến dịch." },

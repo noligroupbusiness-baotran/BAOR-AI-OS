@@ -46,9 +46,9 @@ export const entityTypeLabel: Record<LinkedEntityType, { label: string; plural: 
   content: { label: "Nội dung", plural: "Nội dung đang viết", module: "Nội dung" },
   asset: { label: "Hình ảnh", plural: "Hình ảnh", module: "Nội dung" },
   video: { label: "Video", plural: "Video đang dựng", module: "Video Studio" },
-  approval: { label: "Phê duyệt", plural: "Phê duyệt", module: "Điều hành" },
-  publication: { label: "Bài đăng", plural: "Bài đang chờ đăng", module: "Đăng bài & Quảng cáo" },
-  ad: { label: "Quảng cáo", plural: "Quảng cáo", module: "Đăng bài & Quảng cáo" },
-  lead: { label: "Lead", plural: "Lead đang chăm sóc", module: "Khách hàng" },
+  approval: { label: "Phê duyệt", plural: "Phê duyệt", module: "Tổng quan" },
+  publication: { label: "Bài đăng", plural: "Bài đang chờ đăng", module: "Đăng bài" },
+  ad: { label: "Quảng cáo", plural: "Quảng cáo", module: "Quảng cáo" },
+  lead: { label: "Lead", plural: "Lead đang chăm sóc", module: "Lead" },
   automation_run: { label: "Automation", plural: "Automation đã chạy", module: "Automation" },
 };

@@ -71,6 +71,7 @@ function writeJob(job: VideoJob) {
   const tmp = path.join(dir, "job.json.tmp");
   fs.writeFileSync(tmp, JSON.stringify(job, null, 1));
   fs.renameSync(tmp, path.join(dir, "job.json"));
+  runIndexMemo.at = 0; // job đổi (runId mới / video mới) → ánh xạ run → video đọc lại ở lần sau
 }
 
 export function readJob(videoId: string, version: number): VideoJob | null {
@@ -110,6 +111,29 @@ export function latestJob(videoId: string): JobView | null {
     return { job, progress: readJson<JobProgress>(path.join(dir, "progress.json")), report: readJson<VideoReport>(path.join(dir, "report.json")), files: [...files, ...snaps] };
   }
   return null;
+}
+
+/** Mã video theo mã lần chạy (sync_runs) của mọi bản dựng: "Việc cần làm" mở đúng video trong Studio, lỗi cũ được đóng khi bản sau xong. */
+// Ánh xạ run → video đọc mọi job.json: nhớ ngắn (một lượt tải trang gọi nhiều lần), làm mới khi ghi job / xoá video.
+const runIndexMemo = ((globalThis as unknown as { __baorRunIndex?: { at: number; map: Map<string, string> } }).__baorRunIndex ??= { at: 0, map: new Map() });
+const RUN_INDEX_TTL_MS = 3_000;
+
+/** Run của video ĐÃ XOÁ (deleteVideo chuyển thư mục video-jobs đi nên job.json không còn): DATA_DIR/removed/run-index.json. */
+function removedRunIndexPath(): string {
+  return path.join(dataDir(), "removed", "run-index.json");
+}
+
+export function removedRunIndex(): Record<string, string> {
+  return readJson<Record<string, string>>(removedRunIndexPath()) ?? {};
+}
+
+export function videoIdsByRun(): Map<string, string> {
+  if (Date.now() - runIndexMemo.at < RUN_INDEX_TTL_MS) return runIndexMemo.map;
+  const out = new Map<string, string>(Object.entries(removedRunIndex()));
+  for (const j of allJobs()) if (j.runId) out.set(j.runId, j.videoId);
+  runIndexMemo.map = out;
+  runIndexMemo.at = Date.now();
+  return out;
 }
 
 function allJobs(): VideoJob[] {
@@ -358,15 +382,22 @@ function killGroup(pid: number) {
   }
 }
 
-function recoverStale() {
-  if (worker.recovered) return;
+export const RESTART_MSG = "Máy chủ khởi động lại giữa lúc dựng";
+
+/**
+ * Job tại chỗ còn "running" từ lần chạy trước (máy chủ khởi động lại): xếp lại qua failJob — khởi động lại KHÔNG ghi run lỗi
+ * (run giữ mở, lần dựng lại dùng tiếp), nhưng TĂNG attempt: nguồn làm sập tiến trình lặp lại thì sau MAX_RENDER_RETRIES lần thành lỗi thật,
+ * không xếp lại vô hạn. `force` chỉ cho kiểm thử (bình thường chạy một lần mỗi tiến trình).
+ */
+export function recoverStale(force = false) {
+  if (worker.recovered && !force) return;
   worker.recovered = true;
   for (const j of allJobs()) {
     if (j.status !== "running" || j.worker) continue; // job của máy dựng: do recoverRemoteStale xử lý theo nhịp tim
     // Tiến trình dựng của lần chạy trước còn sống: dừng hẳn trước khi xếp lại, để hai bộ dựng không cùng ghi một thư mục.
     if (isOurRenderer(j.pid)) killGroup(j.pid!);
-    if (j.runId) finishRun(j.runId, false, "Máy chủ khởi động lại giữa lúc dựng");
-    writeJob({ ...j, status: "queued", pid: undefined, note: "Máy chủ khởi động lại giữa chừng, dựng lại từ đầu" });
+    const title = getDb().select().from(schema.videos).where(eq(schema.videos.id, j.videoId)).get()?.title ?? j.videoId;
+    failJob({ ...j, pid: undefined }, RESTART_MSG, runFor(j, title), title);
   }
 }
 
@@ -381,21 +412,56 @@ if (!(globalThis as unknown as { __baorVideoExitHook?: boolean }).__baorVideoExi
   });
 }
 
-const stopRequested = ((globalThis as unknown as { __baorVideoStop?: Set<string> }).__baorVideoStop ??= new Set());
+// Bản đang dựng OWNER bấm Dừng → lời nhắn dừng (khoá mới: Set cũ của bản trước có thể còn trên globalThis khi tải lại nóng)
+const stopRequested = ((globalThis as unknown as { __baorVideoStopBy?: Map<string, string> }).__baorVideoStopBy ??= new Map());
+
+/** Lời nhắn của job bị dừng theo yêu cầu (KHÔNG phải lỗi: không ghi run lỗi, không cảnh báo, không vào Việc cần làm). */
+export const STOP_PREFIX = "Đã dừng theo yêu cầu";
+export const isStoppedJob = (j: Pick<VideoJob, "status" | "error"> | null | undefined) => !!j && j.status === "error" && (j.error ?? "").startsWith(STOP_PREFIX);
+
+export const VIDEO_RUN_KEY = "video_auto_edit";
+
+/** Lần chạy (sync_runs) của job: dùng tiếp run còn mở của lần thử trước (thử lại / khởi động lại không ghi run lỗi), không thì mở run mới. */
+function runFor(job: VideoJob, title: string): string {
+  if (job.runId) {
+    const r = getDb().select({ finishedAt: schema.syncRuns.finishedAt }).from(schema.syncRuns).where(eq(schema.syncRuns.id, job.runId)).get();
+    if (r && !r.finishedAt) return job.runId;
+  }
+  return startRun(VIDEO_RUN_KEY, title);
+}
+
+/** Ghi tình trạng vào run còn mở (vd "lỗi tạm → tự thử lại") mà không đóng run. */
+function noteRun(runId: string, message: string) {
+  getDb().update(schema.syncRuns).set({ message: message.slice(0, 500) }).where(eq(schema.syncRuns.id, runId)).run();
+}
+
+function runIsOpen(runId: string | undefined): runId is string {
+  if (!runId) return false;
+  const r = getDb().select({ finishedAt: schema.syncRuns.finishedAt }).from(schema.syncRuns).where(eq(schema.syncRuns.id, runId)).get();
+  return !!r && !r.finishedAt;
+}
+
+/** Job dừng theo yêu cầu: ghi job "error" kèm lời nhắn dừng, đóng run là KHÔNG lỗi, không thử lại, không cảnh báo. */
+function stoppedJob(job: VideoJob, msg: string, runId: string | undefined) {
+  const now = new Date().toISOString();
+  writeJob({ ...job, status: "error", finishedAt: now, error: msg, pid: undefined, worker: undefined, heartbeatAt: undefined, ...(runId ? { runId } : {}) });
+  if (getDb().select().from(schema.videos).where(eq(schema.videos.id, job.videoId)).get()) getDb().update(schema.videos).set({ note: msg, updatedAt: now }).where(eq(schema.videos.id, job.videoId)).run();
+  if (runIsOpen(runId)) finishRun(runId, true, `${msg} (không phải lỗi)`);
+}
 
 /** Dừng bản đang dựng / đang chờ của một video (dừng cả nhóm tiến trình ffmpeg / whisper con). Bản trước vẫn giữ nguyên. */
 export function stopVideoJob(videoId: string, by: string): { ok: true; version: number } | { ok: false; error: string } {
   const v = jobVersions(videoId)[0];
   const job = v ? readJob(videoId, v) : null;
   if (!job || (job.status !== "queued" && job.status !== "running")) return { ok: false, error: "Video này không có bản đang dựng" };
-  const msg = `Đã dừng theo yêu cầu của ${by}`;
-  if (job.status === "running" && job.pid && isOurRenderer(job.pid)) {
-    stopRequested.add(`${videoId}/v${job.version}`);
+  const msg = `${STOP_PREFIX} của ${by}`;
+  if (job.status === "running" && !job.worker && job.pid && isOurRenderer(job.pid)) {
+    // Bộ dựng tại chỗ: dừng tiến trình, runJob (sự kiện close) đóng job + run là "đã dừng"
+    stopRequested.set(`${videoId}/v${job.version}`, msg);
     killGroup(job.pid);
   } else {
-    const now = new Date().toISOString();
-    writeJob({ ...job, status: "error", finishedAt: now, error: msg });
-    getDb().update(schema.videos).set({ note: msg, updatedAt: now }).where(eq(schema.videos.id, videoId)).run();
+    // Đang chờ / máy dựng từ xa (nhịp tim sau đó nhận 409) / tiến trình đã mất: đóng job và run ngay
+    stoppedJob(job, msg, job.runId);
   }
   logActivity("human", `${by} dừng dựng bản ${job.version} của video ${videoId}.`, "video");
   return { ok: true, version: job.version };
@@ -434,19 +500,21 @@ export function videoDeleteBlock(videoId: string, canDeleteApproved: boolean): s
 /** Xoá video chưa gửi phê duyệt, hoặc video đã duyệt chưa có bài lên lịch / đã đăng (xem videoDeleteBlock): dừng bản đang dựng, gỡ khỏi Studio / Kho.
  *  Tệp (nguồn, bản dựng, thư mục dựng) và dữ liệu được CHUYỂN vào DATA_DIR/removed/<videoId>-<thời điểm>/ để khôi phục được, không xoá vĩnh viễn.
  *  Bài đăng đã huỷ / lỗi chưa lên trang / chế độ thử, lịch sử phản hồi, góp ý theo mốc và liên kết chiến dịch của video được ghi vào
- *  records.json rồi gỡ khỏi bảng (không để dòng mồ côi). Phê duyệt chiến dịch (campaign_approvals) giữ lại: là lịch sử của chiến dịch. */
-export function deleteVideo(videoId: string, by: string, opts: { canDeleteApproved?: boolean } = {}): { ok: true; title: string } | { ok: false; error: string } {
+ *  records.json rồi gỡ khỏi bảng (không để dòng mồ côi). Phê duyệt chiến dịch (campaign_approvals) giữ lại: là lịch sử của chiến dịch.
+ *  Thứ tự (kiểm toán 26/10 — trước đây chuyển tệp TRƯỚC rồi mới xoá dòng, lỗi giữa chừng để lại video "mất tệp"):
+ *  kiểm chặn → ghi records.json (lỗi: chưa đổi gì) → dừng bản đang dựng → MỌI lệnh CSDL trong một transaction (lỗi: CSDL nguyên vẹn,
+ *  tệp chưa chuyển, records.json gỡ) → chuyển tệp. Chuyển tệp lỗi: CSDL đã gỡ nhưng records.json đủ để khôi phục → ghi rõ tệp nào còn
+ *  ở chỗ cũ vào records.json (fileErrors) + nhật ký, trả warning — không có trạng thái nửa vời không ghi nhận. */
+export function deleteVideo(videoId: string, by: string, opts: { canDeleteApproved?: boolean } = {}): { ok: true; title: string; warning?: string } | { ok: false; error: string } {
   const db = getDb();
   const v = db.select().from(schema.videos).where(eq(schema.videos.id, videoId)).get();
   if (!v) return { ok: false, error: "Không tìm thấy video" };
   const block = videoDeleteBlock(videoId, !!opts.canDeleteApproved);
   if (block) return { ok: false, error: block };
+  const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
   const posts = db.select().from(schema.scheduledPosts).where(eq(schema.scheduledPosts.videoId, videoId)).all();
-  const last = latestJob(videoId);
-  if (last && (last.job.status === "queued" || last.job.status === "running")) stopVideoJob(videoId, by);
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const arch = path.join(dataDir(), "removed", `${videoId}-${stamp}`);
-  fs.mkdirSync(arch, { recursive: true });
   const upIds = new Set<string>();
   for (const ver of jobVersions(videoId)) {
     const j = readJob(videoId, ver);
@@ -462,22 +530,109 @@ export function deleteVideo(videoId: string, by: string, opts: { canDeleteApprov
   const postIds = posts.map((p) => p.id);
   const postLinks = postIds.length ? db.select().from(schema.marketingLinks).where(and(eq(schema.marketingLinks.entityType, "publication"), inArray(schema.marketingLinks.entityId, postIds))).all() : [];
   const uploads = [...upIds].map((id) => getUpload(id)).filter((u): u is NonNullable<typeof u> => !!u);
-  fs.writeFileSync(path.join(arch, "records.json"), JSON.stringify({ video: v, feedback, comments, links, postLinks, uploads, posts, by, removedAt: new Date().toISOString() }, null, 1));
+  const runIds = jobVersions(videoId).map((ver) => readJob(videoId, ver)?.runId).filter((x): x is string => !!x);
+  // Tệp sẽ chuyển (đường dẫn tương đối DATA_DIR, ghi vào records.json để khôi phục tay được nếu bước chuyển lỗi)
+  const moves: { from: string; to: string }[] = [];
   for (const u of uploads) {
     const p = path.join(uploadsDir(), u.fileName);
-    if (fs.existsSync(p)) fs.renameSync(p, path.join(arch, u.fileName));
-    db.delete(schema.uploads).where(eq(schema.uploads.id, u.id)).run();
+    if (fs.existsSync(p)) moves.push({ from: p, to: path.join(arch, u.fileName) });
   }
   const jd = path.join(jobsRoot(), videoId);
-  if (fs.existsSync(jd)) fs.renameSync(jd, path.join(arch, "video-jobs"));
-  db.delete(schema.videoFeedback).where(eq(schema.videoFeedback.videoId, videoId)).run();
-  db.delete(schema.videoComments).where(eq(schema.videoComments.videoId, videoId)).run();
-  // Chỉ còn bài không lên trang (đã huỷ / lỗi rõ / chế độ thử) — videoDeleteBlock đã chặn bài chờ / đã đăng
-  db.delete(schema.scheduledPosts).where(eq(schema.scheduledPosts.videoId, videoId)).run();
-  if (postIds.length) db.delete(schema.marketingLinks).where(and(eq(schema.marketingLinks.entityType, "publication"), inArray(schema.marketingLinks.entityId, postIds))).run();
-  db.delete(schema.marketingLinks).where(and(eq(schema.marketingLinks.entityType, "video"), eq(schema.marketingLinks.entityId, videoId))).run();
-  db.delete(schema.videos).where(eq(schema.videos.id, videoId)).run();
-  logActivity("human", `${by} xoá video “${v.title}” (lưu trữ ở ${path.relative(dataDir(), arch)}).`, "video");
+  if (fs.existsSync(jd)) moves.push({ from: jd, to: path.join(arch, "video-jobs") });
+  const rel = (p: string) => path.relative(dataDir(), p);
+  const recordsPath = path.join(arch, "records.json");
+  const records: Record<string, unknown> = { video: v, feedback, comments, links, postLinks, uploads, posts, runIds, files: moves.map((m) => ({ from: rel(m.from), to: rel(m.to) })), by, removedAt: new Date().toISOString() };
+
+  // 1) Bản lưu trữ trước khi đụng gì
+  try {
+    fs.mkdirSync(arch, { recursive: true });
+    fs.writeFileSync(recordsPath, JSON.stringify(records, null, 1));
+  } catch (e) {
+    try {
+      fs.rmSync(recordsPath, { force: true });
+      fs.rmdirSync(arch); // chỉ gỡ khi trống (thư mục vừa tạo)
+    } catch {}
+    return { ok: false, error: `Không ghi được bản lưu trữ, chưa xoá gì: ${errText(e)}` };
+  }
+
+  // 2) Dừng bản đang dựng (bộ dựng không ghi tiếp vào thư mục sắp chuyển)
+  const last = latestJob(videoId);
+  const stopped = !!last && (last.job.status === "queued" || last.job.status === "running");
+  if (stopped) {
+    try {
+      stopVideoJob(videoId, by);
+    } catch (e) {
+      // Dừng lỗi (ghi job.json / CSDL hỏng): chưa xoá gì → gỡ bản lưu trữ vừa ghi, không để records.json "ma" cho video còn nguyên
+      try {
+        fs.rmSync(recordsPath, { force: true });
+        fs.rmdirSync(arch);
+      } catch {}
+      return { ok: false, error: `Không dừng được bản đang dựng, chưa xoá gì: ${errText(e)}` };
+    }
+  }
+
+  // 3) Mọi lệnh CSDL trong MỘT transaction: lỗi giữa chừng → không gỡ dòng nào
+  try {
+    db.transaction((tx) => {
+      if (uploads.length) tx.delete(schema.uploads).where(inArray(schema.uploads.id, uploads.map((u) => u.id))).run();
+      tx.delete(schema.videoFeedback).where(eq(schema.videoFeedback.videoId, videoId)).run();
+      tx.delete(schema.videoComments).where(eq(schema.videoComments.videoId, videoId)).run();
+      // Chỉ còn bài không lên trang (đã huỷ / lỗi rõ / chế độ thử) — videoDeleteBlock đã chặn bài chờ / đã đăng
+      tx.delete(schema.scheduledPosts).where(eq(schema.scheduledPosts.videoId, videoId)).run();
+      if (postIds.length) tx.delete(schema.marketingLinks).where(and(eq(schema.marketingLinks.entityType, "publication"), inArray(schema.marketingLinks.entityId, postIds))).run();
+      tx.delete(schema.marketingLinks).where(and(eq(schema.marketingLinks.entityType, "video"), eq(schema.marketingLinks.entityId, videoId))).run();
+      tx.delete(schema.videos).where(eq(schema.videos.id, videoId)).run();
+    });
+  } catch (e) {
+    // CSDL nguyên vẹn, tệp chưa chuyển: bản lưu trữ không ứng với lần xoá nào → gỡ (chỉ gồm records.json vừa ghi)
+    try {
+      fs.rmSync(recordsPath, { force: true });
+      fs.rmdirSync(arch);
+    } catch {}
+    return { ok: false, error: `Không xoá được video (CSDL lỗi, chưa gỡ gì${stopped ? "; bản đang dựng đã dừng" : ""}): ${errText(e)}` };
+  }
+
+  // 4) Giữ ánh xạ run → video sau khi chuyển thư mục dựng đi: lỗi dựng của video đã xoá không còn tính là việc cần xử lý
+  const fileErrors: { from: string; to: string; error: string }[] = [];
+  if (runIds.length) {
+    try {
+      const idx = removedRunIndex();
+      for (const r of runIds) idx[r] = videoId;
+      fs.writeFileSync(removedRunIndexPath(), JSON.stringify(idx));
+    } catch (e) {
+      fileErrors.push({ from: "", to: rel(removedRunIndexPath()), error: `Không ghi được ánh xạ run → video: ${errText(e)}` });
+    }
+  }
+  // 5) Chuyển tệp (sau khi CSDL đã gỡ): lỗi từng tệp ghi lại, các tệp khác vẫn chuyển
+  for (const m of moves) {
+    try {
+      fs.renameSync(m.from, m.to);
+    } catch (e) {
+      fileErrors.push({ from: rel(m.from), to: rel(m.to), error: errText(e) });
+    }
+  }
+  runIndexMemo.at = 0;
+  if (fileErrors.length) {
+    const list = fileErrors.map((f) => (f.from ? `${f.from} (${f.error})` : f.error)).join("; ");
+    const warning = `Đã gỡ video khỏi CSDL (dữ liệu lưu trong ${rel(recordsPath)}) nhưng ${fileErrors.length} tệp chưa chuyển được vào lưu trữ, còn ở chỗ cũ: ${list}`;
+    try {
+      // Ghi qua tệp tạm rồi đổi tên: ghi dở (đĩa đầy) không làm hỏng records.json đầu — bản duy nhất để khôi phục
+      const tmpRec = `${recordsPath}.tmp`;
+      try {
+        fs.writeFileSync(tmpRec, JSON.stringify({ ...records, fileErrors }, null, 1));
+        fs.renameSync(tmpRec, recordsPath);
+      } catch (e) {
+        fs.rmSync(tmpRec, { force: true });
+        throw e;
+      }
+    } catch (e) {
+      console.error(`[video] deleteVideo ${videoId}: không cập nhật được records.json:`, e);
+    }
+    console.error(`[video] deleteVideo ${videoId}: ${warning}`);
+    logActivity("human", `${by} xoá video “${v.title}” — CẢNH BÁO: ${warning}`, "video");
+    return { ok: true, title: v.title, warning };
+  }
+  logActivity("human", `${by} xoá video “${v.title}” (lưu trữ ở ${rel(arch)}).`, "video");
   return { ok: true, title: v.title };
 }
 
@@ -486,16 +641,24 @@ export async function kickWorker(): Promise<void> {
   // Kiểm thử chạy trên CSDL tạm: không chạy bộ dựng thật.
   if (process.env.BAOR_VIDEO_WORKER === "off") return;
   if (worker.running) return;
-  // Thu hồi job kẹt ở CẢ hai chế độ: job tại chỗ của lần chạy trước (khởi động lại) + job máy dựng mất nhịp tim
-  recoverStale();
-  recoverRemoteStale();
-  // Chế độ máy dựng của OWNER: máy chủ không tự dựng, máy dựng gọi /api/render-worker/claim để nhận việc
-  if (renderMode() === "remote") return;
-  const next = allJobs()
-    .filter((j) => j.status === "queued")
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
-  if (!next) return;
-  worker.running = `${next.videoId}/v${next.version}`;
+  // Giữ chỗ NGAY trước khi thu hồi: failJob trong recoverStale / recoverRemoteStale gọi kickWorker lồng nhau — lần lồng phải trả về
+  // luôn, không thì nó và lần ngoài cùng chọn job và hai bộ dựng chạy song song.
+  worker.running = "kick";
+  let next: VideoJob | undefined;
+  try {
+    // Thu hồi job kẹt ở CẢ hai chế độ: job tại chỗ của lần chạy trước (khởi động lại) + job máy dựng mất nhịp tim
+    recoverStale();
+    recoverRemoteStale();
+    // Chế độ máy dựng của OWNER: máy chủ không tự dựng, máy dựng gọi /api/render-worker/claim để nhận việc
+    if (renderMode() === "remote") return;
+    next = allJobs()
+      .filter((j) => j.status === "queued")
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+    if (!next) return;
+    worker.running = `${next.videoId}/v${next.version}`;
+  } finally {
+    if (!next) worker.running = null;
+  }
   try {
     await runJob(next);
   } finally {
@@ -510,7 +673,7 @@ export function runJob(job: VideoJob): Promise<void> {
   const title = video?.title ?? job.videoId;
   const src = getUpload(job.sourceUploadId);
   const srcPath = src ? uploadPath(src) : null;
-  const runId = startRun("video_auto_edit", title);
+  const runId = runFor(job, title);
   const started = new Date().toISOString();
   writeJob({ ...job, status: "running", startedAt: started, runId, worker: undefined, heartbeatAt: undefined });
   if (!srcPath) {
@@ -597,9 +760,10 @@ export function runJob(job: VideoJob): Promise<void> {
       clearTimeout(timer);
       children.delete(child);
       const key = `${job.videoId}/v${job.version}`;
-      if (stopRequested.has(key)) {
+      const stopMsg = stopRequested.get(key);
+      if (stopMsg) {
         stopRequested.delete(key);
-        failJob(job, "Đã dừng theo yêu cầu", runId, title);
+        stoppedJob(job, stopMsg, runId);
       } else if (timedOut) {
         failJob(job, `Dựng quá ${Math.round(JOB_TIMEOUT_MS / 60_000)} phút, đã dừng`, runId, title);
       } else if (code === 0) {
@@ -647,6 +811,8 @@ function finishJob(job: VideoJob, dir: string, runId: string, title: string, sta
   }
   const note = `Bản ${job.version}: ${report.output.seconds.toFixed(0)} giây, ${report.captions.units} khung phụ đề, ${report.emphasis.length} chữ nhấn. Bảng kiểm: ${failed.length ? `chưa đạt ${failed.join(", ")}` : "các mục đo được đều đạt"}; ${report.blockers.length} điểm chặn đăng.${skillNote}`;
   getDb().update(schema.videos).set({ status: "review", version: job.version, uploadId: upId, note, updatedAt: now }).where(eq(schema.videos.id, job.videoId)).run();
+  // Liên kết chiến dịch của video theo trạng thái mới (như mọi bước chuyển khác), không kẹt "editing"
+  campaignRepo.syncEntityStatus("video", job.videoId, "review");
   writeJob({ ...job, status: "done", startedAt: started, finishedAt: now, runId, masterUploadId: upId });
   adoptAiPlan(job, dir);
   finishRun(runId, true, `Dựng xong “${title}” bản ${job.version} → Chờ kiểm tra`, 1);
@@ -686,7 +852,7 @@ function failJob(job: VideoJob, msg: string, runId: string, title: string) {
   const now = new Date().toISOString();
   // Video đã bị xoá (deleteVideo dừng bộ dựng rồi chuyển thư mục đi): không ghi lại job.json vào chỗ cũ.
   if (!getDb().select().from(schema.videos).where(eq(schema.videos.id, job.videoId)).get()) {
-    finishRun(runId, false, `Đã xoá video “${title}”, dừng dựng`);
+    finishRun(runId, true, `Đã xoá video “${title}”, dừng dựng (không phải lỗi)`);
     return;
   }
   // Lỗi tạm thời (bộ dựng sập, thiếu bộ nhớ, không ra bản chính…): tự xếp hàng dựng lại MỘT lần, không báo lỗi ngay
@@ -694,16 +860,17 @@ function failJob(job: VideoJob, msg: string, runId: string, title: string) {
     const attempt = (job.attempt ?? 0) + 1;
     writeJob({ ...job, status: "queued", attempt, lastError: msg.slice(0, 600), pid: undefined, startedAt: undefined, runId });
     getDb().update(schema.videos).set({ note: `Dựng lỗi, tự thử lại lần ${attempt}: ${msg.slice(0, 200)}`, updatedAt: now }).where(eq(schema.videos.id, job.videoId)).run();
-    finishRun(runId, false, `${msg} → tự thử lại lần ${attempt}`);
+    // Lần thử lại KHÔNG ghi run lỗi: run giữ mở, lần dựng lại dùng tiếp (runFor) và đóng nó bằng kết quả cuối cùng
+    noteRun(runId, `${msg} → tự thử lại lần ${attempt}`);
     logActivity("system", `Dựng “${title}” bản ${job.version} lỗi (${msg.slice(0, 120)}) — tự thử lại lần ${attempt}.`, "video");
     void kickWorker();
     return;
   }
   writeJob({ ...job, status: "error", finishedAt: now, error: msg.slice(0, 600), runId });
   getDb().update(schema.videos).set({ note: `Dựng lỗi${job.attempt ? ` (đã tự thử lại ${job.attempt} lần)` : ""}: ${msg.slice(0, 300)}`, updatedAt: now }).where(eq(schema.videos.id, job.videoId)).run();
-  finishRun(runId, false, msg);
+  finishRun(runId, false, `${msg}${job.attempt ? ` (đã tự thử lại ${job.attempt} lần)` : ""}`);
   logActivity("system", `Dựng “${title}” bản ${job.version} lỗi: ${msg.slice(0, 160)}`, "video");
-  void sendAlert({ level: "error", title: "Dựng video lỗi", text: `${title}: ${msg.slice(0, 300)}`, href: "/video-studio" });
+  void sendAlert({ level: "error", title: "Dựng video lỗi", text: `${title}: ${msg.slice(0, 300)}`, href: `/video-studio?open=${encodeURIComponent(job.videoId)}` });
   void verifyCommentsLater(job.videoId);
 }
 
@@ -789,7 +956,7 @@ export function planBackups(videoId: string): string[] {
 /**
  * Khôi phục kế hoạch đã lưu trữ gần nhất làm kế hoạch video rồi dựng lại (bản mới, bản cũ giữ). Không xoá gì:
  * kế hoạch đang dùng được cất thành plan.prev-<bây giờ>.json (khôi phục lần nữa = quay lại kế hoạch vừa thay).
- * Kiểm "dựng lại được không" TRƯỚC khi đổi tệp; dựng lại không xếp hàng được thì trả tệp về như cũ.
+ * Kiểm "dựng lại được không" TRƯỚC khi đổi tệp; dựng lại không xếp hàng được thì trả tệp về như cũ (bản lỡ xếp giữa chừng được huỷ trước).
  */
 export function restorePrevPlan(videoId: string, by: string): { ok: true; version: number; restored: string } | { ok: false; error: string } {
   const block = rerenderBlock(videoId);
@@ -812,13 +979,33 @@ export function restorePrevPlan(videoId: string, by: string): { ok: true; versio
     fs.renameSync(own, prev);
     if (hadOwn) fs.renameSync(stash, own);
   };
+  const before = jobVersions(videoId)[0] ?? 0;
   let r: ReturnType<typeof rerenderVideo>;
   try {
     r = rerenderVideo(videoId, by, undefined, undefined, `Khôi phục kế hoạch trước${label ? ` (${label.slice(0, 80)})` : ""} rồi dựng lại`);
   } catch (e) {
-    // Tệp đã đổi chỗ: dựng lại ném lỗi (ghi việc dựng / CSDL hỏng) thì cũng trả tệp về như cũ
+    const why = e instanceof Error ? e.message : String(e);
+    // rerenderVideo có thể ném SAU khi đã xếp bản dựng (writeJob chạy, bước CSDL / lịch sử sau đó lỗi). Trả tệp về khi bản đó còn
+    // trong hàng thì bộ dựng sẽ dựng bằng kế hoạch CŨ mà người dùng tưởng đã huỷ → huỷ bản vừa xếp TRƯỚC (đồng bộ: chưa bộ dựng nào
+    // nhận được), rồi mới trả tệp. Không huỷ được → giữ kế hoạch khôi phục (bản đã xếp dựng đúng kế hoạch đó) và báo rõ.
+    const queued = (jobVersions(videoId)[0] ?? 0) > before ? readJob(videoId, jobVersions(videoId)[0]) : null;
+    if (queued && (queued.status === "queued" || queued.status === "running")) {
+      try {
+        stoppedJob(queued, `${STOP_PREFIX}: khôi phục kế hoạch lỗi giữa chừng (${why.slice(0, 200)}), huỷ bản ${queued.version} trước khi trả kế hoạch cũ`, queued.runId);
+      } catch (e2) {
+        // stoppedJob ghi job.json "đã dừng" TRƯỚC rồi mới cập nhật CSDL: CSDL hỏng (chỉ đọc / khoá) thì ném sau khi bản đã thoát hàng
+        // → đọc lại job: đã thoát queued / running = đã huỷ, trả tệp như thường. Còn trong hàng mới là "không huỷ được".
+        const now = readJob(videoId, queued.version);
+        if (!now || now.status === "queued" || now.status === "running") {
+          try {
+            logActivity("human", `${by} khôi phục kế hoạch trước (${name}) của video ${videoId}: lỗi giữa chừng, bản ${queued.version} ĐÃ xếp dựng với kế hoạch khôi phục.`, "video");
+          } catch {}
+          return { ok: false, error: `Khôi phục kế hoạch lỗi giữa chừng (${why}) nhưng bản ${queued.version} đã xếp dựng với kế hoạch khôi phục và không huỷ được (${e2 instanceof Error ? e2.message : String(e2)}) — kế hoạch khôi phục được giữ.` };
+        }
+      }
+    }
     putBack();
-    return { ok: false, error: `Không dựng lại được: ${e instanceof Error ? e.message : String(e)}` };
+    return { ok: false, error: `Không dựng lại được: ${why}${queued ? ` (đã huỷ bản ${queued.version} vừa xếp)` : ""}` };
   }
   if (!r.ok) {
     putBack();
@@ -872,7 +1059,7 @@ function recoverRemoteStale(now = Date.now()) {
     const beat = Date.parse(j.heartbeatAt ?? j.startedAt ?? "") || 0;
     if (now - beat < REMOTE_STALE_MS) continue;
     const title = getDb().select().from(schema.videos).where(eq(schema.videos.id, j.videoId)).get()?.title ?? j.videoId;
-    failJob({ ...j, worker: undefined, heartbeatAt: undefined }, `Máy dựng ${j.worker} mất kết nối quá ${REMOTE_STALE_MS / 60_000} phút`, j.runId ?? startRun("video_auto_edit", title), title);
+    failJob({ ...j, worker: undefined, heartbeatAt: undefined }, `Máy dựng ${j.worker} mất kết nối quá ${REMOTE_STALE_MS / 60_000} phút`, runFor(j, title), title);
   }
 }
 
@@ -924,7 +1111,7 @@ export function claimRemoteJob(worker: string): RemoteSpec | null {
   const title = video?.title ?? next.videoId;
   const src = getUpload(next.sourceUploadId);
   const srcPath = src ? uploadPath(src) : null;
-  const runId = startRun("video_auto_edit", title);
+  const runId = runFor(next, title);
   const now = new Date().toISOString();
   if (!srcPath || !fs.existsSync(srcPath)) {
     failJob(next, "Không tìm thấy tệp nguồn trong kho tải lên", runId, title);
@@ -957,11 +1144,11 @@ export function completeRemoteJob(videoId: string, version: number, worker: stri
   const title = getDb().select().from(schema.videos).where(eq(schema.videos.id, videoId)).get()?.title ?? videoId;
   const dir = jobDir(videoId, version);
   try {
-    finishJob({ ...j, worker: undefined, heartbeatAt: undefined }, dir, j.runId ?? startRun("video_auto_edit", title), title, j.startedAt ?? new Date().toISOString());
+    finishJob({ ...j, worker: undefined, heartbeatAt: undefined }, dir, runFor(j, title), title, j.startedAt ?? new Date().toISOString());
     return { ok: true };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    failJob({ ...j, worker: undefined, heartbeatAt: undefined }, msg, j.runId ?? startRun("video_auto_edit", title), title);
+    failJob({ ...j, worker: undefined, heartbeatAt: undefined }, msg, runFor(j, title), title);
     return { ok: false, error: msg };
   }
 }
@@ -970,7 +1157,7 @@ export function failRemoteJob(videoId: string, version: number, worker: string, 
   const j = remoteJobFor(videoId, version, worker);
   if (!j) return false;
   const title = getDb().select().from(schema.videos).where(eq(schema.videos.id, videoId)).get()?.title ?? videoId;
-  failJob({ ...j, worker: undefined, heartbeatAt: undefined }, `Máy dựng ${worker}: ${msg.slice(0, 500)}`, j.runId ?? startRun("video_auto_edit", title), title);
+  failJob({ ...j, worker: undefined, heartbeatAt: undefined }, `Máy dựng ${worker}: ${msg.slice(0, 500)}`, runFor(j, title), title);
   return true;
 }
 

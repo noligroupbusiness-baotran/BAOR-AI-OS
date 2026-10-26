@@ -7,6 +7,8 @@ import { SubmitButton } from "@/components/campaigns/submit-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { removeCompetitor, saveCompetitor } from "@/lib/actions/insights";
 import { channelLines, getCompetitor, lines, listCompetitors, offerLines } from "@/lib/insights/competitors";
+import { SamplePill } from "@/components/ui/sample";
+import { isSample } from "@/lib/sample";
 import { formatDate, formatNumber, cn } from "@/lib/format";
 
 // Nghiên cứu & Insight › Đối thủ: theo dõi thủ công (kênh, định vị, gói / giá họ công bố, điểm mạnh yếu) — nghiên cứu thị trường.
@@ -21,7 +23,7 @@ export function CompetitorsPanel({ editing }: { editing?: string }) {
       <PanelHeader
         title="Đối thủ"
         sub="Theo dõi tay: kênh, định vị, gói họ công bố, điểm mạnh yếu."
-        action={showForm ? undefined : <LinkButton href="/insights?competitor=new#competitors" variant="primary">Thêm đối thủ</LinkButton>}
+        action={showForm ? undefined : <LinkButton href="/insights/research?tab=insight&competitor=new#competitors" variant="primary">Thêm đối thủ</LinkButton>}
       />
 
       {showForm && (
@@ -33,14 +35,14 @@ export function CompetitorsPanel({ editing }: { editing?: string }) {
           </Field>
           <Field label="Định vị" className="md:col-span-2"><input name="positioning" defaultValue={current?.positioning ?? ""} className={inputClass} placeholder="VD: Spa giá rẻ, đông khách, nhiều chi nhánh" /></Field>
           <Field label="Kênh" hint="Mỗi dòng: nền tảng | đường dẫn | số theo dõi"><textarea name="channels" rows={3} defaultValue={current ? channelLines(current.channels) : ""} className={textareaClass} placeholder={"facebook | https://facebook.com/... | 28000\ntiktok | https://tiktok.com/@... | 41000"} /></Field>
-          <Field label="Bảng giá của họ" hint="Mỗi dòng: tên gói | giá | đơn vị (thông tin họ công bố)."><textarea name="offers" rows={3} defaultValue={current ? offerLines(current.offers) : ""} className={textareaClass} placeholder={"Gội đầu dưỡng sinh | 45000 | lượt\nThẻ 10 lượt gội | 390000 | thẻ"} /></Field>
+          <Field label="Dịch vụ họ công bố" hint="Mỗi dòng: tên dịch vụ | giá | đơn vị."><textarea name="offers" rows={3} defaultValue={current ? offerLines(current.offers) : ""} className={textareaClass} placeholder={"Gội đầu dưỡng sinh | 45000 | lượt\nThẻ 10 lượt gội | 390000 | thẻ"} /></Field>
           <Field label="Điểm mạnh" hint="Mỗi dòng một ý"><textarea name="strengths" rows={3} defaultValue={current ? lines(current.strengths) : ""} className={textareaClass} /></Field>
           <Field label="Điểm yếu" hint="Mỗi dòng một ý"><textarea name="weaknesses" rows={3} defaultValue={current ? lines(current.weaknesses) : ""} className={textareaClass} /></Field>
           <Field label="Ghi chú" className="md:col-span-2"><input name="note" defaultValue={current?.note ?? ""} className={inputClass} placeholder="Điều bạn thấy ở bình luận, review, quảng cáo của họ" /></Field>
           <Field label="Ngày xem gần nhất"><input type="date" name="lastCheckedAt" defaultValue={current?.lastCheckedAt ?? ""} className={inputClass} /></Field>
           <div className="flex items-end gap-2">
             <SubmitButton pendingText="Đang lưu…">{current ? "Lưu thay đổi" : "Thêm đối thủ"}</SubmitButton>
-            <LinkButton href="/insights#competitors" variant="ghost">Hủy</LinkButton>
+            <LinkButton href="/insights/research?tab=insight#competitors" variant="ghost">Hủy</LinkButton>
           </div>
         </form>
       )}
@@ -55,6 +57,7 @@ export function CompetitorsPanel({ editing }: { editing?: string }) {
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-[13px] font-semibold text-ink">{c.name}</span>
                   {c.brand && <Pill>{c.brand}</Pill>}
+                  {isSample("competitor", c.id) && <SamplePill />}
                   {c.lastCheckedAt && <span className="num text-[11.5px] text-ink-3">xem {formatDate(c.lastCheckedAt)}</span>}
                 </div>
                 {c.positioning && <div className="mt-0.5 text-[12.5px] text-ink-2">{c.positioning}</div>}
@@ -65,7 +68,7 @@ export function CompetitorsPanel({ editing }: { editing?: string }) {
                       {ch.followers ? <span className="num"> · {formatNumber(ch.followers)}</span> : null}
                     </span>
                   ))}
-                  {c.offers.length > 0 && <span>{c.offers.length} gói giá</span>}
+                  {c.offers.length > 0 && <span>{c.offers.length} dịch vụ</span>}
                 </div>
                 {(c.strengths.length > 0 || c.weaknesses.length > 0) && (
                   <div className="mt-1.5 grid gap-x-4 gap-y-0.5 text-[12px] md:grid-cols-2">
@@ -76,7 +79,7 @@ export function CompetitorsPanel({ editing }: { editing?: string }) {
                 {c.note && <div className="mt-1 text-[12px] text-ink-3">Ghi chú: {c.note}</div>}
               </div>
               <div className="flex gap-1.5 md:justify-end">
-                <LinkButton href={`/insights?competitor=${c.id}#competitors`}>Sửa</LinkButton>
+                <LinkButton href={`/insights/research?tab=insight&competitor=${c.id}#competitors`}>Sửa</LinkButton>
                 <form action={removeCompetitor}><input type="hidden" name="id" value={c.id} /><Button type="submit" variant="ghost">Xóa</Button></form>
               </div>
             </li>

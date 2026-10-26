@@ -21,7 +21,7 @@ export function VerifyForm() {
       <button
         type="submit"
         disabled={pending}
-        className="inline-flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-md bg-jade text-[13.5px] font-semibold text-white transition-colors hover:bg-jade-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-jade disabled:opacity-60"
+        className="btn btn-primary inline-flex h-10 w-full cursor-pointer items-center justify-center gap-2 text-[13.5px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-jade disabled:opacity-60"
       >
         <KeyRound size={16} aria-hidden />
         {pending ? "Đang kiểm tra…" : "Xác nhận"}

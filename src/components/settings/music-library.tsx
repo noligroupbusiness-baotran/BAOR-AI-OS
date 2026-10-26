@@ -1,3 +1,4 @@
+import { Library, Lock } from "lucide-react";
 import { Panel, PanelHeader } from "@/components/ui/card";
 import { Pill } from "@/components/ui/pill";
 import { SubmitButton } from "@/components/campaigns/submit-button";
@@ -31,14 +32,17 @@ export async function MusicLibraryPanel() {
     <Panel id="music-library">
       <PanelHeader
         title="Thư viện nhạc nền"
-        sub="Nhạc đã kiểm giấy phép. Nghe thử rồi bấm Duyệt dùng — bộ dựng chỉ tự chọn bài đã duyệt; chưa có bài nào thì video không có nhạc."
+        sub="Nghe thử rồi duyệt"
+        icon={Library}
+        tone="indigo"
+        info="Nhạc đã kiểm giấy phép. Nghe thử rồi bấm Duyệt dùng — bộ dựng chỉ tự chọn bài đã duyệt; chưa có bài nào thì video không có nhạc."
         action={<Pill tone={approved > 1 ? "jade" : "amber"}>{approved}/{tracks.length} bài đã duyệt</Pill>}
       />
       {tracks.length === 0 ? (
         <p className="p-4 text-[13px] text-ink-2">Chưa có bài nào. Chạy <code>python3 scripts/video/library_sync.py --catalog …</code> với danh mục của kho tư liệu.</p>
       ) : (
         <div className="grid gap-4 p-4">
-          <MoreOptions label="Luật chọn nhạc và hiệu ứng âm thanh">
+          <MoreOptions label={`Luật chọn nhạc · ${sfxCount()} hiệu ứng âm thanh`}>
             <ul className="m-0 grid list-disc gap-1 pl-5 text-[12px] text-ink-2">
               <li>Chỉ nạp bài kho tư liệu ghi ĐỦ-HỒ-SƠ, đúng mã sha256. “ĐỦ-HỒ-SƠ” là đội kiểm giấy phép trên trang nguồn, không phải quét Content ID: vẫn có thể bị nhận bản quyền sau này.</li>
               <li>Bộ dựng chỉ dùng bài đã duyệt VÀ đạt luật A5 của Phần chung (giấy phép rõ, không nhãn AI, đã tra YouTube không thấy bên thứ ba đăng lại). 552792, 241274, 136824 không bao giờ dùng.</li>
@@ -59,14 +63,14 @@ export async function MusicLibraryPanel() {
                         <span className="text-ink-3">{mmss(t.durationSec)}</span>
                         {t.isDefault && <Pill tone="jade">mặc định</Pill>}
                         <Pill tone={t.approved ? "jade" : "amber"}>{t.approved ? "đã duyệt" : "chờ nghe duyệt"}</Pill>
-                        {needsCredit(t) && <Pill tone="amber">tác giả đề nghị ghi công</Pill>}
+                        {needsCredit(t) && <Pill tone="amber">cần ghi công</Pill>}
                       </div>
                       <div className="mt-0.5 truncate text-[11.5px] text-ink-3" title={t.license}>{t.license}</div>
                     </div>
                     <audio controls preload="none" src={`/api/video-assets/music?file=${encodeURIComponent(t.file)}`} className="h-8 w-full" />
                     <div>
                       {!isOwner ? (
-                        <span className="text-[11.5px] text-ink-3">chỉ OWNER duyệt</span>
+                        <Pill><Lock size={11} aria-hidden />chỉ OWNER duyệt</Pill>
                       ) : !t.approved ? (
                         <form action={setLibraryMusicApproval}>
                           <input type="hidden" name="file" value={t.file} />

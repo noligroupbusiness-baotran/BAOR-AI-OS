@@ -18,14 +18,33 @@ import { formatCurrency, formatDate, formatDateTime, formatNumber, cn } from "@/
 import { AccountPill, ApprovalStatusPill, GoalStatusPill } from "./status";
 import { GoalForm } from "./goal-form";
 import { ConfirmAction } from "./confirm-action";
+import { SamplePill } from "@/components/ui/sample";
+import { isSample } from "@/lib/sample";
 
 const personName = (people: Person[], id: string | null) => people.find((p) => p.id === id)?.name ?? "Chưa phân công";
+
+// Lead của MỤC TIÊU KÊNH = số nền tảng báo (đồng bộ Meta…), khác "Lead gắn chiến dịch" (lead thật trong app, dùng cho tiến độ chung).
+const goalUnit = (g: Pick<ChannelGoal, "primaryMetric">) => (g.primaryMetric === "leads" ? "lead nền tảng" : metricUnit(g.primaryMetric));
+
+// Trạng thái kênh: "Đang chạy" nhưng tài khoản chưa kết nối → hiện "Chưa kết nối" (không thể đang chạy thật).
+function GoalState({ goal, connected }: { goal: ChannelGoal; connected: Record<string, boolean> }) {
+  const key = goal.accountId ?? channelDef(goal.channel)?.integrationKey ?? null;
+  const on = key ? connected[key] === true : false;
+  return (
+    <>
+      {goal.status === "active" && !on ? <Pill tone="amber">Chưa kết nối</Pill> : <GoalStatusPill status={goal.status} />}
+      {isSample("goal", goal.id) && <SamplePill />}
+    </>
+  );
+}
 
 // ---------- Tab 1: Tổng quan ----------
 export function OverviewTab({ campaign, goals, result, people, alerts, logs }: { campaign: Campaign; goals: ChannelGoal[]; result: CampaignResult | null; people: Person[]; alerts: string[]; logs: CampaignLog[] }) {
   const progress = campaignProgress(campaign, goals, result);
   const budget = checkBudget(campaign.totalBudget, goals);
   const spent = goals.reduce((n, g) => n + g.spent, 0);
+  const sample = isSample("campaign", campaign.id);
+  const connected = campaignRepo.connectedMap();
   return (
     <div className="mt-3.5 grid gap-3.5 lg:grid-cols-[3fr_2fr] lg:items-start">
       <div className="grid gap-3.5">
@@ -35,7 +54,7 @@ export function OverviewTab({ campaign, goals, result, people, alerts, logs }: {
             <p className="text-[14px] font-semibold text-ink">{campaign.objective}</p>
             {campaign.description && <p className="mt-1 text-[12.5px] text-ink-2">{campaign.description}</p>}
             <div className="mt-3 flex items-center justify-between text-[12px] text-ink-2">
-              <span>Tiến độ chung{campaign.targetValue ? ` · ${formatNumber(result?.achievedValue ?? 0)} / ${formatNumber(campaign.targetValue)} ${campaign.targetMetric}` : " · trung bình các kênh"}</span>
+              <span className="inline-flex flex-wrap items-center gap-1.5">{campaign.targetValue ? `Lead gắn chiến dịch · ${formatNumber(result?.achievedValue ?? 0)} / ${formatNumber(campaign.targetValue)}` : "Tiến độ chung · trung bình các kênh"}{sample && <SamplePill />}</span>
               <span className="num font-semibold text-ink">{progress}%</span>
             </div>
             <ProgressBar value={progress} className="mt-1" label="Tiến độ chung" />
@@ -44,7 +63,7 @@ export function OverviewTab({ campaign, goals, result, people, alerts, logs }: {
             <Info label="Khách hàng mục tiêu" value={campaign.audience || "—"} />
             <Info label="Khu vực" value={campaign.location || "—"} />
             <Info label="Thời gian" value={`${formatDate(campaign.startDate)} – ${formatDate(campaign.endDate)}`} />
-            <Info label="Ngân sách" value={`${formatCurrency(campaign.totalBudget)} tổng · đã phân bổ ${formatCurrency(budget.allocated)} · đã chi ${formatCurrency(spent)}`} />
+            <Info label="Ngân sách" value={<>{`${formatCurrency(campaign.totalBudget)} tổng · đã phân bổ ${formatCurrency(budget.allocated)} · đã chi ${formatCurrency(spent)}`}{sample && <span className="ml-1.5 align-middle"><SamplePill /></span>}</>} />
             <Info label="Người phụ trách" value={`${personName(people, campaign.ownerId)} · tạo bởi ${campaign.createdBy}`} />
             {campaign.budgetNote && <Info label="Ghi chú ngân sách" value={campaign.budgetNote} />}
             {campaign.approvedAt && <Info label="Phê duyệt" value={`${campaign.approvedBy ?? "—"} · ${formatDateTime(campaign.approvedAt)}`} />}
@@ -60,12 +79,12 @@ export function OverviewTab({ campaign, goals, result, people, alerts, logs }: {
               {goals.map((g) => (
                 <li key={g.id} className="grid grid-cols-[1fr_auto] items-center gap-3 border-b border-border px-4 py-2.5 last:border-b-0">
                   <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2 text-[13px]"><span className="font-semibold text-ink">{channelLabel(g.channel)}</span><GoalStatusPill status={g.status} /></div>
+                    <div className="flex flex-wrap items-center gap-2 text-[13px]"><span className="font-semibold text-ink">{channelLabel(g.channel)}</span><GoalState goal={g} connected={connected} /></div>
                     <div className="mt-0.5 truncate text-[12px] text-ink-2">{g.objective}</div>
                   </div>
                   <div className="num text-right text-[12px] text-ink-2">
                     <div className="font-semibold text-ink">{goalProgress(g)}%</div>
-                    <div>{formatNumber(g.currentValue)} / {formatNumber(g.targetValue)} {metricUnit(g.primaryMetric)}</div>
+                    <div>{formatNumber(g.currentValue)} / {formatNumber(g.targetValue)} {goalUnit(g)}</div>
                   </div>
                 </li>
               ))}
@@ -105,7 +124,7 @@ export function OverviewTab({ campaign, goals, result, people, alerts, logs }: {
   );
 }
 
-function Info({ label, value }: { label: string; value: string }) {
+function Info({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="min-w-0">
       <dt className="lbl">{label}</dt>
@@ -119,6 +138,7 @@ export function GoalsTab({ campaign, goals, people, accounts, add, edit, idem }:
   const budget = checkBudget(campaign.totalBudget, goals);
   const accountOf = (g: ChannelGoal) => accounts.find((a) => a.key === (g.accountId ?? channelDef(g.channel)?.integrationKey));
   const canEdit = campaign.status !== "ended";
+  const connected = Object.fromEntries(accounts.map((a) => [a.key, a.connected]));
   return (
     <Panel>
       <PanelHeader
@@ -141,7 +161,7 @@ export function GoalsTab({ campaign, goals, people, accounts, add, edit, idem }:
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-[13.5px] font-semibold text-ink">{channelLabel(g.channel)}</span>
-                      <GoalStatusPill status={g.status} />
+                      <GoalState goal={g} connected={connected} />
                       <Pill>{executionLabel(g.executionType)}</Pill>
                       {acc ? <AccountPill connected={acc.connected} name={acc.account ?? acc.name} /> : <Pill tone="amber">Chưa chọn tài khoản</Pill>}
                     </div>
@@ -150,7 +170,7 @@ export function GoalsTab({ campaign, goals, people, accounts, add, edit, idem }:
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center justify-between text-[12px] text-ink-2">
-                      <span>{metricLabel(g.primaryMetric)}: <b className="num text-ink">{formatNumber(g.currentValue)}</b> / <span className="num">{formatNumber(g.targetValue)}</span> {metricUnit(g.primaryMetric)}</span>
+                      <span>{metricLabel(g.primaryMetric)}: <b className="num text-ink">{formatNumber(g.currentValue)}</b> / <span className="num">{formatNumber(g.targetValue)}</span> {goalUnit(g)}</span>
                       <span className="num font-semibold text-ink">{goalProgress(g)}%</span>
                     </div>
                     <ProgressBar value={goalProgress(g)} className="mt-1" label={`Tiến độ ${channelLabel(g.channel)}`} muted={g.status === "planned"} />
@@ -185,7 +205,7 @@ const activityGroups: { key: string; title: string; type: LinkedEntityType; matc
   { key: "review", title: "Nội dung chờ duyệt", type: "content", match: (r) => r.link.entityType === "content" && r.entityStatus === "review" },
   { key: "publication", title: "Bài đang chờ đăng", type: "publication", match: (r) => r.link.entityType === "publication" },
   { key: "ad", title: "Quảng cáo", type: "ad", match: (r) => r.link.entityType === "ad" },
-  { key: "lead", title: "Lead đang chăm sóc", type: "lead", match: (r) => r.link.entityType === "lead" },
+  { key: "lead", title: "Lead gắn chiến dịch", type: "lead", match: (r) => r.link.entityType === "lead" },
 ];
 
 export function ActivityTab({ campaign, goals, goalFilter }: { campaign: Campaign; goals: ChannelGoal[]; goalFilter: string | null }) {
@@ -211,7 +231,7 @@ export function ActivityTab({ campaign, goals, goalFilter }: { campaign: Campaig
           </label>
           <button type="submit" className="cursor-pointer rounded-full border border-border-2 px-2.5 py-1 text-[12px] font-medium text-ink hover:border-ink-3">Áp dụng</button>
         </form>
-        <span className="num ml-auto text-[12px] text-ink-3">{links.length} mục liên kết bằng campaign_id{goalFilter ? " + channel_goal_id" : ""}</span>
+        <span className="num ml-auto text-[12px] text-ink-3">{links.length} mục</span>
       </div>
       {resolved.length === 0 ? (
         <div className="card mt-3.5"><EmptyState title="Chưa có hoạt động liên kết" hint="Khi Insight, Nội dung, Video, Bài đăng hoặc Lead được gắn vào chiến dịch này, chúng sẽ hiện ở đây theo từng nhóm." /></div>
@@ -302,17 +322,17 @@ export function ResultsTab({ campaign, goals, result }: { campaign: Campaign; go
     );
   }
   const rows: { label: string; value: string; note?: string }[] = [
-    { label: "Lead", value: formatNumber(leads), note: cpl ? `Chi phí / lead ${formatCurrency(cpl)}` : undefined },
+    { label: "Lead gắn chiến dịch", value: formatNumber(leads), note: cpl ? `Chi phí / lead ${formatCurrency(cpl)}` : undefined },
     { label: "Chi phí", value: formatCurrency(spent), note: `Ngân sách ${formatCurrency(campaign.totalBudget)}` },
   ];
   return (
     <>
       <Panel>
-        <PanelHeader title="Mục tiêu chung so với kết quả" sub={result ? `Cập nhật ${formatDateTime(result.updatedAt)} · ${result.source === "sample" ? "số liệu mẫu" : result.source === "mixed" ? "số thật trộn số mẫu ở vài cột" : "tổng hợp từ hệ thống"}.` : "Tổng hợp từ mục tiêu kênh."} />
+        <PanelHeader title="Mục tiêu chung so với kết quả" sub={result ? `Cập nhật ${formatDateTime(result.updatedAt)}` : "Tổng hợp từ mục tiêu kênh"} tags={isSample("campaign", campaign.id) || result?.source === "sample" || result?.source === "mixed" ? <SamplePill title={result?.source === "mixed" ? "Số thật trộn số mẫu ở vài cột" : "Số liệu mẫu"} /> : undefined} />
         <div className="px-4 py-3">
           <div className="flex flex-wrap items-baseline justify-between gap-2 text-[13px]">
             <span className="font-semibold text-ink">{campaign.objective}</span>
-            <span className="num text-ink-2">{campaign.targetValue ? `${formatNumber(result?.achievedValue ?? 0)} / ${formatNumber(campaign.targetValue)} ${campaign.targetMetric}` : "trung bình các kênh"} · <b className="text-ink">{progress}%</b></span>
+            <span className="num text-ink-2">{campaign.targetValue ? `Lead gắn chiến dịch ${formatNumber(result?.achievedValue ?? 0)} / ${formatNumber(campaign.targetValue)}` : "trung bình các kênh"} · <b className="text-ink">{progress}%</b></span>
           </div>
           <ProgressBar value={progress} className="mt-1.5" label="Mức hoàn thành mục tiêu chung" />
         </div>
@@ -327,7 +347,7 @@ export function ResultsTab({ campaign, goals, result }: { campaign: Campaign; go
         </dl>
       </Panel>
       <Panel>
-        <PanelHeader title="Kết quả từng kênh" sub="Chỉ tiêu đặt ra so với thực tế. Số liệu kênh sẽ do Đăng bài & Quảng cáo và Khách hàng cập nhật." />
+        <PanelHeader title="Kết quả từng kênh" sub="Chỉ tiêu so với số nền tảng báo" />
         <Table>
           <thead>
             <tr><Th>Kênh</Th><Th>Chỉ số</Th><Th right>Chỉ tiêu</Th><Th right>Thực tế</Th><Th right>Hoàn thành</Th><Th right>Chi phí / ngân sách</Th></tr>
@@ -338,7 +358,7 @@ export function ResultsTab({ campaign, goals, result }: { campaign: Campaign; go
               return (
                 <tr key={g.id}>
                   <Td className="font-semibold text-ink">{channelLabel(g.channel)}<div className="text-[11.5px] font-normal text-ink-2">{g.objective}</div></Td>
-                  <Td>{metricLabel(g.primaryMetric)}</Td>
+                  <Td>{g.primaryMetric === "leads" ? "Lead nền tảng" : metricLabel(g.primaryMetric)}{isSample("goal", g.id) && <span className="ml-1.5 align-middle"><SamplePill /></span>}</Td>
                   <Td right className="num">{formatNumber(g.targetValue)}</Td>
                   <Td right className="num">{formatNumber(g.currentValue)}</Td>
                   <Td right className={cn("num font-semibold", p >= 100 ? "text-jade" : p < 30 ? "text-amber" : "text-ink")}>{p}%</Td>
@@ -349,7 +369,7 @@ export function ResultsTab({ campaign, goals, result }: { campaign: Campaign; go
           </tbody>
         </Table>
       </Panel>
-      <p className="mt-3 text-[12px] text-ink-3">Hiệu quả từng nội dung và video sẽ hiện ở đây khi phân hệ Báo cáo được xây; hiện chỉ so sánh mục tiêu với kết quả ở cấp kênh. <Link href={`/campaigns/${campaign.id}?tab=activity`} className="text-jade hover:underline">Xem hoạt động thực hiện</Link>.</p>
+      <p className="mt-3 text-[12px] text-ink-3"><Link href={`/campaigns/${campaign.id}?tab=activity`} className="text-jade hover:underline">Xem hoạt động thực hiện ›</Link></p>
     </>
   );
 }

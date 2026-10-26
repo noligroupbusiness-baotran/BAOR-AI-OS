@@ -18,7 +18,7 @@ const fail = (path: string, msg: string): never => done(`${path}${path.includes(
 export async function syncKnowledgeNow() {
   const actor = await requirePermission("manager", "/settings#second-brain");
   const r = await syncSecondBrain();
-  logActivity("human", `${actor.name} đồng bộ Second Brain từ Notion: ${r.message}`, "research");
+  logActivity("human", `${actor.name} đồng bộ kho kiến thức từ Notion: ${r.message}`, "research");
   if (!r.ok) return fail("/settings#second-brain", r.message);
   done("/settings#second-brain", r.message);
 }
@@ -33,7 +33,7 @@ export async function importKnowledgeSnapshotAction(fd: FormData) {
   }
   try {
     const r = importKnowledgeSnapshot(snap);
-    logActivity("human", `${actor.name} nhập ảnh chụp Second Brain (${r.pages} trang, cập nhật ${r.changed}).`, "research");
+    logActivity("human", `${actor.name} nhập ảnh chụp kho kiến thức (${r.pages} trang, cập nhật ${r.changed}).`, "research");
     done("/settings#second-brain", `Đã nhập ${r.pages} trang, cập nhật ${r.changed}`);
   } catch (e) {
     return fail("/settings#second-brain", e instanceof Error ? e.message : "Nhập ảnh chụp lỗi");

@@ -39,6 +39,20 @@ FONT_DIRS = [os.environ.get("BAOR_FONT_DIR", ""), "/System/Library/Fonts/Supplem
 G1 = [("#FFF3C4", 0.0), ("#E8C872", 0.42), ("#B8913A", 0.78), ("#F2DC98", 1.0)]
 GOLD, GOLD2, DARK_BROWN = "#D4AF37", "#E8C872", "#1E1408"
 SS = 2  # vẽ chữ ở 2x rồi thu về để nét mảnh (0,8 px) đúng
+# Hệ số vẽ lớp chữ / đồ hoạ: 1 = khung 1080, 2 = 4K. Toạ độ, cỡ chữ, nét, bóng vẫn viết theo hệ thiết kế 1080; lúc VẼ nhân RQ
+# (font ×RQ, ảnh chữ / icon dựng ở RQ, nét ×RQ) → 4K là nét gốc, không phải ảnh 1080 phóng ×2. Hộp đo (bảng kiểm G/H/I/J)
+# luôn ghi ở hệ thiết kế (chia RQ). RQ = 1 giữ nguyên từng phép tính như trước (×1 chính xác) → bản 1080 không đổi.
+RQ = 1
+
+
+def dpx(v):
+    """Điểm ảnh ở độ phân giải vẽ → hệ thiết kế."""
+    return v if RQ == 1 else v / RQ
+
+
+def dbox(b):
+    """Hộp điểm ảnh ở độ phân giải vẽ → hệ thiết kế (None giữ None)."""
+    return b if (RQ == 1 or b is None) else tuple(v / RQ for v in b)
 
 
 # Font có giấy phép (S5): Tinos — SIL OFL 1.1, cùng số đo với Times New Roman (thay thế khớp từng ký tự), có tiếng Việt.
@@ -155,12 +169,13 @@ def draw_subtitle(unit, hl, fsub_ss, cw=None, bottom=None, k=1.0):
     bottom = SUB_BOTTOM if bottom is None else bottom
     words = [w["text"] for w in unit["words"]]
     text = " ".join(words)
-    bw, bh = cw * SS, 200 * SS
+    S2 = SS * RQ  # fsub_ss đã ở cỡ SUBFS·SS·RQ
+    bw, bh = cw * S2, 200 * S2
     canvas = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
     tw = fsub_ss.getlength(text)
     x0 = (bw - tw) / 2
     asc, desc = fsub_ss.getmetrics()
-    y0 = bh - 30 * SS - (asc + desc)
+    y0 = bh - 30 * S2 - (asc + desc)
     # vị trí từng từ
     xs, x = [], x0
     for i, wd in enumerate(words):
@@ -168,16 +183,31 @@ def draw_subtitle(unit, hl, fsub_ss, cw=None, bottom=None, k=1.0):
         x += fsub_ss.getlength(wd + (" " if i < len(words) - 1 else ""))
     # bóng
     sh_ = Image.new("L", (bw, bh), 0)
-    ImageDraw.Draw(sh_).text((x0 + 5.5 * k * SS, y0 + 3.8 * k * SS), text, font=fsub_ss, fill=255, stroke_width=int(round(2.45 * k * SS)), stroke_fill=255)
-    sh_ = sh_.filter(ImageFilter.GaussianBlur(4.4 * k * SS / 2))
+    ImageDraw.Draw(sh_).text((x0 + 5.5 * k * S2, y0 + 3.8 * k * S2), text, font=fsub_ss, fill=255, stroke_width=int(round(2.45 * k * S2)), stroke_fill=255)
+    sh_ = sh_.filter(ImageFilter.GaussianBlur(4.4 * k * S2 / 2))
     canvas.paste((0, 0, 0, 255), (0, 0), sh_.point(lambda v: int(v * 0.67)))
     d = ImageDraw.Draw(canvas)
-    d.text((x0, y0), text, font=fsub_ss, fill=(0, 0, 0, 255), stroke_width=max(1, int(round(2.45 * k * SS))), stroke_fill=(0, 0, 0, 255))
+    d.text((x0, y0), text, font=fsub_ss, fill=(0, 0, 0, 255), stroke_width=max(1, int(round(2.45 * k * S2))), stroke_fill=(0, 0, 0, 255))
     for i, wd in enumerate(words):
         col = rgb("#FFC929") if i == hl else (255, 255, 255)
-        d.text((xs[i], y0), wd, font=fsub_ss, fill=col + (255,), stroke_width=max(1, int(round(0.8 * k * SS))), stroke_fill=col + (255,))
-    small = canvas.resize((cw, 200), Image.LANCZOS)
-    return small, bottom - 200 + 30  # ảnh, y đỉnh trên khung
+        d.text((xs[i], y0), wd, font=fsub_ss, fill=col + (255,), stroke_width=max(1, int(round(0.8 * k * S2))), stroke_fill=col + (255,))
+    small = canvas.resize((cw * RQ, 200 * RQ), Image.LANCZOS)
+    return small, bottom - 200 + 30  # ảnh (cỡ ×RQ), y đỉnh trên khung (hệ thiết kế)
+
+
+def sub_image(cache, u, hl, make):
+    """Ảnh phụ đề (cụm u, từ đang đọc hl) qua bộ đệm CHỈ của cụm đang hiện: sang cụm mới thì xoá ảnh cụm cũ (khung vẽ theo thời gian
+    tăng dần, cụm cũ không quay lại). Trước đây giữ ảnh mọi từ cả video → RAM tăng theo số từ (phản biện P2-1: 16:9 4K 120 s 2,8 GB).
+    cache["_max"] ghi số ảnh giữ cùng lúc lớn nhất (báo cáo / tự kiểm)."""
+    key = (id(u), hl)
+    if key not in cache:
+        if cache.get("_unit") != id(u):
+            mx = cache.get("_max", 0)
+            cache.clear()
+            cache.update({"_max": mx, "_unit": id(u)})
+        cache[key] = make()
+        cache["_max"] = max(cache["_max"], len(cache) - 2)  # trừ hai khoá sổ "_max" / "_unit"
+    return cache[key]
 
 
 # ---------------------------------------------------------------- chữ nhấn vàng ánh kim (ESV mục 4)
@@ -200,11 +230,12 @@ def gradient_fill(size, stops):
 
 def render_gold(text, fs):
     """Ảnh RGBA chữ vàng G1: quầng #FFD66E 2 lớp, bóng lệch, viền #1E1408 0,025·fs, gradient dọc."""
-    f = font("Times New Roman Bold Italic.ttf", fs * SS)
-    stroke = max(1, int(round(0.025 * fs * SS)))
+    S2 = SS * RQ  # ảnh trả về ở cỡ ×RQ
+    f = font("Times New Roman Bold Italic.ttf", fs * S2)
+    stroke = max(1, int(round(0.025 * fs * S2)))
     m, _ = text_mask(text, f, 0)
     ms, _ = text_mask(text, f, stroke)
-    pad = int(0.35 * fs * SS)
+    pad = int(0.35 * fs * S2)
     w, h = ms.size[0] + 2 * pad, ms.size[1] + 2 * pad
     canvas = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     full_m = Image.new("L", (w, h), 0)
@@ -213,9 +244,9 @@ def render_gold(text, fs):
     full_ms.paste(ms, (pad, pad))
     glow_col = Image.new("RGBA", (w, h), rgb("#FFD66E") + (255,))
     for blur, op in ((0.30 * fs, 0.45), (0.12 * fs, 0.75)):
-        g = full_ms.filter(ImageFilter.MaxFilter(3)).filter(ImageFilter.GaussianBlur(blur * SS / 2))
+        g = full_ms.filter(ImageFilter.MaxFilter(2 * RQ + 1)).filter(ImageFilter.GaussianBlur(blur * S2 / 2))
         canvas.alpha_composite(Image.composite(glow_col, Image.new("RGBA", (w, h), (0, 0, 0, 0)), g.point(lambda v, o=op: int(v * o))))
-    sh_ = ImageChops.offset(full_ms, int(0.083 * fs * SS), int(0.058 * fs * SS)).filter(ImageFilter.GaussianBlur(0.083 * fs * SS / 2))
+    sh_ = ImageChops.offset(full_ms, int(0.083 * fs * S2), int(0.058 * fs * S2)).filter(ImageFilter.GaussianBlur(0.083 * fs * S2 / 2))
     canvas.paste((0, 0, 0, 255), (0, 0), sh_.point(lambda v: int(v * 0.67)))
     canvas.paste(rgb(DARK_BROWN) + (255,), (0, 0), full_ms)
     grad = gradient_fill((w, h), G1).convert("RGBA")
@@ -260,7 +291,7 @@ class Emphasis:
             alpha = u
             r = 14 * (1 - u) + 0.4 * u
             if r > 0.6:
-                img = img.filter(ImageFilter.GaussianBlur(r / 2))
+                img = img.filter(ImageFilter.GaussianBlur(r * RQ / 2))
             sx = 1 + 0.06 * (1 - u)  # giãn chữ 12 → 1 xấp xỉ bằng giãn ngang
             if sx > 1.001:
                 img = img.resize((int(img.width * sx), img.height), Image.LANCZOS)
@@ -275,10 +306,10 @@ class Emphasis:
                 img = img.copy()
                 band = Image.new("L", img.size, 0)
                 bd = ImageDraw.Draw(band)
-                cx = -90 + p * (img.width + 120)
+                cx = -90 * RQ + p * (img.width + 120 * RQ)
                 for k, a in enumerate((0xC8, 0x70, 0x30, 0x70, 0xC8)):
-                    x = cx + (k - 2) * 22
-                    bd.polygon([(x, 0), (x + 22, 0), (x + 22 - 30, img.height), (x - 30, img.height)], fill=255 - a)
+                    x = cx + (k - 2) * 22 * RQ
+                    bd.polygon([(x, 0), (x + 22 * RQ, 0), (x + 22 * RQ - 30 * RQ, img.height), (x - 30 * RQ, img.height)], fill=255 - a)
                 m = self.mask.resize(img.size) if self.mask.size != img.size else self.mask
                 shine = ImageChops.multiply(band, m)
                 img.paste(rgb("#FFF8EA") + (255,), (0, 0), shine)
@@ -287,66 +318,68 @@ class Emphasis:
             import ngang as NG
             slide = (NG.EMP_X_IN - NG.EMP_X) * (1 - ease_cubic(ms / 450))  # bay vào từ x163 → đứng x133 (R8.4)
             pad = 0.35 * self.fs  # ảnh chữ vàng có lề trong suốt 0,35·fs mỗi bên (render_gold) → \an1 tính từ mép chữ
-            x = int(NG.EMP_X + slide - pad) if not self.right else int(CW - NG.EMP_X - slide - img.width + pad)
-            y = int(NG.EMP_BOTTOM - img.height * 0.80 + dy)
+            x = int(NG.EMP_X * RQ + slide * RQ - pad * RQ) if not self.right else int(CW * RQ - NG.EMP_X * RQ - slide * RQ - img.width + pad * RQ)
+            y = int(NG.EMP_BOTTOM * RQ - img.height * 0.80 + dy * RQ)
             layer.alpha_composite(img, (x, y))
             bb = img.getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox()
             if bb:
-                boxes.append(("emp", (x + bb[0], y + bb[1], x + bb[2], y + bb[3])))
+                boxes.append(("emp", dbox((x + bb[0], y + bb[1], x + bb[2], y + bb[3]))))
             return
-        x = int(540 - img.width / 2)
-        y = int(EMP_BOTTOM - img.height * 0.80 + dy)  # đáy nét chữ ≈ y1402
-        layer.alpha_composite(img, (x, y - BAND_Y0))
+        x = int(540 * RQ - img.width / 2)
+        y = int(EMP_BOTTOM * RQ - img.height * 0.80 + dy * RQ)  # đáy nét chữ ≈ y1402
+        layer.alpha_composite(img, (x, y - BAND_Y0 * RQ))
         # Kiểm H đo NÉT chữ (alpha > 40) như phụ đề, không đo khung ảnh có viền trong suốt / quầng sáng
         bb = img.getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox()
         if bb:
-            boxes.append(("emp", (x + bb[0], y + bb[1], x + bb[2], y + bb[3])))
+            boxes.append(("emp", dbox((x + bb[0], y + bb[1], x + bb[2], y + bb[3]))))
 
 
 # ---------------------------------------------------------------- sơ đồ (ESV mục 5)
 
 def label_img(text, fs=66):
     """Nhãn kiểu B: Times Italic trắng, không viền, bóng đen lệch 2/34·fs, đục 70 %."""
-    f = font("Times New Roman Italic.ttf", fs * SS)
+    S2 = SS * RQ  # ảnh trả về ở cỡ ×RQ
+    f = font("Times New Roman Italic.ttf", fs * S2)
     m, _ = text_mask(text, f)
-    off = int(round(2 / 34 * fs * SS))
-    w, h = m.size[0] + off + 8, m.size[1] + off + 8
+    off = int(round(2 / 34 * fs * S2))
+    w, h = m.size[0] + off + 8 * RQ, m.size[1] + off + 8 * RQ
     c = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     sh_ = Image.new("L", (w, h), 0)
     sh_.paste(m, (off, off))
-    c.paste((0, 0, 0, 255), (0, 0), sh_.filter(ImageFilter.GaussianBlur(0.6 * SS)).point(lambda v: int(v * 0.70)))
+    c.paste((0, 0, 0, 255), (0, 0), sh_.filter(ImageFilter.GaussianBlur(0.6 * S2)).point(lambda v: int(v * 0.70)))
     c.paste((255, 255, 255, 255), (0, 0), m)
     return c.resize((w // SS, h // SS), Image.LANCZOS)
 
 
 def ring_icon(r, glyph):
     s = r * 2 + 12
-    c = Image.new("RGBA", (s * SS, s * SS), (0, 0, 0, 0))
+    S2 = SS * RQ  # icon trả về ở cỡ ×RQ
+    c = Image.new("RGBA", (s * S2, s * S2), (0, 0, 0, 0))
     d = ImageDraw.Draw(c)
-    o = 6 * SS
-    d.ellipse([o, o, o + 2 * r * SS, o + 2 * r * SS], fill=(13, 11, 11, 191), outline=rgb(GOLD) + (255,), width=3 * SS)
-    cx = cy = o + r * SS
-    k = r * 0.42 * SS
+    o = 6 * S2
+    d.ellipse([o, o, o + 2 * r * S2, o + 2 * r * S2], fill=(13, 11, 11, 191), outline=rgb(GOLD) + (255,), width=3 * S2)
+    cx = cy = o + r * S2
+    k = r * 0.42 * S2
     if glyph == "x":
         for a, b in (((-k, -k), (k, k)), ((-k, k), (k, -k))):
-            d.line([(cx + a[0], cy + a[1]), (cx + b[0], cy + b[1])], fill=(255, 255, 255, 255), width=4 * SS)
+            d.line([(cx + a[0], cy + a[1]), (cx + b[0], cy + b[1])], fill=(255, 255, 255, 255), width=4 * S2)
     elif glyph == "tick":
-        d.line([(cx - k, cy), (cx - k * 0.25, cy + k * 0.7), (cx + k, cy - k * 0.7)], fill=rgb(GOLD2) + (255,), width=5 * SS, joint="curve")
+        d.line([(cx - k, cy), (cx - k * 0.25, cy + k * 0.7), (cx + k, cy - k * 0.7)], fill=rgb(GOLD2) + (255,), width=5 * S2, joint="curve")
     elif glyph == "person":
         hr = k * 0.42
-        d.ellipse([cx - hr, cy - k * 0.95, cx + hr, cy - k * 0.95 + 2 * hr], outline=(255, 255, 255, 255), width=3 * SS)
-        d.arc([cx - k * 0.85, cy - k * 0.02, cx + k * 0.85, cy + k * 1.6], 200, 340, fill=(255, 255, 255, 255), width=3 * SS)
+        d.ellipse([cx - hr, cy - k * 0.95, cx + hr, cy - k * 0.95 + 2 * hr], outline=(255, 255, 255, 255), width=3 * S2)
+        d.arc([cx - k * 0.85, cy - k * 0.02, cx + k * 0.85, cy + k * 1.6], 200, 340, fill=(255, 255, 255, 255), width=3 * S2)
     elif glyph == "bubble":
-        d.rounded_rectangle([cx - k, cy - k * 0.75, cx + k, cy + k * 0.45], radius=k * 0.3, outline=(255, 255, 255, 255), width=3 * SS)
-        d.line([(cx - k * 0.45, cy + k * 0.45), (cx - k * 0.7, cy + k * 0.95), (cx - k * 0.05, cy + k * 0.45)], fill=(255, 255, 255, 255), width=3 * SS, joint="curve")
+        d.rounded_rectangle([cx - k, cy - k * 0.75, cx + k, cy + k * 0.45], radius=k * 0.3, outline=(255, 255, 255, 255), width=3 * S2)
+        d.line([(cx - k * 0.45, cy + k * 0.45), (cx - k * 0.7, cy + k * 0.95), (cx - k * 0.05, cy + k * 0.45)], fill=(255, 255, 255, 255), width=3 * S2, joint="curve")
     elif glyph == "heart":
         pts = [(cx + k * 16 * math.sin(q) ** 3 / 17, cy - k * (13 * math.cos(q) - 5 * math.cos(2 * q) - 2 * math.cos(3 * q) - math.cos(4 * q)) / 17 - k * 0.05)
                for q in np.linspace(0, 2 * math.pi, 60)]
-        d.line(pts + [pts[0]], fill=(255, 255, 255, 255), width=3 * SS, joint="curve")
+        d.line(pts + [pts[0]], fill=(255, 255, 255, 255), width=3 * S2, joint="curve")
     elif glyph == "phone":
-        d.rounded_rectangle([cx - k * 0.5, cy - k * 0.9, cx + k * 0.5, cy + k * 0.9], radius=k * 0.15, outline=(255, 255, 255, 255), width=3 * SS)
-        d.line([(cx - k * 0.15, cy + k * 0.65), (cx + k * 0.15, cy + k * 0.65)], fill=(255, 255, 255, 255), width=3 * SS)
-    return c.resize((s, s), Image.LANCZOS)
+        d.rounded_rectangle([cx - k * 0.5, cy - k * 0.9, cx + k * 0.5, cy + k * 0.9], radius=k * 0.15, outline=(255, 255, 255, 255), width=3 * S2)
+        d.line([(cx - k * 0.15, cy + k * 0.65), (cx + k * 0.15, cy + k * 0.65)], fill=(255, 255, 255, 255), width=3 * S2)
+    return c.resize((s * RQ, s * RQ), Image.LANCZOS)
 
 
 def ease_out_back(u, s_=1.4):
@@ -360,31 +393,33 @@ def ease_in_out_quint(u):
 
 
 def _put(layer, im, cx, cy, boxes, kind="gfx"):
-    x, y = int(round(cx - im.width / 2)), int(round(cy - im.height / 2))
-    layer.alpha_composite(im, (x, y - BAND_Y0))
-    boxes.append((kind, (x, y, x + im.width, y + im.height)))
+    x, y = int(round(cx * RQ - im.width / 2)), int(round(cy * RQ - im.height / 2))
+    layer.alpha_composite(im, (x, y - BAND_Y0 * RQ))
+    boxes.append((kind, dbox((x, y, x + im.width, y + im.height))))
 
 
 def _label_at(layer, img, x, cy, u, fade, boxes, dim=1.0):
     """Nhãn kiểu B vào: fscx 92→100, alpha, 320 ms ease-out cubic (u đã tính)."""
     lb = img.resize((max(1, int(img.width * (0.92 + 0.08 * u))), img.height), Image.LANCZOS)
     lb = with_alpha(lb, u * fade * dim)
-    y = int(cy - lb.height / 2)
-    layer.alpha_composite(lb, (int(x), y - BAND_Y0))
-    boxes.append(("gfx", (int(x), y, int(x) + lb.width, y + lb.height)))
+    y = int(cy * RQ - lb.height / 2)
+    layer.alpha_composite(lb, (int(x * RQ), y - BAND_Y0 * RQ))
+    boxes.append(("gfx", dbox((int(x * RQ), y, int(x * RQ) + lb.width, y + lb.height))))
 
 
 def _vline(layer, x, y0, y1, p, fade, width=3, color=GOLD):
     if p <= 0:
         return
     d = ImageDraw.Draw(layer)
-    d.line([(x, y0 - BAND_Y0), (x, y0 + (y1 - y0) * p - BAND_Y0)], fill=rgb(color) + (int(255 * fade),), width=width)
+    d.line([(x * RQ, (y0 - BAND_Y0) * RQ), (x * RQ, (y0 + (y1 - y0) * p - BAND_Y0) * RQ)], fill=rgb(color) + (int(255 * fade),), width=width * RQ)
 
 
 def _head(layer, x, y, a, down=True, size=16):
     d = ImageDraw.Draw(layer)
     h = size / 2
     pts = [(x - h, y - h - BAND_Y0), (x + h, y - h - BAND_Y0), (x, y + h - BAND_Y0)] if down else [(x - h, y + h - BAND_Y0), (x + h, y + h - BAND_Y0), (x, y - h - BAND_Y0)]
+    if RQ != 1:
+        pts = [(a * RQ, b * RQ) for a, b in pts]
     d.polygon(pts, fill=rgb(GOLD) + (int(255 * a),))
 
 
@@ -419,7 +454,7 @@ class Compare:
         if t >= ti:
             ic = with_alpha(scale_in(self.icon, (t - ti) / 0.30), fade)
             cx, cy = 130, 1180
-            layer.alpha_composite(ic, (int(cx - ic.width / 2), int(cy - ic.height / 2) - BAND_Y0))
+            layer.alpha_composite(ic, (int(cx * RQ - ic.width / 2), int(cy * RQ - ic.height / 2) - BAND_Y0 * RQ))
             boxes.append(("gfx", (cx - 44, cy - 44, cx + 44, cy + 44)))
         if t >= ti + 0.09:
             u = ease_cubic((t - ti - 0.09) / 0.32)
@@ -431,18 +466,18 @@ class Compare:
             if self.right and t >= self.right[0][0]:
                 dim = min(dim, 1 - (0x70 / 255) * min(1.0, (t - self.right[0][0]) / 0.4))
             lb = with_alpha(lb, u * fade * dim)
-            x, y = 190, 1180 - lb.height // 2
-            layer.alpha_composite(lb, (x, y - BAND_Y0))
-            boxes.append(("gfx", (x, y, x + lb.width, y + lb.height)))
+            x, y = 190 * RQ, 1180 * RQ - lb.height // 2
+            layer.alpha_composite(lb, (x, y - BAND_Y0 * RQ))
+            boxes.append(("gfx", dbox((x, y, x + lb.width, y + lb.height))))
             if strike_t and t >= strike_t:
                 p = ease_cubic((t - strike_t) / 0.42)
                 d = ImageDraw.Draw(layer)
-                yy = 1180 - BAND_Y0 + 4
-                d.line([(x - 6, yy), (x - 6 + (lb.width + 12) * p, yy)], fill=(255, 255, 255, int(255 * fade)), width=4)
+                yy = (1180 - BAND_Y0 + 4) * RQ
+                d.line([(x - 6 * RQ, yy), (x - 6 * RQ + (lb.width + 12 * RQ) * p, yy)], fill=(255, 255, 255, int(255 * fade)), width=4 * RQ)
         if self.right and t >= self.right[0][0]:
             p = ease_cubic((t - self.right[0][0]) / 0.42)
             d = ImageDraw.Draw(layer)
-            d.line([(96, 1240 - BAND_Y0), (96 + 464 * p, 1240 - BAND_Y0)], fill=rgb(GOLD) + (int(255 * fade),), width=2)
+            d.line([(96 * RQ, (1240 - BAND_Y0) * RQ), ((96 + 464 * p) * RQ, (1240 - BAND_Y0) * RQ)], fill=rgb(GOLD) + (int(255 * fade),), width=2 * RQ)
         for k, (tr, img) in enumerate(self.right):
             if t < tr:
                 continue
@@ -472,25 +507,25 @@ class Arrow:
             u = ease_cubic((t - ta) / 0.32)
             dim = 1.0 if t < tb else 1 - (1 - (255 - 0x50) / 255) * min(1.0, (t - tb) / 0.35)
             im = with_alpha(self.topimg, u * fade * dim)
-            x, y = int(540 - im.width / 2), int(1172 - im.height / 2)
-            layer.alpha_composite(im, (x, y - BAND_Y0))
-            boxes.append(("gfx", (x, y, x + im.width, y + im.height)))
+            x, y = int(540 * RQ - im.width / 2), int(1172 * RQ - im.height / 2)
+            layer.alpha_composite(im, (x, y - BAND_Y0 * RQ))
+            boxes.append(("gfx", dbox((x, y, x + im.width, y + im.height))))
             ts = ta + 0.30
             if t >= ts:
                 p = ease_cubic((t - ts) / 0.52)
                 y1 = 1214 + (1290 - 1214) * p
-                d.line([(540, 1214 - BAND_Y0), (540, y1 - BAND_Y0)], fill=rgb(GOLD) + (int(255 * fade),), width=3)
+                d.line([(540 * RQ, (1214 - BAND_Y0) * RQ), (540 * RQ, (y1 - BAND_Y0) * RQ)], fill=rgb(GOLD) + (int(255 * fade),), width=3 * RQ)
             th = ta + 0.76
             if t >= th:
                 a = int(255 * ease_cubic((t - th) / 0.22) * fade)
-                d.polygon([(540 - 11, 1298 - 11 - BAND_Y0), (540 + 11, 1298 - 11 - BAND_Y0), (540, 1298 + 11 - BAND_Y0)], fill=rgb(GOLD) + (a,))
+                d.polygon([((540 - 11) * RQ, (1298 - 11 - BAND_Y0) * RQ), ((540 + 11) * RQ, (1298 - 11 - BAND_Y0) * RQ), (540 * RQ, (1298 + 11 - BAND_Y0) * RQ)], fill=rgb(GOLD) + (a,))
         if t >= tb:
             u = ease_cubic((t - tb) / 0.38)
             im = with_alpha(self.botimg, u * fade)
-            x = int(540 - im.width / 2)
-            y = int(1418 - im.height * 0.80 + 0.18 * 96 * (1 - u))
-            layer.alpha_composite(im, (x, y - BAND_Y0))
-            boxes.append(("gfx", (x, y, x + im.width, y + im.height)))
+            x = int(540 * RQ - im.width / 2)
+            y = int(1418 * RQ - im.height * 0.80 + 0.18 * 96 * (1 - u) * RQ)
+            layer.alpha_composite(im, (x, y - BAND_Y0 * RQ))
+            boxes.append(("gfx", dbox((x, y, x + im.width, y + im.height))))
 
 
 class Steps:
@@ -504,14 +539,15 @@ class Steps:
         n = len(self.steps)
         self.ys = [1130 + (320 / n) * (k + 0.5) for k in range(n)]
         self.lbls = [label_img(x["text"][:1].upper() + x["text"][1:], fit_label(x["text"], 66, 800)) for x in self.steps]
-        fnum = font("Times New Roman Bold Italic.ttf", 34 * SS)
+        S2 = SS * RQ
+        fnum = font("Times New Roman Bold Italic.ttf", 34 * S2)
         self.dots = []
         for k in range(n):
-            c = Image.new("RGBA", (56 * SS, 56 * SS), (0, 0, 0, 0))
+            c = Image.new("RGBA", (56 * S2, 56 * S2), (0, 0, 0, 0))
             dd = ImageDraw.Draw(c)
-            dd.ellipse([5 * SS, 5 * SS, 51 * SS, 51 * SS], fill=rgb("#E8C872") + (255,), outline=rgb(DARK_BROWN) + (255,), width=int(1.5 * SS))
-            dd.text((28 * SS, 29 * SS), str(k + 1), font=fnum, fill=rgb("#0D0B0B") + (255,), anchor="mm")
-            self.dots.append(c.resize((56, 56), Image.LANCZOS))
+            dd.ellipse([5 * S2, 5 * S2, 51 * S2, 51 * S2], fill=rgb("#E8C872") + (255,), outline=rgb(DARK_BROWN) + (255,), width=int(1.5 * S2))
+            dd.text((28 * S2, 29 * S2), str(k + 1), font=fnum, fill=rgb("#0D0B0B") + (255,), anchor="mm")
+            self.dots.append(c.resize((56 * RQ, 56 * RQ), Image.LANCZOS))
 
     def frame(self, t, layer, boxes):
         if not (self.t0 <= t < self.t1):
@@ -563,37 +599,39 @@ class Vertical:
         if self.gold is not None and t >= self.mid["t"]:
             u = ease_cubic((t - self.mid["t"]) / 0.38)
             im = with_alpha(self.gold, u * fade)
-            x, cy = 190, 1290
-            layer.alpha_composite(im, (x, int(cy - im.height / 2) - BAND_Y0))
+            x, cy = 190 * RQ, 1290
+            yp = int(cy * RQ - im.height / 2)
+            layer.alpha_composite(im, (x, yp - BAND_Y0 * RQ))
             bb = im.getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox()
             if bb:
-                boxes.append(("gfx", (x + bb[0], int(cy - im.height / 2) + bb[1], x + bb[2], int(cy - im.height / 2) + bb[3])))
+                boxes.append(("gfx", dbox((x + bb[0], yp + bb[1], x + bb[2], yp + bb[3]))))
 
 
-def fs_background(kind):
+def fs_background(kind, q=1):
     """Nền tĩnh của khung toàn màn hình (Skill 5.4): FS-05 sân khấu đen + đèn rọi vàng ấm hình nón, vũng sáng, 3 tia chéo mờ;
     FS-01 gradient tối #0E0B07→#1A140C + lưới vàng α 6 %. Cả hai có vignette. Bụi vàng vẽ theo khung (động)."""
-    yy, xx = np.mgrid[0:CH, 0:CW].astype(np.float32)
+    CW_, CH_ = CW * q, CH * q  # dựng thẳng ở khung xuất (q = 2: 4K)
+    yy, xx = np.mgrid[0:CH_, 0:CW_].astype(np.float32)
     if kind == "fs05":
-        base = np.zeros((CH, CW, 3), np.float32) + 7.0
-        cx = CW * 0.5
-        half = 50 + (yy / CH) * CW * 0.42
-        cone = np.clip(1 - np.abs(xx - cx) / np.maximum(half, 1), 0, 1) ** 1.6 * np.clip(1 - yy / (CH * 0.86), 0, 1) ** 0.7
-        pool = np.exp(-(((xx - cx) / (CW * 0.36)) ** 2 + ((yy - CH * 0.84) / (CH * 0.045)) ** 2))
+        base = np.zeros((CH_, CW_, 3), np.float32) + 7.0
+        cx = CW_ * 0.5
+        half = 50 * q + (yy / CH_) * CW_ * 0.42
+        cone = np.clip(1 - np.abs(xx - cx) / np.maximum(half, 1), 0, 1) ** 1.6 * np.clip(1 - yy / (CH_ * 0.86), 0, 1) ** 0.7
+        pool = np.exp(-(((xx - cx) / (CW_ * 0.36)) ** 2 + ((yy - CH_ * 0.84) / (CH_ * 0.045)) ** 2))
         rays = np.zeros_like(xx)
-        for k, (x0, slope) in enumerate(((CW * 0.18, 0.55), (CW * 0.62, -0.35), (CW * 0.85, -0.7))):
+        for k, (x0, slope) in enumerate(((CW_ * 0.18, 0.55), (CW_ * 0.62, -0.35), (CW_ * 0.85, -0.7))):
             dist = np.abs((xx - x0) - slope * yy) / np.sqrt(1 + slope ** 2)
-            rays += np.exp(-(dist / (CW * 0.03)) ** 2) * 0.035
+            rays += np.exp(-(dist / (CW_ * 0.03)) ** 2) * 0.035
         light = cone * 0.55 + pool * 0.35 + rays
         warm = np.array([255, 205, 130], np.float32)
         img = base + light[..., None] * warm
     else:
-        g = (yy / CH)[..., None]
+        g = (yy / CH_)[..., None]
         img = np.array([14, 11, 7], np.float32) * (1 - g) + np.array([26, 20, 12], np.float32) * g
-        step = 60 * CW / 1080
-        grid = ((np.mod(xx, step) < 1.2) | (np.mod(yy, step) < 1.2)).astype(np.float32) * 0.06
+        step = 60 * CW_ / 1080
+        grid = ((np.mod(xx, step) < 1.2 * q) | (np.mod(yy, step) < 1.2 * q)).astype(np.float32) * 0.06
         img = img * (1 - grid[..., None]) + np.array([212, 175, 55], np.float32) * grid[..., None]
-    r = np.sqrt(((xx - CW / 2) / (CW * 0.62)) ** 2 + ((yy - CH / 2) / (CH * 0.62)) ** 2)
+    r = np.sqrt(((xx - CW_ / 2) / (CW_ * 0.62)) ** 2 + ((yy - CH_ / 2) / (CH_ * 0.62)) ** 2)
     img *= np.clip(1.15 - 0.75 * r ** 2, 0.25, 1.0)[..., None]
     return Image.fromarray(img.clip(0, 255).astype(np.uint8)).convert("RGBA")
 
@@ -654,28 +692,30 @@ def measure_grade(src, info, face=None, n=10):
     return filt, note
 
 
-def fs06_clip(src, cropf, t0, d, out, kind="fs06"):
+def fs06_clip(src, cropf, t0, d, out, kind="fs06", q=1):
     """FS-06 (Skill 5.4/5.5 b): nền là chính cảnh quay làm mờ mạnh (≈40 px @1080), giảm bão hoà 55 %, tối, vignette;
     TR-PIP: người nói thu về khung góc vuông viền vàng góc trên phải (x615, y120, rộng 405) trong 0,6 s easeInOutQuint,
-    phóng ngược ra ở 0,6 s cuối. Nội suy affine dưới điểm ảnh (không làm tròn)."""
+    phóng ngược ra ở 0,6 s cuối. Nội suy affine dưới điểm ảnh (không làm tròn).
+    q = 2 (4K): đọc nguồn, dựng nền, khung người, viền, bụi thẳng ở OW×OH — người nói trong khung là điểm ảnh 4K gốc."""
     from PIL import ImageEnhance
     n = max(2, int(round(d * FPS)))
-    vf = ",".join(["fps=30"] + ([cropf] if cropf else []) + GRADE + [f"scale={CW}:{CH}:flags=lanczos", "format=rgb24"])
+    OW_, OH_ = CW * q, CH * q
+    vf = ",".join(["fps=30"] + ([cropf] if cropf else []) + GRADE + [f"scale={OW_}:{OH_}:flags=lanczos", "format=rgb24"])
     rd = subprocess.Popen(["ffmpeg", "-v", "error", "-ss", f"{t0:.3f}", "-i", src, "-frames:v", str(n), "-vf", vf, "-f", "rawvideo", "-"], stdout=subprocess.PIPE)
-    wr = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{CW}x{CH}", "-r", str(FPS), "-i", "-",
+    wr = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{OW_}x{OH_}", "-r", str(FPS), "-i", "-",
                            "-c:v", "libx264", "-preset", "medium", "-crf", "14", "-pix_fmt", "yuv420p", out], stdin=subprocess.PIPE)
-    yy, xx = np.mgrid[0:CH, 0:CW].astype(np.float32)
-    r = np.sqrt(((xx - CW / 2) / (CW * 0.62)) ** 2 + ((yy - CH / 2) / (CH * 0.62)) ** 2)
+    yy, xx = np.mgrid[0:OH_, 0:OW_].astype(np.float32)
+    r = np.sqrt(((xx - OW_ / 2) / (OW_ * 0.62)) ** 2 + ((yy - OH_ / 2) / (OH_ * 0.62)) ** 2)
     vig = np.clip(1.15 - 0.75 * r ** 2, 0.25, 1.0)[..., None]
-    static = fs_background(kind) if kind in ("fs05", "fs01") else None
+    static = fs_background(kind, q) if kind in ("fs05", "fs01") else None
     rng = np.random.default_rng(5)
     dx, dy = rng.uniform(0, CW, 160), rng.uniform(0, CH, 160)
     dvx, dvy, dph, drr = rng.uniform(-6, 6, 160), rng.uniform(-22, -6, 160), rng.uniform(0, 6.28, 160), rng.uniform(1.0, 2.6, 160)
     last = None
     for i in range(n):
-        buf = rd.stdout.read(CW * CH * 3)
-        if len(buf) == CW * CH * 3:
-            last = Image.frombytes("RGB", (CW, CH), buf)
+        buf = rd.stdout.read(OW_ * OH_ * 3)
+        if len(buf) == OW_ * OH_ * 3:
+            last = Image.frombytes("RGB", (OW_, OH_), buf)
         fr = last
         t = i / FPS
         p = min(ease_in_out_quint(t / 0.6), ease_in_out_quint((d - t) / 0.6))
@@ -686,22 +726,23 @@ def fs06_clip(src, cropf, t0, d, out, kind="fs06"):
             frame = static.copy()
             dd = ImageDraw.Draw(frame)
             for j in range(160):  # bụi vàng trôi chậm
-                x_, y_ = dx[j] + dvx[j] * t, (dy[j] + dvy[j] * t) % CH
+                x_, y_ = (dx[j] + dvx[j] * t) * q, ((dy[j] + dvy[j] * t) % CH) * q
                 a_ = int(255 * p * (0.25 + 0.3 * math.sin(dph[j] + 3 * t)))
                 if a_ > 6:
-                    dd.ellipse([x_ - drr[j], y_ - drr[j], x_ + drr[j], y_ + drr[j]], fill=(255, 214, 140, a_))
+                    rr_ = drr[j] * q
+                    dd.ellipse([x_ - rr_, y_ - rr_, x_ + rr_, y_ + rr_], fill=(255, 214, 140, a_))
         else:
             sm = fr.resize((270, max(2, int(270 * CH / CW))), Image.BILINEAR).filter(ImageFilter.GaussianBlur(5))
             sm = ImageEnhance.Brightness(ImageEnhance.Color(sm).enhance(0.45)).enhance(0.55)
-            bg = (np.asarray(sm.resize((CW, CH), Image.BICUBIC), dtype=np.float32) * vig).clip(0, 255).astype(np.uint8)
+            bg = (np.asarray(sm.resize((OW_, OH_), Image.BICUBIC), dtype=np.float32) * vig).clip(0, 255).astype(np.uint8)
             frame = Image.fromarray(bg).convert("RGBA")
         px_, py_, pw_ = LAY["pip"]
-        x, y, w = px_ * p, py_ * p, CW - (CW - pw_) * p
-        k = w / CW
-        lay = fr.convert("RGBA").transform((CW, CH), Image.AFFINE, (1 / k, 0, -x / k, 0, 1 / k, -y / k), resample=Image.BICUBIC, fillcolor=(0, 0, 0, 0))
+        x, y, w = px_ * q * p, py_ * q * p, OW_ - (OW_ - pw_ * q) * p
+        k = w / OW_
+        lay = fr.convert("RGBA").transform((OW_, OH_), Image.AFFINE, (1 / k, 0, -x / k, 0, 1 / k, -y / k), resample=Image.BICUBIC, fillcolor=(0, 0, 0, 0))
         frame.alpha_composite(lay)
         if p > 0.05:
-            ImageDraw.Draw(frame).rectangle([x - 1.5, y - 1.5, x + w + 1.5, y + w * CH / CW + 1.5], outline=rgb(GOLD) + (int(255 * min(1.0, (p - 0.05) / 0.2)),), width=3)
+            ImageDraw.Draw(frame).rectangle([x - 1.5 * q, y - 1.5 * q, x + w + 1.5 * q, y + w * OH_ / OW_ + 1.5 * q], outline=rgb(GOLD) + (int(255 * min(1.0, (p - 0.05) / 0.2)),), width=3 * q)
         wr.stdin.write(frame.convert("RGB").tobytes())
     rd.stdout.close()
     rd.wait()
@@ -710,10 +751,11 @@ def fs06_clip(src, cropf, t0, d, out, kind="fs06"):
         raise RuntimeError(f"không dựng được khung {kind.upper()}")
 
 
-def leak_clip(out, d=3.6):
+def leak_clip(out, d=3.6, q=1):
     """AN-12 chuyển chương bằng vệt sáng: light leak vàng ấm + 1 vệt chéo quét qua toàn khung (easeInOutQuint), 220 hạt bụi vàng; 3,6 s.
-    Lớp có alpha (gần với blend screen), chồng dưới logo và chữ."""
+    Lớp có alpha (gần với blend screen), chồng dưới logo và chữ. q = 2 (4K): dựng thẳng ở OW×OH (hạt bụi nét gốc)."""
     n = int(round(d * FPS))
+    OW_, OH_ = CW * q, CH * q
     sw, sh = 270, max(2, int(270 * CH / CW))
     Y, X = np.mgrid[0:sh, 0:sw].astype(np.float32)
     X /= sw
@@ -722,7 +764,7 @@ def leak_clip(out, d=3.6):
     px, py = rng.uniform(0, CW, 220), rng.uniform(0, CH, 220)
     vx, vy = rng.uniform(-14, 14, 220), rng.uniform(-30, -6, 220)
     ph, rr = rng.uniform(0, 6.28, 220), rng.uniform(1.2, 3.2, 220)
-    wr = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgba", "-s", f"{CW}x{CH}", "-r", str(FPS), "-i", "-",
+    wr = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgba", "-s", f"{OW_}x{OH_}", "-r", str(FPS), "-i", "-",
                            "-c:v", "png", "-pix_fmt", "rgba", out], stdin=subprocess.PIPE)
     ang = math.radians(35)
     for i in range(n):
@@ -738,14 +780,15 @@ def leak_clip(out, d=3.6):
         warm = np.clip(band / (blob + band + 1e-6), 0, 1)
         rgbm = np.stack([255 + 0 * warm, 205 + 40 * warm, 110 + 120 * warm], -1)
         small = np.concatenate([rgbm, (al * 255)[..., None]], -1).astype(np.uint8)
-        img = Image.fromarray(small).resize((CW, CH), Image.BICUBIC)
+        img = Image.fromarray(small).resize((OW_, OH_), Image.BICUBIC)
         dd = ImageDraw.Draw(img)
         env = math.sin(math.pi * u) ** 0.8
         for j in range(220):
-            x, y = px[j] + vx[j] * t, py[j] + vy[j] * t
+            x, y = (px[j] + vx[j] * t) * q, (py[j] + vy[j] * t) * q
             a_ = int(255 * env * (0.35 + 0.35 * math.sin(ph[j] + 5 * t)))
             if a_ > 8:
-                dd.ellipse([x - rr[j], y - rr[j], x + rr[j], y + rr[j]], fill=(255, 220, 140, a_))
+                r_ = rr[j] * q
+                dd.ellipse([x - r_, y - r_, x + r_, y + r_], fill=(255, 220, 140, a_))
         wr.stdin.write(img.tobytes())
     wr.stdin.close()
     if wr.wait() != 0:
@@ -1101,11 +1144,11 @@ class Chapter:
 
     def __init__(self, d):
         self.t0, self.t1 = d["t0"], d["t1"]
-        f = font("Times New Roman Bold Italic.ttf", 54 * SS)
+        f = font("Times New Roman Bold Italic.ttf", 54 * SS * RQ)
         num = str(d.get("num", ""))
         self.num = None
         if num:
-            c = Image.new("RGBA", (200 * SS, 80 * SS), (0, 0, 0, 0))
+            c = Image.new("RGBA", (200 * SS * RQ, 80 * SS * RQ), (0, 0, 0, 0))
             ImageDraw.Draw(c).text((0, 0), num, font=f, fill=(255, 255, 255, 255))
             bb = c.getbbox()
             self.num = c.crop(bb).resize((max(1, (bb[2] - bb[0]) // SS), max(1, (bb[3] - bb[1]) // SS)), Image.LANCZOS) if bb else None
@@ -1117,18 +1160,18 @@ class Chapter:
             return
         fade = min(1.0, (self.t1 - t) / 0.25)
         u = ease_cubic((t - self.t0) / 0.30)
-        box = Image.new("RGBA", (860, 314), (14, 11, 7, int(207 * u * fade)))
-        layer.alpha_composite(box, (110, 1132 - BAND_Y0))
+        box = Image.new("RGBA", (860 * RQ, 314 * RQ), (14, 11, 7, int(207 * u * fade)))
+        layer.alpha_composite(box, (110 * RQ, (1132 - BAND_Y0) * RQ))
         boxes.append(("gfx", (110, 1132, 970, 1446)))
         if self.num is not None and t >= self.t0 + 0.1:
-            layer.alpha_composite(with_alpha(self.num, ease_cubic((t - self.t0 - 0.1) / 0.3) * fade), (150, 1150 - BAND_Y0))
+            layer.alpha_composite(with_alpha(self.num, ease_cubic((t - self.t0 - 0.1) / 0.3) * fade), (150 * RQ, (1150 - BAND_Y0) * RQ))
         if t >= self.t0 + 0.15:
             v = ease_cubic((t - self.t0 - 0.15) / 0.45)
             im = with_alpha(self.name, v * fade)
-            layer.alpha_composite(im, (int(540 - im.width / 2), int(1290 - im.height / 2 + 14 * (1 - v)) - BAND_Y0))
+            layer.alpha_composite(im, (int(540 * RQ - im.width / 2), int(1290 * RQ - im.height / 2 + 14 * (1 - v) * RQ) - BAND_Y0 * RQ))
         if t >= self.t0 + 0.3:
             p_ = ease_cubic((t - self.t0 - 0.3) / 0.6)
-            ImageDraw.Draw(layer).line([(150, 1408 - BAND_Y0), (150 + 780 * p_, 1408 - BAND_Y0)], fill=rgb(GOLD) + (int(255 * fade),), width=3)
+            ImageDraw.Draw(layer).line([(150 * RQ, (1408 - BAND_Y0) * RQ), ((150 + 780 * p_) * RQ, (1408 - BAND_Y0) * RQ)], fill=rgb(GOLD) + (int(255 * fade),), width=3 * RQ)
 
 
 class Quote:
@@ -1173,7 +1216,7 @@ class Quote:
                 k += 1
             y += 82
         self.ul_y = y - 6
-        self.ul_w = min(760, max(220, max(i[0].width + i[1] for i in self.items) - min(i[1] for i in self.items)))
+        self.ul_w = min(760, max(220, max(dpx(i[0].width) + i[1] for i in self.items) - min(i[1] for i in self.items)))
         self.qmark = render_gold("“", 120)[0]
 
     def frame(self, t, layer, boxes):
@@ -1182,19 +1225,20 @@ class Quote:
         fade = min(1.0, (self.t1 - t) / 0.25)
         q = ease_cubic((t - self.t0) / 0.35)
         qm = with_alpha(scale_in(self.qmark, q), fade)
-        layer.alpha_composite(qm, (104, 1128 - BAND_Y0))
-        boxes.append(("gfx", (104, 1128, 104 + qm.width, 1128 + qm.height)))
+        layer.alpha_composite(qm, (104 * RQ, (1128 - BAND_Y0) * RQ))
+        boxes.append(("gfx", (104, 1128, 104 + dpx(qm.width), 1128 + dpx(qm.height))))
         for im, x, y, k in self.items:
             ts = self.t0 + 0.25 + k * self.step
             if t < ts:
                 continue
             u = ease_cubic((t - ts) / 0.22)
-            layer.alpha_composite(with_alpha(im, u * fade), (int(x), int(y + 8 * (1 - u)) - BAND_Y0))
-            boxes.append(("gfx", (int(x), int(y), int(x) + im.width, int(y) + im.height)))
+            layer.alpha_composite(with_alpha(im, u * fade), (int(x * RQ), int((y + 8 * (1 - u)) * RQ) - BAND_Y0 * RQ))
+            boxes.append(("gfx", (int(x), int(y), int(x) + dpx(im.width), int(y) + dpx(im.height))))
         tu = self.t0 + 0.25 + len(self.items) * self.step
         if t >= tu:
             p_ = ease_in_out_quint((t - tu) / 0.6)
-            ImageDraw.Draw(layer).line([(540 - self.ul_w / 2, self.ul_y - BAND_Y0), (540 - self.ul_w / 2 + self.ul_w * p_, self.ul_y - BAND_Y0)], fill=rgb(GOLD) + (int(255 * fade),), width=3)
+            ImageDraw.Draw(layer).line([((540 - self.ul_w / 2) * RQ, (self.ul_y - BAND_Y0) * RQ), ((540 - self.ul_w / 2 + self.ul_w * p_) * RQ, (self.ul_y - BAND_Y0) * RQ)],
+                                       fill=rgb(GOLD) + (int(255 * fade),), width=3 * RQ)
 
 
 def fit_label(text, fs=66, maxw=800):
@@ -1258,34 +1302,97 @@ def zoom_at(zooms, f):
     return 1 + sum((z["level"] - 1) * (S((f - z["t"] * FPS) / z["nin"]) - S((f - z["out"] * FPS) / z["nout"])) for z in zooms)
 
 
-def fill_zooms(zooms, units, prof, blocked, dur, cut_times=(), every=10.0):
-    """Lấp khoảng trống dài không zoom (bản v9 có 14 lần / 177 s): thêm zoom ×1,06 ở đầu câu phụ đề khi đã quá `every` giây
-    không có zoom; vẫn giữ mọi luật của place_zooms (giãn cách, không chạm sơ đồ / FS / minh hoạ, tránh mối cắt)."""
+# Punch-in nhẹ đồng bộ chữ nhấn (OWNER 26/10/2026: zoom còn thưa): một đường cong smootherstep NGẮN nằm trong cửa sổ chữ nhấn —
+# vào 0,4 s, giữ ≥ 0,8 s, ra 0,5 s, mức ×1,04 (chữ nhấn "shine" ×1,05). Vẫn một tâm, không "thở"; giãn cách tới zoom khác vẫn ≥ hồ sơ.
+# [AI SUY LUẬN — chưa có số trong Skill ESV 6.5, cần OWNER xem]
+PUNCH_IN, PUNCH_OUT, PUNCH_HOLD, PUNCH_HOLD_MAX = 12, 15, 0.8, 1.4
+PUNCH_MARGIN = 0.2  # punch-in không chồng sơ đồ / FS / B-roll / vệt sáng (lề 0,2 s thay ±1 s của zoom đầy đủ)
+
+
+def _zoom_end(z):
+    return z["out"] + z["nout"] / FPS
+
+
+def _zoom_fits(t, end, existing, gap, blocked, margin, cut_times, dur):
+    """Luật chung mọi lần zoom: xong trước cuối video 0,5 s; cách vùng chặn ≥ margin; hai đầu cách mối cắt ≥ 0,5 s;
+    cách MỌI zoom đã đặt (trước lẫn sau) ≥ giãn cách hồ sơ."""
+    if end > dur - 0.5:
+        return False
+    if any(not (end + margin <= a or t - margin >= b) for a, b in blocked):
+        return False
+    if any(abs(x - c) < 0.5 for c in cut_times for x in (t, end)):
+        return False
+    return all(end + gap <= z["t"] or t >= _zoom_end(z) + gap for z in existing)
+
+
+def punch_zooms(emph, prof, blocked, dur, cut_times=(), existing=()):
+    """Punch-in nhẹ trong cửa sổ từng chữ nhấn [(t0, t1, mức)]: bắt đầu 0,1 s trước chữ, ra hết trước khi chữ tắt (giữ ≥ 0,8 s, chữ
+    ngắn thì kéo ra tối đa 0,5 s sau khi chữ tắt). Bỏ nếu chạm vùng chặn, mối cắt hoặc giãn cách hồ sơ với zoom khác."""
+    gap = ZOOM_PROFILES[prof][3]
+    out_list = list(existing)
+    for t0, t1, lv in sorted(emph):
+        t = max(0.3, t0 - 0.1)
+        hold = min(PUNCH_HOLD_MAX, max(PUNCH_HOLD, t1 - PUNCH_OUT / FPS - (t + PUNCH_IN / FPS)))
+        o = t + PUNCH_IN / FPS + hold
+        end = o + PUNCH_OUT / FPS
+        if end > t1 + 0.5 or not _zoom_fits(t, end, out_list, gap, blocked, PUNCH_MARGIN, cut_times, dur):
+            continue
+        out_list.append({"t": round(t, 3), "out": round(o, 3), "level": lv, "nin": PUNCH_IN, "nout": PUNCH_OUT, "kind": "punch"})
+    return sorted(out_list, key=lambda z: z["t"])
+
+
+def fill_zooms(zooms, units, prof, blocked, dur, cut_times=(), every=10.0, words=()):
+    """Lấp khoảng trống dài không zoom (bản v9 có 14 lần / 177 s): khi đã ≥ `every` giây từ lúc zoom trước BẮT ĐẦU, thêm zoom ×1,06
+    theo hồ sơ; không đủ chỗ cho cả đường cong hồ sơ thì thêm punch-in nhẹ ×1,04 (vào 0,4 s / giữ 1,0 s / ra 0,5 s). Mốc ứng viên:
+    đầu câu phụ đề, đầu từng từ đã nghe rõ, và thời điểm SỚM NHẤT hợp lệ sau mỗi zoom (max(bắt đầu + every, kết thúc + giãn cách),
+    tròn lên khung — đầu zoom smootherstep có vận tốc 0 nên không cần trùng đầu từ); trước đây chỉ đầu câu → hụt chỗ trống vài trăm ms
+    là mất cả lần zoom. Giữ mọi luật:
+    giãn cách hồ sơ với zoom trước / sau, không chạm sơ đồ / FS / minh hoạ (±1 s; punch-in 0,2 s), tránh mối cắt, xong trước cuối video."""
     nin, nout, hold, gap = ZOOM_PROFILES[prof]
+    import heapq
     out = sorted(zooms, key=lambda z: z["t"])
-    for u in units:
-        t = max(0.3, u["start"] - 0.1)
-        o = t + nin / FPS + max(hold, 1.2)
-        end = o + nout / FPS
-        if end > dur - 0.5:
+
+    def earliest(z):
+        return round(math.ceil(max(z["t"] + every, _zoom_end(z) + gap) * FPS - 1e-6) / FPS, 3)
+    cands = sorted({round(max(0.3, u["start"] - 0.1), 3) for u in units}
+                   | {round(max(0.3, w["start"] - 0.1), 3) for w in words if not w.get("uncertain")}
+                   | {earliest(z) for z in out})
+    seen = set()
+    while cands:
+        t = heapq.heappop(cands)
+        if t in seen:
             continue
-        if any(not (end + 1.0 <= a or t - 1.0 >= b) for a, b in blocked):
-            continue
-        if any(abs(x - c) < 0.5 for c in cut_times for x in (t, end)):
+        seen.add(t)
+        if t < 1.5 and not any(z["t"] <= t for z in out):
             continue
         prev = [z for z in out if z["t"] <= t]
-        nxt = [z for z in out if z["t"] > t]
         # "every" = khoảng KHÔNG zoom tối đa (tính từ lúc zoom trước BẮT ĐẦU); giãn cách giữa hai zoom vẫn ≥ hồ sơ (OWNER 25/10/2026:
         # luật cũ đòi ≥ every giây SAU khi zoom trước kết thúc → video 36 s chỉ còn chỗ cho 1 zoom)
-        if prev and (t - prev[-1]["t"] < every or t - (prev[-1]["out"] + prev[-1]["nout"] / FPS) < gap):
+        if prev and t - prev[-1]["t"] < every:
             continue
-        if not prev and t < 1.5:
-            continue
-        if nxt and nxt[0]["t"] - end < gap:
-            continue
-        out.append({"t": round(t, 3), "out": round(o, 3), "level": 1.06, "nin": nin, "nout": nout})
+        o = t + nin / FPS + max(hold, 1.2)
+        if _zoom_fits(t, o + nout / FPS, out, gap, blocked, 1.0, cut_times, dur):
+            out.append({"t": t, "out": round(o, 3), "level": 1.06, "nin": nin, "nout": nout, "kind": "fill"})
+        else:
+            o = t + PUNCH_IN / FPS + 1.0
+            if not _zoom_fits(t, o + PUNCH_OUT / FPS, out, gap, blocked, PUNCH_MARGIN, cut_times, dur):
+                continue
+            out.append({"t": t, "out": round(o, 3), "level": 1.04, "nin": PUNCH_IN, "nout": PUNCH_OUT, "kind": "fill-punch"})
         out.sort(key=lambda z: z["t"])
+        heapq.heappush(cands, earliest(out[[z["t"] for z in out].index(t)]))
     return out
+
+
+def zoom_stats(zooms, dur):
+    """Mật độ zoom cho báo cáo / tự kiểm: số lần, giây / lần, khoảng KHÔNG zoom dài nhất (kể cả đầu / cuối video)."""
+    zs = sorted(zooms, key=lambda z: z["t"])
+    holes, last = [], 0.0
+    for z in zs:
+        holes.append(z["t"] - last)
+        last = max(last, _zoom_end(z))
+    holes.append(dur - last)
+    return {"count": len(zs), "secPerZoom": round(dur / len(zs), 1) if zs else None, "longestNoZoomSec": round(max(holes), 1),
+            "punch": sum(1 for z in zs if z.get("kind") in ("punch", "fill-punch"))}
 
 
 def pace_profile(units, words, n_cuts, dur, content=""):
@@ -1308,25 +1415,18 @@ def pace_profile(units, words, n_cuts, dur, content=""):
     return prof, {"syllablesPerSec": round(rate, 2), "cutsPerMin": round(cuts, 1), "content": content or "", "byRate": v1, "byCuts": v2, "byContent": v3, "why": why}
 
 
-def place_zooms(cands, prof, blocked, dur, cut_times=()):
-    """Đặt zoom ở ý quan trọng (mốc chữ nhấn): mức ×1,06–1,08; giữ ≥ hồ sơ; giãn cách ≥ hồ sơ; không chạm sơ đồ / FS / minh hoạ
-    (±1 s), không bắt đầu hay kết thúc trong ±0,5 s quanh mối cắt; zoom phải xong trước cuối video."""
+def place_zooms(cands, prof, blocked, dur, cut_times=(), existing=()):
+    """Đặt zoom ĐẦY ĐỦ theo hồ sơ ở ý quan trọng (mốc chữ nhấn): mức ×1,06–1,08; giữ ≥ hồ sơ; giãn cách ≥ hồ sơ với mọi zoom đã đặt;
+    không chạm sơ đồ / FS / minh hoạ (±1 s), không bắt đầu hay kết thúc trong ±0,5 s quanh mối cắt; zoom phải xong trước cuối video."""
     nin, nout, hold, gap = ZOOM_PROFILES[prof]
-    out_list = []
+    out_list = list(existing)
     for t, lv in sorted(cands):
         t = max(0.3, t - 0.1)
         o = t + nin / FPS + max(hold, 1.2)
-        end = o + nout / FPS
-        if end > dur - 0.5:
+        if not _zoom_fits(t, o + nout / FPS, out_list, gap, blocked, 1.0, cut_times, dur):
             continue
-        if any(not (end + 1.0 <= a or t - 1.0 >= b) for a, b in blocked):
-            continue
-        if any(abs(x - c) < 0.5 for c in cut_times for x in (t, end)):
-            continue
-        if out_list and t - (out_list[-1]["out"] + out_list[-1]["nout"] / FPS) < gap:
-            continue
-        out_list.append({"t": round(t, 3), "out": round(o, 3), "level": min(1.08, max(1.06, lv)), "nin": nin, "nout": nout})
-    return out_list
+        out_list.append({"t": round(t, 3), "out": round(o, 3), "level": min(1.08, max(1.06, lv)), "nin": nin, "nout": nout, "kind": "emphasis"})
+    return sorted(out_list, key=lambda z: z["t"])
 
 
 # ---------------------------------------------------------------- kế hoạch tự động (khi chưa có biên tập)
@@ -1687,8 +1787,8 @@ def plan_ngang(src, info, cropf, plan, words, emph, dias, fs_events, rev_spans, 
 
     dropped_emph = []
     for e in emph:  # chữ nhấn \an1 trái; đè mặt (hoặc trùng dòng miễn trừ góc trái) → sang phải; hai bên đều đè mặt → bỏ
-        w_ = e.img.width - 0.7 * e.fs
-        boxL = (NG.EMP_X, NG.EMP_BOTTOM - e.img.height * 0.8, NG.EMP_X + w_, NG.EMP_BOTTOM + 0.2 * e.fs)
+        w_ = dpx(e.img.width) - 0.7 * e.fs  # ảnh chữ ở cỡ ×RQ → hệ thiết kế 1920×1080
+        boxL = (NG.EMP_X, NG.EMP_BOTTOM - dpx(e.img.height) * 0.8, NG.EMP_X + w_, NG.EMP_BOTTOM + 0.2 * e.fs)
         boxR = (CW - NG.EMP_X - w_, boxL[1], CW - NG.EMP_X, boxL[3])
         fb = faces(e.t0, e.t1)
         left_ok = not any(_inter(boxL, q, 30) for q in fb) and not any(a_ < e.t1 and e.t0 < b_ for a_, b_ in rev_spans)
@@ -1787,7 +1887,8 @@ _DARK169 = {}
 
 
 def draw_ngang(t, cards, dias, dia_pos, emph, rev_spans, disc_img, units, sub_cache, fsub_ss, split3=None):
-    """Một khung lớp chữ 16:9 (1920×1080): thẻ ảnh → sơ đồ (trên nền tối mềm) → chữ nhấn → dòng miễn trừ → phụ đề."""
+    """Một khung lớp chữ 16:9 (1920×1080, ×RQ khi 4K): thẻ ảnh → sơ đồ (trên nền tối mềm) → chữ nhấn → dòng miễn trừ → phụ đề.
+    Thẻ ảnh / M3 do ngang.py vẽ ở hệ 1920×1080 (4K: phóng ×RQ); sơ đồ, chữ nhấn, dòng miễn trừ, phụ đề vẽ thẳng ở độ phân giải đích."""
     import ngang as NG
     layer = Image.new("RGBA", (CW, CH), (0, 0, 0, 0))
     boxes = []
@@ -1798,35 +1899,39 @@ def draw_ngang(t, cards, dias, dia_pos, emph, rev_spans, disc_img, units, sub_ca
         b = c.frame(t, layer)
         if b:
             boxes.append(("card", b))
+    if RQ != 1:
+        layer = layer.resize((CW * RQ, CH * RQ), Image.LANCZOS) if layer.getbbox() else Image.new("RGBA", (CW * RQ, CH * RQ), (0, 0, 0, 0))
+        if base3 is not None:
+            base3 = base3.resize((CW * RQ, CH * RQ), Image.LANCZOS)
     for d in dias:
         if not (d.t0 <= t < d.t1):
             continue
-        band = Image.new("RGBA", (W, BAND_Y1 - BAND_Y0), (0, 0, 0, 0))
+        band = Image.new("RGBA", (W * RQ, (BAND_Y1 - BAND_Y0) * RQ), (0, 0, 0, 0))
         d.frame(t, band, [])
-        g = band.crop((YEL[0], YEL[1] - BAND_Y0, YEL[2], YEL[3] - BAND_Y0)).resize(DIA169, Image.LANCZOS)
+        g = band.crop((YEL[0] * RQ, (YEL[1] - BAND_Y0) * RQ, YEL[2] * RQ, (YEL[3] - BAND_Y0) * RQ)).resize((DIA169[0] * RQ, DIA169[1] * RQ), Image.LANCZOS)
         x0, y0 = dia_pos.get(id(d), (125, 512))
         dk = max(0.0, min(1.0, (t - d.t0) / 0.3, (d.t1 - t) / 0.3))
-        if "d" not in _DARK169:  # nền tối mềm RGB(8,6,4) α ≤ 0,42 (A10), lùi vào trong để mép mờ không lọt title-safe
-            m = Image.new("L", (DIA169[0] + 100, DIA169[1] + 100), 0)
-            ImageDraw.Draw(m).rectangle((80, 60, DIA169[0] + 20, DIA169[1] + 40), fill=int(255 * 0.42))
+        if RQ not in _DARK169:  # nền tối mềm RGB(8,6,4) α ≤ 0,42 (A10), lùi vào trong để mép mờ không lọt title-safe
+            m = Image.new("L", ((DIA169[0] + 100) * RQ, (DIA169[1] + 100) * RQ), 0)
+            ImageDraw.Draw(m).rectangle((80 * RQ, 60 * RQ, (DIA169[0] + 20) * RQ, (DIA169[1] + 40) * RQ), fill=int(255 * 0.42))
             dd = Image.new("RGBA", m.size, (8, 6, 4, 255))
-            dd.putalpha(m.filter(ImageFilter.GaussianBlur(18)))
-            _DARK169["d"] = dd
-        layer.alpha_composite(with_alpha(_DARK169["d"], dk), (x0 - 50, y0 - 50))
-        layer.alpha_composite(g, (x0, y0))
+            dd.putalpha(m.filter(ImageFilter.GaussianBlur(18 * RQ)))
+            _DARK169[RQ] = dd
+        layer.alpha_composite(with_alpha(_DARK169[RQ], dk), ((x0 - 50) * RQ, (y0 - 50) * RQ))
+        layer.alpha_composite(g, (x0 * RQ, y0 * RQ))
         bb = g.getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox()
         if bb:
-            boxes.append(("gfx", (x0 + bb[0], y0 + bb[1], x0 + bb[2], y0 + bb[3])))
+            boxes.append(("gfx", dbox((x0 * RQ + bb[0], y0 * RQ + bb[1], x0 * RQ + bb[2], y0 * RQ + bb[3]))))
     for e in emph:
         e.frame(t, layer, boxes)
     for a_, b_ in rev_spans:  # R8.5: dòng miễn trừ trên hộp đen bo R11, phủ suốt câu
         if a_ <= t < b_ and disc_img is not None:
             al = min(1.0, (t - a_) / 0.15, (b_ - t) / 0.15)
-            x1 = max(NG.DISC["box"][2], NG.DISC["x"] + disc_img.width + 12)
-            bx = Image.new("RGBA", (x1 - NG.DISC["box"][0], NG.DISC["box"][3] - NG.DISC["box"][1]), (0, 0, 0, 0))
-            ImageDraw.Draw(bx).rounded_rectangle((0, 0, bx.width - 1, bx.height - 1), radius=NG.DISC["r"], fill=(0, 0, 0, int(255 * NG.DISC["alpha"])))
-            layer.alpha_composite(with_alpha(bx, al), (NG.DISC["box"][0], NG.DISC["box"][1]))
-            layer.alpha_composite(with_alpha(disc_img, al), (NG.DISC["x"], int(NG.DISC["cy"] - disc_img.height / 2)))
+            x1 = max(NG.DISC["box"][2], NG.DISC["x"] + dpx(disc_img.width) + 12)
+            bx = Image.new("RGBA", (int(round((x1 - NG.DISC["box"][0]) * RQ)), (NG.DISC["box"][3] - NG.DISC["box"][1]) * RQ), (0, 0, 0, 0))
+            ImageDraw.Draw(bx).rounded_rectangle((0, 0, bx.width - 1, bx.height - 1), radius=NG.DISC["r"] * RQ, fill=(0, 0, 0, int(255 * NG.DISC["alpha"])))
+            layer.alpha_composite(with_alpha(bx, al), (NG.DISC["box"][0] * RQ, NG.DISC["box"][1] * RQ))
+            layer.alpha_composite(with_alpha(disc_img, al), (NG.DISC["x"] * RQ, int(NG.DISC["cy"] * RQ - disc_img.height / 2)))
             boxes.append(("disc", (NG.DISC["box"][0], NG.DISC["box"][1], x1, NG.DISC["box"][3])))
     u = next((x for x in units if x["start"] <= t < x["end"]), None)
     if u:
@@ -1835,12 +1940,9 @@ def draw_ngang(t, cards, dias, dia_pos, emph, rev_spans, disc_img, units, sub_ca
             nxt = u["words"][k + 1]["start"] if k + 1 < len(u["words"]) else u["end"]
             if w["start"] <= t < max(nxt, w["end"]):
                 hl = k
-        key = (id(u), hl)
-        if key not in sub_cache:
-            sub_cache[key] = draw_subtitle(u, hl, fsub_ss, CW, NG.SUB_BOTTOM, NG.SUB_FS / 66)
-        img, ytop = sub_cache[key]
-        layer.alpha_composite(with_alpha(img, min(1.0, (t - u["start"]) / 0.045 + 0.0001)), (0, ytop))
-        bb = img.getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox()
+        img, ytop = sub_image(sub_cache, u, hl, lambda: draw_subtitle(u, hl, fsub_ss, CW, NG.SUB_BOTTOM, NG.SUB_FS / 66))
+        layer.alpha_composite(with_alpha(img, min(1.0, (t - u["start"]) / 0.045 + 0.0001)), (0, ytop * RQ))
+        bb = dbox(img.getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox())
         if bb:
             boxes.append(("sub", (bb[0], bb[1] + ytop, bb[2], bb[3] + ytop)))
     if base3 is not None:
@@ -1875,7 +1977,7 @@ def main():
     ap.add_argument("--ai-plan", action="store_true", help="bỏ kế hoạch có sẵn, để biên tập AI tại máy lập lại (scripts/video/ai_plan.py)")
     ap.add_argument("--quality", default="1080", choices=["1080", "4k"], help="4k = xuất gấp đôi (2160x3840 / 3840x2160) khi nguồn đủ điểm ảnh")
     a = ap.parse_args()
-    global CW, CH, LAY
+    global CW, CH, LAY, RQ
     LAY = make_layout(a.aspect)
     CW, CH = LAY["CW"], LAY["CH"]
     job = P.Job(a.job_dir)
@@ -1915,6 +2017,9 @@ def main():
     if script_text:
         import script_align
         script_fixes = script_align.correct(words, script_text)
+    # Kế hoạch cũ GIỮ LẠI trước khi bỏ: "AI biên tập lại" cùng lời nói thì ai_plan dùng lại bảng phân tích cấu trúc (ai.analysis, khớp
+    # digest lời nói) thay vì gọi lại mô hình. Kế hoạch theo luật không có ai.analysis → ai_plan tự phân tích như thường.
+    prev_plan = plan if isinstance(plan, dict) else None
     if plan is not None and str(plan.get("by", "")).startswith("Luật tự động"):
         plan = None  # kế hoạch máy lập ở bản trước: lập lại (AI nếu có mô hình, không thì luật mới nhất)
     if a.ai_plan:
@@ -1929,7 +2034,8 @@ def main():
             import ai_plan
             job.progress("aiplan", "Biên tập AI: đọc lời nói, chọn chữ nhấn / sơ đồ / minh hoạ (mô hình tại máy)", 31)
             plan = ai_plan.plan(words, dur, broll_library(broll_dir), (script_text[:1200] + (f" Từ khoá: {a.keywords}" if a.keywords else "")).strip(),
-                                log=lambda m: print(m, file=sys.stderr), music_genres=music_genres(music_library(os.environ.get("DATA_DIR", os.path.join(P.ROOT, "data")))))
+                                log=lambda m: print(m, file=sys.stderr), music_genres=music_genres(music_library(os.environ.get("DATA_DIR", os.path.join(P.ROOT, "data")))),
+                                prev=prev_plan)  # ép phân tích lại: BAOR_AI_REANALYZE=1 (ai_plan đọc)
             if plan is None:
                 ai_note = " Biên tập AI: không có mô hình tại máy (llama-server) hoặc Đội AI đang tắt → lập theo luật."
             else:
@@ -1975,6 +2081,7 @@ def main():
         else:
             quality_note = f"chọn 4K nhưng vùng cắt nguồn chỉ {cw}x{chh} (< 90 % của {2 * CW}x{2 * CH}) → xuất 1080 để không phóng to giả"
     OW, OH = CW * Q, CH * Q
+    RQ = Q  # lớp chữ / đồ hoạ, FS-06, vệt sáng vẽ thẳng ở OW×OH
     # Cân sáng / màu nhẹ (S5): đo trên đúng vùng sẽ xuất, chỉ chỉnh khi lệch rõ
     if a.no_grade:
         GRADE[:], grade_note = [], "tắt (--no-grade)"
@@ -1990,7 +2097,7 @@ def main():
     FULL = a.aspect == "16:9"  # Skill Edit Video Ngang: lớp chữ / thẻ ảnh vẽ toàn khung 1920×1080 (không dùng dải chữ 9:16)
     SUBFS = 48 if FULL else 66
     fsub = font("Times New Roman Italic.ttf", SUBFS)
-    fsub_ss = font("Times New Roman Italic.ttf", SUBFS * SS)
+    fsub_ss = font("Times New Roman Italic.ttf", SUBFS * SS * RQ)
     units = build_sub_units(words, fsub, 1500 if FULL else None)
     Emphasis.mode169 = FULL
     emph = [Emphasis(e, words) for e in plan.get("emphasis", [])]
@@ -2030,8 +2137,14 @@ def main():
         prof, pace = pace_profile(units, words, len(cut_times) + len(plan.get("broll", [])) + 2 * len(fs_events) + len(leaks), dur, plan.get("content", ""))
     zooms = [z for z in plan.get("zooms", []) if "nin" in z]
     if not zooms:
-        zooms = place_zooms([(e.t0, 1.08 if e.style == "shine" else (1.07 if e.style == "blur" else 1.06)) for e in emph], prof, blocked, dur, cut_times)
-        zooms = fill_zooms(zooms, units, prof, blocked, dur, cut_times, every=6.0)  # OWNER 25/10/2026: không để video thưa (cũ 10 s)
+        # OWNER 26/10/2026 "zoom còn thưa": mỗi chữ nhấn một punch-in nhẹ trong cửa sổ chữ (ngắn → chừa chỗ cho zoom lấp trống);
+        # chữ nhấn không đặt được punch-in (chạm vùng chặn / giãn cách) thì thử zoom đầy đủ như cũ; rồi lấp trống ≥ 6 s.
+        live = [e for e in emph if e.t1 > e.t0]
+        zooms = punch_zooms([(e.t0, e.t1, 1.05 if e.style == "shine" else 1.04) for e in live], prof, blocked, dur, cut_times)
+        done = {round(max(0.3, e.t0 - 0.1), 3) for e in live} & {z["t"] for z in zooms}
+        zooms = place_zooms([(e.t0, 1.08 if e.style == "shine" else (1.07 if e.style == "blur" else 1.06)) for e in live
+                             if round(max(0.3, e.t0 - 0.1), 3) not in done], prof, blocked, dur, cut_times, existing=zooms)
+        zooms = fill_zooms(zooms, units, prof, blocked, dur, cut_times, every=6.0, words=words)  # OWNER 25/10/2026: không để video thưa (cũ 10 s)
     cards, card_skips, dia_pos, track169, split3 = [], [], {}, [], None
     if FULL:
         cards, card_skips, dia_pos, track169 = plan_ngang(src, info, cropf, plan, words, emph, dias, fs_events, rev_spans, zooms, (ax * CW, ay * CH), broll_dir, m3)
@@ -2046,8 +2159,8 @@ def main():
                                float(np.median(fcs)) if fcs else ax * CW,
                                [NG.load_media(os.path.join(broll_dir, x["file"]), NG.M3_TILE, yc=float(lib_[x["file"]].get("yc", 0.38)))[0].resize(NG.M3_TILE) for x in m3["tiles"]])
     frame_boxes = {}
-    yy_ = np.arange(BH, dtype=np.float32)
-    xx_ = np.arange(W, dtype=np.float32)
+    yy_ = np.arange(BH, dtype=np.float32) if RQ == 1 else (np.arange(BH * RQ, dtype=np.float32) + 0.5) / RQ - 0.5
+    xx_ = np.arange(W, dtype=np.float32) if RQ == 1 else (np.arange(W * RQ, dtype=np.float32) + 0.5) / RQ - 0.5
     # vào / ra 150 px theo chiều dọc và 180 px hai bên: không cạnh (ở tỷ lệ khác 9:16 dải chữ không phủ hết bề ngang)
     DARK_RAMP = 0.55 * (np.clip(yy_ / 150.0, 0, 1) * np.clip((BH - yy_) / 150.0, 0, 1))[:, None] * (np.clip(xx_ / 180.0, 0, 1) * np.clip((W - xx_) / 180.0, 0, 1))[None, :]
     for f in range(N):
@@ -2055,7 +2168,7 @@ def main():
         if FULL:
             layer, boxes = draw_ngang(t, cards, dias, dia_pos, emph, rev_spans, disc_img, units, sub_cache, fsub_ss, split3)
             # title-safe đo trên lớp NỘI DUNG (chữ / thẻ / ô / sơ đồ), không đo nền M3 đục toàn khung
-            abb = (layer[1] if isinstance(layer, tuple) else layer).getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox()
+            abb = dbox((layer[1] if isinstance(layer, tuple) else layer).getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox())
             layer = layer[0] if isinstance(layer, tuple) else layer
             import ngang as NG
             if abb and (abb[0] < NG.SAFE[0] or abb[1] < NG.SAFE[1] or abb[2] > NG.SAFE[2] or abb[3] > NG.SAFE[3]):
@@ -2071,7 +2184,7 @@ def main():
             if f % 150 == 0:
                 job.progress("draw", f"Vẽ lớp chữ / thẻ ảnh {f}/{N} khung", 45 + int(25 * f / N))
             continue
-        layer = Image.new("RGBA", (W, BH), (0, 0, 0, 0))
+        layer = Image.new("RGBA", (W * RQ, BH * RQ), (0, 0, 0, 0))
         boxes = []
         for d in dias:
             d.frame(t, layer, boxes)
@@ -2082,9 +2195,9 @@ def main():
             if a_ <= t < b_:
                 al = min(1.0, (t - a_) / 0.15, (b_ - t) / 0.15)
                 im = with_alpha(disc_img, 0.92 * al)
-                x_, y_ = int(540 - im.width / 2), 1124
-                layer.alpha_composite(im, (x_, y_ - BAND_Y0))
-                boxes.append(("disc", (x_, y_, x_ + im.width, y_ + im.height)))
+                x_, y_ = int(540 * RQ - im.width / 2), 1124 * RQ
+                layer.alpha_composite(im, (x_, y_ - BAND_Y0 * RQ))
+                boxes.append(("disc", dbox((x_, y_, x_ + im.width, y_ + im.height))))
         u = next((x for x in units if x["start"] <= t < x["end"]), None)
         if u:
             hl = -1
@@ -2092,18 +2205,15 @@ def main():
                 nxt = u["words"][k + 1]["start"] if k + 1 < len(u["words"]) else u["end"]
                 if w["start"] <= t < max(nxt, w["end"]):
                     hl = k
-            key = (id(u), hl)
-            if key not in sub_cache:
-                sub_cache[key] = draw_subtitle(u, hl, fsub_ss)
-            img, ytop = sub_cache[key]
+            img, ytop = sub_image(sub_cache, u, hl, lambda: draw_subtitle(u, hl, fsub_ss))
             a_in = min(1.0, (t - u["start"]) / 0.045 + 0.0001)
             img2 = with_alpha(img, a_in)
-            layer.alpha_composite(img2, (0, ytop - BAND_Y0))
-            bb = img.getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox()
+            layer.alpha_composite(img2, (0, (ytop - BAND_Y0) * RQ))
+            bb = dbox(img.getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox())
             if bb:
                 boxes.append(("sub", (bb[0], bb[1] + ytop, bb[2], bb[3] + ytop)))
         # Kiểm F/I/H: điểm ảnh chữ trong VÀNG (+19 px), phụ đề không chồng chữ nhấn / đồ hoạ
-        abb = layer.getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox()
+        abb = dbox(layer.getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox())
         if abb and (abb[0] < YEL[0] - 19 or abb[2] > YEL[2] + 19 or abb[1] + BAND_Y0 < YEL[1] - 19 or abb[3] + BAND_Y0 > YEL[3] + 19):
             bad_zone += 1
         if f % 15 == 0:  # lưu hộp chữ / đồ hoạ mỗi 0,5 s cho kiểm J ở tỷ lệ khác 9:16
@@ -2116,7 +2226,7 @@ def main():
         # Vẽ SAU khi đo G / H / I (lớp tối không phải chữ).
         dk = max([min(1.0, (t - d_.t0) / 0.3, (d_.t1 - t) / 0.3) for d_ in dias if d_.t0 <= t < d_.t1] or [0.0])
         if dk > 0.01:
-            dark = Image.fromarray(np.zeros((BH, W, 4), np.uint8))
+            dark = Image.fromarray(np.zeros((BH * RQ, W * RQ, 4), np.uint8))
             dark.putalpha(Image.fromarray((DARK_RAMP * dk * 255).astype(np.uint8)))
             dark.alpha_composite(layer)
             layer = dark
@@ -2256,7 +2366,7 @@ def main():
         t0_, d_ = float(fsd["t0"]), float(fsd["t1"]) - float(fsd["t0"])
         job.progress("encode", f"Dựng khung FS-06 {k + 1}/{len(fs_events)}", 78)
         clip = job.p("work", f"fs_{k}.mp4")
-        fs06_clip(src, cropf, t0_, d_, clip, fsd["type"])
+        fs06_clip(src, cropf, t0_, d_, clip, fsd["type"], Q)
         b_args += ["-i", clip]
         b_fc += (f"[{n_in}:v]fps=30,scale={OW}:{OH}:flags=lanczos,setsar=1,format=yuv420p,setpts=PTS-STARTPTS+{t0_:.3f}/TB[fs{k}];"
                  f"[{last}][fs{k}]overlay=0:0:enable='between(t,{t0_:.3f},{t0_ + d_:.3f})':eof_action=pass[fsb{k}];")
@@ -2264,7 +2374,7 @@ def main():
     for k, lk in enumerate(leaks):
         t0_ = float(lk["t0"])
         clip = job.p("work", f"leak_{k}.mov")
-        leak_clip(clip, 3.6)
+        leak_clip(clip, 3.6, Q)
         b_args += ["-i", clip]
         b_fc += (f"[{n_in}:v]format=rgba,scale={OW}:{OH}:flags=lanczos,setpts=PTS-STARTPTS+{t0_:.3f}/TB[lk{k}];"
                  f"[{last}][lk{k}]overlay=0:0:format=auto:enable='between(t,{t0_:.3f},{t0_ + 3.6:.3f})':eof_action=pass[lkb{k}];")
@@ -2312,7 +2422,8 @@ def main():
     lx_expr = f"{LAY['logo_x'] * Q}-{12 * Q}*pow(1-min(max((t-0.3)/0.6\\,0)\\,1)\\,3)"
     fc = (f"[0:v]{','.join(vf)}[bg0];{b_fc}[{last}]null[bg];"
           + (logo_filter(logo_sched, "1:v", f"{n_in}:v", logo_w * Q, lx_expr, LAY["logo_y"] * Q) if logo_w else "[bg]null[l];")
-          + (f"[2:v]format=rgba[tx];" if ((LAY["s"] == 1.0 or FULL) and Q == 1) else f"[2:v]format=rgba,scale=iw*{(1.0 if FULL else LAY['s']) * Q}:ih*{(1.0 if FULL else LAY['s']) * Q}:flags=lanczos[tx];")
+          # lớp chữ đã vẽ ở OW×OH (×RQ): chỉ còn thu dải chữ 9:16 theo tỷ lệ khác (s < 1), không phóng 4K
+          + (f"[2:v]format=rgba[tx];" if (LAY["s"] == 1.0 or FULL) else f"[2:v]format=rgba,scale=iw*{LAY['s']}:ih*{LAY['s']}:flags=lanczos[tx];")
           + f"[l][tx]overlay={0 if FULL else LAY['tx'] * Q}:{0 if FULL else LAY['ty'] * Q}:format=auto,fade=t=out:st={max(0.0, dur - 0.9):.3f}:d=0.9,format=yuv420p[v]")
     master = job.p("master.mp4")
     P.sh(["ffmpeg", "-v", "error", "-y", "-i", src, "-loop", "1", "-i", a.logo, "-framerate", str(FPS), "-start_number", "0", "-i", os.path.join(tdir, "%06d.png"),
@@ -2406,18 +2517,22 @@ def main():
         add("F", "Bố cục: logo vùng XANH, chữ vùng VÀNG", "pass", "16:9: không chèn logo tới khi có vị trí chuẩn (Skill Edit Video Ngang R8.6, #34c)")
     else:
         lw0, lh0 = Image.open(a.logo).size
-        lb = (LAY["logo_x"], LAY["logo_y"], LAY["logo_x"] + LAY["logo_w"], LAY["logo_y"] + round(LAY["logo_w"] * lh0 / lw0))
+        # Ghi theo ĐỘ PHÂN GIẢI THẬT của bản chính (4K: toạ độ thiết kế ×Q, đúng như logo đã phủ ở bước xuất)
+        lwq = LAY["logo_w"] * Q
+        lb = (LAY["logo_x"] * Q, LAY["logo_y"] * Q, LAY["logo_x"] * Q + lwq, LAY["logo_y"] * Q + round(lwq * lh0 / lw0))
+        at = f" @{OW}x{OH}" + (" (số skill @1080 ×2)" if Q == 2 else "")
         if a.aspect == "9:16":
-            inside = lb[0] >= 64 and lb[1] >= 51 and lb[2] <= 425 and lb[3] <= 248
+            gz = tuple(v * Q for v in (64, 51, 425, 248))
+            inside = lb[0] >= gz[0] and lb[1] >= gz[1] and lb[2] <= gz[2] and lb[3] <= gz[3]
             add("F", "Bố cục: logo vùng XANH, chữ vùng VÀNG", "pass" if inside else "fail",
-                f"logo rộng {LAY['logo_w']} tại ({lb[0]},{lb[1]}) hộp x{lb[0]}–{lb[2]} y{lb[1]}–{lb[3]} {'trong' if inside else 'NGOÀI'} XANH x64–425 y51–248 (Skill ESV v0.1.r2 B7)")
+                f"logo rộng {lwq} tại ({lb[0]},{lb[1]}) hộp x{lb[0]}–{lb[2]} y{lb[1]}–{lb[3]} {'trong' if inside else 'NGOÀI'} XANH x{gz[0]}–{gz[2]} y{gz[1]}–{gz[3]}{at} (Skill ESV v0.1.r2 B7)")
         else:
-            add("F", "Bố cục: logo vùng XANH, chữ vùng VÀNG", "pass", f"logo rộng {LAY['logo_w']} tại ({lb[0]},{lb[1]}) — tỷ lệ {a.aspect}: thu theo khung [AI SUY LUẬN, skill chưa có số]")
+            add("F", "Bố cục: logo vùng XANH, chữ vùng VÀNG", "pass", f"logo rộng {lwq} tại ({lb[0]},{lb[1]}){at} — tỷ lệ {a.aspect}: thu theo khung [AI SUY LUẬN, skill chưa có số]")
     if FULL:
         add("G", "Chữ / đồ hoạ / thẻ ảnh trong title-safe 5 % (Ngang R3.0.2, R9.2)", "pass" if bad_zone == 0 else "fail",
-            f"{bad_zone} khung có điểm ảnh (α > 40) ngoài (96,54)–(1824,1026)" + (f": {bad_safe[:6]}" if bad_safe else ""))
+            f"{bad_zone} khung có điểm ảnh (α > 40) ngoài ({96 * Q},{54 * Q})–({1824 * Q},{1026 * Q}) @{OW}x{OH}" + (f": {bad_safe[:6]} (toạ độ thiết kế 1920×1080)" if bad_safe else ""))
     else:
-        add("G", "Đồ hoạ trong VÀNG", "pass" if bad_zone == 0 else "fail", f"{bad_zone} khung có điểm ảnh ngoài VÀNG (+19 px)")
+        add("G", "Đồ hoạ trong VÀNG", "pass" if bad_zone == 0 else "fail", f"{bad_zone} khung có điểm ảnh ngoài VÀNG (+19 px)" + (f"; lớp chữ vẽ thẳng {OW}x{OH}, đo ở hệ thiết kế 1080 (÷{Q})" if Q > 1 else ""))
     add("H", "Phụ đề không chồng chữ nhấn / đồ hoạ", "pass" if overlap == 0 else "fail", f"{overlap} khung chồng")
     if FULL:
         add("I", "Quét điểm ảnh chữ ngoài VÀNG", "na", "16:9 không có vùng VÀNG cố định (C-K.3) — đo title-safe ở G")
@@ -2500,8 +2615,8 @@ def main():
     else:
         add("S", "SFX: mỗi cú ≤ −19 dB so giọng; 0 SFX trên zoom", "na", sfx_info.get("reason", "không có cú SFX"))
     add("T", "Phụ đề không phát sáng; PA B \\pos(540,1600)" if a.aspect != "16:9" else "Phụ đề không phát sáng; \\an2\\pos(960,1015) (Ngang R8.1)", "pass",
-        ("không lớp phát sáng; đáy phụ đề y1600 @1080x1920 (PA B)" + ("" if a.aspect == "9:16" else f" trong dải chữ thu ×{LAY['s']} cho {a.aspect}")) if a.aspect != "16:9" else
-        "16:9: không lớp phát sáng; Times Italic 48 (96 @4K), đáy y1015 (y2030 @4K) — số skill ghi CHƯA DỰNG THỬ, nay đã dựng thật (1017)")
+        (f"không lớp phát sáng; đáy phụ đề y{1600 * Q} @{1080 * Q}x{1920 * Q} (PA B)" + ("" if a.aspect == "9:16" else f" trong dải chữ thu ×{LAY['s']} cho {a.aspect}")) if a.aspect != "16:9" else
+        f"16:9: không lớp phát sáng; Times Italic {48 * Q}, đáy y{1015 * Q} @{OW}x{OH} — số skill ghi CHƯA DỰNG THỬ, nay đã dựng thật (1017 @1920x1080)")
     add("V", "Cân sáng / màu nhẹ (đo trước, chỉ chỉnh khi lệch rõ)", "info", grade_note)
     add("K", "So với bản trước", "na", "chưa so khung tự động với bản trước (dựng lại từ RAW)")
     add("L", "Độ đọc chữ trắng trên nền sáng", "info", "kiểm bằng mắt khi duyệt")
@@ -2530,7 +2645,7 @@ def main():
         f"{font_note}; {m_note}; {b_note}; SFX: {sfx_info.get('source', 'không')}" + (f" — {odq}" if p_ok and not font_lic else ""))
     add("Q", "Câu doanh thu / thu nhập / kết quả có dòng 'Kết quả cá nhân, không cam kết'", "pass",
         "không phát sinh" if not rev_spans else f"{len(rev_spans)} đoạn có dòng phủ suốt câu: {[[round(a_, 1), round(b_, 1)] for a_, b_ in rev_spans][:6]}"
-        + (" (hộp đen bo R11 tại x100–628 y861–919, Ngang R8.5)" if FULL else " (vị trí tạm: đỉnh vùng chữ, chờ OWNER chốt)"))
+        + (f" (hộp đen bo R{11 * Q} tại x{100 * Q}–{628 * Q} y{861 * Q}–{919 * Q} @{OW}x{OH}, Ngang R8.5)" if FULL else " (vị trí tạm: đỉnh vùng chữ, chờ OWNER chốt)"))
     onscreen = [e.text for e in emph] + [x for d in plan.get("diagrams", []) for x in
                 [d.get("wrong", {}).get("text", ""), d.get("top", {}).get("text", ""), d.get("bottom", {}).get("text", ""), d.get("mid", {}).get("text", "") if d.get("mid") else ""]
                 + [r["text"] for r in d.get("right", [])] + [st["text"] for st in d.get("steps", [])] + [d.get("text", "") if d.get("type") in ("chapter", "quote") else ""]]
@@ -2558,12 +2673,12 @@ def main():
                    "keep": [[a_, b_] for a_, b_ in keep] if keep else None},
         "transcript": {"words": len(words), "uncertain": uncertain, "corrections": fixes, "secondModel": None if a.words else a.model2,
                        "script": bool(script_text), "scriptFixes": script_fixes[:200]},
-        "captions": {"units": len(units)},
+        "captions": {"units": len(units), "maxWordsPerUnit": max([len(u["words"]) for u in units] or [0]), "subCacheMax": sub_cache.get("_max", 0)},
         "emphasis": [{"t": round(e.t0, 2), "text": e.text, "kind": e.style} for e in emph],
         "broll": {"events": brolls, "skipped": card_skips},
         "diagrams": [{"type": d["type"], "t0": d["t0"], "t1": d.get("t1", d["t0"] + 3.6)} for d in plan.get("diagrams", [])],
         "emphasisDropped": n_emph_plan - len(emph),
-        "zoom": {"formula": "r3 smootherstep, một tâm, không zoom thở", "profile": prof, "pace": pace, "events": zooms, "anchor": [round(ax, 3), round(ay, 3)], "faceDetected": face_ok},
+        "zoom": {"formula": "r3 smootherstep, một tâm, không zoom thở", "profile": prof, "pace": pace, "events": zooms, **zoom_stats(zooms, dur), "anchor": [round(ax, 3), round(ay, 3)], "faceDetected": face_ok},
         "logo": {"schedule": [list(x) for x in logo_sched], "files": [os.path.basename(x) for x in logo_in],
                  "bgLuma": [round(v[0], 3) for v in (logo_meas or {}).get("bg", [])], "darkSource": (logo_meas or {}).get("dark", "")} if logo_w else None,
         "audio": {"lufs": mI, "truePeak": mTP, "previewTruePeak": pTP, "music": music_info, "sfx": sfx_info},

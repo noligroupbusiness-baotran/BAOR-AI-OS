@@ -114,6 +114,24 @@ OWNER 25/10/2026 (tối): edit video LẠI ("edit lại đi") — lệnh "ngưng
       (kể cả Mixkit) để bản dựng có nhạc, giấy phép giữ nguyên văn → bảng kiểm P CHẶN ĐĂNG tới khi OWNER nghe duyệt bài (§7).
       Cũng xong (commit kế): chống trùng bài cùng Page ID (kể cả lên lịch 2 lần riêng / thử lại / dry-run), từ chối quyền ở Cài đặt mở đúng
       nhóm + hiện thông báo (toast trước #neo), sổ chi phí AI ghi đúng token khi parse lỗi sau khi hãng đã tính tiền (tính vào trần).
+   P. XONG (commit kế, OWNER 25–26/10) — Giao diện + kiểm toán logic:
+      - Theme: nền sáng ngà #f5f2ea và nền tối xanh rừng #0f1a14 (lấy từ màn đăng nhập gốc), icon chip màu theo nhóm, nút xanh ngọc,
+        hiệu ứng vào trang (tắt khi giảm chuyển động), video nền màn đăng nhập kèm nút bật / tắt nhỏ. Giữ font gốc. Luật "Giao diện ít chữ,
+        nút bấm" ghi vào §7 chuẩn vận hành + CLAUDE.md.
+      - Hành trình 7 bước. Menu "Khác" = Chiến dịch · Lead · Tư liệu (/assets mới). Insight → tab bước 1, Báo cáo → tab "Số liệu" bước 7,
+        Automation → Cài đặt › Tự động. Liên kết cũ chuyển hướng đúng. Cài đặt và Quảng cáo làm gọn.
+      - Sửa cuộn: html / body overflow-x: clip, thay hidden (menu trái / thanh trên sticky từng trôi theo trang, có cả trên production).
+      - Kiểm toán logic 26/10 (2 kiểm toán độc lập + 5 vòng phản biện):
+        - Bài chữ nay qua cổng chế độ thử / chống trùng / đọc lại. Bài quá hạn > 6 h thành "Quá hạn" (huỷ / xếp lại có chọn giờ);
+          bài mẫu không bao giờ đăng. Khoá chạy nền chống chồng.
+        - Cổng OWNER: nhân sự không thể mang email OWNER (lỗ hổng cũ). Ủy quyền ngân sách, tắt chế độ thử, xác nhận kiểm trang chỉ OWNER.
+        - Số đếm một nguồn (src/lib/attention.ts): lỗi dựng cũ tự đóng; Dừng không phải lỗi; giờ VN cho trần AI;
+          nhịp tim máy dựng ngay khi nhận việc; nghiên cứu kẹt tự thu hồi.
+        - Số liệu mẫu có nhãn "Mẫu", tách khỏi số thật. Dọn chữ bán hàng còn sót.
+        - refreshSampleCopy chỉ đổi chữ HIỂN THỊ của bản ghi mẫu còn nguyên chữ cũ, không bao giờ đổi trường mang hành vi
+          (FAQ / luật tự động).
+      - SAU KHI TRIỂN KHAI: OWNER bấm "Đăng xuất mọi thiết bị" một lần (phiên cấp cho bản ghi nhân sự trùng email OWNER trước đây
+        không phân biệt được với phiên OWNER).
    CHỜ OWNER: khoá Meta / Google / YouTube / TikTok (đăng bài + quảng cáo 7.2–7.5), hồ sơ cá nhân Facebook (6.2.1.1).
 2. Skill ESV + Skill Edit Video Ngang v0.1.r2 — XONG phần Phần chung A (4255aca, ff638df): nhạc A5 (chưa có bài đạt → KHÔNG nhạc),
    SFX OWNER theo vai trò, cắt lặng A11.4 (+ bảo vệ khoảng có từ), xem trước 720p, số A13, ảnh theo mô tả nội dung A4.1.
@@ -122,28 +140,37 @@ OWNER 25/10/2026 (tối): edit video LẠI ("edit lại đi") — lệnh "ngưng
    XONG (commit kế): logo sáng / tối theo cảnh A16.1.4 (đo nền ô logo 4 mẫu/s trên đúng nền sẽ xuất, ngưỡng 0,55 ±0,03, giữ ≥ 2 s, mờ 0,2 s;
    bảng kiểm N đo lại trên bản chính; lỗi đo → logo sáng + N unmeasured, không chết lần dựng) — ngưỡng / giữ 2 s do AI chọn, CHỜ OWNER duyệt;
    bản logo tối thương hiệu (baor-dark.png, chữ ánh kim có phần gần trắng) khó đọc trên nền rất sáng — OWNER xem có cần bản tối đặc màu;
-   4K (D-04): --quality=4k (crop ≥ 90 % 4K mới xuất 4K; lớp chữ / FS-06 là bản 1080 phóng ×2). Dựng lại "1011(1)" v_mvnu9i50atbkj bản 7:
+   4K (D-04): --quality=4k (crop ≥ 90 % 4K mới xuất 4K; chữ / sơ đồ / FS-06 / vệt sáng vẽ gốc 4K từ 26/10). Dựng lại "1011(1)" v_mvnu9i50atbkj bản 7:
    5 chữ nhấn, nhạc kho (chờ OWNER duyệt bài → P chặn đăng), bảng kiểm đạt trừ P. OWNER 25/10 "không có hiệu ứng, animation, vẽ khung":
    bộ lập kế hoạch AI nay tự đặt FS-06 (khung toàn màn hình, người nói thu vào khung viền vàng) kèm sơ đồ / trích dẫn và vệt sáng trước
    khung chương (trước đây chỉ kế hoạch làm tay có); cụm mô hình viết diễn giải → hỏi lại chép nguyên văn; "X thì Y" trích vế chính;
    zoom lấp trống theo khoảng KHÔNG zoom (≥ 6 s từ lúc zoom trước bắt đầu). Bản 9: FS-06 + trích dẫn + 3 zoom + nhạc.
    CÒN: K1–K10 (CHƯA CHỐT — chờ OWNER #134a); giấy phép SFX OWNER CHƯA XÁC MINH;
    mô tả ảnh mới tải lên chưa có (ảnh mới rơi về tên tệp, có đánh dấu).
-3. Nợ đã ghi (không chặn): mỗi video mới gọi mô hình ~6–8 phút; chống trùng cùng Page ID là kiểm-rồi-ghi (khoá unique CSDL vẫn theo
-   kênh — cần khoá theo trang nếu chạy nhiều tiến trình); TRƯỚC KHI BẬT ĐĂNG THẬT: lúc đăng chỉ cập nhật Page ID, chưa kiểm lại trùng
-   trang ngay trước khi gửi (Page ID đổi giữa lúc lên lịch và lúc đăng mà trỏ trúng trang đã có bài → vẫn có thể trùng);
-   phủ định còn sót (HEAD cũng sót): "đâu phải cứ … thì …", "có phải … đâu", "không phải ai … thì cũng …", "không bao giờ còn …";
-   script_align: tên ở mép lời nói / ngữ cảnh < 3 từ một phía không còn được sửa (đánh đổi chủ ý — chờ người nghe lại), đổi tên chỉ
-   khác dấu trong khối khớp dài ("Lan"→"Lân") vẫn có; Kho video chưa lọc theo ?campaign=&goal=; deleteVideo chuyển tệp trước rồi mới
-   xoá dòng (không transaction); gắn tay chiến dịch đã kế thừa từ kịch bản bị bỏ qua (dòng vẫn mang dấu kế thừa → đổi kịch bản sẽ gỡ);
-   meterClient dựa vào APIPromise._thenUnwrap (API gạch dưới của SDK 0.124 — test đỏ ngay nếu SDK đổi); ChatGPT / Grok chưa truyền
-   model thực chạy (tính theo model yêu cầu); E2E music-library chập chờn khi máy tải nặng; máy dựng: các P3 phản biện 9042beb;
-   các P3 phản biện nghiên cứu (49c69ba); restorePrevPlan: rerenderVideo ném lỗi SAU khi đã xếp bản dựng → trả tệp plan nhưng bản dựng
-   vẫn chạy với kế hoạch cũ (hiếm, không mất dữ liệu); bài đã có mã nền tảng trên trang nhập nhầm giữ khoá kênh vĩnh viễn (chưa có
-   nút gỡ); bài trước migration 0023 có target_page_id trống → tính theo cấu hình hiện tại.
-   ĐÃ DỌN 25/10 (commit kế): Page ID lưu trên bài lúc lên lịch / đăng (migration 0023), ?tab=approved giữ ngữ cảnh chiến dịch,
-   restorePrevPlan trả tệp khi rerender ném lỗi, meterClient giữ APIPromise, giá theo model thực chạy, script_align "Lan"→"Lành",
-   phủ định "không phải cứ … thì" / "chẳng còn", góp ý video_comments khi xoá, liên kết kế thừa khi đổi kịch bản.
+3. Nợ đã ghi (không chặn):
+   - Chống trùng nhiều tiến trình: recoverStuckPublishing dựa vào inFlight riêng từng tiến trình (báo động giả, không đăng trùng; muốn
+     hết cần cột claimed_by / claimed_at + migration); bước kiểm lúc lên lịch chưa nguyên tử giữa nhiều tiến trình (lớp chặn cuối là
+     giành quyền lúc gửi BEGIN IMMEDIATE).
+   - Bài có targetPageId trống (trước migration 0023 / kênh chưa nhập Page ID) không được kiểm đổi trang lúc gửi.
+   - Bài đã có mã nền tảng trên trang nhập nhầm giữ khoá kênh vĩnh viễn (chưa có nút gỡ).
+   - script_align: tên ở mép lời nói / ngữ cảnh < 3 từ một phía không sửa (đánh đổi chủ ý); đổi tên chỉ khác dấu trong khối khớp dài.
+   - Phủ định là heuristic theo từ khoá: văn nói có dấu câu thật từ Whisper có thể cho ranh giới vế khác ca thử; "đâu" ở câu sau
+     do ngắt hơi có thể lọt.
+   - 4K: thẻ ảnh tĩnh 9:16 (image_clip), thẻ / M3 16:9 (ngang.py) vẫn là 1080 phóng ×2. Số punch-in zoom (0,4 / 0,8–1,4 / 0,5 s,
+     ×1,04–1,05) AI chọn — CHỜ OWNER xem.
+   - deleteVideo khi bộ dựng tại chỗ đang chạy: sự kiện close có thể tạo lại thư mục job mồ côi (có từ trước).
+   - 16:9: ngang.face_track giải mã cả nguồn vào một mảng (~0,5 MB / khung ở 2 khung/s) → RAM tăng theo thời lượng (10 phút ≈ 0,6 GB);
+     nên dò mặt theo từng khung. (Bộ đệm phụ đề đã sửa 26/10: 4K 9:16 120 s 1559 → 184 MB, khung hình không đổi.)
+   - Máy dựng: các P3 phản biện 9042beb; nghiên cứu: các P3 phản biện 49c69ba.
+   ĐÃ DỌN 26/10 (đêm, commit kế): kiểm lại trang ngay lúc gửi + giành quyền BEGIN IMMEDIATE (chống trùng nhiều tiến trình);
+   bài "verifying" không kẹt (bỏ cuộc 24 h → cần kiểm trang, tính là lỗi mơ hồ); SQLITE_BUSY không làm hỏng cả lượt; phủ định:
+   "đâu phải / có phải … đâu / đâu còn / làm gì còn / lấy đâu ra / không phải ai … thì cũng / không chỉ (động từ)" + không coi
+   "không còn" là trợ từ hỏi; số lần gọi mô hình 18 → 9 (7 khi dựng lại cùng lời nói, dùng lại phân tích); 4K vẽ chữ / sơ đồ / FS-06
+   / vệt sáng gốc (1080 không đổi từng khung); zoom ≈ 1 / 7 s (punch-in theo chữ nhấn); phím tắt theo e.code (Alt+1…7 bước, Alt+8
+   Tổng quan, Alt+9 Lead, Alt+0 Cài đặt; không kích hoạt khi đang gõ); chữ "Second Brain" hiển thị → "Kiến thức"; tương phản
+   hover jade tối; E2E chờ hydrate / server action có chủ đích; deleteVideo theo thứ tự an toàn + transaction; restorePrevPlan huỷ
+   bản đã xếp; meterClient có đường dự phòng; ChatGPT / Grok tính giá theo model thực chạy; gắn tay chiến dịch giữ khi đổi kịch
+   bản; lỗi webhook dữ liệu không bị lần ok sau che; hằng số thông báo webhook dùng chung; 413 đóng run.
 4. Sau mỗi nhóm được nghiệm thu: cập nhật docs/brand-engine/BAOR-BRAND-ENGINE-IMPLEMENTATION-PROGRESS.md (công thức chấm cố định, chỉ tính bằng chứng mới).
 <!-- NEXT:END -->
 

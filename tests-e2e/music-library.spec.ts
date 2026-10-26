@@ -3,12 +3,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { test, expect, request as playwrightRequest } from "@playwright/test";
-import { login, trackErrors } from "./helpers";
+import { ACTION_MS, login, trackErrors } from "./helpers";
 import { E2E } from "./env";
 
 const FILE = "acoustic_e2e-cho-duyet_pixabay1.mp3";
-// Server action ghi manifest + làm mới trang: máy tải nặng có lúc > 5 s (nút còn "Đang bỏ…") — chờ lâu hơn, không đổi điều kiện kiểm
-const ACTION_MS = 20_000;
+// Server action ghi manifest + làm mới trang: máy tải nặng có lúc > 5 s (nút còn "Đang bỏ…") — chờ ACTION_MS, không đổi điều kiện kiểm
 const manifest = () => JSON.parse(fs.readFileSync(path.join(E2E.dataDir, "video-assets", "music", "manifest.json"), "utf8")) as { file: string; license: string; ownerApproved?: { by: string } }[];
 
 test("nghe thử, duyệt dùng rồi bỏ duyệt một bài trong thư viện nhạc nền", async ({ page }) => {

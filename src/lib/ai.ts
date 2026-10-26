@@ -28,6 +28,29 @@ export function aiConfiguredFor(purpose: string): { ok: boolean; provider: strin
   return { ok: providerConfigured(p), provider: PROVIDERS[p].label };
 }
 
+export type AiReadiness = { ok: true } | { ok: false; label: string; reason: string; href: string };
+export const AI_TEAM_HREF = "/settings?tab=ai#ai-team";
+
+/**
+ * Nút AI hiện ĐÚNG trạng thái (kiểm toán 26/10: vị trí đặt ChatGPT nhưng chỉ có khoá Claude → nút vẫn bấm được rồi hỏng):
+ * cùng thứ tự kiểm như gate() — công tắc / trần riêng của vị trí → khoá hãng của mô hình vị trí → trần chung. Không gọi được thì trả
+ * nhãn ngắn ("Thiếu khoá ChatGPT", "AI đang tắt", "Chạm trần AI") + lý do + đường tới Cài đặt › Đội AI để trang vô hiệu nút.
+ * alsoProvider: bước cần thêm một hãng (Nghiên cứu web: bước tìm nguồn luôn chạy Claude).
+ */
+export function aiReadiness(purpose: string, opts: { alsoProvider?: AiProvider } = {}): AiReadiness {
+  const role = roleForPurpose(purpose);
+  const allowed = roleAllows(role);
+  if (!allowed.ok) return { ok: false, label: allowed.value && !allowed.value.enabled ? "AI đang tắt" : "Chạm trần AI", reason: allowed.reason, href: AI_TEAM_HREF };
+  const model = allowed.value?.model ?? role.defaultModel;
+  const need: AiProvider[] = [modelInfo(model)?.provider ?? "anthropic", ...(opts.alsoProvider ? [opts.alsoProvider] : [])];
+  for (const p of need) {
+    if (!providerConfigured(p)) return { ok: false, label: `Thiếu khoá ${PROVIDERS[p].label}`, reason: `${role.name} cần khoá ${PROVIDERS[p].label} (${modelInfo(model)?.label ?? model}). Nhập khoá ở Cài đặt › Kết nối hoặc đổi mô hình ở Cài đặt › Đội AI.`, href: AI_TEAM_HREF };
+  }
+  const budget = aiBudgetAllows();
+  if (!budget.ok) return { ok: false, label: "Chạm trần AI", reason: budget.reason, href: AI_TEAM_HREF };
+  return { ok: true };
+}
+
 // Cổng AI: mọi lần gọi mô hình đi qua đây để (1) kiểm tra công tắc "Cho phép gọi AI" + trần riêng của vị trí (Đội AI),
 // (2) kiểm tra trần ngân sách chung, (3) ghi sổ chi phí theo vị trí và giá của đúng mô hình, (4) ghi quyết định vào bộ định tuyến với
 // nhãn "AI đề xuất, cần người duyệt". Mô hình (và hãng) do vị trí quyết định (Cài đặt › Đội AI), truyền vào call.
@@ -93,9 +116,15 @@ type UsageLike = { input_tokens?: number | null; output_tokens?: number | null }
 // create của SDK trả APIPromise (.withResponse() / .asResponse()) → gắn đồng hồ bằng _thenUnwrap của chính APIPromise: vẫn là APIPromise,
 // đồng hồ chạy đúng MỘT lần khi thân phản hồi được parse (APIPromise nhớ kết quả parse; asResponse không parse → không đếm, như SDK).
 // Giá tính theo từng phản hồi với response.model (mô hình hãng thực chạy, vd fallbacks), thiếu / lạ → giá mô hình yêu cầu (servedCost).
-// tests/ai-gate-served-model.test.ts giữ giả định "_thenUnwrap" của SDK.
+// tests/ai-gate-served-model.test.ts giữ giả định "_thenUnwrap" của SDK; thiếu _thenUnwrap → đường dự phòng .then (cảnh báo một lần).
 // Token cộng theo từng mô hình có giá được áp rồi mới quy ra ₫ (làm tròn một lần / mô hình — một mô hình thì khớp modelCostVnd tổng như cũ).
 type Meter = { input: number; output: number; responses: number; readonly costVnd: number; served: Set<string>; notes: Set<string> };
+let warnedNoThenUnwrap = false;
+function warnNoThenUnwrap() {
+  if (warnedNoThenUnwrap) return;
+  warnedNoThenUnwrap = true;
+  console.warn("[ai] SDK Anthropic không còn APIPromise._thenUnwrap: cổng AI đếm token qua .then (mất .withResponse() / .asResponse() trên client qua cổng). Kiểm meterClient trong src/lib/ai.ts khi nâng SDK.");
+}
 function meterClient(client: Anthropic, requested: string): { client: Anthropic; used: Meter } {
   const byPrice = new Map<string, { input: number; output: number }>(); // "" = mô hình không có trong bảng giá → giá chung
   const used: Meter = {
@@ -129,6 +158,9 @@ function meterClient(client: Anthropic, requested: string): { client: Anthropic;
   };
   type Unwrappable = { _thenUnwrap: (f: (data: unknown) => unknown) => unknown };
   const isApiPromise = (v: unknown): v is Unwrappable => typeof (v as Partial<Unwrappable> | null)?._thenUnwrap === "function";
+  // _thenUnwrap là API gạch dưới (nội bộ) của SDK: bản SDK sau đổi tên / bỏ → vẫn đếm token qua .then (mất .withResponse() trong
+  // trường hợp đó — không chỗ gọi nào của BAOR cần), cảnh báo MỘT lần để biết mà sửa, không làm hỏng sổ chi phí.
+  const looksLikeApiPromise = (v: unknown) => typeof (v as { withResponse?: unknown } | null)?.withResponse === "function";
   type Fn = (...args: unknown[]) => unknown;
   const passThrough = <O extends object>(target: O, overrides: Record<string, unknown>): O =>
     new Proxy(target, {
@@ -144,7 +176,9 @@ function meterClient(client: Anthropic, requested: string): { client: Anthropic;
       create: (...args: unknown[]) => {
         const out = raw.create.apply(m, args);
         // Claude thật: giữ nguyên kiểu APIPromise; bộ chuyển đổi ChatGPT / Grok, client giả: Promise thường
-        return isApiPromise(out) ? out._thenUnwrap(tally) : Promise.resolve(out).then(tally);
+        if (isApiPromise(out)) return out._thenUnwrap(tally);
+        if (looksLikeApiPromise(out)) warnNoThenUnwrap();
+        return Promise.resolve(out).then(tally);
       },
     };
     const proxy = passThrough(m, overrides);

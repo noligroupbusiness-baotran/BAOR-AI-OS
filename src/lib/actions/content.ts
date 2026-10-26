@@ -14,6 +14,7 @@ import { briefForContent, rebuildScriptFromBrief } from "@/lib/research";
 import { getContentVersion, recordContentVersion } from "@/lib/content/versions";
 import { rewriteViolations } from "@/lib/content/shooting-script";
 import { approveBlock, submitBlock } from "@/lib/content/review-gate";
+import { scheduleTextPosts } from "@/lib/publishing/text";
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 
@@ -100,24 +101,16 @@ export async function approveContent(fd: FormData) {
 
 export async function scheduleContent(fd: FormData) {
   // Chỉ nội dung đã được duyệt mới được lên lịch đăng; người lên lịch cần quyền quản lý trở lên.
-  await requirePermission("manager", "/content?tab=done");
+  const actor = await requirePermission("manager", "/content?tab=done");
   const id = str(fd, "id");
   const when = str(fd, "when"); // datetime-local (giờ VN)
   const platforms = fd.getAll("platform").map(String);
-  if (!when || platforms.length === 0) return done("/content?tab=done", "Cần chọn giờ và ít nhất một kênh");
-  const iso = new Date(`${when}:00+07:00`).toISOString();
-  const db = getDb();
-  const item = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, id)).get();
-  if (!item) return done("/content?tab=done", "Không tìm thấy nội dung");
-  if (item.status !== "approved" && item.status !== "scheduled") return done("/content?tab=done&tone=error", "Chỉ lên lịch được nội dung đã duyệt.");
-  db.update(schema.contentItems).set({ status: "scheduled", scheduledFor: iso }).where(eq(schema.contentItems.id, id)).run();
-  const posts = platforms.map((p) => ({ id: newId("sp"), contentId: id, title: item.title, platform: p, scheduledFor: iso, status: "scheduled" }));
-  db.insert(schema.scheduledPosts).values(posts).run();
-  // Bài đăng kế thừa chiến dịch và mục tiêu kênh của nội dung (truy ngược: publication ← content).
-  campaignRepo.syncEntityStatus("content", id, "scheduled");
-  for (const p of posts) campaignRepo.inheritLinks("content", id, "publication", p.id, "scheduled");
-  logActivity("system", `Đã lên lịch “${item.title}” trên ${platforms.length} kênh.`, "publishing");
-  done("/publishing", "Đã lên lịch đăng");
+  const back = `/content?tab=done${id ? `&open=${id}` : ""}`;
+  if (!when || platforms.length === 0) return done(`${back}&tone=error`, "Cần chọn giờ và ít nhất một kênh");
+  // Cùng cổng với bài video: chế độ thử, chống trùng theo trang, chặn giờ đã qua, chặn kiểu / kênh không hợp (src/lib/publishing/text.ts)
+  const r = scheduleTextPosts({ contentId: id, platforms, whenIso: new Date(`${when}:00+07:00`).toISOString(), by: actor.name });
+  if (!r.ok) return done(`${back}&tone=error`, r.error);
+  done("/publishing", r.mode === "dry_run" ? "Đã lên lịch (chế độ thử: không đăng thật)" : "Đã lên lịch đăng");
 }
 
 export async function createIdea(fd: FormData) {

@@ -193,3 +193,75 @@ test("cấu hình máy dựng: lệnh dán ở trang tạo khoá ghi đúng tệ
   execFileSync("bash", ["-c", setupCommand("https://x.vn/a'b", key)], { env: { ...process.env, HOME: home } });
   assert.match(fs.readFileSync(f, "utf8"), /^BAOR_REMOTE_URL=https:\/\/x\.vn\/a'b\n/);
 });
+
+// Kiểm toán độc lập 26/10/2026 (mục 8): nhịp tim chỉ bật SAU khi tải xong video gốc → tệp lớn / mạng chậm quá 15 phút thì máy chủ
+// coi máy dựng mất kết nối và giao lại việc. Nhịp tim phải bật NGAY khi nhận việc, chạy suốt lúc tải nguồn.
+function slowSource(chunks: number, everyMs: number, marks: { sourceDoneAt: number }) {
+  let i = 0;
+  return new ReadableStream<Uint8Array>({
+    async pull(c) {
+      await new Promise((r) => setTimeout(r, everyMs));
+      if (i++ >= chunks) {
+        marks.sourceDoneAt = Date.now();
+        c.close();
+        return;
+      }
+      c.enqueue(new TextEncoder().encode("VIDEO"));
+    },
+  });
+}
+
+const workerSpec = { videoId: "v_hb", version: 1, title: "Nhịp tim", sourceName: "a.mp4", aspect: "9:16", cutSilence: false, framing: null, aiPlan: false, sfx: false, noMusic: true, music: null, keywords: "", model: "small", corrections: "", script: null, plan: null, words: null, allowAi: false };
+
+test("mục 8: máy dựng gửi nhịp tim NGAY khi nhận việc và trong lúc tải video gốc (không đợi tải xong)", async () => {
+  const marks = { sourceDoneAt: 0 };
+  const beats: number[] = [];
+  const calls: string[] = [];
+  const fake = (async (url: string | URL) => {
+    const u = String(url);
+    calls.push(u.replace(/\?.*$/, ""));
+    if (u.includes("/heartbeat")) {
+      beats.push(Date.now());
+      return new Response("{}", { status: 200 });
+    }
+    if (u.includes("/source")) return new Response(slowSource(4, 80, marks), { status: 200 });
+    return new Response("{}", { status: 200 });
+  }) as typeof fetch;
+  const bin = path.join(tmp, "fail-render.sh");
+  fs.writeFileSync(bin, "#!/bin/sh\necho 'LỖI: bộ dựng giả' >&2\nexit 1\n");
+  fs.chmodSync(bin, 0o755);
+  const prev = process.env.PYTHON_BIN;
+  process.env.PYTHON_BIN = bin;
+  try {
+    const r = await worker.runOne(workerSpec, { base: "http://may-chu.test", headers: {}, dataDir: tmp, fetchImpl: fake, beatMs: 50 });
+    assert.equal(r, "failed");
+  } finally {
+    if (prev === undefined) delete process.env.PYTHON_BIN;
+    else process.env.PYTHON_BIN = prev;
+  }
+  assert.ok(marks.sourceDoneAt > 0);
+  const during = beats.filter((t) => t < marks.sourceDoneAt).length;
+  assert.ok(during >= 3, `nhịp tim trong lúc tải nguồn: ${during}`);
+  assert.equal(calls[0], "http://may-chu.test/api/render-worker/heartbeat", "nhịp tim đầu tiên đi TRƯỚC lệnh tải nguồn");
+  assert.ok(calls.includes("http://may-chu.test/api/render-worker/fail"), "bộ dựng lỗi → báo máy chủ");
+});
+
+test("mục 8: máy chủ báo dừng (409) khi đang tải video gốc → máy dựng ngắt tải, không báo lỗi", async () => {
+  const calls: string[] = [];
+  const fake = (async (url: string | URL, init?: RequestInit) => {
+    const u = String(url);
+    calls.push(u.replace(/\?.*$/, ""));
+    if (u.includes("/heartbeat")) return new Response("{}", { status: calls.filter((c) => c.endsWith("/heartbeat")).length >= 2 ? 409 : 200 });
+    if (u.includes("/source")) {
+      const body = slowSource(50, 40, { sourceDoneAt: 0 });
+      init?.signal?.addEventListener("abort", () => body.cancel().catch(() => {}));
+      return new Response(body, { status: 200 });
+    }
+    return new Response("{}", { status: 200 });
+  }) as typeof fetch;
+  const t0 = Date.now();
+  const r = await worker.runOne({ ...workerSpec, videoId: "v_hb2" }, { base: "http://may-chu.test", headers: {}, dataDir: tmp, fetchImpl: fake, beatMs: 50 });
+  assert.equal(r, "stopped");
+  assert.ok(Date.now() - t0 < 1500, "không tải hết 50 khúc");
+  assert.ok(!calls.some((c) => c.endsWith("/fail")));
+});

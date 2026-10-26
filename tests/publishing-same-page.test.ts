@@ -181,7 +181,7 @@ test("bài cũ chưa lưu Page ID → dùng cấu hình kênh hiện tại như 
   }
 });
 
-test("lúc đăng: Page ID đích của bài cập nhật theo cấu hình kênh khi gửi lệnh đăng (fetch giả, không gọi nền tảng)", async () => {
+test("lúc đăng: Page ID kênh đổi sau lúc lên lịch → KHÔNG gửi lên trang mới (kiểm lại kênh); bài cũ chưa lưu trang thì lưu trang lúc gửi (fetch giả)", async () => {
   const d = db.getDb();
   admin.setSetting("publishing.dryRun", "0");
   d.update(db.schema.integrations).set({ connected: true }).where(eq(db.schema.integrations.key, "facebook_page")).run();
@@ -190,13 +190,21 @@ test("lúc đăng: Page ID đích của bài cập nhật theo cấu hình kênh
   try {
     seed("v_pubnow");
     assert.equal(pub.scheduleVideoPosts({ videoId: "v_pubnow", platforms: ["facebook"], whenIso: new Date(Date.now() - 60_000).toISOString(), caption: "Bình luận bên dưới", by: "t" }).ok, true);
+    const id = pub.videoPostsFor("v_pubnow")[0].id;
     assert.equal(pub.videoPostsFor("v_pubnow")[0].targetPageId, "111");
-    // OWNER sửa Page ID giữa lúc lên lịch và lúc đăng → bài đăng lên trang 666
+    // OWNER sửa Page ID giữa lúc lên lịch và lúc đăng (trước đây: bài lặng lẽ đăng lên trang 666)
     config.writeIntegrationConfig("facebook_page", { pageId: "666", pageToken: "tok-gia-1", appId: "222", userToken: "u-gia-1" });
     globalThis.fetch = (async (url: string) => {
       calls.push(String(url));
       throw new Error("mạng giả: không gọi nền tảng");
     }) as typeof fetch;
+    await pub.publishDueVideoPosts();
+    assert.equal(calls.length, 0, "không gửi lệnh đăng khi trang kênh khác trang lúc lên lịch");
+    const p = pub.videoPostsFor("v_pubnow")[0];
+    assert.equal(p.status, "failed");
+    assert.match(p.error ?? "", /Page ID đã đổi/);
+    // Bài cũ chưa lưu trang (trước khi có target_page_id): đi tới bước gửi, lưu trang thật nhận lệnh đăng
+    d.update(db.schema.scheduledPosts).set({ status: "scheduled", error: null, targetPageId: null }).where(eq(db.schema.scheduledPosts.id, id)).run();
     await pub.publishDueVideoPosts();
     assert.ok(calls.length > 0, "đã đi tới bước gửi lệnh đăng");
     assert.equal(pub.videoPostsFor("v_pubnow")[0].targetPageId, "666", "lúc đăng: lưu trang thật nhận lệnh đăng");

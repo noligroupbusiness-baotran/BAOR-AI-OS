@@ -10,6 +10,8 @@ Tóm tắt bắt buộc (chi tiết và lý do ở chuẩn vận hành):
   → QUALITY GATE (`npm run verify`, có UI thì `npm run verify:full`) → RISK CHECK → CHECKPOINT → NEXT SLICE. Chưa kiểm chứng = chưa xong.
 - `main` **tự triển khai production**. Không ghép, không đẩy `main` khi OWNER chưa nói MERGE (hook `scripts/agent/guard-bash.mjs` chặn).
 - Repo **công khai**: không commit `data/`, `docs/brand-engine/`, nội dung Second Brain, email, ID Drive, `.env*`. Stage đúng từng tệp.
+- Giao diện: **đơn giản, chuyên nghiệp, ít chữ, điều khiển bằng nút bấm**. Lõi phức tạp nằm trong mã; bề mặt dễ nhìn, dễ hiểu, dễ dùng
+  (chi tiết ở §7 chuẩn vận hành). Giữ font gốc; cảnh báo an toàn vẫn luôn thấy.
 - Dừng chỉ ở: tiền · credential / truy cập ngoài · dữ liệu thật · production / công bố. Ngoài ra tự quyết, tự sửa, làm tới cùng.
 
 @AGENTS.md

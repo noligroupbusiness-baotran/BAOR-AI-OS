@@ -29,6 +29,7 @@ export const postStatusLabel: Record<PostStatus, { label: string; tone: Tone }> 
   verifying: { label: "Đang xác minh", tone: "amber" },
   dry_run: { label: "Đã thử (không đăng thật)", tone: "violet" },
   cancelled: { label: "Đã huỷ", tone: "neutral" },
+  overdue: { label: "Quá hạn, cần xếp lại", tone: "amber" },
 };
 
 export const adStatusLabel: Record<AdStatus, { label: string; tone: Tone }> = {

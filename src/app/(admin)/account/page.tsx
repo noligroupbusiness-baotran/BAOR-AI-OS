@@ -26,7 +26,7 @@ export default async function AccountPage() {
 
   return (
     <>
-      <Breadcrumb items={[{ label: "Điều hành", href: "/dashboard" }, { label: "Tài khoản của tôi" }]} />
+      <Breadcrumb items={[{ label: "Tổng quan", href: "/dashboard" }, { label: "Tài khoản của tôi" }]} />
       <PageHead title="Tài khoản của tôi" sub="Thông tin đăng nhập, mật khẩu và xác thực hai lớp của bạn. Tên, vai trò và quyền do Quản trị đặt trong Cài đặt › Nhân sự." />
 
       <div className="grid gap-3.5 md:grid-cols-2">

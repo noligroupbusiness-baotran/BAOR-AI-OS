@@ -170,12 +170,12 @@ export function GridSizeToggle({ target }: { target: string }) {
     window.dispatchEvent(new Event(GRID_EVENT));
   }
   const btn = (s: "large" | "small", label: string) => (
-    <button type="button" onClick={() => pick(s)} aria-pressed={size === s} className={cn("h-6 cursor-pointer rounded-full px-2.5 text-[12px] font-medium", size === s ? "bg-jade text-white" : "text-ink-2 hover:text-ink")}>
+    <button type="button" onClick={() => pick(s)} aria-pressed={size === s} className={cn("h-6 cursor-pointer px-2.5 text-[12px] font-medium", size === s ? "metal-pill" : "tab-pill text-ink-2 hover:text-ink")}>
       {label}
     </button>
   );
   return (
-    <div role="group" aria-label="Cỡ thẻ" className="inline-flex rounded-full border border-border-2 bg-surface p-0.5">
+    <div role="group" aria-label="Cỡ thẻ" className="inline-flex gap-0.5 rounded-[9px] border border-border-2 bg-surface p-0.5">
       {btn("large", "Lớn")}
       {btn("small", "Nhỏ")}
     </div>

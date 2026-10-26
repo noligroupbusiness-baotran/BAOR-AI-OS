@@ -144,7 +144,7 @@ export function buildShootingScript(brief: ScriptBrief, sources: ScriptSource[],
   });
   const pageLines = [...kTag.entries()].map(([id, tag]) => {
     const p = pages.find((x) => x.id === id)!;
-    return `[${tag}] Second Brain: ${p.title} (${p.status})`;
+    return `[${tag}] Kiến thức: ${p.title} (${p.status})`;
   });
   const hypotheses = brief.points.filter((p) => p.classification === "HYPOTHESIS").map((p) => `- Giả thuyết chưa kiểm (không đưa vào lời thoại): ${p.text}`);
   const missing = [...brief.gaps.map((g) => `- ${g}`), ...hypotheses];
@@ -367,7 +367,7 @@ export function scriptQa(draft: string, opts: QaOptions = {}): ScriptQa {
     if ([s.speech, s.onScreen, s.visual].some(hasStatistic) && s.basis.filter((t) => p.tags.has(t)).length === 0) blocking.push(`${label}: có số liệu nhưng không có căn cứ trong mục NGUỒN`);
     if (OVERCLAIM.test(said)) warnings.push(`${label}: có từ khẳng định tuyệt đối, kiểm lại`);
     const drafts = s.basis.filter((t) => draftPages.has(t));
-    if (drafts.length) warnings.push(`${label}: dựa trên trang Second Brain còn DRAFT (${drafts.map((t) => `[${t}]`).join(" ")}): OWNER xác nhận trước khi quay`);
+    if (drafts.length) warnings.push(`${label}: dựa trên trang kiến thức còn DRAFT (${drafts.map((t) => `[${t}]`).join(" ")}): OWNER xác nhận trước khi quay`);
     if (s.ownerHint && hasOwnerMark(s.ownerHint)) warnings.push(`${label}: có chỗ để thêm câu chuyện thật của OWNER (không bắt buộc)`);
   }
   const looseStat = p.loose.filter((l) => !/^(KỊCH BẢN QUAY|Mục tiêu|Khán giả)\s*:/i.test(l) && hasStatistic(l));

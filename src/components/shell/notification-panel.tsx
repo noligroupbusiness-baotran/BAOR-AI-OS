@@ -38,9 +38,12 @@ export function NotificationPanel({ open, onClose, items, readSet, onRead }: { o
                           <span className="num text-[11px] text-ink-3">{formatDateTime(n.at)}</span>
                         </div>
                         <p className={cn("mt-1 text-[12.5px] leading-snug", isRead ? "text-ink-2" : "font-medium text-ink")}>{n.text}</p>
-                        <Link href={n.href} onClick={() => { onRead([n.id]); onClose(); }} className="mt-1 inline-block text-[12px] font-medium text-jade hover:underline">
-                          Xem chi tiết
-                        </Link>
+                        {/* Mục không trỏ đối tượng cụ thể (nhật ký chung → /dashboard): không hiện "Xem chi tiết" dẫn sai chỗ */}
+                        {n.href !== "/dashboard" && (
+                          <Link href={n.href} onClick={() => { onRead([n.id]); onClose(); }} className="mt-1 inline-block text-[12px] font-medium text-jade hover:underline">
+                            Xem chi tiết
+                          </Link>
+                        )}
                       </div>
                     </li>
                   );

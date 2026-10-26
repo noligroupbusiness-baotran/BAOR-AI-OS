@@ -88,6 +88,8 @@ export interface Connector {
   publish?(ctx: ConnectorContext, req: PublishRequest): Promise<PublishResult>;
   publishVideo?(ctx: ConnectorContext, req: VideoPublishRequest): Promise<PublishResult>;
   verifyPost?(ctx: ConnectorContext, externalId: string): Promise<VerifyPostResult>;
+  /** Đọc lại bài CHỮ (bài trên trang, không phải video): "đã đăng" chỉ khi đọc lại được bài. */
+  verifyFeedPost?(ctx: ConnectorContext, externalId: string): Promise<VerifyPostResult>;
   postMetrics?(ctx: ConnectorContext, externalId: string): Promise<PostMetrics>;
   /** Biến payload webhook thô thành tin nhắn / lead thống nhất. */
   parseWebhook?(body: unknown): InboundMessage[];

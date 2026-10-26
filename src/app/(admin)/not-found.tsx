@@ -9,7 +9,7 @@ export default function AdminNotFound() {
       <div className="text-[14px] font-bold text-ink">Không tìm thấy mục này</div>
       <p className="max-w-[48ch] text-[12.5px] text-ink-2">Mục bạn mở không tồn tại hoặc đã bị xóa. Nếu đi từ một liên kết cũ, hãy tìm lại bằng ô tìm kiếm phía trên.</p>
       <div className="mt-1 flex gap-2">
-        <Link href="/dashboard" className="inline-flex h-8 items-center rounded-full bg-jade px-4 text-[12.5px] font-semibold text-white hover:bg-jade-2">Về Điều hành</Link>
+        <Link href="/dashboard" className="btn btn-primary inline-flex h-8 items-center px-4 text-[12.5px] font-semibold">Về Tổng quan</Link>
         <Link href="/campaigns" className="inline-flex h-8 items-center rounded-full border border-border-2 px-4 text-[12.5px] font-semibold text-ink hover:bg-ground">Danh sách chiến dịch</Link>
       </div>
     </div>

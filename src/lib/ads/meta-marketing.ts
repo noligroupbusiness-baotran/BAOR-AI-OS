@@ -8,7 +8,7 @@
 // Chưa chạy với tài khoản quảng cáo thật: phải kiểm lại khi OWNER cấp quyền.
 import fs from "node:fs";
 import type { ConnectorContext } from "@/lib/connectors/types";
-import { readAdsInsights, type AdsInsightsResponse } from "@/lib/connectors/meta";
+import { GRAPH_TIMEOUT_MS, readAdsInsights, withTimeout, type AdsInsightsResponse } from "@/lib/connectors/meta";
 
 export const MARKETING = "https://graph.facebook.com/v26.0";
 
@@ -26,7 +26,7 @@ async function call<T>(ctx: ConnectorContext, method: "GET" | "POST", path: stri
   } else {
     init = { method, body: new URLSearchParams({ ...params, access_token: token }) };
   }
-  const res = await ctx.fetch(url.toString(), init);
+  const res = await ctx.fetch(url.toString(), withTimeout(init, GRAPH_TIMEOUT_MS));
   const text = await res.text();
   let json: T & GraphError;
   try {

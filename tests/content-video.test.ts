@@ -134,3 +134,29 @@ test("đổi / bỏ kịch bản: gỡ liên kết chiến dịch video KẾ TH�
   assert.equal(jobs.linkVideoScript(vid, null, "OWNER").ok, true);
   assert.deepEqual(links(), ["cp_hand:tay"], "bỏ kịch bản → chỉ còn liên kết gắn tay");
 });
+
+test("gắn TAY một chiến dịch video đã kế thừa từ kịch bản → dòng chuyển thành gắn tay; đổi / bỏ kịch bản không gỡ mất (kiểm toán 26/10)", async () => {
+  const { campaignRepo } = await import("../src/lib/campaigns/repository");
+  content("c_tay_a", "approved");
+  content("c_tay_b", "approved");
+  const base = { channelGoalId: null, status: "in_progress", ownerId: null, viaType: null, viaId: null } as const;
+  campaignRepo.addLink({ ...base, campaignId: "cp_ke_thua", entityType: "content", entityId: "c_tay_a" });
+  campaignRepo.addLink({ ...base, campaignId: "cp_chi_a", entityType: "content", entityId: "c_tay_a" });
+  const vid = jobs.createVideoFromSource({ title: "Nguồn gắn tay", sourceUploadId: "up_x", cutSilence: false, by: "t", contentId: "c_tay_a", start: false });
+  const rows = () => db.getDb().select().from(db.schema.marketingLinks).where(eq(db.schema.marketingLinks.entityId, vid)).all();
+  const links = () => rows().map((l) => `${l.campaignId}:${l.viaId ?? "tay"}`).sort();
+  assert.deepEqual(links(), ["cp_chi_a:c_tay_a", "cp_ke_thua:c_tay_a"]);
+  const idBefore = rows().find((l) => l.campaignId === "cp_ke_thua")!.id;
+
+  // Người dùng gắn tay đúng chiến dịch đã kế thừa (cùng đường linkEntityToCampaign: addLink via trống)
+  campaignRepo.addLink({ ...base, campaignId: "cp_ke_thua", entityType: "video", entityId: vid, status: "editing" });
+  assert.deepEqual(links(), ["cp_chi_a:c_tay_a", "cp_ke_thua:tay"], "dòng kế thừa thành gắn tay (vẫn một dòng / chiến dịch)");
+  assert.equal(rows().find((l) => l.campaignId === "cp_ke_thua")!.id, idBefore, "cập nhật tại chỗ, không tạo dòng mới");
+
+  // Kế thừa lại (kịch bản mới cũng thuộc chiến dịch đó) không biến gắn tay thành kế thừa
+  campaignRepo.addLink({ ...base, campaignId: "cp_ke_thua", entityType: "content", entityId: "c_tay_b" });
+  assert.equal(jobs.linkVideoScript(vid, "c_tay_b", "OWNER").ok, true);
+  assert.deepEqual(links(), ["cp_ke_thua:tay"], "đổi kịch bản: chỉ gỡ cp_chi_a (kế thừa từ kịch bản cũ), gắn tay giữ");
+  assert.equal(jobs.linkVideoScript(vid, null, "OWNER").ok, true);
+  assert.deepEqual(links(), ["cp_ke_thua:tay"], "bỏ kịch bản: gắn tay vẫn còn");
+});

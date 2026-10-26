@@ -351,3 +351,31 @@ test("Insights: đọc reach lỗi KHÔNG chặn ghi chi phí theo ngày (số c
   assert.equal(ad.spent, 120_000, "chi phí theo ngày đã ghi");
   assert.equal(ad.reach, 50, "giữ reach cũ khi đọc lỗi");
 });
+
+test("kiểm toán 26/10: tự tăng ngân sách có thời gian chờ 24 giờ giữa hai lần ('Chạy ngay' lặp lại không tăng dồn)", async () => {
+  const d = db.getDb();
+  const admin = await import("../src/lib/admin");
+  d.insert(db.schema.adCampaigns).values({ id: "ad_cd", name: "Chờ", objective: "video_views", status: "active", dailyBudget: 100_000, spent: 300_000, impressions: 20_000, clicks: 400, leads: 12, audience: "", startedAt: new Date(Date.now() - 3 * 86_400_000).toISOString() }).run();
+  auth.saveAuthorization(A({ allowAutoScale: true }));
+  const budget = () => d.select().from(db.schema.adCampaigns).where(eq(db.schema.adCampaigns.id, "ad_cd")).get()!.dailyBudget;
+  const others = d.select().from(db.schema.adCampaigns).where(eq(db.schema.adCampaigns.status, "active")).all().filter((a) => a.id !== "ad_cd");
+  for (const a of others) d.update(db.schema.adCampaigns).set({ status: "paused" }).where(eq(db.schema.adCampaigns.id, a.id)).run();
+  assert.equal((await engine.autoOptimize()).scaled, 1);
+  assert.equal(budget(), 120_000);
+  // Lượt chạy kế tiếp ngay sau đó (vd "Chạy ngay" đặt lại mốc mỗi giờ): vẫn đủ điều kiện tăng nhưng đang trong thời gian chờ
+  assert.equal((await engine.autoOptimize()).scaled, 0);
+  assert.equal(budget(), 120_000);
+  assert.equal(engine.autoScaleCoolingDown("ad_cd"), true);
+  assert.equal(engine.AUTO_SCALE_COOLDOWN_MS, 24 * 60 * 60 * 1000);
+  // Qua 24 giờ → được tăng tiếp (vẫn trong trần ngày 200.000 ₫)
+  admin.setSetting("ads.lastBudgetIncreaseAt.ad_cd", new Date(Date.now() - 25 * 3_600_000).toISOString());
+  assert.equal((await engine.autoOptimize()).scaled, 1);
+  assert.equal(budget(), 144_000);
+  // OWNER tăng tay cũng tính mốc; giảm thì không
+  admin.setSetting("ads.lastBudgetIncreaseAt.ad_cd", "");
+  assert.equal((await engine.changeDailyBudget("ad_cd", 100_000, "OWNER")).ok, true);
+  assert.equal(engine.autoScaleCoolingDown("ad_cd"), false, "giảm không đặt thời gian chờ");
+  assert.equal((await engine.changeDailyBudget("ad_cd", 110_000, "OWNER")).ok, true);
+  assert.equal(engine.autoScaleCoolingDown("ad_cd"), true);
+  d.update(db.schema.adCampaigns).set({ status: "paused" }).where(eq(db.schema.adCampaigns.id, "ad_cd")).run();
+});

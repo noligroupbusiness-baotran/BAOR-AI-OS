@@ -40,7 +40,7 @@ export function PendingRow({ item, compact }: { item: PendingItem; compact?: boo
             {item.priority !== "low" && <Pill tone={pr.tone} className="h-[18px] px-1.5 text-[10.5px]">{pr.label}</Pill>}
           </span>
         </span>
-        <span className="hidden shrink-0 rounded-full border border-border-2 px-3 py-1 text-[12px] font-medium text-ink transition-colors group-hover:border-jade group-hover:text-jade sm:inline-flex">
+        <span className="hidden shrink-0 rounded-full border border-border-2 px-3 py-1 text-[12px] font-medium text-ink transition-colors group-hover:border-jade group-hover:text-jade-fg sm:inline-flex">
           Xem và xử lý
         </span>
         <ChevronRight size={16} className="shrink-0 text-ink-3 sm:hidden" aria-label="Xem và xử lý" />

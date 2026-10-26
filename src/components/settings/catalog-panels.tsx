@@ -1,7 +1,9 @@
+import { Users } from "lucide-react";
 import { Panel, PanelHeader } from "@/components/ui/card";
+import { SwitchSubmit } from "@/components/ui/switch";
 import { ListFilter } from "@/components/ui/list-filter";
 import { Pill } from "@/components/ui/pill";
-import { Button, LinkButton } from "@/components/ui/button";
+import { LinkButton } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Field, inputClass } from "@/components/ui/field";
 import { SubmitButton } from "@/components/campaigns/submit-button";
@@ -17,8 +19,11 @@ export function PeoplePanel({ editing }: { editing?: string }) {
     <Panel id="people">
       <PanelHeader
         title="Nhân sự"
-        sub="Người phụ trách chiến dịch, nội dung và chăm sóc khách; quyền đăng nhập."
-        action={<div className="flex items-center gap-2">{items.length > 5 && <ListFilter target="people" placeholder="Lọc tên, vai trò, email…" />}{editing !== "new" && <LinkButton href="/settings?person=new#people" variant="primary">Thêm nhân sự</LinkButton>}</div>}
+        sub="Người phụ trách, quyền đăng nhập"
+        icon={Users}
+        tone="slate"
+        info="Người phụ trách chiến dịch, nội dung và chăm sóc khách; quyền đăng nhập."
+        action={<div className="flex items-center gap-2">{items.length > 5 && <ListFilter target="people" placeholder="Lọc tên, vai trò, email…" />}{editing !== "new" && <LinkButton href="/settings?person=new#people" variant="primary">Thêm</LinkButton>}</div>}
       />
       {editing === "new" && <PersonForm />}
       {items.length === 0 && editing !== "new" ? (
@@ -35,16 +40,16 @@ export function PeoplePanel({ editing }: { editing?: string }) {
                   <div className="flex flex-wrap items-center gap-2">
                     <span className={cn("font-semibold", p.active ? "text-ink" : "text-ink-3")}>{p.name}</span>
                     <Pill tone={p.permission === "admin" ? "jade" : "neutral"}>{permissionLabel[p.permission].label}</Pill>
-                    {p.canLogin ? <Pill tone="jade">Đăng nhập được</Pill> : <Pill tone="amber">Chưa cấp mật khẩu</Pill>}
+                    {p.canLogin ? <Pill tone="jade">Đăng nhập được</Pill> : <Pill tone="amber">Chưa có mật khẩu</Pill>}
                     {!p.active && <Pill>Ngừng hoạt động</Pill>}
                   </div>
                   <div className="mt-0.5 truncate text-[12px] text-ink-2">{p.role || "Chưa có vai trò"}{p.email ? ` · ${p.email}` : ""}</div>
                 </div>
-                <div className="flex gap-1.5">
+                <div className="flex items-center gap-2.5">
                   {current?.id !== p.id && <LinkButton href={`/settings?person=${p.id}#people`}>Sửa</LinkButton>}
-                  <form action={togglePerson}>
+                  <form action={togglePerson} className="flex items-center">
                     <input type="hidden" name="id" value={p.id} />
-                    <Button type="submit" variant="ghost">{p.active ? "Ngừng" : "Kích hoạt"}</Button>
+                    <SwitchSubmit on={p.active} label={p.active ? `Ngừng ${p.name}` : `Kích hoạt ${p.name}`} />
                   </form>
                 </div>
               </div>
@@ -77,7 +82,7 @@ function PersonForm({ person }: { person?: PersonRecord }) {
           ))}
         </select>
       </Field>
-      <Field label={person?.canLogin ? "Đổi mật khẩu đăng nhập (để trống nếu giữ)" : "Mật khẩu đăng nhập (cấp quyền vào hệ thống)"} hint="Nhân sự đăng nhập bằng email ở trên và mật khẩu này; quyền hạn áp theo lựa chọn bên cạnh.">
+      <Field label={person?.canLogin ? "Mật khẩu mới" : "Mật khẩu đăng nhập"} hint={person?.canLogin ? "Để trống nếu giữ" : "Đăng nhập bằng email ở trên"}>
         <input name="password" type="password" autoComplete="new-password" className={inputClass} placeholder="Ít nhất 10 ký tự, không chứa tên hay email" />
       </Field>
       <div className="flex gap-2 md:col-span-2">

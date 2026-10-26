@@ -1,8 +1,9 @@
 @import "tailwindcss";
 
-/* Tone màu BAOR AI OS: xanh ngọc trên nền xương trắng ấm.
-   Một màu chủ đạo (jade), ba màu trạng thái (amber = chờ bạn, brick = lỗi/cần người, sky = thông tin),
-   một màu riêng cho mọi thứ do AI tạo (violet). */
+/* Giao diện BAOR AI OS (OWNER 25/10/2026): ngôn ngữ "kim loại / kính" — sáng = ngà ấm, tối = xanh rừng có quầng sáng (OWNER 26/10/2026: lấy đúng hai màu của màn đăng nhập gốc).
+   Thương hiệu: jade (xanh ngọc) + vàng logo làm điểm nhấn; ba màu trạng thái (amber = chờ bạn, brick = lỗi/cần người,
+   sky = thông tin), violet cho mọi thứ do AI tạo. Tên token giữ nguyên, chỉ đổi giá trị.
+   Bảng màu nhóm chức năng (icon chip) khai báo MỘT nơi: --tone-* bên dưới; ánh xạ phân hệ → nhóm ở src/config/menu.ts. */
 :root {
   --ground: #f5f2ea;
   --ground-2: #ece8dd;
@@ -10,80 +11,137 @@
   --border: #e2ddd0;
   --border-2: #cfc9b9;
   --ink: #1a1f1b;
-  --ink-2: #5e655f;
-  --ink-3: #9aa19b;
+  --ink-2: #4f5650;
+  --ink-3: #5f665f;
   --brand-caption: #6a7069;
   --jade: #1e7a4b;
   --jade-2: #155d38;
   --jade-soft: #ddefe3;
   --jade-ink: #10472b;
-  --amber: #b7791f;
+  --jade-fg: #1e7a4b;
+  --amber: #8f5c0e;
   --amber-soft: #f8ecd2;
-  --brick: #c2413b;
+  --brick: #b73a34;
   --brick-soft: #f8e1df;
   --violet: #6b4fbb;
   --violet-soft: #eae4f8;
   --sky: #2f5fd0;
   --sky-soft: #e1e8fa;
-  --shadow: 0 1px 2px rgba(26, 31, 27, 0.05);
+  --shadow: 0 1px 2px rgba(16, 16, 24, 0.04), 0 1px 3px rgba(16, 16, 24, 0.03);
+  --shadow-lift: 0 6px 18px -6px rgba(16, 16, 24, 0.16), 0 2px 6px -2px rgba(16, 16, 24, 0.06);
+  --card-bg: #ffffff;
+  --card-edge: 0 0 #0000;
+  --input-bg: #ffffff;
+  --on-brick: #ffffff;
+  --page-glow: none;
+
+  /* Bảng màu nhóm chức năng: 8 màu + xám (sáng: sắc độ 600–800 để đọc trên nền ngà; tối: 300–400 rực trên nền xanh rừng) */
+  --tone-blue: #1d4ed8;
+  --tone-cyan: #155e75;
+  --tone-violet: #6d28d9;
+  --tone-pink: #9d174d;
+  --tone-orange: #9a3412;
+  --tone-emerald: #065f46;
+  --tone-yellow: #854d0e;
+  --tone-indigo: #4338ca;
+  --tone-red: #991b1b;
+  --tone-slate: #52525b;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --sidebar-w: 240px;
   --sidebar-collapsed-w: 64px;
   --topbar-h: 56px;
-  --radius: 8px;
+  --radius: 10px;
   color-scheme: light;
 }
 
-/* Chế độ tối: bảng màu tham khảo của BAOR AI OS */
+/* Chế độ tối: xanh rừng #0f1a14 (như mảng trái màn đăng nhập), thẻ nền đặc, viền trắng mảnh 8–14 % */
 :root[data-theme="dark"] {
-  --ground: #121713;
-  --ground-2: #171d18;
-  --surface: #1a1f1b;
-  --border: #283029;
-  --border-2: #384139;
-  --ink: #ffffff;
+  --ground: #0f1a14;
+  --ground-2: #0b140f;
+  --surface: #142219;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-2: rgba(255, 255, 255, 0.14);
+  --ink: #f3f5f3;
   --ink-2: #aab2ab;
   --ink-3: #8a928b;
   --brand-caption: #b8a271;
-  --jade: #1e7a4b;
-  --jade-2: #155d38;
+  --jade: #208658;
+  --jade-2: #18704a;
   --jade-soft: #1c3a29;
-  --jade-ink: #ddefe3;
-  --amber: #d9a441;
+  --jade-ink: #c9f0dc;
+  --jade-fg: #34d399;
+  --amber: #e6b04f;
   --amber-soft: #3a2d14;
-  --brick: #e0665f;
+  --brick: #f07a72;
   --brick-soft: #3d1f1d;
-  --violet: #a48ee6;
+  --violet: #b6a3f5;
   --violet-soft: #2b2340;
-  --sky: #7ea0f0;
+  --sky: #8fb0f5;
   --sky-soft: #1d2740;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-lift: 0 10px 28px -10px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  --card-bg: #142219;
+  --card-edge: 0 0 #0000;
+  --input-bg: #18281e;
+  --on-brick: #1a0505;
+  --page-glow: radial-gradient(640px circle at 0% 0%, rgba(30, 122, 75, 0.22), transparent 62%), radial-gradient(560px circle at 100% 100%, rgba(183, 121, 31, 0.13), transparent 62%);
+  --tone-blue: #93c5fd;
+  --tone-cyan: #22d3ee;
+  --tone-violet: #c4b5fd;
+  --tone-pink: #f9a8d4;
+  --tone-orange: #fb923c;
+  --tone-emerald: #34d399;
+  --tone-yellow: #facc15;
+  --tone-indigo: #a5b4fc;
+  --tone-red: #fca5a5;
+  --tone-slate: #d4d4d8;
   color-scheme: dark;
+  background: #0f1a14;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]):not([data-theme="dark"]) {
-    --ground: #121713;
-    --ground-2: #171d18;
-    --surface: #1a1f1b;
-    --border: #283029;
-    --border-2: #384139;
-    --ink: #ffffff;
+    --ground: #0f1a14;
+    --ground-2: #0b140f;
+    --surface: #142219;
+    --border: rgba(255, 255, 255, 0.08);
+    --border-2: rgba(255, 255, 255, 0.14);
+    --ink: #f3f5f3;
     --ink-2: #aab2ab;
     --ink-3: #8a928b;
     --brand-caption: #b8a271;
-    --jade: #1e7a4b;
-    --jade-2: #155d38;
+    --jade: #208658;
+    --jade-2: #18704a;
     --jade-soft: #1c3a29;
-    --jade-ink: #ddefe3;
-    --amber: #d9a441;
+    --jade-ink: #c9f0dc;
+    --jade-fg: #34d399;
+    --amber: #e6b04f;
     --amber-soft: #3a2d14;
-    --brick: #e0665f;
+    --brick: #f07a72;
     --brick-soft: #3d1f1d;
-    --violet: #a48ee6;
+    --violet: #b6a3f5;
     --violet-soft: #2b2340;
-    --sky: #7ea0f0;
+    --sky: #8fb0f5;
     --sky-soft: #1d2740;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+    --shadow-lift: 0 10px 28px -10px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05);
+    --card-bg: #142219;
+    --card-edge: 0 0 #0000;
+    --input-bg: #18281e;
+    --on-brick: #1a0505;
+    --page-glow: radial-gradient(640px circle at 0% 0%, rgba(30, 122, 75, 0.22), transparent 62%), radial-gradient(560px circle at 100% 100%, rgba(183, 121, 31, 0.13), transparent 62%);
+    --tone-blue: #93c5fd;
+    --tone-cyan: #22d3ee;
+    --tone-violet: #c4b5fd;
+    --tone-pink: #f9a8d4;
+    --tone-orange: #fb923c;
+    --tone-emerald: #34d399;
+    --tone-yellow: #facc15;
+    --tone-indigo: #a5b4fc;
+    --tone-red: #fca5a5;
+    --tone-slate: #d4d4d8;
     color-scheme: dark;
+    background: #0f1a14;
   }
 }
 
@@ -101,6 +159,8 @@
   --color-jade-2: var(--jade-2);
   --color-jade-soft: var(--jade-soft);
   --color-jade-ink: var(--jade-ink);
+  /* Chữ jade dùng ở biến thể hover / group-hover (tối: --jade-fg sáng hơn để đạt AA; .text-jade thường đã có luật riêng) */
+  --color-jade-fg: var(--jade-fg);
   --color-amber: var(--amber);
   --color-amber-soft: var(--amber-soft);
   --color-brick: var(--brick);
@@ -122,13 +182,21 @@ html {
 }
 
 body {
-  background: var(--ground);
+  background-color: var(--ground);
+  /* Tối: quầng sáng jade góc trên trái + vàng góc dưới phải như màn đăng nhập (không blur, không grain) */
+  background-image: var(--page-glow);
+  background-attachment: fixed;
   color: var(--ink);
   margin: 0;
 }
 
-* {
-  border-color: var(--border);
+/* Màu viền mặc định nằm ở lớp base để tiện ích border-* (border-jade, border-brick/30…) đè được */
+@layer base {
+  *,
+  ::before,
+  ::after {
+    border-color: var(--border);
+  }
 }
 
 ::selection {
@@ -137,8 +205,8 @@ body {
 
 /* Nhãn nhỏ chữ hoa */
 .lbl {
-  font-size: 10.5px;
-  letter-spacing: 0.08em;
+  font-size: 10px;
+  letter-spacing: 0.03em;
   text-transform: uppercase;
   font-weight: 600;
   color: var(--ink-3);
@@ -148,11 +216,377 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-.card {
-  background: var(--surface);
-  border: 1px solid var(--border);
+@layer components {
+  /* Thẻ: kính mờ nhẹ trên nền (tối) / trắng nổi nhẹ (sáng), viền mảnh */
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--card-edge), var(--shadow);
+  }
+
+  /* Thẻ bấm được: nhấc nhẹ + bóng khi rê chuột */
+  a.card,
+  .lift {
+    transition:
+      transform 180ms var(--ease-out),
+      box-shadow 180ms var(--ease-out),
+      border-color 180ms ease,
+      background-color 180ms ease;
+  }
+  a.card:hover,
+  .lift:hover {
+    transform: translateY(-2px);
+    border-color: var(--border-2);
+    box-shadow: var(--card-edge), var(--shadow-lift);
+  }
+  a.card:active,
+  .lift:active {
+    transform: translateY(0) scale(0.995);
+    transition-duration: 90ms;
+  }
+
+  /* ── Nút "liquid glass" ─────────────────────────────────────────── */
+  .btn {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    border-radius: 6px;
+    border-width: 1px;
+    border-style: solid;
+    transition:
+      box-shadow 180ms var(--ease-out),
+      border-color 180ms ease,
+      background-color 180ms ease,
+      color 180ms ease,
+      transform 120ms var(--ease-out);
+  }
+  .btn:active:not(:disabled) {
+    transform: translateY(1px) scale(0.985);
+  }
+  /* Vệt sáng quét ngang khi rê chuột */
+  .btn::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, 0.55) 50%, transparent 70%);
+    transform: translateX(-130%);
+  }
+  .btn:hover:not(:disabled)::after {
+    transform: translateX(130%);
+    transition: transform 0.65s var(--ease-out);
+  }
+
+  /* Nút chính — xanh ngọc chữ trắng ở cả hai chế độ (OWNER 26/10/2026: như nút "Đăng nhập" của màn đăng nhập gốc).
+     Tối cũng dùng xanh ngọc: nút trắng bạc quá chói trên nền xanh rừng; xanh ngọc liền mạch với quầng sáng jade. */
+  .btn-primary {
+    color: #ffffff;
+    border-color: #155d38;
+    background: linear-gradient(180deg, #1f7d4e 0%, #1e7a4b 55%, #1a6c43 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.2),
+      0 1px 2px rgba(0, 0, 0, 0.18);
+  }
+  .btn-primary:hover:not(:disabled) {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.24),
+      0 0 22px rgba(30, 122, 75, 0.35);
+  }
+  .btn-primary::after {
+    background: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, 0.28) 50%, transparent 70%);
+  }
+
+  /* Nút phụ — kính 135deg, viền bạc */
+  .btn-glass {
+    color: var(--ink);
+    border-color: #cfc9b9;
+    background: linear-gradient(135deg, #ffffff 0%, #f7f4ec 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 2px rgba(16, 16, 24, 0.05);
+  }
+  .btn-glass:hover:not(:disabled) {
+    border-color: #a9b39f;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 0 18px rgba(30, 122, 75, 0.18);
+  }
+
+  /* ── Tab / mục chọn dạng "liquid-metal pill" (đang chọn) ─────────── */
+  .metal-pill {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    color: #ffffff;
+    border: 1px solid rgba(198, 198, 198, 0.55);
+    border-radius: 7px;
+    background: linear-gradient(105deg, #0b140f 0%, #1f3327 55%, #2f4a3a 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 2px rgba(0, 0, 0, 0.25);
+    transition: box-shadow 180ms var(--ease-out), border-color 180ms ease;
+  }
+  .metal-pill::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, 0.22) 50%, transparent 70%);
+    transform: translateX(-130%);
+  }
+  .metal-pill:hover::before {
+    transform: translateX(130%);
+    transition: transform 0.65s var(--ease-out);
+  }
+  .metal-pill:hover {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 0 18px rgba(200, 210, 230, 0.18);
+  }
+  /* Mục chưa chọn của nhóm tab: trong suốt, rê chuột hiện nền mờ */
+  .tab-pill {
+    border: 1px solid transparent;
+    border-radius: 7px;
+    transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
+  }
+  .tab-pill:hover {
+    background: color-mix(in srgb, var(--ink) 6%, transparent);
+    border-color: var(--border);
+  }
+
+  /* Huy hiệu kim loại (kèm sao lấp lánh) cho nhãn nổi bật */
+  .badge-metal {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 999px;
+    background: linear-gradient(90deg, #7d7d7d 0%, #2a2a2a 45%, #0a0a0a 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  }
+  .badge-metal .sparkle {
+    animation: sparkle 2.4s ease-in-out infinite;
+  }
+
+  /* ── Icon chip: ô bo tròn nền nhạt + icon màu theo nhóm chức năng ─── */
+  .chip {
+    display: inline-grid;
+    place-items: center;
+    flex-shrink: 0;
+    border-radius: 7px;
+    color: var(--chip, var(--ink-2));
+    background: color-mix(in srgb, var(--chip, var(--ink-3)) 16%, transparent);
+    border: 1px solid color-mix(in srgb, var(--chip, var(--ink-3)) 25%, transparent);
+    transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease;
+  }
+  /* Bản gọn cho thanh bên: không viền, icon vẫn đủ màu */
+  .chip-quiet {
+    background: color-mix(in srgb, var(--chip, var(--ink-3)) 14%, transparent);
+    border-color: transparent;
+  }
+  /* Rê chuột: nền chip đậm hơn */
+  .group:hover .chip,
+  .chip-host:hover .chip {
+    background: color-mix(in srgb, var(--chip, var(--ink-3)) 24%, transparent);
+  }
+  /* Icon nhúc nhẹ khi rê chuột lên mục chứa nó */
+  .group:hover .chip > svg,
+  .chip-host:hover .chip > svg {
+    animation: nudge 0.5s var(--ease-out);
+  }
+
+  /* Mục menu đang chọn ở thanh bên: kim loại nhẹ */
+  .nav-active {
+    color: var(--ink);
+    background: #ffffff;
+    box-shadow: 0 1px 2px rgba(16, 16, 24, 0.06);
+  }
+}
+
+.tone-blue { --chip: var(--tone-blue); }
+.tone-cyan { --chip: var(--tone-cyan); }
+.tone-violet { --chip: var(--tone-violet); }
+.tone-pink { --chip: var(--tone-pink); }
+.tone-orange { --chip: var(--tone-orange); }
+.tone-emerald { --chip: var(--tone-emerald); }
+.tone-yellow { --chip: var(--tone-yellow); }
+.tone-indigo { --chip: var(--tone-indigo); }
+.tone-red { --chip: var(--tone-red); }
+.tone-slate { --chip: var(--tone-slate); }
+
+/* Bản tối của các thành phần kim loại / kính — trong @layer components để tiện ích (text-brick, border-brick của nút
+   nguy hiểm…) vẫn đè được */
+@layer components {
+:root[data-theme="dark"] .btn-glass {
+  color: #ffffff;
+  border-color: rgba(198, 198, 198, 0.45);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.02) 100%), #142219;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+:root[data-theme="dark"] .btn-glass:hover:not(:disabled) {
+  border-color: rgba(220, 230, 255, 0.75);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 22px rgba(186, 208, 255, 0.25);
+}
+:root[data-theme="dark"] .nav-active {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: none;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .btn-glass {
+    color: #ffffff;
+    border-color: rgba(198, 198, 198, 0.45);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.02) 100%), #142219;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .btn-glass:hover:not(:disabled) {
+    border-color: rgba(220, 230, 255, 0.75);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 22px rgba(186, 208, 255, 0.25);
+  }
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .nav-active {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.06);
+    box-shadow: none;
+  }
+}
+}
+
+/* Chữ jade ở nền tối: sáng hơn để đạt AA (cố ý ngoài layer để đè tiện ích .text-jade) */
+:root[data-theme="dark"] .text-jade { color: var(--jade-fg); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .text-jade { color: var(--jade-fg); }
+}
+
+/* Ô nhập (mọi ô dùng nền bg-surface): tối = nền #141416 sáng hơn thẻ; focus viền màu thương hiệu.
+   Ở @layer utilities với độ ưu tiên cao hơn .bg-surface; chỉ đặt nền (viền do tiện ích border-* của từng ô quyết định). */
+@layer utilities {
+  :is(input, select, textarea)[class*="bg-surface"] {
+    background-color: var(--input-bg);
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+  }
+  :is(input, select, textarea)[class*="bg-surface"]:focus-visible {
+    border-color: var(--jade-fg);
+  }
+}
+
+/* Công tắc cho ô chọn bật / tắt trong biểu mẫu (<input type="checkbox" class="switch" role="switch">): tên trường giữ nguyên */
+input[type="checkbox"].switch {
+  appearance: none;
+  position: relative;
+  flex-shrink: 0;
+  width: 30px;
+  height: 17px;
+  margin: 0;
+  border-radius: 999px;
+  background: var(--border-2);
+  cursor: pointer;
+  transition: background-color 180ms ease;
+}
+input[type="checkbox"].switch::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 13px;
+  height: 13px;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: transform 180ms var(--ease-out);
+}
+input[type="checkbox"].switch:checked { background: var(--jade); }
+input[type="checkbox"].switch:checked::before { transform: translateX(13px); }
+input[type="checkbox"].switch:focus-visible { outline: 2px solid var(--jade); outline-offset: 2px; }
+
+/* Hộp giải thích của nút (i) (InfoTip, Popover API): giữa màn hình, gọn, bấm ra ngoài để đóng */
+.info-pop {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  width: min(340px, calc(100vw - 32px));
+  height: fit-content;
+  max-height: calc(100vh - 64px);
+  overflow: auto;
+  padding: 12px 14px;
+  border: 1px solid var(--border-2);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 12.5px;
+  line-height: 1.55;
+  box-shadow: var(--shadow-lift);
+}
+.info-pop::backdrop { background: rgba(0, 0, 0, 0.25); }
+
+/* ── Hiệu ứng vào trang ─────────────────────────────────────────────
+   Trạng thái nghỉ = hiện đủ (opacity 1): hiệu ứng chỉ là keyframe "backwards", hỏng thì trang vẫn đầy đủ.
+   So le bằng biến --d (0, 1, 2…). JS dự phòng (AppearFallback) thêm .is-in để chốt trạng thái cuối. */
+@layer components {
+.appear,
+.appear-kids > * {
+  animation-duration: 1.05s;
+  animation-timing-function: var(--ease-out);
+  animation-fill-mode: backwards;
+  animation-delay: calc(var(--d, 0) * 70ms);
+  animation-name: appear-soft;
+}
+.appear--soft { animation-name: appear-soft; }
+.appear--scale { animation-name: appear-scale; }
+.appear--pop { animation-name: appear-pop; }
+.appear--mask { animation-name: appear-mask; }
+.appear--btn { animation-name: appear-btn; }
+.appear--side { animation-name: appear-side; }
+.appear--stat { animation-name: appear-stat; }
+/* Lưới (vd lưới video): mọi con hiện kiểu "scale", so le khi kèm .stagger */
+.appear-kids > * { animation-name: appear-scale; }
+.appear.is-in,
+.appear-kids > .is-in {
+  animation: none;
+}
+}
+
+/* So le tự động cho lưới / danh sách: con thứ n nhận --d = n-1 (tối đa 12) */
+.stagger > :nth-child(1) { --d: 0; }
+.stagger > :nth-child(2) { --d: 1; }
+.stagger > :nth-child(3) { --d: 2; }
+.stagger > :nth-child(4) { --d: 3; }
+.stagger > :nth-child(5) { --d: 4; }
+.stagger > :nth-child(6) { --d: 5; }
+.stagger > :nth-child(7) { --d: 6; }
+.stagger > :nth-child(8) { --d: 7; }
+.stagger > :nth-child(9) { --d: 8; }
+.stagger > :nth-child(10) { --d: 9; }
+.stagger > :nth-child(11) { --d: 10; }
+.stagger > :nth-child(12) { --d: 11; }
+.stagger > :nth-child(n + 13) { --d: 12; }
+
+@keyframes appear-soft {
+  from { opacity: 0; transform: translateY(8px); }
+}
+@keyframes appear-scale {
+  from { opacity: 0; transform: translateY(6px) scale(0.97); }
+}
+@keyframes appear-pop {
+  from { opacity: 0; transform: scale(0.94); }
+}
+@keyframes appear-mask {
+  from { opacity: 0; transform: translateY(6px); clip-path: inset(0 0 100% 0); }
+  to { clip-path: inset(-20% -5% -20% -5%); }
+}
+@keyframes appear-btn {
+  from { opacity: 0; transform: translateY(4px) scale(0.98); }
+}
+@keyframes appear-side {
+  from { opacity: 0; transform: translateX(-8px); }
+}
+@keyframes appear-stat {
+  from { opacity: 0; transform: translateY(6px); filter: blur(3px); }
+}
+@keyframes nudge {
+  0% { transform: rotate(0) scale(1); }
+  35% { transform: rotate(-9deg) scale(1.1); }
+  70% { transform: rotate(5deg) scale(1.04); }
+  100% { transform: rotate(0) scale(1); }
+}
+@keyframes sparkle {
+  0%, 100% { opacity: 1; transform: scale(1) rotate(0); }
+  50% { opacity: 0.55; transform: scale(0.8) rotate(20deg); }
 }
 
 @keyframes blink {
@@ -167,11 +601,6 @@ body {
   border-radius: 999px;
   background: var(--jade);
   animation: blink 1.8s ease-in-out infinite;
-}
-@media (prefers-reduced-motion: reduce) {
-  .live {
-    animation: none;
-  }
 }
 
 /* Tooltip khi sidebar thu gọn */
@@ -196,19 +625,46 @@ body {
   pointer-events: none;
 }
 
-/* Khung xương khi đang tải */
+/* Khung xương khi đang tải: vệt sáng quét ngang */
 @keyframes shimmer {
-  0% { opacity: 0.55; }
-  50% { opacity: 1; }
-  100% { opacity: 0.55; }
+  from { background-position: 150% 0; }
+  to { background-position: -50% 0; }
 }
 .skeleton {
-  background: var(--ground-2);
+  background-color: var(--ground-2);
+  background-image: linear-gradient(100deg, transparent 35%, color-mix(in srgb, var(--ink) 7%, transparent) 50%, transparent 65%);
+  background-size: 200% 100%;
   border-radius: 6px;
-  animation: shimmer 1.4s ease-in-out infinite;
+  animation: shimmer 1.4s linear infinite;
 }
+
+/* Tắt mọi chuyển động khi người dùng chọn giảm chuyển động */
 @media (prefers-reduced-motion: reduce) {
-  .skeleton { animation: none; }
+  .live,
+  .skeleton,
+  .appear,
+  .appear-kids > *,
+  .badge-metal .sparkle,
+  .group:hover .chip > svg,
+  .chip-host:hover .chip > svg {
+    animation: none !important;
+  }
+  .btn::after,
+  .metal-pill::before {
+    display: none;
+  }
+  a.card:hover,
+  .lift:hover,
+  a.card:active,
+  .lift:active,
+  .btn:active:not(:disabled) {
+    transform: none;
+  }
+  *,
+  ::before,
+  ::after {
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* Phần tử chỉ hiện ở một chế độ màu (logo hai biến thể) */
@@ -220,5 +676,6 @@ body {
   :root:not([data-theme="light"]):not([data-theme="dark"]) .only-light { display: none; }
 }
 
-/* Tránh cuộn ngang ngoài ý muốn */
-html, body { overflow-x: hidden; }
+/* Tránh cuộn ngang ngoài ý muốn. Dùng `clip`, KHÔNG dùng `hidden`: `overflow-x: hidden` biến body thành khung cuộn (overflow-y
+   thành auto) nên menu trái / thanh trên cùng `sticky` trôi theo trang khi cuộn (OWNER 26/10/2026 "trải nghiệm cuộn chưa tốt") */
+html, body { overflow-x: clip; }

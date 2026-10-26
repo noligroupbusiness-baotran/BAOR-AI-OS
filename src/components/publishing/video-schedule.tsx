@@ -7,6 +7,8 @@ import { videoChannels, channelStatus, isDryRun, suggestCaption, videoPostsFor }
 import { postStatusLabel } from "@/lib/labels";
 import { Pill } from "@/components/ui/pill";
 import type { PostStatus } from "@/lib/types";
+import { aiReadiness } from "@/lib/ai";
+import { AiBlocked } from "@/components/ui/ai-blocked";
 
 // Lên lịch đăng một video đã duyệt: chọn kênh, giờ, caption. Kênh chưa có adapter hoặc chưa kết nối được ghi rõ lý do.
 export function VideoScheduleForm({ videoId, back }: { videoId: string; back: string }) {
@@ -21,7 +23,8 @@ export function VideoScheduleForm({ videoId, back }: { videoId: string; back: st
   const draftSource = postDraftSource(videoId);
   const golden = goldenHours("facebook");
   const times = suggestPostTimes(golden.hours);
-  const source = draft ? (draftSource?.startsWith("rule:") ? `Bản nháp theo luật — AI chưa viết được: ${draftSource.slice(5).trim()}` : "Tiêu đề + nội dung do AI Viết bài đăng viết (nháp)") : base.skill ? `Caption dựng theo skill “${base.skill.title}”${base.skill.status !== "ACTIVE" ? ` (${base.skill.status} — nháp)` : ""}` : "Second Brain chưa có skill viết content — caption dựng theo cấu trúc mặc định";
+  const aiReady = aiReadiness("caption");
+  const source = draft ? (draftSource?.startsWith("rule:") ? `Bản nháp theo luật — AI chưa viết được: ${draftSource.slice(5).trim()}` : "Tiêu đề + nội dung do AI Viết bài đăng viết (nháp)") : base.skill ? `Caption dựng theo skill “${base.skill.title}”${base.skill.status !== "ACTIVE" ? ` (${base.skill.status} — nháp)` : ""}` : "Kiến thức chưa có skill viết content — caption dựng theo cấu trúc mặc định";
   // Gọn (OWNER 25/10/2026 "ít chữ, tương tác bằng nút bấm"): kênh là nút bật/tắt (vẫn là checkbox name="platform"), caption trong ô,
   // lời giải thích dài chuyển vào chú thích khi rê chuột.
   return (
@@ -54,7 +57,11 @@ export function VideoScheduleForm({ videoId, back }: { videoId: string; back: st
         <textarea name="caption" rows={5} defaultValue={caption} aria-label="Nội dung bài đăng" title={source} className="w-full rounded-md border border-border-2 bg-surface px-2.5 py-1.5 text-[12.5px] text-ink" />
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px]">
           <span className={draftSource?.startsWith("rule:") ? "text-amber" : "text-ink-3"} title={source}>{draft ? (draftSource?.startsWith("rule:") ? "Nháp theo luật" : "AI đã viết") : "Theo skill"}</span>
-          <button type="submit" formNoValidate formAction={aiCaptionAction} title={source} className="cursor-pointer font-semibold text-accent hover:underline">Viết lại bằng AI</button>
+          {aiReady.ok ? (
+            <button type="submit" formNoValidate formAction={aiCaptionAction} title={source} className="cursor-pointer font-semibold text-accent hover:underline">Viết lại bằng AI</button>
+          ) : (
+            <span className="inline-flex items-center gap-1.5"><button type="button" disabled title={aiReady.reason} className="cursor-not-allowed font-semibold text-ink-3">Viết lại bằng AI</button><AiBlocked ready={aiReady} /></span>
+          )}
           {draft && <button type="submit" formNoValidate formAction={resetCaptionAction} className="cursor-pointer text-ink-3 hover:underline">Về bản theo skill</button>}
         </div>
         {issues.length > 0 && (

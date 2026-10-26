@@ -15,8 +15,8 @@ export function WorkerKeyForm({ hasKey }: { hasKey: boolean }) {
   return (
     <form action={action} className="grid gap-2">
       <div>
-        <button type="submit" disabled={pending} className="h-8 rounded-full bg-jade px-3.5 text-[12.5px] font-semibold text-white hover:opacity-90 disabled:opacity-60">
-          {pending ? "Đang tạo…" : hasKey ? "Tạo khoá mới (thu hồi khoá cũ)" : "Tạo khoá máy dựng"}
+        <button type="submit" disabled={pending} title={hasKey ? "Tạo khoá mới (thu hồi khoá cũ)" : "Tạo khoá máy dựng"} className="btn btn-primary h-8 px-3.5 text-[12.5px] font-semibold disabled:opacity-60">
+          {pending ? "Đang tạo…" : hasKey ? "Tạo khoá mới" : "Tạo khoá"}
         </button>
       </div>
       {state.key && (

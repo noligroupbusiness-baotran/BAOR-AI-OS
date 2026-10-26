@@ -4,18 +4,20 @@ import { cn } from "@/lib/format";
 type Variant = "primary" | "outline" | "soft" | "ghost";
 type Size = "sm" | "md";
 
+// Nút "liquid glass" (OWNER 25/10/2026): chính = kim loại (sáng: graphite, tối: trắng bạc), phụ = kính viền bạc;
+// cả hai có vệt sáng quét khi rê chuột (.btn::after, globals.css). Bo 6 px; md cao 40 px.
 const variantClass: Record<Variant, string> = {
-  primary: "bg-jade border-jade-2 text-white hover:bg-jade-2",
-  outline: "bg-surface border-border-2 text-ink hover:border-ink-3",
+  primary: "btn-primary",
+  outline: "btn-glass",
   soft: "bg-jade-soft border-transparent text-jade-ink hover:bg-jade/20",
   ghost: "bg-transparent border-transparent text-ink-2 hover:bg-ground-2 hover:text-ink",
 };
 const sizeClass: Record<Size, string> = {
-  sm: "h-[26px] px-2.5 text-[12px]",
-  md: "h-8 px-3.5 text-[12.5px]",
+  sm: "h-7 px-2.5 text-[12px]",
+  md: "h-10 px-3.5 text-[12.5px]",
 };
 const base =
-  "inline-flex cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-full border font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-jade disabled:cursor-not-allowed disabled:opacity-50";
+  "btn inline-flex cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-jade disabled:cursor-not-allowed disabled:opacity-50";
 
 export function Button({
   variant = "outline",

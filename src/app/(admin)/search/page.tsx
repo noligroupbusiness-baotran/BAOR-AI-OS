@@ -42,7 +42,7 @@ function search(q: string): { group: string; hits: Hit[] }[] {
   if (videos.length) groups.push({ group: "Video", hits: videos });
 
   const leads = listLeads().filter((l) => has(l.name, l.lastMessage, l.phone, l.email, l.tags.join(" "))).map<Hit>((l) => ({ title: l.name, sub: l.lastMessage, href: "/customers?tab=leads", tag: l.platform }));
-  if (leads.length) groups.push({ group: "Khách hàng", hits: leads });
+  if (leads.length) groups.push({ group: "Lead", hits: leads });
 
   const insights = getDb().select().from(schema.insights).all().filter((i) => has(i.title, i.detail, i.source)).map<Hit>((i) => ({ title: i.title, sub: i.source, href: "/insights#insights", tag: `tin cậy ${i.confidence}%` }));
   if (insights.length) groups.push({ group: "Insight", hits: insights });
@@ -60,7 +60,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
   const total = groups.reduce((n, g) => n + g.hits.length, 0);
   return (
     <>
-      <Breadcrumb items={[{ label: "Điều hành", href: "/dashboard" }, { label: "Tìm kiếm" }]} />
+      <Breadcrumb items={[{ label: "Tổng quan", href: "/dashboard" }, { label: "Tìm kiếm" }]} />
       <PageHead title="Tìm kiếm" sub="Tìm không dấu trên chiến dịch, nội dung, video, khách hàng, insight, sản phẩm và nhân sự." />
       <form method="get" action="/search" className="flex gap-2">
         <input name="q" defaultValue={q} autoFocus className={`${inputClass} h-9 max-w-[480px]`} placeholder="Nhập từ khóa…" />

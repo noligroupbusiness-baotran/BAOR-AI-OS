@@ -69,7 +69,7 @@ export function LinkToCampaignForm({ entityType, entityId, status, back, links, 
             </optgroup>
           ))}
         </select>
-        <button type="submit" className="cursor-pointer rounded-full border border-border-2 px-2 py-0.5 text-[11.5px] font-medium text-ink hover:border-jade hover:text-jade">Gắn</button>
+        <button type="submit" className="cursor-pointer rounded-full border border-border-2 px-2 py-0.5 text-[11.5px] font-medium text-ink hover:border-jade hover:text-jade-fg">Gắn</button>
       </form>
     </div>
   );

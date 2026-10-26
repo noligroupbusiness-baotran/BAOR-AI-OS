@@ -8,7 +8,7 @@ import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { gate } from "@/lib/ai";
 import { captionSkill } from "@/lib/publishing/caption";
-import { skillChecksForPost, topicPerformance } from "./analyze";
+import { MEASURE_STEP, skillChecksForPost, topicPerformance } from "./analyze";
 import { analyzeAll, gatherPosts, gatherPublished } from "./index";
 
 const ReviewSchema = z.object({
@@ -69,7 +69,7 @@ export async function aiReviewResults(by: string): Promise<{ ok: true; saved: nu
     const row = {
       target: TARGETS.has(p.target) ? p.target : "content",
       title: `AI đề xuất: ${p.title.trim().slice(0, 180)}`,
-      detail: `${p.detail.trim().slice(0, 1500)} (AI Đo lường — bước 8.2, giả thuyết; ${by})`,
+      detail: `${p.detail.trim().slice(0, 1500)} (AI Đo lường — bước ${MEASURE_STEP}, giả thuyết; ${by})`,
       evidence: JSON.stringify(valid.map((id) => {
         const x = published.find((q) => q.id === id)!;
         return `${x.platform}: “${x.title.slice(0, 80)}” · xem ${x.views ?? "?"}`;

@@ -10,7 +10,7 @@ const csp = [
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' data: https://fonts.gstatic.com",
   "img-src 'self' data: blob: https:",
-  "media-src 'self' blob:",
+  "media-src 'self' blob: https://d8j0ntlcm91z4.cloudfront.net",
   `connect-src 'self'${dev ? " ws: wss:" : ""}`,
   "frame-ancestors 'none'",
   "base-uri 'self'",

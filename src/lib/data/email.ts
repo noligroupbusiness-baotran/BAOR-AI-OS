@@ -21,7 +21,7 @@ export const emailSequences: EmailSequence[] = [
   },
   {
     id: "es2",
-    name: "Nuôi dưỡng: hỏi giá chưa mua",
+    name: "Nuôi dưỡng: lead chưa đặt lịch",
     trigger: "Lead ở giai đoạn 'Đã liên hệ' quá 3 ngày",
     steps: 5,
     active: true,
@@ -31,7 +31,7 @@ export const emailSequences: EmailSequence[] = [
   },
   {
     id: "es3",
-    name: "Sau mua: hướng dẫn & nhắc mua lại",
+    name: "Sau chuyển đổi: chăm sóc, xin cảm nhận",
     trigger: "Lead chuyển đổi",
     steps: 6,
     active: true,

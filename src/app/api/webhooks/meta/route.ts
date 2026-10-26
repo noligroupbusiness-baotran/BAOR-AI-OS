@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { readIntegrationConfig, finishRun, startRun } from "@/lib/connectors/config";
 import { parseMessengerWebhook, verifyMetaSignature } from "@/lib/connectors/meta";
 import { ingestInboundMessages } from "@/lib/inbound";
-import { getMetaVerifyToken } from "@/lib/webhooks";
+import { getMetaVerifyToken, WEBHOOK_BAD_JSON_MSG, WEBHOOK_BAD_SIGNATURE_MSG } from "@/lib/webhooks";
 import { clientIp } from "@/lib/login-guard";
 import { RATE_RULES, limitOr429 } from "@/lib/rate-limit";
 
@@ -29,14 +29,14 @@ export async function POST(req: NextRequest) {
   const { appSecret } = readIntegrationConfig("facebook_page");
   const runId = startRun("facebook_page", "webhook");
   if (!verifyMetaSignature(appSecret ?? "", raw, req.headers.get("x-hub-signature-256"))) {
-    finishRun(runId, false, "Chữ ký webhook không hợp lệ (kiểm tra App Secret).");
+    finishRun(runId, false, WEBHOOK_BAD_SIGNATURE_MSG);
     return NextResponse.json({ error: "chữ ký không hợp lệ" }, { status: 401 });
   }
   let body: unknown;
   try {
     body = JSON.parse(raw);
   } catch {
-    finishRun(runId, false, "Payload không phải JSON.");
+    finishRun(runId, false, WEBHOOK_BAD_JSON_MSG);
     return NextResponse.json({ error: "payload" }, { status: 400 });
   }
   const messages = parseMessengerWebhook(body);

@@ -9,7 +9,7 @@ export function notionConfigured(): boolean {
 }
 
 export async function syncSecondBrain(): Promise<{ ok: boolean; message: string }> {
-  if (!notionConfigured()) return { ok: false, message: "Chưa có token Notion. Nhập ở Cài đặt › Kết nối › Notion (Second Brain)." };
+  if (!notionConfigured()) return { ok: false, message: "Chưa có token Notion. Nhập ở Cài đặt › Kết nối › Notion." };
   const run = startRun("notion", "sync");
   try {
     const known = new Map(getDb().select({ id: schema.knowledgeIndex.id, at: schema.knowledgeIndex.notionEditedAt, origin: schema.knowledgeIndex.origin }).from(schema.knowledgeIndex).all().filter((r) => r.origin === "notion_sync").map((r) => [r.id, r.at]));

@@ -40,7 +40,7 @@ export function entityHref(type: LinkedEntityType, entityId: string, ctx: Partia
   let path: string;
   switch (type) {
     case "insight":
-      path = "/insights#insights";
+      path = "/insights/research?tab=insight#insights";
       break;
     case "content": {
       const tab = entityStatus === "proposed" ? "proposed" : entityStatus === "in_progress" || entityStatus === "review" ? "mine" : "done";
@@ -63,7 +63,7 @@ export function entityHref(type: LinkedEntityType, entityId: string, ctx: Partia
       path = "/customers?tab=leads";
       break;
     case "automation_run":
-      path = "/automation";
+      path = "/settings?tab=tu-dong#rules";
       break;
     case "approval":
       path = "/dashboard";

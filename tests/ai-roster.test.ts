@@ -70,7 +70,8 @@ test("báo cáo chung: chi phí theo từng AI, bản ghi cũ (không có role) 
   router.recordAiCall({ purpose: "video_plan", role: "video_edit", model: "qwen", inputTokens: 0, outputTokens: 0, ok: true, costVnd: 0 });
   router.recordAiCall({ purpose: "research", role: "research", model: "claude-opus-5-5", inputTokens: 0, outputTokens: 0, ok: false, error: "lỗi" });
   const by = Object.fromEntries(roster.roleSpendThisMonth().map((r) => [r.role.id, r]));
-  assert.equal(by.research.calls, 1);
+  // Định nghĩa thống nhất 26/10: calls = MỌI lần gọi (1 thành công + 1 lỗi), failed = phần lỗi trong đó
+  assert.equal(by.research.calls, 2);
   assert.equal(by.research.failed, 1);
   assert.equal(by.research.costVnd, router.estimateCostVnd(1000, 1000));
   assert.equal(by.video_edit.calls, 1);
@@ -122,4 +123,15 @@ test("trần riêng tính cả bản ghi cũ chưa có cột vị trí (khớp v
   roster.saveRoleSettings("reply", { monthlyCapVnd: 1000 });
   router.recordAiCall({ purpose: "reply", model: "claude-opus-5-5", inputTokens: 2000, outputTokens: 500, ok: true }); // role null
   assert.equal(roster.roleAllows(roster.roleById("reply")!).ok, false);
+});
+
+test("Đội AI hiển thị bước theo 7 bước (mã sơ đồ 8.2 → 7, 6.1 → 5, 4.2 → 3); vị trí ngoài hành trình giữ '—'", async () => {
+  const { displayStepOf } = await import("../src/config/journey");
+  const step = (id: string) => displayStepOf(roster.AI_ROLES.find((r) => r.id === id)!.step);
+  assert.equal(step("measure"), "7");
+  assert.equal(step("caption"), "5");
+  assert.equal(step("video_edit"), "3");
+  assert.equal(step("research"), "1");
+  assert.equal(step("reply"), "—");
+  for (const r of roster.AI_ROLES) assert.ok(!/Second Brain/.test(r.job), `${r.id}: không hiện "Second Brain" trên giao diện`);
 });

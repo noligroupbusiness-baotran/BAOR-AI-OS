@@ -45,7 +45,7 @@ export const leads: Lead[] = [
     lastMessage: "Đã nhận hàng, cảm ơn shop",
     lastMessageAt: "2026-09-09T21:30:00+07:00",
     email: "quynh.p@example.com",
-    tags: ["đã mua"],
+    tags: ["đã chuyển đổi"],
     autoReplied: true,
   },
   {
@@ -161,8 +161,8 @@ export const autoReplyRules: AutoReplyRule[] = [
   },
   {
     id: "ar6",
-    trigger: "Hỏi ship / thời gian giao",
-    action: "Trả lời chính sách giao hàng theo khu vực",
+    trigger: "Hỏi giờ mở cửa / đặt lịch",
+    action: "Trả lời giờ mở cửa, mời để lại số",
     enabled: false,
     hits: 0,
   },

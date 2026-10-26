@@ -11,6 +11,8 @@ import { checkBudget } from "@/lib/campaigns/results";
 import { campaignRepo } from "@/lib/campaigns/repository";
 import { activateCampaign, approveCampaign, deleteDraftCampaign, duplicateCampaign, endCampaign, pauseCampaign, requestCampaignChanges, submitCampaign } from "@/lib/actions/campaigns";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { SamplePill } from "@/components/ui/sample";
+import { isSample } from "@/lib/sample";
 
 type Params = Promise<{ id: string }>;
 type Search = Promise<{ tab?: string; add?: string; edit?: string; goal?: string }>;
@@ -85,12 +87,13 @@ export default async function CampaignDetailPage({ params, searchParams }: { par
 
   return (
     <>
-      <Breadcrumb items={[{ label: "Điều hành", href: "/dashboard" }, { label: "Chiến dịch", href: "/campaigns" }, { label: campaign.name }]} />
+      <Breadcrumb items={[{ label: "Tổng quan", href: "/dashboard" }, { label: "Chiến dịch", href: "/campaigns" }, { label: campaign.name }]} />
       <div className="mb-3.5 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-[20px] font-bold tracking-[-0.01em] text-ink">{campaign.name}</h1>
             <CampaignStatusPill status={campaign.status} />
+            {isSample("campaign", campaign.id) && <SamplePill title="Chiến dịch mẫu (dữ liệu demo): số liệu không phải số thật" />}
           </div>
           <p className="mt-1 text-[12.5px] text-ink-2">
             {formatDate(campaign.startDate)} – {formatDate(campaign.endDate)} · {formatCurrency(campaign.totalBudget)} · {goals.length} mục tiêu kênh · {owner}

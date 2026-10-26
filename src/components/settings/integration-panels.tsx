@@ -1,9 +1,12 @@
 import Link from "next/link";
+import { BookOpen, Bot, Clock, Globe, Lock, Mail, Megaphone, Plug, ScrollText, Send, Wallet, type LucideIcon } from "lucide-react";
+import type { GroupTone } from "@/config/menu";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Panel, PanelHeader } from "@/components/ui/card";
 import { MoreOptions, SettingItem, SettingList, SettingSection } from "./setting-item";
 import { Pill } from "@/components/ui/pill";
 import { Button } from "@/components/ui/button";
-import { Field, FormNotice, inputClass } from "@/components/ui/field";
+import { Field, FormNotice, WithUnit, inputClass } from "@/components/ui/field";
 import { SubmitButton } from "@/components/campaigns/submit-button";
 import { STALE_CLAUDE_NOTE, listIntegrationStatus, listRuns, maskedIntegrationConfig } from "@/lib/connectors/config";
 import { connectorFor } from "@/lib/connectors/registry";
@@ -33,6 +36,16 @@ const PRIMARY: Record<string, string[]> = {
 
 const AI_ORDER = ["claude", "openai", "xai", "notion"];
 
+// Icon + màu nhóm của từng nền tảng (dòng trong Kết nối)
+function itemLook(key: string): { icon: LucideIcon; tone: GroupTone } {
+  if (key === "meta_ads") return { icon: Megaphone, tone: "orange" };
+  if (key === "notion") return { icon: BookOpen, tone: "violet" };
+  if (AI_ORDER.includes(key)) return { icon: Bot, tone: "violet" };
+  if (key === "website") return { icon: Globe, tone: "cyan" };
+  if (key === "email_provider") return { icon: Mail, tone: "cyan" };
+  return { icon: Send, tone: "blue" };
+}
+
 // Nhóm nền tảng cho dễ tìm; khoá lạ rơi vào "Khác".
 const SECTIONS: { title: string; keys: (k: string) => boolean }[] = [
   { title: "Đăng bài & tin nhắn", keys: (k) => k.startsWith("facebook_page") || ["instagram", "tiktok", "youtube", "zalo_oa"].includes(k) },
@@ -55,7 +68,14 @@ export function IntegrationsPanel() {
     .filter((g) => g.items.length > 0);
   return (
     <Panel id="integrations">
-      <PanelHeader title="Kết nối" sub="Bấm vào nền tảng, dán API rồi Lưu — hệ thống tự kiểm tra. Khoá được mã hoá." />
+      <PanelHeader
+        title="Kết nối"
+        sub="Dán API, bấm Lưu"
+        icon={Plug}
+        tone="blue"
+        info="Bấm vào nền tảng, dán API rồi Lưu — hệ thống tự kiểm tra. Khoá được mã hoá."
+        tags={<Pill tone="jade"><Lock size={11} aria-hidden />Mã hoá</Pill>}
+      />
       <SettingList>
         {groups.map((g) => (
           <div key={g.title}>
@@ -88,7 +108,7 @@ function IntegrationItem({ i, extras, nextFree }: { i: IntegrationRow; extras: I
   const more = extras.filter((x) => x.key !== nextFree);
   const add = extras.find((x) => x.key === nextFree);
   return (
-    <SettingItem id={i.key} title={i.name} badge={statusBadge(i)} summary={more.length ? `+ ${more.length} fanpage khác` : undefined}>
+    <SettingItem id={i.key} title={i.name} badge={statusBadge(i)} summary={more.length ? `+ ${more.length} fanpage` : undefined} {...itemLook(i.key)} action={i.connected ? "Sửa" : "Kết nối"}>
       <IntegrationBody i={i} />
       {more.map((x) => (
         <div key={x.key} id={x.key} className="grid scroll-mt-20 gap-2 rounded-md border border-border p-3">
@@ -116,7 +136,12 @@ function IntegrationBody({ i }: { i: IntegrationRow }) {
   const masked = maskedIntegrationConfig(i.key);
   return (
     <>
-      {connector?.pending && <p className="m-0 text-[12px] text-ink-3">Có thể lưu khoá trước — kết nối thật với nền tảng này sẽ được mở sau. {connector.pending}</p>}
+      {connector?.pending && (
+        <div className="flex items-center gap-1.5">
+          <Pill tone="amber"><Clock size={11} aria-hidden />Mở sau</Pill>
+          <InfoTip label="Vì sao mở sau">Có thể lưu khoá trước — kết nối thật với nền tảng này sẽ được mở sau. {connector.pending}</InfoTip>
+        </div>
+      )}
       {!i.connected && !connector?.pending && i.lastError && i.lastError !== STALE_CLAUDE_NOTE && <FormNotice tone="error">{i.lastError}</FormNotice>}
       <form action={saveIntegration} className="grid gap-2">
         <input type="hidden" name="key" value={i.key} />
@@ -169,8 +194,11 @@ export function AiBudgetPanel() {
     <Panel id="ai">
       <PanelHeader
         title="Chi tiêu AI"
-        sub="Tổng tiền gọi AI. Chạm trần thì AI tạm dừng tới ngày / tháng sau."
-        action={<Link href="/reports?tab=ai" className="text-[12.5px] font-semibold text-accent">Xem chi tiết ›</Link>}
+        sub="Chạm trần thì AI tạm dừng"
+        icon={Wallet}
+        tone="violet"
+        info="Tổng tiền gọi AI. Chạm trần thì AI tạm dừng tới ngày / tháng sau. Tỷ giá dùng để quy đổi giá hãng AI (USD) sang đồng."
+        action={<Link href="/insights/learning?tab=so-lieu&view=ai" className="text-[12.5px] font-semibold text-accent">Chi tiết ›</Link>}
       />
       <div className="grid gap-4 p-4 md:grid-cols-[1fr_auto] md:items-end">
         <dl className="m-0 grid grid-cols-2 gap-3">
@@ -178,10 +206,10 @@ export function AiBudgetPanel() {
           <div><dt className="lbl">Tháng này</dt><dd className={cn("num m-0 mt-0.5 text-[20px] font-bold", pctMonth >= 100 ? "text-brick" : pctMonth >= 80 ? "text-amber" : "text-ink")}>{formatCurrency(b.spentMonthVnd)}</dd><dd className="m-0 text-[11.5px] text-ink-3">{pctMonth}% trần tháng {formatCurrency(b.monthlyCapVnd)}</dd></div>
         </dl>
         <form action={saveAiBudget} className="flex flex-wrap items-end gap-2">
-          <Field label="Trần / ngày (₫)"><input name="dailyCapVnd" inputMode="numeric" defaultValue={b.dailyCapVnd} className={`${inputClass} w-[130px]`} /></Field>
-          <Field label="Trần / tháng (₫)"><input name="monthlyCapVnd" inputMode="numeric" defaultValue={b.monthlyCapVnd} className={`${inputClass} w-[140px]`} /></Field>
-          <Field label="Tỷ giá (₫ / USD)" hint="Quy đổi giá hãng AI"><input name="vndPerUsd" inputMode="numeric" defaultValue={vndPerUsd()} className={`${inputClass} w-[110px]`} /></Field>
-          <SubmitButton>Lưu trần</SubmitButton>
+          <Field label="Trần / ngày"><WithUnit unit="₫"><input name="dailyCapVnd" inputMode="numeric" defaultValue={b.dailyCapVnd} className={`${inputClass} w-[130px] pr-7`} /></WithUnit></Field>
+          <Field label="Trần / tháng"><WithUnit unit="₫"><input name="monthlyCapVnd" inputMode="numeric" defaultValue={b.monthlyCapVnd} className={`${inputClass} w-[140px] pr-7`} /></WithUnit></Field>
+          <Field label="Tỷ giá"><WithUnit unit="₫/USD"><input name="vndPerUsd" inputMode="numeric" defaultValue={vndPerUsd()} className={`${inputClass} w-[130px] pr-14`} /></WithUnit></Field>
+          <SubmitButton>Lưu</SubmitButton>
         </form>
       </div>
     </Panel>
@@ -197,7 +225,10 @@ export function SystemLogPanel() {
     <Panel id="syslog">
       <PanelHeader
         title="Nhật ký hệ thống"
-        sub={s.running ? `Chạy nền đang hoạt động · lần gần nhất ${s.lastTickAt ? formatDateTime(s.lastTickAt) : "chưa có"}` : "Chạy nền chưa khởi động."}
+        icon={ScrollText}
+        tone="slate"
+        sub={s.running ? `Lần chạy nền gần nhất: ${s.lastTickAt ? formatDateTime(s.lastTickAt) : "chưa có"}` : undefined}
+        tags={s.running ? <Pill tone="jade">Chạy nền bật</Pill> : <Pill tone="amber">Chạy nền tắt</Pill>}
         action={
           <form action={runBackgroundNow}>
             <SubmitButton variant="soft" pendingText="Đang chạy…">Chạy ngay</SubmitButton>
@@ -205,7 +236,7 @@ export function SystemLogPanel() {
         }
       />
       <div className="border-t border-border px-4 py-3">
-      <MoreOptions label={`Xem nhật ký (${runs.length} lần đồng bộ · ${decisions.length} quyết định)`}>
+      <MoreOptions label={`Xem nhật ký (${runs.length} đồng bộ · ${decisions.length} quyết định)`}>
       <div className="grid rounded-md border border-border md:grid-cols-2">
         <div className="border-b border-border md:border-b-0 md:border-r">
           <h3 className="px-4 pt-3 text-[11.5px] font-semibold uppercase tracking-wide text-ink-3">Đồng bộ và webhook</h3>

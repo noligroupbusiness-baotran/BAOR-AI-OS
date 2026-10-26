@@ -3,7 +3,7 @@
 // Mọi phân hệ (Chiến dịch, Nội dung, AI...) đọc qua catalogRepo, không giữ bản sao riêng.
 import { asc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
-import { hashPassword } from "@/lib/admin";
+import { hashPassword, isAdminEmail } from "@/lib/admin";
 import type { Person } from "@/lib/campaigns/types";
 
 export type Permission = "admin" | "manager" | "staff";
@@ -48,6 +48,8 @@ class SqliteCatalogRepository implements CatalogRepository {
   }
 
   savePerson(input: Omit<PersonRecord, "id" | "active" | "canLogin"> & { id?: string; password?: string }): PersonRecord {
+    const block = personEditBlock(input.id, input.email);
+    if (block) throw new Error(block);
     const id = input.id ?? newId("u");
     const passwordHash = input.password ? hashPassword(input.password) : undefined;
     const row = { id, name: input.name, role: input.role, email: input.email, permission: input.permission, active: true, updatedAt: nowIso(), ...(passwordHash ? { passwordHash } : {}) };
@@ -60,8 +62,19 @@ class SqliteCatalogRepository implements CatalogRepository {
   }
 
   setPersonActive(id: string, active: boolean) {
+    const block = personEditBlock(id, "");
+    if (block) throw new Error(block);
     this.db.update(schema.people).set({ active, updatedAt: nowIso() }).where(eq(schema.people.id, id)).run();
   }
+}
+
+/** Nhân sự không được mang email OWNER: đặt mật khẩu / đổi quyền / ngừng hoạt động bản ghi đó sẽ đăng nhập hoặc thu hồi phiên
+ *  dưới tên OWNER. Tài khoản OWNER chỉ quản lý ở Cài đặt › Tài khoản quản trị. null = được. */
+export function personEditBlock(id: string | undefined, email: string): string | null {
+  if (isAdminEmail(email)) return "Email này là tài khoản OWNER (quản trị chính): không thêm vào Nhân sự.";
+  const before = id ? getDb().select({ email: schema.people.email }).from(schema.people).where(eq(schema.people.id, id)).get() : undefined;
+  if (before && isAdminEmail(before.email)) return "Bản ghi mang email OWNER: quản lý ở Cài đặt › Tài khoản quản trị, không sửa ở Nhân sự.";
+  return null;
 }
 
 function toPerson(r: typeof schema.people.$inferSelect): PersonRecord {

@@ -1,4 +1,7 @@
+import { Cpu, KeyRound, RefreshCw } from "lucide-react";
 import { Panel, PanelHeader } from "@/components/ui/card";
+import { IconChip } from "@/components/ui/icon-chip";
+import { SwitchSubmit } from "@/components/ui/switch";
 import { Pill } from "@/components/ui/pill";
 import { SubmitButton } from "@/components/campaigns/submit-button";
 import { WorkerKeyForm } from "./worker-key-form";
@@ -18,30 +21,43 @@ export function RenderWorkerPanel() {
   const skillAlert = skills.some((s) => s.state === "changed" || s.state === "unconfirmed");
   return (
     <Panel id="render-worker">
-      <PanelHeader title="Nơi dựng video" sub="Dựng trên máy chủ, hoặc trên máy của anh (nhanh hơn, dùng tư liệu trên máy)." />
-      <div className="grid gap-3 px-4 py-3 text-[13px]">
-        <form action={setRenderModeAction} className="flex flex-wrap items-center gap-2">
+      <PanelHeader title="Nơi dựng video" sub="Máy chủ hoặc máy của anh" icon={Cpu} tone="pink" info="Dựng trên máy chủ, hoặc trên máy của anh (nhanh hơn, dùng tư liệu trên máy)." />
+      <div className="grid text-[13px]">
+        {/* Công tắc: bật = dựng trên máy của anh (cùng action, cùng giá trị mode như nút "Chuyển…" cũ) */}
+        <form action={setRenderModeAction} className="chip-host flex min-h-[52px] flex-wrap items-center gap-3 border-b border-border px-4 py-2.5">
           <input type="hidden" name="mode" value={mode === "remote" ? "local" : "remote"} />
-          <Pill tone={mode === "remote" ? "jade" : "neutral"}>Đang dựng trên: {mode === "remote" ? "máy của anh" : "máy chủ"}</Pill>
-          {mode === "remote" && (seen ? <Pill tone={online ? "jade" : "amber"}>{seen.name} · {online ? "đang chạy" : `liên lạc lúc ${formatDateTime(seen.at)}`}</Pill> : <Pill tone="amber">máy dựng chưa kết nối</Pill>)}
-          <SubmitButton variant="soft">{mode === "remote" ? "Chuyển về máy chủ" : "Chuyển sang máy của anh"}</SubmitButton>
+          <IconChip icon={Cpu} tone="pink" size="sm" />
+          <span className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            <span className="font-semibold text-ink">Dựng trên máy của anh</span>
+            {mode === "remote" ? (seen ? <Pill tone={online ? "jade" : "amber"}>{seen.name} · {online ? "đang chạy" : `liên lạc lúc ${formatDateTime(seen.at)}`}</Pill> : <Pill tone="amber">Máy dựng chưa kết nối</Pill>) : <Pill>Đang dùng máy chủ</Pill>}
+          </span>
+          <SwitchSubmit on={mode === "remote"} label={mode === "remote" ? "Chuyển về máy chủ" : "Chuyển sang máy của anh"} />
         </form>
 
-        <div className="flex flex-wrap items-start gap-2">
-          <WorkerKeyForm hasKey={workerKeyConfigured()} />
-          {workerKeyConfigured() && (
-            <form action={revokeWorkerKeyAction}><SubmitButton variant="ghost">Thu hồi khoá</SubmitButton></form>
-          )}
+        <div className="chip-host flex min-h-[52px] flex-wrap items-center gap-3 border-b border-border px-4 py-2.5">
+          <IconChip icon={KeyRound} tone="pink" size="sm" />
+          <span className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            <span className="font-semibold text-ink">Khoá máy dựng</span>
+            {workerKeyConfigured() ? <Pill tone="jade">Đã có khoá</Pill> : <Pill>Chưa có khoá</Pill>}
+          </span>
+          <div className="flex flex-wrap items-start gap-2">
+            <WorkerKeyForm hasKey={workerKeyConfigured()} />
+            {workerKeyConfigured() && (
+              <form action={revokeWorkerKeyAction}><SubmitButton variant="ghost">Thu hồi</SubmitButton></form>
+            )}
+          </div>
         </div>
 
         {skillAlert && (
-          <form action={acceptSkillVersionsAction} className="flex flex-wrap items-center gap-2 rounded-md border border-amber/40 bg-amber-soft px-3 py-2 text-[12.5px]">
-            <span className="text-ink">Skill dựng trên Notion có bản mới — kiểm bộ dựng đã khớp chưa.</span>
-            <SubmitButton variant="ghost">Xác nhận đã khớp</SubmitButton>
+          <form action={acceptSkillVersionsAction} className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-2.5">
+            <IconChip icon={RefreshCw} tone="orange" size="sm" />
+            <span className="flex-1"><Pill tone="amber">Skill Notion có bản mới</Pill></span>
+            <SubmitButton variant="outline">Xác nhận đã khớp</SubmitButton>
           </form>
         )}
+        <div className="px-4 py-3">
 
-        <MoreOptions label="Cách cài máy dựng và skill trên Notion">
+        <MoreOptions label="Hướng dẫn cài máy dựng">
           <ol className="m-0 list-decimal pl-5 text-[12.5px] text-ink-2">
             <li>Cài một lần trên máy (thư mục BAOR AI OS): <code>npm run render-worker:install</code> — chạy nền, tự bật khi mở máy.</li>
             <li>Bấm Tạo khoá ở trên, dán lệnh hiện ra vào Terminal của máy đó.</li>
@@ -57,6 +73,7 @@ export function RenderWorkerPanel() {
             ))}
           </ul>
         </MoreOptions>
+        </div>
       </div>
     </Panel>
   );

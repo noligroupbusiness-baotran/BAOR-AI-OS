@@ -12,7 +12,10 @@ import { publishDueVideoPosts, syncVideoPostMetrics, verifyPublishingPosts } fro
 import { autoOptimize, enforceAuthorization, proposeFromVideoPosts, syncAdInsights } from "@/lib/ads/engine";
 import { refreshProposals } from "@/lib/learning";
 
-const g = globalThis as unknown as { __baorScheduler?: { timer: NodeJS.Timeout; lastHourly: number; lastDaily: number } };
+const g = globalThis as unknown as { __baorScheduler?: { timer: NodeJS.Timeout; lastHourly: number; lastDaily: number }; __baorTickRunning?: boolean };
+
+/** Lượt trước chưa xong (mạng chậm, "Chạy ngay" trùng nhịp 60 giây) thì không chạy chồng: hai lượt cùng lúc có thể đăng trùng. */
+export const TICK_BUSY = "Lượt chạy trước chưa xong — bỏ qua, không chạy chồng.";
 
 export interface SchedulerState {
   running: boolean;
@@ -28,7 +31,18 @@ export function schedulerState(): SchedulerState {
   return { ...state, running: !!g.__baorScheduler };
 }
 
-async function tick() {
+async function tick(): Promise<boolean> {
+  if (g.__baorTickRunning) return false;
+  g.__baorTickRunning = true;
+  try {
+    await tickBody();
+  } finally {
+    g.__baorTickRunning = false;
+  }
+  return true;
+}
+
+async function tickBody() {
   const now = Date.now();
   state.lastTickAt = new Date(now).toISOString();
   const parts: string[] = [];
@@ -67,7 +81,7 @@ async function tick() {
       if (notionConfigured() && now - lastKb >= 6 * 60 * 60 * 1000) {
         setSetting("knowledge.lastAutoSync", new Date(now).toISOString());
         const kb = await syncSecondBrain();
-        parts.push(`Second Brain: ${kb.ok ? "đồng bộ xong" : "lỗi đồng bộ"}`);
+        parts.push(`Kiến thức: ${kb.ok ? "đồng bộ xong" : "lỗi đồng bộ"}`); // chữ hiển thị (25/10: ẩn tên Second Brain khỏi giao diện)
       }
     }
     // Mỗi ngày: dọn nhật ký cũ và tệp mồ côi theo chính sách lưu trữ.
@@ -111,7 +125,9 @@ export function startScheduler(intervalMs = 60_000) {
 
 // Cho nút "Chạy ngay" trong Cài đặt.
 export async function runSchedulerNow(): Promise<string> {
+  if (g.__baorTickRunning) return TICK_BUSY;
+  // Việc mỗi giờ chạy lại ngay; tự tăng ngân sách quảng cáo vẫn theo thời gian chờ riêng (AUTO_SCALE_COOLDOWN_MS)
   if (g.__baorScheduler) g.__baorScheduler.lastHourly = 0;
-  await tick();
+  if (!(await tick())) return TICK_BUSY;
   return state.lastResult;
 }

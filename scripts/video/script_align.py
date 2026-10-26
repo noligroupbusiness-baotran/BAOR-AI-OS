@@ -23,13 +23,16 @@ def tnorm(s):
 
 
 NEG = set("không chưa chẳng chả đừng chớ".split())
+# "đâu" phủ định ("mình đâu có biết", "… quay lại đâu"): đổi "đâu" ↔ "đấy / đây" theo kịch bản là đảo nghĩa (phản biện 26/10).
+# "đâu" hỏi nơi chốn cũng không tự thay — mất một lần sửa, không bao giờ đảo nghĩa.
+NEG_RISKY = NEG | {"đâu"}
 
 
 def _risky(word, target):
     """Không bao giờ tự thay: con số (giá, số lượng), từ phủ định (đảo nghĩa), tên riêng viết hoa giữa câu khi kịch bản viết thường."""
     if any(ch.isdigit() for ch in word + target):
         return True
-    if tnorm(word) in NEG or tnorm(target) in NEG:
+    if tnorm(word) in NEG_RISKY or tnorm(target) in NEG_RISKY:
         return True
     return False
 
@@ -212,6 +215,12 @@ def self_test():
     w = W("mình chưa gọi", unc={1})
     correct(w, "mình cha gọi")
     bad += w[1]["text"] != "chưa"
+    # 7c) "đâu" phủ định ("mình đâu có biết") cũng không tự thay theo kịch bản ("đấy"), hai chiều (phản biện 26/10)
+    for heard, script, k, want in (("hôm nay mình đâu có biết cách làm", "hôm nay mình đấy có biết cách làm", 3, "đâu"),
+                                   ("hôm nay mình đấy có biết cách làm", "hôm nay mình đâu có biết cách làm", 3, "đấy")):
+        w = W(heard, p={k: 0.5})
+        correct(w, script)
+        bad += w[k]["text"] != want
     w = W("dạ chị Lan ơi", unc={2})
     correct(w, "dạ chị lành ơi")
     bad += w[2]["text"] != "Lan"
