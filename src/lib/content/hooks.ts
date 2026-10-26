@@ -1,12 +1,15 @@
 // Bảng Hook & kịch bản video ngắn (Personal Brand System bước 3). Phần LOGIC ở đây (không gọi AI): ngữ cảnh căn cứ, luật ngôn từ theo
 // nền tảng, lưu / chọn / bỏ hook, hook nhập tay. Phần gọi AI (10 hook mỗi lần) ở src/lib/ai.ts › generateHooks, qua Đội AI "AI Hook & Ý tưởng".
-import { and, desc, eq, like, or } from "drizzle-orm";
+import { and, desc, eq, isNull, like, or } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { searchKnowledge } from "@/lib/knowledge";
 import { usableStatus } from "@/lib/knowledge/types";
+import { VLOG_MAX_SEC, vlogTemplate } from "./formats";
 
 export const HOOK_COUNT = 10; // sơ đồ OWNER: "mỗi lần gọi trả về 10 kết quả"
-export const MAX_SHORT_SEC = 180; // "nội dung dưới 3 phút"
+// OWNER 26/10: "content viết ra nên là dạng vlog chia sẻ dưới 1 phút" (trước: dưới 3 phút). Chỉ áp cho hook / kịch bản MỚI:
+// cảnh báo luật lưu lúc tạo hook, nên hook / video đã làm không đổi.
+export const MAX_SHORT_SEC = VLOG_MAX_SEC;
 export const HOOK_PLATFORMS = ["facebook", "instagram", "tiktok", "youtube"] as const;
 
 export interface HookBasis {
@@ -59,7 +62,7 @@ export function policyIssues(text: string, platforms: readonly string[], duratio
     const hit = r.platforms === "all" ? platforms : platforms.filter((p) => (r.platforms as readonly string[]).includes(p));
     if (hit.length && r.test.test(text)) out.push(`${r.message} — ${r.platforms === "all" ? "mọi nền tảng" : hit.join(", ")}`);
   }
-  if (durationSec !== undefined && durationSec > MAX_SHORT_SEC) out.push(`dài ${durationSec} giây — vượt 3 phút của video ngắn`);
+  if (durationSec !== undefined && durationSec > MAX_SHORT_SEC) out.push(`dài ${durationSec} giây — vượt 1 phút của vlog chia sẻ`);
   return out;
 }
 
@@ -163,11 +166,21 @@ function toRow(r: typeof schema.hookIdeas.$inferSelect): HookRow {
   };
 }
 
-export function listHooks(limit = 200): HookRow[] {
-  return getDb().select().from(schema.hookIdeas).orderBy(desc(schema.hookIdeas.createdAt)).limit(limit).all().map(toRow);
+/** `topic`: hook của một chủ đề — có research_id đó, hoặc lô cũ chưa có research_id (bên gọi lọc tiếp theo tên). `status`: chỉ một trạng thái. */
+export function listHooks(limit = 200, where: { topic?: string; status?: HookRow["status"] } = {}): HookRow[] {
+  const conds = [
+    where.topic ? or(eq(schema.hookIdeas.researchId, where.topic), isNull(schema.hookIdeas.researchId)) : undefined,
+    where.status ? eq(schema.hookIdeas.status, where.status) : undefined,
+  ].filter((c) => c !== undefined);
+  return getDb().select().from(schema.hookIdeas).where(conds.length ? and(...conds) : undefined).orderBy(desc(schema.hookIdeas.createdAt)).limit(limit).all().map(toRow);
 }
 
-/** Chọn hook → tạo nội dung kịch bản (đang viết) mang hook + dàn ý; đi tiếp luồng Kịch bản & nội dung hiện có. */
+/** Số đếm gọn của mọi hook (không giới hạn) để đếm theo chủ đề trên bảng chủ đề. */
+export function hookStubs(): { id: string; researchId: string | null; topic: string; status: string; contentId: string | null }[] {
+  return getDb().select({ id: schema.hookIdeas.id, researchId: schema.hookIdeas.researchId, topic: schema.hookIdeas.topic, status: schema.hookIdeas.status, contentId: schema.hookIdeas.contentId }).from(schema.hookIdeas).all();
+}
+
+/** Chọn hook → tạo nội dung kịch bản (đang viết) mang hook + dàn ý + khung vlog; đi tiếp luồng Kịch bản & nội dung hiện có. */
 export function pickHook(id: string): { ok: true; contentId: string } | { ok: false; error: string } {
   const db = getDb();
   const h = db.select().from(schema.hookIdeas).where(eq(schema.hookIdeas.id, id)).get();
@@ -187,6 +200,8 @@ export function pickHook(id: string): { ok: true; contentId: string } | { ok: fa
       pillar: r.topic.slice(0, 100),
       hook: r.hook,
       outline: JSON.stringify(r.beats),
+      // Điền sẵn khung vlog chia sẻ < 1 phút (hook ở cảnh 1, dàn ý vào từng cảnh) — câu chuyện thật để OWNER kể
+      draft: vlogTemplate({ title: r.hook.slice(0, 120), hook: r.hook, beats: r.beats }),
       assignee: "human",
       createdAt: now,
       source: r.source === "ai" ? "ai" : "manual",

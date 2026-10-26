@@ -58,7 +58,7 @@ export function VideoScheduleForm({ videoId, back }: { videoId: string; back: st
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px]">
           <span className={draftSource?.startsWith("rule:") ? "text-amber" : "text-ink-3"} title={source}>{draft ? (draftSource?.startsWith("rule:") ? "Nháp theo luật" : "AI đã viết") : "Theo skill"}</span>
           {aiReady.ok ? (
-            <button type="submit" formNoValidate formAction={aiCaptionAction} title={source} className="cursor-pointer font-semibold text-accent hover:underline">Viết lại bằng AI</button>
+            <button type="submit" formNoValidate formAction={aiCaptionAction} title={source} className="cursor-pointer font-semibold text-jade hover:underline">Viết lại bằng AI</button>
           ) : (
             <span className="inline-flex items-center gap-1.5"><button type="button" disabled title={aiReady.reason} className="cursor-not-allowed font-semibold text-ink-3">Viết lại bằng AI</button><AiBlocked ready={aiReady} /></span>
           )}

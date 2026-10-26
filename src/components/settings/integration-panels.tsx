@@ -119,7 +119,7 @@ function IntegrationItem({ i, extras, nextFree }: { i: IntegrationRow; extras: I
       ))}
       {add && (
         <details key={add.key} id={add.key} className="group/add scroll-mt-20 rounded-md border border-dashed border-border-2">
-          <summary className="cursor-pointer list-none px-3 py-2 text-[12.5px] font-semibold text-accent [&::-webkit-details-marker]:hidden">+ Thêm fanpage</summary>
+          <summary className="cursor-pointer list-none px-3 py-2 text-[12.5px] font-semibold text-jade [&::-webkit-details-marker]:hidden">+ Thêm fanpage</summary>
           <div className="grid gap-2 px-3 pb-3"><IntegrationBody i={add} /></div>
         </details>
       )}
@@ -199,7 +199,7 @@ export function AiBudgetPanel() {
         icon={Wallet}
         tone="violet"
         info="Tổng tiền gọi AI. Chạm trần thì AI tạm dừng tới ngày / tháng sau. Tỷ giá dùng để quy đổi giá hãng AI (USD) sang đồng."
-        action={<Link href="/insights/learning?tab=so-lieu&view=ai" className="text-[12.5px] font-semibold text-accent">Chi tiết ›</Link>}
+        action={<Link href="/insights/learning?tab=so-lieu&view=ai" className="text-[12.5px] font-semibold text-jade">Chi tiết ›</Link>}
       />
       <div className="grid gap-4 p-4 md:grid-cols-[1fr_auto] md:items-end">
         <dl className="m-0 grid grid-cols-2 gap-3">

@@ -1,6 +1,7 @@
 // Định dạng nội dung: bài viết, kịch bản video, caption, hình ảnh. Mọi kiểm tra ở đây là theo luật
 // (đếm ký tự, hashtag, khung kịch bản, tỷ lệ ảnh), không gọi AI; AI chỉ dùng khi người bấm "AI viết nháp".
 import type { ContentFormat } from "@/lib/types";
+import { PERSONAL_CLAIM } from "./scoring";
 
 export type ContentKind = "text" | "script" | "caption" | "image";
 
@@ -33,7 +34,7 @@ export interface Scene {
   goal: string;
 }
 
-/** Khung kịch bản ngắn (15–60 giây) cho Reel / TikTok / Story. */
+/** Khung kịch bản CŨ 5 cảnh (15–60 giây). Giữ cho kịch bản đã làm và kịch bản quay sinh từ brief (src/lib/content/shooting-script.ts). */
 export const SCRIPT_SCENES: Scene[] = [
   { name: "Hook", seconds: "0–3s", goal: "Giữ người xem: câu hỏi, con số, hoặc cảnh gây tò mò." },
   { name: "Vấn đề", seconds: "3–10s", goal: "Nỗi đau khách đang gặp, nói bằng lời của khách." },
@@ -42,22 +43,85 @@ export const SCRIPT_SCENES: Scene[] = [
   { name: "Kêu gọi", seconds: "45–60s", goal: "Một hành động duy nhất: inbox, đặt lịch, comment." },
 ];
 
-/** Văn bản khung kịch bản để chèn vào ô nháp; người viết điền ba dòng mỗi cảnh. */
-export function scriptTemplate(title = ""): string {
-  const head = title ? `KỊCH BẢN: ${title}\n\n` : "";
+// Định dạng MẶC ĐỊNH cho nội dung mới (OWNER 26/10: "content viết ra nên là dạng vlog chia sẻ dưới 1 phút"): vlog ngôi thứ nhất,
+// ≤ 60 giây (~130–160 từ lời thoại): hook 3 giây → câu chuyện / trải nghiệm thật → MỘT bài học cụ thể → kết nhẹ (CTA mềm).
+export const VLOG_MAX_SEC = 60;
+/** Tốc độ nói vlog chia sẻ bình thường: ~160 từ (âm tiết) / phút. */
+export const VLOG_WORDS_PER_SEC = 2.7;
+export const VLOG_SCENES: Scene[] = [
+  { name: "Hook", seconds: "0–3s", goal: "Một câu nói thẳng vào camera, ≤ 12–15 chữ." },
+  { name: "Câu chuyện", seconds: "3–25s", goal: "Chuyện / trải nghiệm thật, ngôi thứ nhất — không bịa." },
+  { name: "Bài học", seconds: "25–50s", goal: "MỘT bài học cụ thể, làm được ngay." },
+  { name: "Kết", seconds: "50–60s", goal: "Kết nhẹ, CTA mềm (hỏi ý kiến, lưu lại) — không chào bán." },
+];
+
+/** Khung vlog chia sẻ < 1 phút; điền sẵn hook và dàn ý (nếu có). Câu chuyện thật để OWNER kể — hệ thống không viết thay. */
+export function vlogTemplate(input: { title?: string; hook?: string; beats?: string[] } = {}): string {
+  const beats = (input.beats ?? []).map((b) => b.trim()).filter(Boolean);
+  // Dàn ý ≥ 3 nhịp: nhịp cuối là kết, phần còn lại chia đôi cho câu chuyện / bài học (AI mới trả đúng 3 nhịp: chuyện · bài học · kết)
+  const body = beats.length >= 3 ? beats.slice(0, -1) : beats;
+  const story = body.slice(0, Math.max(1, Math.ceil(body.length / 2)));
+  const lesson = body.slice(story.length);
+  const end = beats.length >= 3 ? beats.at(-1) : "";
+  const note = (xs: string[]) => (xs.length ? `Ý chính: ${xs.join(" · ")}\n` : "");
+  const head = input.title ? `KỊCH BẢN VLOG: ${input.title}\n` : "";
+  // Hook kể chuyện riêng ("mình từng mất…") mà hệ thống chưa kiểm được: giữ làm lời thoại nhưng ghi chú để OWNER xác nhận / sửa
+  const claim = PERSONAL_CLAIM.test(input.hook ?? "");
   return (
-    head +
-    SCRIPT_SCENES.map((s, i) => `${i + 1}. ${s.name.toUpperCase()} (${s.seconds})\nHình ảnh: \nLời thoại: \nChữ trên màn hình: \n`).join("\n") +
-    "\nNhạc nền: (chọn trong Cài đặt › Kho nhạc)\nGhi chú dựng: "
+    `${head}Dạng: vlog chia sẻ, nói ngôi thứ nhất · dưới ${VLOG_MAX_SEC} giây · ~130–160 từ lời thoại\n\n` +
+    `1. HOOK (0–3s)\nHình ảnh: cận mặt, nói thẳng vào camera\nLời thoại: ${input.hook?.trim() ?? ""}\n${claim ? `${OWNER_CHECK}\n` : ""}Chữ trên màn hình: \n\n` +
+    `2. CÂU CHUYỆN (3–25s)\nHình ảnh: \n${note(story)}Gợi ý OWNER: [OWNER KỂ: một lần mình gặp đúng chuyện này — ở đâu, chuyện gì, mình thấy thế nào]\nLời thoại: \nChữ trên màn hình: \n\n` +
+    `3. BÀI HỌC (25–50s)\nHình ảnh: \n${note(lesson)}Lời thoại: \nChữ trên màn hình: \n\n` +
+    `4. KẾT (50–60s)\nHình ảnh: \n${end ? `Ý chính: ${end}\n` : ""}Lời thoại: \nChữ trên màn hình: \n\n` +
+    "Nhạc nền: (chọn trong Cài đặt › Kho nhạc)\nGhi chú dựng: "
   );
 }
 
-/** Kiểm tra kịch bản có đủ các cảnh bắt buộc chưa (khớp theo tên cảnh, không phân biệt hoa thường). */
-export function scriptCheck(draft: string): { scenes: { name: string; present: boolean }[]; missing: string[]; hasSpeech: boolean } {
-  const lower = draft.toLowerCase();
-  const scenes = SCRIPT_SCENES.map((s) => ({ name: s.name, present: lower.includes(s.name.toLowerCase()) }));
+/** Ghi chú dưới hook có chuyện riêng — dấu [OWNER KỂ: …] nằm ở dòng Gợi ý OWNER, không lọt vào lời thoại. */
+export const OWNER_CHECK = "Gợi ý OWNER: [OWNER KỂ: câu hook nói về trải nghiệm riêng — chỉ giữ nếu đúng chuyện thật của anh, không thì sửa câu hook]";
+
+/** Khung kịch bản để chèn vào ô nháp — mặc định là vlog chia sẻ < 1 phút. */
+export function scriptTemplate(title = ""): string {
+  return vlogTemplate({ title });
+}
+
+/** Tên cảnh đứng ĐẦU DÒNG như tiêu đề cảnh ("2. VẤN ĐỀ (3–10s)", "BÀI HỌC") — chữ trong lời thoại / gợi ý OWNER không tính. */
+function hasHeading(draft: string, name: string): boolean {
+  const n = name.toLowerCase();
+  return draft
+    .normalize("NFC")
+    .toLowerCase()
+    .split("\n")
+    .some((l) => {
+      const t = l.trim().replace(/^\d+\s*[.)]\s*/u, "");
+      return t.startsWith(n) && !/^[\p{L}]/u.test(t.slice(n.length));
+    });
+}
+
+/** Kịch bản theo khung cũ 5 cảnh: có tiêu đề cảnh Vấn đề / Giải pháp / Bằng chứng / Kêu gọi và không có tiêu đề Câu chuyện / Bài học. */
+export function isLegacyScript(draft: string): boolean {
+  const vlogOnly = ["Câu chuyện", "Bài học"].some((n) => hasHeading(draft, n));
+  return !vlogOnly && ["Vấn đề", "Giải pháp", "Bằng chứng", "Kêu gọi"].some((n) => hasHeading(draft, n));
+}
+
+/** Số từ (âm tiết) trong các dòng "Lời thoại:" và thời lượng nói ước tính ở tốc độ vlog bình thường. */
+export function speechEstimate(draft: string): { words: number; seconds: number } {
+  const lines = draft.normalize("NFC").split("\n").filter((l) => /^\s*lời thoại\s*:/iu.test(l));
+  const words = lines.reduce((n, l) => n + l.replace(/^\s*lời thoại\s*:/iu, "").replace(/\[[^\]]*\]/g, " ").split(/[^\p{L}\p{N}]+/u).filter(Boolean).length, 0);
+  return { words, seconds: Math.round(words / VLOG_WORDS_PER_SEC) };
+}
+
+/** Kiểm tra kịch bản có đủ các cảnh bắt buộc chưa (khớp theo tên cảnh, không phân biệt hoa thường). Tự nhận khung vlog (mặc định) hay khung cũ 5 cảnh. */
+export function scriptCheck(draft: string, opts: { format?: "vlog" | "legacy" } = {}): { format: "vlog" | "legacy"; defs: Scene[]; scenes: { name: string; present: boolean }[]; missing: string[]; hasSpeech: boolean; words: number; seconds: number; tooLong: boolean } {
+  const lower = draft.normalize("NFC").toLowerCase();
+  // Kịch bản quay từ brief luôn là khung cũ 5 cảnh (luật kiểm CP02) — trang truyền format="legacy"
+  const legacy = opts.format ? opts.format === "legacy" : isLegacyScript(draft);
+  const defs = legacy ? SCRIPT_SCENES : VLOG_SCENES;
+  // Khung vlog: tên cảnh phải đứng đầu dòng ("4. KẾT…") — "kết" giữa câu ("kết quả") không tính. Khung cũ giữ cách khớp cũ.
+  const scenes = defs.map((s) => ({ name: s.name, present: legacy ? lower.includes(s.name.toLowerCase()) : hasHeading(draft, s.name) }));
   const hasSpeech = /lời thoại:[ \t]*\S/i.test(draft);
-  return { scenes, missing: scenes.filter((s) => !s.present).map((s) => s.name), hasSpeech };
+  const sp = speechEstimate(draft);
+  return { format: legacy ? "legacy" : "vlog", defs, scenes, missing: scenes.filter((s) => !s.present).map((s) => s.name), hasSpeech, ...sp, tooLong: sp.seconds > VLOG_MAX_SEC };
 }
 
 // ---------- Caption ----------

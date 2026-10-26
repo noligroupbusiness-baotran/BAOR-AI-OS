@@ -27,7 +27,7 @@ export interface AiRole {
 export const AI_ROLES: AiRole[] = [
   { id: "research", name: "AI Nghiên cứu", step: "2", job: "Nghiên cứu chủ đề, lấy insight từ các nền tảng", defaultModel: "gpt-6-luna" },
   // OWNER 26/10/2026: gộp "AI Hook & Ý tưởng" + "AI Kịch bản" (cùng bước, cùng mô hình) thành một vị trí; sổ cũ role "script" tính vào đây
-  { id: "hooks", name: "AI Nội dung", step: "3", job: "Hook, ý tưởng và nháp kịch bản video ngắn (< 3 phút)", defaultModel: "gpt-6-luna" },
+  { id: "hooks", name: "AI Nội dung", step: "3", job: "Hook, ý tưởng và nháp kịch bản vlog chia sẻ (< 1 phút)", defaultModel: "gpt-6-luna" },
   { id: "video_edit", name: "AI Edit Video", step: "4.2", job: "Biên tập video theo Skill ESV / Edit Video Ngang", defaultModel: "qwen2.5-32b (tại máy)", local: true },
   // Chỉ gọi khi OWNER bấm "Tự mô tả bằng AI" trên từng ảnh (Tư liệu › Ảnh / B-roll); gửi ảnh thu nhỏ ≤ 480 px, luôn chạy Claude (ảnh)
   { id: "broll_describe", name: "AI Mô tả ảnh", step: "4.1", job: "Tả nội dung ảnh B-roll khi OWNER bấm, để bộ dựng chọn đúng ảnh", defaultModel: "claude-haiku-5-5" },

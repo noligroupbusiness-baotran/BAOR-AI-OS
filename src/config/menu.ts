@@ -49,7 +49,7 @@ export interface MenuItem {
 export const menu: MenuItem[] = [
   { key: "dashboard", tone: "blue", href: "/dashboard", label: "Tổng quan", description: "Tình hình chung (chi tiêu AI, kết nối, dựng video, sao lưu, lỗi) và hành trình marketing 7 bước.", icon: LayoutDashboard, group: "ops", hotkey: "8" },
   { key: "research", tone: "cyan", href: "/insights/research", label: "1 · Chủ đề & insight", description: "Chủ đề → insight từ nhóm Facebook, YouTube, Facebook, social.", icon: FlaskConical, group: "brand", hotkey: "1" },
-  { key: "content", tone: "violet", href: "/content/hooks", label: "2 · Hook & kịch bản", description: "10 hook mỗi lần, kịch bản video ngắn.", icon: FileText, group: "brand", hotkey: "2", also: ["/content"] },
+  { key: "content", tone: "violet", href: "/content/hooks", label: "2 · Hook & kịch bản", description: "10 hook mỗi lần, kịch bản vlog dưới 1 phút.", icon: FileText, group: "brand", hotkey: "2", also: ["/content"] },
   { key: "video-studio", tone: "pink", href: "/video-studio", label: "3 · Quay & edit video", description: "Tải video, AI edit theo skill.", icon: Clapperboard, group: "brand", hotkey: "3" },
   { key: "video-library", tone: "pink", href: "/video-library", label: "4 · Kho video", description: "Chưa đăng, đã đăng, mục xoá.", icon: Archive, group: "brand", hotkey: "4" },
   { key: "publishing", tone: "orange", href: "/publishing", label: "5 · Đăng bài", description: "Lên lịch đăng, fanpage, caption theo skill.", icon: CalendarClock, group: "brand", hotkey: "5" },

@@ -16,6 +16,7 @@ import { SOCIAL_KINDS, cleanComment, commentsToResearch, detectPlatform, parseSo
 import { commentsFromVideo, fallbackQueries, mineYouTube, parseYouTubeVideoId, youtubeApiKey, youtubeReadiness, type MinedComments } from "./youtube";
 import { fanpageComments } from "./facebook";
 import { readPageComments } from "./page-read";
+import { topicIndex } from "@/lib/content/scoring";
 
 export const TOPIC_PURPOSE = "Insight cho hook & kịch bản video ngắn (Personal Brand System bước 2)";
 
@@ -24,6 +25,12 @@ export function createTopic(topic: string, by: string): string {
   if (t.length < 4) throw new Error("Chủ đề quá ngắn (ít nhất 4 ký tự)");
   // createResearchTask cần câu hỏi ≥ 8 ký tự: chủ đề ngắn được ghép tiền tố
   return createResearchTask({ question: t.length >= 8 ? t : `Chủ đề: ${t}`, purposeKind: "content", purpose: TOPIC_PURPOSE, by });
+}
+
+/** Chủ đề đã có cùng tên (không phân biệt hoa thường / khoảng trắng / ký tự lạ; gõ không dấu thì so không dấu) — mới nhất trước. Tạo trùng thì mở chủ đề cũ. */
+export function findTopicByName(topic: string): string | null {
+  const rows = getDb().select({ id: schema.researchTasks.id, name: schema.researchTasks.question }).from(schema.researchTasks).orderBy(desc(schema.researchTasks.createdAt)).all();
+  return topicIndex(rows)(topic);
 }
 
 export interface TopicInsight {

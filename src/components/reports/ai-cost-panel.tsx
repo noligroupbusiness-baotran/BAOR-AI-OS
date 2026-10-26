@@ -20,7 +20,7 @@ export function AiCostPanel() {
         <PanelHeader
           title="Chi phí AI theo từng AI — tháng này"
           sub={`${formatNumber(totalCalls)} lần gọi · ${formatCurrency(b.spentMonthVnd)} / trần chung ${formatCurrency(b.monthlyCapVnd)} (hôm nay ${formatCurrency(b.spentTodayVnd)} / ${formatCurrency(b.dailyCapVnd)}). Việc theo luật không gọi AI nên không tốn tiền.`}
-          action={<Link href="/settings#ai-team" className="text-[12.5px] font-semibold text-accent">Đội AI ›</Link>}
+          action={<Link href="/settings#ai-team" className="text-[12.5px] font-semibold text-jade">Đội AI ›</Link>}
         />
         <Table>
           <thead>
