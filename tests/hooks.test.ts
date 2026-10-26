@@ -24,6 +24,7 @@ before(async () => {
   hooks = await import("../src/lib/content/hooks");
   ai = await import("../src/lib/ai");
   roster = await import("../src/lib/ai-roster");
+  roster.saveRoleSettings("hooks", { model: "claude-sonnet-5-5" }); // ca dưới thử đường Claude (mô hình giả); mặc định từ 26/10 là ChatGPT
 });
 
 test("luật ngôn từ: tuyệt đối / chữa bệnh / giảm cân / thuộc tính cá nhân (chỉ Meta) / thu nhập / quá 3 phút", () => {

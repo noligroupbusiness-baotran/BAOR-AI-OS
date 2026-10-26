@@ -78,14 +78,35 @@ export interface CatalogSyncRequest {
   acks?: CatalogAck[];
 }
 
+/** approve / unapprove = duyệt nhạc; trash = chuyển tệp vào Đã xoá TRÊN máy OWNER (src/lib/video/asset-trash.ts, khôi phục được 30 ngày
+ *  tại máy — Tư liệu › Đã xoá của app trên Mac). */
+export type DecisionAction = "approve" | "unapprove" | "trash";
+/** Loại trong thùng "Đã xoá" (trùng asset-trash.ts › TrashKind — không import để tệp này không đụng fs). */
+export type TrashTargetKind = "music" | "sfx" | "sfx-new" | "broll";
+
 export interface DecisionOut {
   id: string;
-  /** Tên tệp trong music/manifest.json của máy OWNER. */
+  /** Tên tệp trong manifest của thư viện: nhạc → music/manifest.json; trash → manifest của thư mục `kind` (vd "anh/a.jpg" của broll). */
   file: string;
   sha256: string;
-  action: "approve" | "unapprove";
+  action: DecisionAction;
+  /** Chỉ trash: loại trong thùng "Đã xoá" (quyết định thư mục thư viện). */
+  kind?: TrashTargetKind;
   by: string;
   at: string;
+}
+
+/**
+ * Mục danh mục máy OWNER xoá được từ web → loại thùng + tên tệp trong manifest. Chỉ đúng các thư mục asset-trash xoá được: music/,
+ * sfx/, sfx-owner/moi/, broll/. Không: sfx-owner/<tệp> (giấy phép chung + vai trò của bộ dựng), tha-vao/ (chưa nhận), đường dẫn lạ.
+ */
+export function trashTargetOf(assetPath: string): { kind: TrashTargetKind; file: string } | null {
+  const m = /^(music|sfx|sfx-owner\/moi|broll)\/(.+)$/.exec(assetPath);
+  if (!m) return null;
+  const kind: TrashTargetKind = m[1] === "sfx-owner/moi" ? "sfx-new" : (m[1] as TrashTargetKind);
+  const wire: CatalogKind = kind === "music" ? "music" : kind === "broll" ? "broll" : "sfx";
+  if (!safeCatalogPath(assetPath, wire)) return null;
+  return { kind, file: m[2] };
 }
 
 export interface CatalogSyncResponse {

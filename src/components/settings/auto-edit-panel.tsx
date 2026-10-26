@@ -11,6 +11,7 @@ import type { AssetEntry } from "@/lib/video/asset-catalog";
 import { listUploads } from "@/lib/uploads";
 import { BrollDrop } from "@/components/video/broll-drop";
 import { BrollGallery, type GalleryItem } from "@/components/assets/broll-gallery";
+import { aiReadiness } from "@/lib/ai";
 import { MoreOptions } from "./setting-item";
 
 // Cài đặt › Video › Cách dựng video: luật dựng cố định theo skill; ở đây chỉ chỉnh từ khoá nhấn, sửa chữ nghe sai, nhạc nền
@@ -124,6 +125,8 @@ export function BrollPanel({ entries, ownerSynced, isOwner = false }: { entries:
       previewUrl: raw ?? e.previewUrl,
       origin: e.source,
       pendingDecision: !!e.pendingDecision,
+      pendingAction: e.pendingDecision?.action,
+      canTrash: e.canTrash,
     };
   });
   const usable = items.filter((it) => it.usable).length;
@@ -139,7 +142,7 @@ export function BrollPanel({ entries, ownerSynced, isOwner = false }: { entries:
         action={<Pill tone={usable === items.length ? "jade" : "amber"}>{usable}/{items.length} dùng được</Pill>}
       />
       <div className="grid gap-3 px-4 py-3">
-        {items.length > 0 ? <BrollGallery items={items} showOrigin={ownerSynced} canDelete={isOwner} /> : <p className="m-0 text-[12.5px] text-ink-3">Chưa có ảnh / clip.</p>}
+        {items.length > 0 ? <BrollGallery items={items} showOrigin={ownerSynced} canDelete={isOwner} aiReady={isOwner ? aiReadiness("broll_describe", { alsoProvider: "anthropic" }) : undefined} /> : <p className="m-0 text-[12.5px] text-ink-3">Chưa có ảnh / clip.</p>}
         <MoreOptions label="Thêm clip B-roll">
           <BrollDrop />
         </MoreOptions>

@@ -3,7 +3,7 @@
 // CP04: lên lịch đăng video đã duyệt, thử lại, huỷ, bật/tắt chế độ thử.
 import { requirePermission } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
-import { cancelVideoPost, confirmPageChecked, retryVideoPost, scheduleVideoPosts } from "@/lib/publishing/video";
+import { cancelVideoPost, confirmPageChecked, releaseChannelLock, retryVideoPost, scheduleVideoPosts } from "@/lib/publishing/video";
 import { cancelTextPost } from "@/lib/publishing/text";
 import { setDryRunMode } from "@/lib/publishing/guards";
 import { captionIssues, clearCaptionDraft, scriptTextFor } from "@/lib/publishing/caption";
@@ -68,6 +68,14 @@ export async function confirmPageCheckedAction(fd: FormData) {
   const r = confirmPageChecked(str(fd, "id"), actor, str(fd, "found") === "1");
   if (!r.ok) return fail("/publishing", r.error ?? "Không ghi được");
   done("/publishing", str(fd, "found") === "1" ? "Đã ghi: bài có trên trang → Đã đăng" : "Đã ghi: không thấy bài — thử lại hoặc huỷ được");
+}
+
+/** OWNER gỡ khoá kênh của bài đã lên trang nhập nhầm (bài giữ nguyên, ghi lý do + nhật ký trong releaseChannelLock). Chỉ OWNER. */
+export async function releaseChannelLockAction(fd: FormData) {
+  const actor = await requirePermission("admin", "/publishing");
+  const r = releaseChannelLock(str(fd, "id"), actor);
+  if (!r.ok) return fail("/publishing", r.error ?? "Không gỡ được khoá kênh");
+  done("/publishing", "Đã gỡ khoá kênh — lên lịch lại được ở kênh này");
 }
 
 export async function setDryRunAction(fd: FormData) {

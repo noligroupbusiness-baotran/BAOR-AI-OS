@@ -2,7 +2,7 @@
 
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
-import { done } from "./common";
+import { done, withQuery } from "./common";
 import { hashPassword, setSetting, verifyAdmin, getAdminEmail } from "@/lib/admin";
 import { clearSampleOnly, seedAll } from "@/db/seed";
 import { requirePermission } from "@/lib/permissions";
@@ -93,9 +93,14 @@ export async function checkIntegration(fd: FormData) {
   done(`/settings${res.ok ? "" : "?tone=error"}#${key}`, res.message);
 }
 
+// Ô trần nhập bằng $ (26/10): gõ nhầm số đồng vào ô đô sẽ thành trần hàng tỷ ₫ → chặn ở máy chủ (≈ $3.800)
+const MAX_AI_CAP_VND = 100_000_000;
+const CAP_TOO_BIG = "Trần quá lớn — ô nhập bằng $, kiểm lại số (tối đa ≈ 100 triệu ₫)";
+
 export async function saveAiBudget(fd: FormData) {
   await requirePermission("admin", "/settings#ai");
   const n = (k: string) => Number(String(fd.get(k) ?? "").replace(/[^\d]/g, "")) || 0;
+  if (n("dailyCapVnd") > MAX_AI_CAP_VND || n("monthlyCapVnd") > MAX_AI_CAP_VND) return done(withQuery("/settings#ai", "tone", "error"), CAP_TOO_BIG);
   setSetting("ai.dailyCapVnd", String(n("dailyCapVnd")));
   setSetting("ai.monthlyCapVnd", String(n("monthlyCapVnd")));
   // Tỷ giá quy đổi giá USD của hãng AI sang VND (bỏ trống / 0 → giữ mặc định)
@@ -108,11 +113,13 @@ export async function saveAiRole(fd: FormData) {
   await requirePermission("admin", "/settings#ai-team");
   const id = str(fd, "role");
   const role = roleById(id);
-  if (!role) return done("/settings#ai-team?tone=error", "Không có vị trí AI này");
+  if (!role) return done(withQuery("/settings#ai-team", "tone", "error"), "Không có vị trí AI này");
+  const monthlyCapVnd = Number(String(fd.get("monthlyCapVnd") ?? "").replace(/[^\d]/g, "")) || 0;
+  if (monthlyCapVnd > MAX_AI_CAP_VND) return done(withQuery("/settings#ai-team", "tone", "error"), CAP_TOO_BIG);
   saveRoleSettings(role.id, {
     enabled: fd.get("enabled") === "on",
     ...(role.local ? {} : { model: str(fd, "model") }),
-    monthlyCapVnd: Number(String(fd.get("monthlyCapVnd") ?? "").replace(/[^\d]/g, "")) || 0,
+    monthlyCapVnd,
   });
   done("/settings#ai-team", `Đã lưu ${role.name}`);
 }

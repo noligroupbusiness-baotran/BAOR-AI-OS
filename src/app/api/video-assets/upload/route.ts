@@ -11,7 +11,8 @@ import { contentOk, finishUpload, stageUpload, targetLabel, uploadRejectReason }
 import { sameOrigin } from "@/lib/same-origin";
 
 // Trang Tư liệu › Tải lên: một tệp mỗi yêu cầu, thân yêu cầu là tệp (dạng luồng — đường dẫn này loại khỏi proxy, không bị cắt ở
-// 10 MB, không nạp cả tệp vào bộ nhớ). Tham số: name, kind (nhac | hieu-ung-am-thanh | anh-broll), license (bắt buộc), keywords.
+// 10 MB, không nạp cả tệp vào bộ nhớ). Tham số: name, kind (nhac | hieu-ung-am-thanh | anh-broll), license (bắt buộc), keywords,
+// desc (mô tả ngắn ảnh·clip, tuỳ chọn — một dòng đã lọc, ghi "Mô tả:" của tệp .txt kèm theo).
 // Tệp vào thư mục thả + .txt kèm theo rồi được nhận ngay bằng importDrop (src/lib/video/asset-upload.ts) — luật giấy phép giữ nguyên.
 export const runtime = "nodejs";
 
@@ -30,7 +31,7 @@ export async function POST(req: Request) {
 
   const q = new URL(req.url).searchParams;
   const declared = Number(req.headers.get("content-length") ?? "0") || 0;
-  const c = checkUpload({ name: (q.get("name") ?? "").slice(0, 300), target: q.get("kind") ?? "", license: q.get("license") ?? "", keywords: q.get("keywords") ?? "", size: declared });
+  const c = checkUpload({ name: (q.get("name") ?? "").slice(0, 300), target: q.get("kind") ?? "", license: q.get("license") ?? "", keywords: q.get("keywords") ?? "", desc: q.get("desc") ?? "", size: declared });
   if (!c.ok) return json({ ok: false, error: c.error }, c.status);
   const reject = uploadRejectReason(c);
   if (reject) return json({ ok: false, error: reject }, 400);

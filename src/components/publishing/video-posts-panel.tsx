@@ -12,7 +12,7 @@ import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { Button, LinkButton } from "@/components/ui/button";
 import { latestJob } from "@/lib/video/jobs";
-import { videoChannels, channelStatus, isDryRun, listVideoPosts } from "@/lib/publishing/video";
+import { videoChannels, channelPageIds, channelStatus, isDryRun, listVideoPosts } from "@/lib/publishing/video";
 import { postStatusLabel } from "@/lib/labels";
 import { postInCampaign } from "@/lib/campaigns/filter";
 import { fileUrl } from "@/lib/uploads";
@@ -36,6 +36,7 @@ function previewOf(videoId: string | null): string | null {
 export function VideoPostsPanel({ focus, owner = false, campaignIds = null }: { focus?: string; owner?: boolean; campaignIds?: Set<string> | null }) {
   const posts = listVideoPosts().filter((p) => postInCampaign(p, campaignIds));
   const dry = isDryRun();
+  const pages = owner ? channelPageIds() : undefined;
   return (
     <Panel id="video-posts">
       <PanelHeader
@@ -109,7 +110,7 @@ export function VideoPostsPanel({ focus, owner = false, campaignIds = null }: { 
                   )}
                 </div>
                 <div className="col-span-2 flex gap-1.5 md:col-span-1">
-                  <PostActions post={p} owner={owner} />
+                  <PostActions post={p} owner={owner} pages={pages} />
                 </div>
               </li>
             );

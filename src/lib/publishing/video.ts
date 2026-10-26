@@ -5,7 +5,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { and, desc, eq, inArray, isNotNull, isNull, lte } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, lte, ne } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { logActivity } from "@/lib/activity";
 import { sendAlert } from "@/lib/alerts";
@@ -18,7 +18,7 @@ import { getUpload, uploadPath, uploadsDir } from "@/lib/uploads";
 import { latestJob } from "@/lib/video/jobs";
 import { getAutomation } from "@/lib/queries";
 import { isAdminEmail } from "@/lib/admin";
-import { AMBIGUOUS_MARK, PAGE_CHANGED_PREFIX, SAMPLE_NOTE, VERIFY_GIVE_UP_PREFIX, ambiguousRetryBlock, previousExternalId, inFlight, isAmbiguousFailure, isDryRun, isSamplePost, needsPageCheck, parseRescheduleWhen, recoverStuckPublishing, sweepOverduePosts } from "./guards";
+import { AMBIGUOUS_MARK, CLAIM_OWNER, PAGE_CHANGED_PREFIX, SAMPLE_NOTE, VERIFY_GIVE_UP_PREFIX, ambiguousRetryBlock, previousExternalId, holdClaim, releaseUnsentClaim, isAmbiguousFailure, isDryRun, isSamplePost, needsPageCheck, parseRescheduleWhen, recoverStuckPublishing, sweepOverduePosts } from "./guards";
 
 export { AMBIGUOUS_MARK, isAmbiguousFailure, isDryRun } from "./guards";
 
@@ -126,20 +126,28 @@ export function scheduleVideoPosts(input: { videoId: string; platforms: string[]
   const when = Date.parse(input.whenIso);
   if (!Number.isFinite(when)) return { ok: false, error: "Giờ đăng không hợp lệ" };
   const dry = isDryRun();
-  // Chống đăng trùng THEO TRANG ĐÍCH: bài thật đã lên lịch/đã đăng thì không tạo lại; bài lỗi/huỷ cho phép tạo lại.
-  // Kênh khác nhưng cùng Page ID (đã lên lịch ở lần trước) cũng là cùng trang — dedupe_key theo kênh không bắt được.
-  const live = samePageBlockers(v.id, platforms, dry);
-  if (dry && live.length) return { ok: false, error: `Video đã có bài thử đang chờ trên ${describeBlockers(live, platforms)}. Huỷ bài đó ở Đăng bài rồi lên lịch lại (đổi giờ / caption) — không tạo bài trùng.` };
-  if (!dry && live.some((e) => e.status === "failed" && !e.externalId))
-    return { ok: false, error: `Bài trên ${describeBlockers(live.filter((e) => isAmbiguousFailure(e)), platforms)} lỗi mơ hồ, có thể đã lên trang. Kiểm tra trang rồi dùng “Thử lại” (ghi lại đã kiểm tra), không lên lịch mới.` };
-  if (!dry && live.length) return { ok: false, error: `Video đã có bài trên ${describeBlockers(live, platforms)} (${live.map((e) => e.status).join(", ")}). Không đăng trùng.` };
   const keys = platforms.map((p) => `${p}:${v.id}`);
-  const existing = dry ? [] : db.select().from(schema.scheduledPosts).where(inArray(schema.scheduledPosts.dedupeKey, keys)).all();
-  // Một video một bài mỗi kênh (dedupe_key): bài đã gửi lên trang cũ (OWNER sửa Page ID kênh sau khi đăng) vẫn giữ khoá của kênh.
-  // Chỉ bài lỗi rõ ràng / huỷ chưa có mã nền tảng mới nhả khoá — còn lại báo lỗi, không để CSDL ném lỗi trùng khoá.
-  const holders = existing.filter((x) => x.externalId || (x.status !== "failed" && x.status !== "cancelled"));
-  if (holders.length)
-    return { ok: false, error: `Kênh ${holders.map((x) => `${x.platform} đã có bài video này (${x.status}${x.externalId ? `, mã ${x.externalId}` : ""}${x.targetPageId ? `, trang ${x.targetPageId}` : ""})`).join("; ")}. Mỗi kênh một bài cho một video — không đăng trùng.` };
+  // Kiểm chống trùng: chạy một lần để báo lỗi nhanh (trước khi dựng ảnh bìa), rồi chạy LẠI trong giao dịch BEGIN IMMEDIATE cùng lệnh
+  // ghi — tiến trình khác cùng tệp CSDL không thể chen bài cùng trang giữa lúc kiểm và lúc ghi.
+  const check = (): { ok: false; error: string } | { ok: true; existing: PostRow[] } => {
+    // Chống đăng trùng THEO TRANG ĐÍCH: bài thật đã lên lịch/đã đăng thì không tạo lại; bài lỗi/huỷ cho phép tạo lại.
+    // Kênh khác nhưng cùng Page ID (đã lên lịch ở lần trước) cũng là cùng trang — dedupe_key theo kênh không bắt được.
+    const live = samePageBlockers(v.id, platforms, dry);
+    if (dry && live.length) return { ok: false, error: `Video đã có bài thử đang chờ trên ${describeBlockers(live, platforms)}. Huỷ bài đó ở Đăng bài rồi lên lịch lại (đổi giờ / caption) — không tạo bài trùng.` };
+    if (!dry && live.some((e) => e.status === "failed" && !e.externalId))
+      return { ok: false, error: `Bài trên ${describeBlockers(live.filter((e) => isAmbiguousFailure(e)), platforms)} lỗi mơ hồ, có thể đã lên trang. Kiểm tra trang rồi dùng “Thử lại” (ghi lại đã kiểm tra), không lên lịch mới.` };
+    if (!dry && live.length) return { ok: false, error: `Video đã có bài trên ${describeBlockers(live, platforms)} (${live.map((e) => e.status).join(", ")}). Không đăng trùng.` };
+    const existing = dry ? [] : db.select().from(schema.scheduledPosts).where(inArray(schema.scheduledPosts.dedupeKey, keys)).all();
+    // Một video một bài mỗi kênh (dedupe_key): bài đã gửi lên trang cũ (OWNER sửa Page ID kênh sau khi đăng) vẫn giữ khoá của kênh
+    // (OWNER gỡ bằng "Gỡ khoá kênh" — releaseChannelLock). Chỉ bài lỗi rõ ràng / huỷ chưa có mã nền tảng mới nhả khoá — còn lại báo
+    // lỗi, không để CSDL ném lỗi trùng khoá.
+    const holders = existing.filter((x) => x.externalId || (x.status !== "failed" && x.status !== "cancelled"));
+    if (holders.length)
+      return { ok: false, error: `Kênh ${holders.map((x) => `${x.platform} đã có bài video này (${x.status}${x.externalId ? `, mã ${x.externalId}` : ""}${x.targetPageId ? `, trang ${x.targetPageId}` : ""})`).join("; ")}. Mỗi kênh một bài cho một video — không đăng trùng.` };
+    return { ok: true, existing };
+  };
+  const pre = check();
+  if (!pre.ok) return pre;
   const thumb = makeThumbnail(masterPath, v.title, input.by);
   const rows = platforms.map((p) => ({
     id: newId("sp"),
@@ -157,13 +165,17 @@ export function scheduleVideoPosts(input: { videoId: string; platforms: string[]
     // Trang đích lúc lên lịch: chống trùng về sau theo trang này, không theo cấu hình kênh lúc kiểm
     targetPageId: channelPageId(p),
   }));
-  db.transaction((tx) => {
+  const wrote = scheduleTx(() => {
+    const c = check();
+    if (!c.ok) return c;
     // Bài lỗi/huỷ cũ nhả khoá chống trùng để bài mới thay thế (lịch sử vẫn giữ).
-    if (!dry) for (const e of existing) tx.update(schema.scheduledPosts).set({ dedupeKey: null }).where(eq(schema.scheduledPosts.id, e.id)).run();
+    if (!dry) for (const e of c.existing) db.update(schema.scheduledPosts).set({ dedupeKey: null }).where(eq(schema.scheduledPosts.id, e.id)).run();
     // Bài quá hạn cũ cùng video + cùng trang đã được thay bằng bài mới → huỷ (không còn treo "cần xếp lại")
-    for (const e of overdueOnSamePage(videoPostsFor(v.id), platforms)) tx.update(schema.scheduledPosts).set({ status: "cancelled", dedupeKey: null, error: "Đã thay bằng bài lên lịch mới." }).where(eq(schema.scheduledPosts.id, e.id)).run();
-    tx.insert(schema.scheduledPosts).values(rows).run();
+    for (const e of overdueOnSamePage(videoPostsFor(v.id), platforms)) db.update(schema.scheduledPosts).set({ status: "cancelled", dedupeKey: null, error: "Đã thay bằng bài lên lịch mới." }).where(eq(schema.scheduledPosts.id, e.id)).run();
+    db.insert(schema.scheduledPosts).values(rows).run();
+    return { ok: true };
   });
+  if (!wrote.ok) return wrote;
   for (const r of rows) campaignRepo.inheritLinks("video", v.id, "publication", r.id, "scheduled");
   logActivity("human", `${input.by} lên lịch đăng video “${v.title}” lên ${platforms.join(", ")}${dry ? " (chế độ thử, không đăng thật)" : ""}.`, "publishing");
   return { ok: true, created: rows.length, mode: dry ? "dry_run" : "live" };
@@ -173,6 +185,28 @@ export function scheduleVideoPosts(input: { videoId: string; platforms: string[]
 export function channelPageId(platform: string): string | null {
   const key = videoChannels().find((c) => c.platform === platform)?.key;
   return (key?.startsWith("facebook_page") && readIntegrationConfig(key).pageId) || null;
+}
+
+/** Page ID HIỆN TẠI của mọi kênh (đọc cấu hình một lần cho cả danh sách bài — giao diện). */
+export type ChannelPages = Map<string, string | null>;
+export function channelPageIds(): ChannelPages {
+  return new Map(videoChannels().map((c) => [c.platform, (c.key.startsWith("facebook_page") && readIntegrationConfig(c.key).pageId) || null]));
+}
+
+/** Kênh Facebook (có khái niệm Page ID) hay không. */
+function isPageChannel(platform: string): boolean {
+  return !!videoChannels().find((c) => c.platform === platform)?.key.startsWith("facebook_page");
+}
+
+/** Ghi lúc LÊN LỊCH (bài chữ và video) trong MỘT giao dịch BEGIN IMMEDIATE: hàm `write` kiểm lại chống trùng rồi mới ghi, trong cùng
+ *  khoá ghi của SQLite (tiến trình khác cùng tệp CSDL chờ). Trả lỗi kiểm → không ghi gì. SQLITE_BUSY / lỗi CSDL → báo thử lại. */
+export function scheduleTx(write: () => { ok: true } | { ok: false; error: string }): { ok: true } | { ok: false; error: string } {
+  try {
+    return getDb().transaction(() => write(), { behavior: "immediate" });
+  } catch (e) {
+    console.warn(`[publishing] lên lịch: ${e instanceof Error ? e.message : e}`);
+    return { ok: false, error: "Hệ thống đang bận ghi lịch đăng — thử lại sau ít giây." };
+  }
 }
 
 /** Trang đích thật của một kênh: kênh Facebook đã có Page ID → "fb:<Page ID>" (hai kênh nhập cùng Page ID là MỘT trang);
@@ -234,6 +268,23 @@ export function pageChangedReason(p: Pick<PostRow, "platform" | "targetPageId">)
   return `${PAGE_CHANGED_PREFIX}: lúc lên lịch là trang ${p.targetPageId}, kênh ${p.platform} giờ ${now ? `là trang ${now}` : "chưa có Page ID"}. Không gửi lệnh đăng — kiểm Cài đặt › Kết nối rồi Đăng lại (đăng lên trang hiện tại) hoặc Huỷ.`;
 }
 
+/** Bài CHƯA lưu trang đích (trước migration 0023 / kênh Facebook chưa có Page ID lúc lên lịch) — luật lúc gửi (null = gửi được,
+ *  claimForSend đóng dấu trang hiện tại vào bài trong cùng giao dịch giành quyền):
+ *  - kênh không phải Facebook: không có khái niệm trang → gửi;
+ *  - kênh Facebook chưa có Page ID: không biết gửi lên trang nào → không gửi;
+ *  - CSDL có dấu kênh từng trỏ trang KHÁC trang hiện tại (bài khác cùng kênh lưu trang khác): không biết lúc lên lịch OWNER chọn
+ *    trang nào → mơ hồ, không gửi. Cả hai trường hợp không gửi đều là lỗi rõ ràng (chưa gửi gì): OWNER kiểm kênh rồi Đăng lại =
+ *    đăng lên trang hiện tại (retry đọc PAGE_CHANGED_PREFIX), hoặc Huỷ. */
+export function missingPageReason(p: Pick<PostRow, "id" | "platform" | "targetPageId">): string | null {
+  if (p.targetPageId || !isPageChannel(p.platform)) return null;
+  const now = channelPageId(p.platform);
+  if (!now) return `${PAGE_CHANGED_PREFIX}: bài chưa lưu trang đích và kênh ${p.platform} chưa có Page ID. Không gửi lệnh đăng — nhập Page ID ở Cài đặt › Kết nối rồi Đăng lại, hoặc Huỷ.`;
+  const t = schema.scheduledPosts;
+  const other = getDb().select({ page: t.targetPageId }).from(t).where(and(eq(t.platform, p.platform), isNotNull(t.targetPageId), ne(t.targetPageId, now), ne(t.id, p.id))).get();
+  if (other?.page) return `${PAGE_CHANGED_PREFIX}: bài chưa lưu trang đích, kênh ${p.platform} từng là trang ${other.page}, giờ là trang ${now}. Không gửi lệnh đăng — kiểm Cài đặt › Kết nối rồi Đăng lại (đăng lên trang ${now}) hoặc Huỷ.`;
+  return null;
+}
+
 /** Bài cùng video (bài video) / cùng nội dung chữ (bài chữ) với bài này. */
 function siblingPosts(p: PostRow): PostRow[] {
   const t = schema.scheduledPosts;
@@ -248,7 +299,8 @@ export type SendClaim = { ok: true; post: PostRow } | { ok: false; outcome: "los
  *  "publishing". Kiểm và giành quyền nằm trong cùng một khoá nên hai tiến trình không thể cùng thấy "trang trống" rồi cùng gửi.
  *  Không dùng unique index (xem báo cáo 26/10): CSDL đang chạy có thể đã có dòng trùng → migration tạo index sẽ thất bại.
  *  - Bài không còn "scheduled" (lượt / tiến trình khác đã giành) → lost.
- *  - Page ID kênh đã đổi so với lúc lên lịch → failed (lỗi rõ ràng, chưa gửi gì: Đăng lại / Huỷ được).
+ *  - Page ID kênh đã đổi so với lúc lên lịch, hoặc bài chưa lưu trang mà không xác định được (missingPageReason) → failed (lỗi rõ
+ *    ràng, chưa gửi gì: Đăng lại / Huỷ được).
  *  - Trang đã có bài khác cùng video / nội dung đã gửi lệnh đăng (đang đăng / đang xác minh / đã đăng / có mã / lỗi mơ hồ) → cancelled. */
 export function claimForSend(postId: string): SendClaim {
   try {
@@ -269,7 +321,7 @@ function claimForSendTx(postId: string): SendClaim {
     (tx) => {
       const p = tx.select().from(t).where(eq(t.id, postId)).get();
       if (!p || p.status !== "scheduled") return { ok: false as const, outcome: "lost" as const, reason: "Bài đã được lượt chạy khác giành quyền đăng." };
-      const changed = pageChangedReason(p);
+      const changed = pageChangedReason(p) ?? missingPageReason(p);
       if (changed) {
         tx.update(t).set({ status: "failed", error: changed }).where(and(eq(t.id, p.id), eq(t.status, "scheduled"))).run();
         return { ok: false as const, outcome: "failed" as const, reason: changed };
@@ -281,8 +333,13 @@ function claimForSendTx(postId: string): SendClaim {
         tx.update(t).set({ status: "cancelled", dedupeKey: null, error: reason }).where(and(eq(t.id, p.id), eq(t.status, "scheduled"))).run();
         return { ok: false as const, outcome: "cancelled" as const, reason };
       }
-      // Lưu trang thật sắp nhận lệnh đăng (= trang lúc lên lịch; bài cũ chưa lưu thì lấy trang kênh hiện tại)
-      const r = tx.update(t).set({ status: "publishing", attempts: p.attempts + 1, targetPageId: channelPageId(p.platform) ?? p.targetPageId }).where(and(eq(t.id, p.id), eq(t.status, "scheduled"))).run();
+      // Lưu trang thật sắp nhận lệnh đăng (= trang lúc lên lịch; bài chưa lưu thì đóng dấu trang kênh hiện tại — missingPageReason đã
+      // loại trường hợp mơ hồ) + quyền gửi của tiến trình này (claimed_by / claimed_at: recoverStuckPublishing không đánh nhầm).
+      const r = tx
+        .update(t)
+        .set({ status: "publishing", attempts: p.attempts + 1, targetPageId: channelPageId(p.platform) ?? p.targetPageId, claimedBy: CLAIM_OWNER, claimedAt: new Date().toISOString() })
+        .where(and(eq(t.id, p.id), eq(t.status, "scheduled")))
+        .run();
       if (r.changes !== 1) return { ok: false as const, outcome: "lost" as const, reason: "Bài đã được lượt chạy khác giành quyền đăng." };
       return { ok: true as const, post: tx.select().from(t).where(eq(t.id, p.id)).get()! };
     },
@@ -365,11 +422,21 @@ export async function publishDueVideoPosts(): Promise<{ published: number; teste
       }
       continue;
     }
-    inFlight.add(post.id);
-    const runId = startRun(st.channel.key, "publish_video");
+    // Giữa giành quyền và gọi nền tảng: lỗi ở đây (CSDL bận / hỏng) = CHƯA gửi gì → trả bài về "chờ đăng", không để kẹt "publishing".
+    let runId: string;
+    let ctx: ReturnType<typeof connectorContext>;
+    try {
+      ctx = connectorContext(st.channel.key);
+      runId = startRun(st.channel.key, "publish_video");
+    } catch (e) {
+      releaseUnsentClaim(post.id, claim.post.attempts - 1, `Chưa gửi (${e instanceof Error ? e.message : e}); thử lại lượt sau.`);
+      out.skipped++;
+      continue;
+    }
+    const release = holdClaim(post.id);
     try {
       const connector = connectorFor(st.channel.key)!;
-      const res = await connector.publishVideo!(connectorContext(st.channel.key), { postId: post.id, title: post.title, description: post.caption ?? "", filePath: file.path, fileName: file.name, fileSize: file.size });
+      const res = await connector.publishVideo!(ctx, { postId: post.id, title: post.title, description: post.caption ?? "", filePath: file.path, fileName: file.name, fileSize: file.size });
       if (res.ok && res.externalId) {
         db.update(schema.scheduledPosts).set({ status: "verifying", externalId: res.externalId, error: null, publishedAt: nowIso() }).where(eq(schema.scheduledPosts.id, post.id)).run();
         finishRun(runId, true, res.message, 1);
@@ -390,7 +457,7 @@ export async function publishDueVideoPosts(): Promise<{ published: number; teste
         }
       }
     } finally {
-      inFlight.delete(post.id);
+      release();
     }
   }
   return out;
@@ -516,6 +583,55 @@ export function cancelPostRow(p: PostRow, by?: { email: string; name?: string })
   if (!r.changes) return { ok: false, error: "Bài vừa đổi trạng thái, tải lại trang" };
   campaignRepo.syncEntityStatus("publication", p.id, "cancelled");
   if (isAmbiguousFailure(p)) logActivity("human", `${by?.name ?? by?.email ?? "Người dùng"} huỷ bài lỗi mơ hồ “${p.title}” trên ${p.platform} (lệnh đăng đã gửi, bài có thể đã lên trang — kiểm trang nếu cần).`, "publishing");
+  return { ok: true };
+}
+
+/** Khoá kênh (dedupe_key: một video / nội dung một bài mỗi kênh) do bài ĐÃ gửi lên trang giữ. Bài lên nhầm trang (Page ID kênh nhập
+ *  nhầm, sau đó đã sửa) giữ khoá mãi → kênh không lên lịch được bài đúng trang. Gỡ được (null) khi: bài đang giữ khoá thật (có mã /
+ *  chưa lỗi-huỷ), đã gửi xong (không còn chờ / đang gửi), có lưu trang đích, và trang đó KHÁC Page ID kênh hiện tại — chống trùng
+ *  theo trang (pageBlockersAmong) vẫn chặn trang cũ, nên gỡ khoá không mở đường đăng trùng lên cùng một trang. */
+export function channelLockReleaseBlock(p: PostRow, pages?: ChannelPages): string | null {
+  if (!p.dedupeKey || p.mode === "dry_run") return "Bài không giữ khoá kênh.";
+  // Bài chưa từng gửi lệnh đăng (chờ / đang gửi / quá hạn): không có gì trên trang để "nhầm" — dùng Xếp lại / Huỷ.
+  if (p.status === "scheduled" || p.status === "publishing" || p.status === "overdue") return "Bài chưa gửi xong: dùng Xếp lại / Huỷ.";
+  // Lỗi / huỷ chưa có mã: scheduleVideoPosts / scheduleTextPosts tự nhả khoá khi lên lịch bài thay thế
+  if (!p.externalId && (p.status === "failed" || p.status === "cancelled")) return "Khoá tự nhả khi lên lịch lại.";
+  if (!p.targetPageId) return "Bài chưa lưu trang đích: không xác định được trang nhầm.";
+  const now = pages ? (pages.get(p.platform) ?? null) : channelPageId(p.platform);
+  if (!now) return "Kênh chưa có Page ID: nhập Page ID đúng trước.";
+  if (now === p.targetPageId) return "Bài ở đúng trang kênh hiện tại: khoá đúng, không gỡ.";
+  return null;
+}
+
+/** OWNER "Gỡ khoá kênh": nhả dedupe_key của bài đã lên trang nhập nhầm. KHÔNG xoá bài, không đổi trạng thái; ghi lý do vào bài
+ *  (lock_released_note) + nhật ký. Kiểm lại trong giao dịch BEGIN IMMEDIATE (bài / Page ID kênh vừa đổi thì không gỡ). Chỉ OWNER. */
+export function releaseChannelLock(postId: string, by: { email: string; name?: string }): { ok: boolean; error?: string } {
+  if (!isAdminEmail(by.email)) return { ok: false, error: "Chỉ OWNER (tài khoản quản trị chính) gỡ khoá kênh." };
+  const t = schema.scheduledPosts;
+  const who = by.name ?? by.email;
+  let done: { ok: true; post: PostRow; page: string } | { ok: false; error: string };
+  try {
+    done = getDb().transaction(
+      (tx) => {
+        const p = tx.select().from(t).where(eq(t.id, postId)).get();
+        if (!p) return { ok: false as const, error: "Không tìm thấy bài" };
+        const block = channelLockReleaseBlock(p);
+        if (block) return { ok: false as const, error: block };
+        const page = channelPageId(p.platform)!;
+        const at = nowIso();
+        const note = `Gỡ khoá kênh (${who}, ${at.slice(0, 16).replace("T", " ")} UTC): bài ở trang ${p.targetPageId}${p.externalId ? `, mã ${p.externalId}` : ""}; kênh ${p.platform} giờ là trang ${page}. Khoá cũ ${p.dedupeKey}.`;
+        const r = tx.update(t).set({ dedupeKey: null, lockReleasedNote: note }).where(and(eq(t.id, p.id), eq(t.dedupeKey, p.dedupeKey!), eq(t.status, p.status))).run();
+        if (r.changes !== 1) return { ok: false as const, error: "Bài vừa đổi trạng thái, tải lại trang" };
+        return { ok: true as const, post: p, page };
+      },
+      { behavior: "immediate" },
+    );
+  } catch (e) {
+    return { ok: false, error: `Chưa gỡ được (${e instanceof Error ? e.message : e}) — thử lại.` };
+  }
+  if (!done.ok) return done;
+  const p = done.post;
+  logActivity("human", `${who} gỡ khoá kênh ${p.platform} của bài “${p.title}” (bài ở trang ${p.targetPageId}${p.externalId ? `, mã ${p.externalId}` : ""}; kênh giờ là trang ${done.page}). Bài giữ nguyên, không xoá.`, "publishing");
   return { ok: true };
 }
 

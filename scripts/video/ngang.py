@@ -13,6 +13,7 @@ Số đo của skill ghi ở 3840×2160; bộ dựng xuất 1920×1080 nên mọ
 - Chỗ lệch có chủ ý (ghi vào báo cáo): M1 "kính" cần video ngay dưới thẻ làm mờ — lớp chữ dựng tách khỏi video nên viền dùng
   trắng mờ đục 32 % [AI SUY LUẬN]; nhãn M4 dùng Tinos Bold (SIL OFL) thay Playfair Display SC (chưa có tệp font có giấy phép trong máy).
 """
+import contextlib
 import math
 import os
 import subprocess
@@ -28,6 +29,10 @@ DISC = {"fs": 42, "box": (100, 861, 628, 919), "x": 115, "cy": 890, "alpha": 1 -
 BAND_1P = (125, 510, 820, 890)   # dải sơ đồ cảnh 1 người (C-K.1: x250–1640, y1020–1780 @4K)
 GOLD = (212, 175, 55)
 FONT = None  # esv_render gán hàm font() (đã xử lý font có giấy phép Tinos) trước khi dựng
+# Hệ số vẽ thẻ ảnh / M3 (esv_render gán = RQ trước khi dựng): 1 = khung 1920×1080, 2 = 4K 3840×2160. Toạ độ / hộp (rect, PAD,
+# SAFE, M3_*) vẫn ở hệ thiết kế 1920×1080; lúc VẼ nhân RQ (cỡ thẻ, bo góc, viền, bóng, quãng bay, ảnh trong thẻ) → 4K là nét gốc,
+# không phải ảnh 1080 phóng ×2. Hộp trả về (frame / tiles_frame) luôn ở hệ thiết kế. RQ = 1: mọi phép tính ×1 chính xác → 1080 không đổi.
+RQ = 1
 NAVY = (11, 26, 51)
 
 
@@ -63,28 +68,60 @@ def spring(t, zeta=0.55, omega=13.0):
 
 # ---------------------------------------------------------------- mặt người theo thời gian (dùng để né)
 
+FT_W, FT_H = 960, 540  # cỡ khung dò mặt (½ khung xuất)
+
+
+def face_frames(src, crop, every=0.5):
+    """Khung xám FT_W×FT_H của nguồn đã cắt khung, mỗi `every` giây, đọc LẦN LƯỢT từng khung qua ống ffmpeg (MỘT lượt giải mã).
+    Chỉ giữ một khung trong bộ nhớ. Bản cũ đọc cả nguồn vào một mảng (~0,5 MB / khung ở 2 khung/s): clip 10 phút đỉnh RSS 1,65 GB →
+    nay 0,18 GB, bằng mức clip 1 phút (đo /usr/bin/time -l), cùng mốc thời gian và cùng hộp mặt."""
+    vf = f"fps={1 / every:.4f}," + (f"{crop}," if crop else "") + f"scale={FT_W}:{FT_H},format=gray"
+    p = subprocess.Popen(["ffmpeg", "-v", "error", "-i", src, "-vf", vf, "-f", "rawvideo", "-pix_fmt", "gray", "-"],
+                         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0)
+    fsz = FT_W * FT_H
+    try:
+        while True:
+            buf = bytearray(fsz)
+            view, got = memoryview(buf), 0
+            while got < fsz:
+                k = p.stdout.readinto(view[got:])
+                if not k:
+                    break
+                got += k
+            if got < fsz:  # hết nguồn (khung cuối thiếu bị bỏ — như phép chia nguyên của bản đọc cả mảng)
+                return
+            yield np.frombuffer(buf, np.uint8).reshape(FT_H, FT_W)
+    finally:
+        p.stdout.close()
+        if p.poll() is None:
+            p.kill()
+        p.wait()
+
+
 def face_track(src, info, crop, every=0.5):
-    """Dò mặt (Haar) mỗi `every` giây trên nguồn đã cắt khung, MỘT lượt giải mã. Trả [(t, [(x0,y0,x1,y1) theo khung xuất 1920×1080 khi z=1])].
+    """Dò mặt (Haar) mỗi `every` giây trên nguồn đã cắt khung, MỘT lượt giải mã, dò ngay từng khung (bộ nhớ không tăng theo thời lượng).
+    Trả [(t, [(x0,y0,x1,y1) theo khung xuất 1920×1080 khi z=1])].
     Lọc như skill (R1.4 / A10.4): bỏ hộp quá nhỏ, co 12 % mỗi cạnh để hộp sát mặt hơn rồi mới cộng lề an toàn ở bước đặt."""
     import cv2
     cas = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
-    w_, h_ = 960, 540
-    vf = f"fps={1 / every:.4f}," + (f"{crop}," if crop else "") + f"scale={w_}:{h_},format=gray"
-    p = subprocess.run(["ffmpeg", "-v", "error", "-i", src, "-vf", vf, "-f", "rawvideo", "-pix_fmt", "gray", "-"], capture_output=True)
-    raw = np.frombuffer(p.stdout, np.uint8)
-    n = len(raw) // (w_ * h_)
     out = []
-    for k in range(n):
-        g = raw[k * w_ * h_:(k + 1) * w_ * h_].reshape(h_, w_)
-        fcs = cas.detectMultiScale(g, 1.1, 6, minSize=(48, 48))
-        boxes = []
-        for (x, y, w, h) in fcs:
-            sx = CW / w_
-            x0, y0, x1, y1 = x * sx, y * sx, (x + w) * sx, (y + h) * sx
-            sh = 0.12 * (x1 - x0)
-            boxes.append((x0 + sh, y0 + sh, x1 - sh, y1 - sh))
-        out.append((k * every, boxes))
+    # closing: lỗi giữa chừng (dò mặt, Ctrl-C) vẫn đóng ống và dừng ffmpeg ngay (finally của face_frames), không chờ GC
+    with contextlib.closing(face_frames(src, crop, every)) as frames:
+        for k, g in enumerate(frames):
+            out.append((k * every, face_boxes(cas.detectMultiScale(g, 1.1, 6, minSize=(48, 48)))))
     return plausible(out)
+
+
+def face_boxes(fcs):
+    """Hộp Haar trên khung dò FT_W×FT_H → hộp theo khung xuất CW×CH, co 12 % mỗi cạnh. Xếp theo (x, y, w, h): OpenCV dò song song
+    nhiều luồng nên THỨ TỰ hộp đổi giữa các lần chạy (đo: cùng nguồn, 3 lần chạy lệch thứ tự ở 1–4 mẫu / 120) → xếp để tất định."""
+    boxes = []
+    for (x, y, w, h) in sorted(fcs, key=lambda q: (int(q[0]), int(q[1]), int(q[2]), int(q[3]))):
+        sx = CW / FT_W
+        x0, y0, x1, y1 = x * sx, y * sx, (x + w) * sx, (y + h) * sx
+        sh = 0.12 * (x1 - x0)
+        boxes.append((x0 + sh, y0 + sh, x1 - sh, y1 - sh))
+    return boxes
 
 
 def plausible(samples, win=3.0):
@@ -274,71 +311,76 @@ def _paste_clip(canvas, im, ix, iy):
 # ---------------------------------------------------------------- 5 mẫu (C3)
 
 class Card:
-    """Một nhịp ảnh: mẫu + khung đặt + ảnh. `frame(t, canvas)` vẽ, trả hộp đã vẽ (để kiểm che mặt / chồng chữ)."""
+    """Một nhịp ảnh: mẫu + khung đặt + ảnh. `frame(t, canvas)` vẽ, trả hộp đã vẽ (để kiểm che mặt / chồng chữ).
+    `rect` ở hệ thiết kế 1920×1080; thẻ vẽ ở RQ (lúc tạo): canvas phải là (CW·RQ)×(CH·RQ), hộp trả về đã chia RQ."""
     RATIOS = {"M1": (1.6, 1.0, 0.8), "M2": (1.3, 0.85), "M4": (1.25, 0.9), "M5": (0.49,), "M6": (1.6,)}
     MAXW = {"M1": 750, "M2": 720, "M4": 700, "M5": 330, "M6": 820}
 
     def __init__(self, kind, t0, t1, rect, media, label="", side=1, variant=0):
         self.kind, self.t0, self.t1, self.rect, self.label, self.side, self.variant = kind, t0, t1, rect, label, side, variant
+        self.q = q = RQ
         x0, y0, x1, y1 = rect
-        self.w, self.h = int(x1 - x0), int(y1 - y0)
-        self.cx, self.cy = (x0 + x1) / 2, (y0 + y1) / 2
-        self.media = media  # [(frames, kb_sign)]
+        self.w, self.h = int((x1 - x0) * q), int((y1 - y0) * q)  # cỡ VẼ (px ở độ phân giải đích)
+        self.cx, self.cy = (x0 + x1) / 2 * q, (y0 + y1) / 2 * q
+        self.media = media  # [(frames, kb_sign)] — khung ảnh cỡ media_size() (px đích)
+        # nạp chậm (tuỳ chọn): loader() trả media lúc thẻ bắt đầu hiện, nhả sau t1 → RAM chỉ giữ ảnh của thẻ đang hiện
+        # (4K: ảnh trong thẻ gấp 4 lần điểm ảnh; clip B-roll 15 khung/s — nạp sẵn mọi thẻ của video dài tốn hàng trăm MB)
+        self.loader = None
         # lề từ thẻ tới mép title-safe phía thẻ bay vào / ra: chuyển động không được đưa thẻ (kể cả bóng) ra ngoài safe
-        self.room = max(0.0, (SAFE[2] - x1) if side > 0 else (x0 - SAFE[0])) - PAD.get(kind, 40) * 0.5
+        self.room = (max(0.0, (SAFE[2] - x1) if side > 0 else (x0 - SAFE[0])) - PAD.get(kind, 40) * 0.5) * q
         self._prep()
 
     # ---- dựng sẵn phần tĩnh của thẻ
     def _prep(self):
-        k = self.kind
+        k, q = self.kind, self.q
         if k == "M1":
-            R, inset = 24, 17
+            R, inset = 24 * q, 17 * q
             self.base = Image.new("RGBA", (self.w, self.h), (255, 255, 255, int(255 * 0.32)))
-            self.base.putalpha(rounded_mask((self.w, self.h), R))
+            self.base.putalpha(rounded_mask((self.w, self.h), R, q))
             hl = Image.new("L", (self.w, self.h), 0)
-            ImageDraw.Draw(hl).rounded_rectangle((0, 0, self.w - 1, self.h - 1), radius=R, outline=255, width=2)
+            ImageDraw.Draw(hl).rounded_rectangle((0, 0, self.w - 1, self.h - 1), radius=R, outline=255, width=2 * q)
             gx = np.linspace(1.0, 0.45, self.w)[None, :] * np.linspace(1.0, 0.6, self.h)[:, None]
             hl = Image.fromarray((np.asarray(hl, np.float32) * gx * 0.65).astype(np.uint8))
             self.base.paste((255, 255, 255, 255), (0, 0), hl)
             self.inner = (inset, inset, self.w - inset, self.h - inset)
-            self.inner_mask = rounded_mask((self.w - 2 * inset, self.h - 2 * inset), 15)
-            self.shadow = drop_shadow(self.base.getchannel("A").point(lambda v: 255 if v else 0), 0.38, 20, 12)
+            self.inner_mask = rounded_mask((self.w - 2 * inset, self.h - 2 * inset), 15 * q, q)
+            self.shadow = drop_shadow(self.base.getchannel("A").point(lambda v: 255 if v else 0), 0.38, 20 * q, 12 * q)
         elif k == "M2":
             self.inner = (0, 0, self.w, self.h)
-            self.shadow = drop_shadow(Image.new("L", (self.w, self.h), 255), 0.30, 15, 9)
+            self.shadow = drop_shadow(Image.new("L", (self.w, self.h), 255), 0.30, 15 * q, 9 * q)
         elif k == "M4":
-            R, mg, strip = 3, 14, 85 if self.label else 0
+            R, mg, strip = 3 * q, 14 * q, 85 * q if self.label else 0
             self.base = Image.new("RGBA", (self.w, self.h), (0xF4, 0xEF, 0xE7, 255))
             self.base.putalpha(rounded_mask((self.w, self.h), R, 0))
             self.inner = (mg, mg, self.w - mg, self.h - mg - strip)
             self.inner_mask = Image.new("L", (self.inner[2] - self.inner[0], self.inner[3] - self.inner[1]), 255)
-            self.shadow = drop_shadow(self.base.getchannel("A"), 0.30, 8, 5)
+            self.shadow = drop_shadow(self.base.getchannel("A"), 0.30, 8 * q, 5 * q)
             self.strip = strip
             if self.label:
-                fs = 52  # 104 @4K, tự thu 6 px @4K / bước, tối thiểu 60 @4K (R3.4.2)
+                fs = 52 * q  # 104 @4K, tự thu 6 px @4K / bước, tối thiểu 60 @4K (R3.4.2)
                 while True:
                     f = FONT("Times New Roman Bold Italic.ttf", fs)  # Tinos Bold Italic (OFL) — thay Playfair Display SC chưa có tệp
-                    if fs <= 30 or f.getlength(self.label.upper()) <= self.w - 2 * mg - 10:
+                    if fs <= 30 * q or f.getlength(self.label.upper()) <= self.w - 2 * mg - 10 * q:
                         break
-                    fs -= 3
+                    fs -= 3 * q
                 self.lbl = Image.new("RGBA", (self.w - 2 * mg, strip), (0, 0, 0, 0))
                 ImageDraw.Draw(self.lbl).text((0, strip * 0.52), self.label.upper(), font=f, fill=(0x15, 0x15, 0x15, 255), anchor="lm")
         elif k == "M5":
             H = self.h
-            sc = H / 1140
-            self.R, self.bez = int(90 * sc), max(6, int(26 * sc))
+            sc = H / 1140  # theo cỡ VẼ → 4K tự gấp đôi bo góc / viền máy / "đảo"
+            self.R, self.bez = int(90 * sc), max(6 * q, int(26 * sc))
             body = Image.new("RGBA", (self.w, self.h), (0x11, 0x13, 0x18, 255))
             body.putalpha(rounded_mask((self.w, self.h), self.R, 0))
             edge = Image.new("L", (self.w, self.h), 0)
-            ImageDraw.Draw(edge).rounded_rectangle((0, 0, self.w - 1, self.h - 1), radius=self.R, outline=255, width=2)
+            ImageDraw.Draw(edge).rounded_rectangle((0, 0, self.w - 1, self.h - 1), radius=self.R, outline=255, width=2 * q)
             body.paste((0x5A, 0x60, 0x6C, 255), (0, 0), edge)
             self.base = body
             b = self.bez
             self.inner = (b, b, self.w - b, self.h - b)
             self.inner_mask = rounded_mask((self.w - 2 * b, self.h - 2 * b), int(66 * sc), 0)
-            iw, ih = int(150 * sc), max(6, int(40 * sc))
+            iw, ih = int(150 * sc), max(6 * q, int(40 * sc))
             self.island = (int(self.w / 2 - iw / 2), b + int(22 * sc), int(self.w / 2 + iw / 2), b + int(22 * sc) + ih)
-            self.shadow = drop_shadow(body.getchannel("A"), 0.45, 22, 14)
+            self.shadow = drop_shadow(body.getchannel("A"), 0.45, 22 * q, 14 * q)
         elif k == "M6":
             self.prints = []
             n = len(self.media)
@@ -346,13 +388,14 @@ class Card:
             pw = int(self.w * (0.74 if n <= 2 else 0.70) * 0.62)
             ph = int(pw / 1.6)
             for i, (rx, ry, ang) in enumerate(spots[:n]):
-                bw = 9
+                bw = 9 * q
                 card = Image.new("RGBA", (pw + 2 * bw, ph + 2 * bw), (255, 255, 255, 255))
-                card.putalpha(rounded_mask(card.size, 3, 0))
-                self.prints.append({"size": (pw, ph), "card": card, "bw": bw, "pos": (self.rect[0] + rx * self.w, self.rect[1] + ry * self.h), "ang": ang,
-                                    "shadow": drop_shadow(card.getchannel("A"), 0.40, 17, 10)})
+                card.putalpha(rounded_mask(card.size, 3 * q, 0))
+                self.prints.append({"size": (pw, ph), "card": card, "bw": bw, "pos": (self.rect[0] * q + rx * self.w, self.rect[1] * q + ry * self.h), "ang": ang,
+                                    "shadow": drop_shadow(card.getchannel("A"), 0.40, 17 * q, 10 * q)})
 
     def media_size(self, i=0):
+        """Cỡ ảnh trong thẻ, px ở độ phân giải VẼ (4K: gấp đôi) — load_media nạp ảnh gốc đúng cỡ này, không phóng từ 1080."""
         if self.kind == "M6":
             return self.prints[i]["size"]
         x0, y0, x1, y1 = self.inner
@@ -363,21 +406,27 @@ class Card:
     # ---- vẽ một khung
     def frame(self, t, canvas):
         if t < self.t0 or t >= self.t1:
+            if self.loader is not None and t >= self.t1:
+                self.media = None
             return None
+        if self.loader is not None and self.media is None:
+            self.media = self.loader()
         ms = (t - self.t0) * 1000
         left = (self.t1 - t) * 1000
         u = (t - self.t0) / max(0.01, self.t1 - self.t0)
-        return getattr(self, "_" + self.kind)(t, ms, left, u, canvas)
+        b = getattr(self, "_" + self.kind)(t, ms, left, u, canvas)
+        return b if (b is None or self.q == 1) else tuple(v / self.q for v in b)
 
     def _photo(self, i, u, t, z0=1.0, z1=1.07):
         frames, sign = self.media[min(i, len(self.media) - 1)]
         return ken_burns(frames, self.media_size(i), u, z0, z1, sign=sign, t=t - self.t0)
 
     def _M1(self, t, ms, left, u, canvas):
+        q = self.q
         enter = spring(ms / 1000)
         a = min(ss(ms / 250), ss(left / 350))
         sc = (0.86 + 0.14 * enter) * (1 - 0.06 * eic(1 - left / 350) if left < 350 else 1)
-        dx = self.side * min(70, self.room) * max(0.0, 1 - enter) + (self.side * min(30, self.room) * eic(1 - left / 350) if left < 350 else 0)
+        dx = self.side * min(70 * q, self.room) * max(0.0, 1 - enter) + (self.side * min(30 * q, self.room) * eic(1 - left / 350) if left < 350 else 0)
         card = self.base.copy()
         x0, y0, x1, y1 = self.inner
         ph = self._photo(0, u, t)
@@ -387,6 +436,7 @@ class Card:
         return paste_tf(canvas, card, self.cx + dx, self.cy, sc, 0, a)
 
     def _M2(self, t, ms, left, u, canvas):
+        q = self.q
         p_in = ss((ms - 0) / 550)
         p_out = ss(1 - left / 350) if left < 350 else 0.0
         reveal = max(0.0, p_in - p_out)
@@ -398,26 +448,27 @@ class Card:
         d = ImageDraw.Draw(m)
         kind = self.variant % 3
         if kind == 0:   # quét trái → phải
-            d.rectangle((0, 0, int((w + 30) * reveal), h), fill=255)
+            d.rectangle((0, 0, int((w + 30 * q) * reveal), h), fill=255)
         elif kind == 1:  # chéo 30°
-            off = (w + h * math.tan(math.radians(30)) + 30) * reveal
+            off = (w + h * math.tan(math.radians(30)) + 30 * q) * reveal
             d.polygon([(0, 0), (off, 0), (off - h * math.tan(math.radians(30)), h), (0, h)], fill=255)
         else:            # tròn nở từ tâm
-            r = reveal * math.hypot(w, h) / 2 + 1
+            r = reveal * math.hypot(w, h) / 2 + q
             d.ellipse((w / 2 - r, h / 2 - r, w / 2 + r, h / 2 + r), fill=255)
-        m = m.filter(ImageFilter.GaussianBlur(10))
+        m = m.filter(ImageFilter.GaussianBlur(10 * q))
         ph = ph.copy()
         ph.putalpha(m)
         sh, _ = self.shadow
         paste_tf(canvas, sh, self.cx, self.cy, 1, 0, reveal)
         box = paste_tf(canvas, ph, self.cx, self.cy)
-        # viền vàng 6 px @4K → 3 px, vẽ dần theo chu vi chiều kim đồng hồ từ góc trên-trái (250–700 ms), rút khi ra
+        # viền vàng 6 px @4K → 3 px @1080, vẽ dần theo chu vi chiều kim đồng hồ từ góc trên-trái (250–700 ms), rút khi ra
         pb = ss((ms - 250) / 450) * (1 - p_out)
         if pb > 0.002:
             per = 2 * (w + h)
             L = per * pb
             pts = [(0, 0), (w, 0), (w, h), (0, h), (0, 0)]
-            lay = Image.new("RGBA", (w + 6, h + 6), (0, 0, 0, 0))
+            o = 3 * q
+            lay = Image.new("RGBA", (w + 2 * o, h + 2 * o), (0, 0, 0, 0))
             ld = ImageDraw.Draw(lay)
             acc = 0.0
             for (ax, ay), (bx, by) in zip(pts, pts[1:]):
@@ -425,39 +476,41 @@ class Card:
                 if acc >= L:
                     break
                 k = min(1.0, (L - acc) / seg)
-                ld.line([(ax + 3, ay + 3), (ax + 3 + (bx - ax) * k, ay + 3 + (by - ay) * k)], fill=GOLD + (255,), width=3)
+                ld.line([(ax + o, ay + o), (ax + o + (bx - ax) * k, ay + o + (by - ay) * k)], fill=GOLD + (255,), width=3 * q)
                 acc += seg
             paste_tf(canvas, lay, self.cx, self.cy)
         return box
 
     def _M4(self, t, ms, left, u, canvas):
+        q = self.q
         a = min(ss(ms / 300), 1 - eic(1 - left / 320) if left < 320 else 1.0)
-        below = max(0.0, SUB_FORBID_Y - self.rect[3] - PAD["M4"])  # trượt lên từ dưới / rơi khi ra: không qua vạch phụ đề
-        dy = min(40, below) * (1 - eoc(ms / 500)) + (min(20, below) * eic(1 - left / 320) if left < 320 else 0)
+        below = max(0.0, SUB_FORBID_Y - self.rect[3] - PAD["M4"]) * q  # trượt lên từ dưới / rơi khi ra: không qua vạch phụ đề
+        dy = min(40 * q, below) * (1 - eoc(ms / 500)) + (min(20 * q, below) * eic(1 - left / 320) if left < 320 else 0)
         card = self.base.copy()
         x0, y0, x1, y1 = self.inner
         ph = self._photo(0, u, t)
         rv = ss((ms - 100) / 500)
         if rv > 0:
             m = Image.new("L", ph.size, 0)
-            ImageDraw.Draw(m).rectangle((0, 0, ph.width, int((ph.height + 20) * rv)), fill=255)
-            card.paste(ph, (x0, y0), m.filter(ImageFilter.GaussianBlur(10)))
+            ImageDraw.Draw(m).rectangle((0, 0, ph.width, int((ph.height + 20 * q) * rv)), fill=255)
+            card.paste(ph, (x0, y0), m.filter(ImageFilter.GaussianBlur(10 * q)))
         if self.label:
             rl = ss((ms - 280) / 350)
-            ImageDraw.Draw(card).rectangle((x0, y1 + 10, x0 + int(70 * rl), y1 + 13), fill=(0xC8, 0x10, 0x2E, 255))
+            ImageDraw.Draw(card).rectangle((x0, y1 + 10 * q, x0 + int(70 * q * rl), y1 + 13 * q), fill=(0xC8, 0x10, 0x2E, 255))
             lu = eoc((ms - 350) / 450)
             if lu > 0:
                 lb = self.lbl.copy()
                 lb.putalpha(lb.getchannel("A").point(lambda v: int(v * lu)))
-                card.alpha_composite(lb, (x0, int(y1 + 6 + 20 * (1 - lu))))
+                card.alpha_composite(lb, (x0, int(y1 + 6 * q + 20 * q * (1 - lu))))
         sh, _ = self.shadow
         paste_tf(canvas, sh, self.cx, self.cy + dy, 1, 0, a)
         return paste_tf(canvas, card, self.cx, self.cy + dy, 1, 0, a)
 
     def _M5(self, t, ms, left, u, canvas):
+        q = self.q
         a = min(ss(ms / 300), 1 - ss(1 - left / 350) if left < 350 else 1.0)
-        drop = min(160, max(0.0, SUB_FORBID_Y - self.rect[3] - PAD["M5"] * 0.5)) * (1 - eob(ms / 600, 1.1))  # không rơi qua vạch phụ đề
-        lift = -60 * ss(1 - left / 350) if left < 350 else 0.0
+        drop = min(160 * q, max(0.0, SUB_FORBID_Y - self.rect[3] - PAD["M5"] * 0.5) * q) * (1 - eob(ms / 600, 1.1))  # không rơi qua vạch phụ đề
+        lift = -60 * q * ss(1 - left / 350) if left < 350 else 0.0
         ang = 4 * (1 - eoc(ms / 600))
         body = self.base.copy()
         x0, y0, x1, y1 = self.inner
@@ -478,6 +531,7 @@ class Card:
         return paste_tf(canvas, body, self.cx, self.cy + drop + lift, 1, ang, a)
 
     def _M6(self, t, ms, left, u, canvas):
+        q = self.q
         box = None
         for i, p in enumerate(self.prints):
             st = ms - 180 * i
@@ -491,9 +545,9 @@ class Card:
             tx, ty = p["pos"]
             # bay ngang từ mép gần (450 px @4K-demo), không bay từ dưới lên qua phụ đề; quãng bay thu lại theo lề còn lại
             # để thẻ đang bay cũng không lọt title-safe (R3.6.5 CHƯA CHỐT → áp chặt: "cho thẻ hiện từ trong lề")
-            half = math.hypot(p["card"].width, p["card"].height) / 2 + 30
-            room = (SAFE[2] - (tx + half)) if self.side > 0 else ((tx - half) - SAFE[0])
-            fx = tx + self.side * min(450, max(0.0, room)) * (1 - pos)
+            half = math.hypot(p["card"].width, p["card"].height) / 2 + 30 * q
+            room = (SAFE[2] * q - (tx + half)) if self.side > 0 else ((tx - half) - SAFE[0] * q)
+            fx = tx + self.side * min(450 * q, max(0.0, room)) * (1 - pos)
             card = p["card"].copy()
             card.paste(self._photo(i, u, t), (p["bw"], p["bw"]))
             sh, _ = p["shadow"]
@@ -538,18 +592,20 @@ def pick_m3(broll, rev_spans, busy, dur):
 
 
 class VideoReader:
-    """Đọc tuần tự khung của nền đã cắt khung / cân màu (KHÔNG zoom — R3.3.8 không zoom trong cửa sổ M3) cho đoạn [t0, t0 + n/30)."""
+    """Đọc tuần tự khung của nền đã cắt khung / cân màu (KHÔNG zoom — R3.3.8 không zoom trong cửa sổ M3) cho đoạn [t0, t0 + n/30).
+    `vf` phải thu về đúng (CW·RQ)×(CH·RQ) — 4K đọc nguồn ở 3840×2160 (người nói trong thẻ M3 là điểm ảnh 4K gốc)."""
 
     def __init__(self, src, t0, n, vf):
-        self.n, self.k, self.size = n, 0, (CW, CH)
+        self.n, self.k, self.size = n, 0, (CW * RQ, CH * RQ)
+        self.fsz = self.size[0] * self.size[1] * 3
         self.p = subprocess.Popen(["ffmpeg", "-v", "error", "-ss", f"{t0:.3f}", "-i", src, "-frames:v", str(n), "-vf", vf,
                                    "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], stdout=subprocess.PIPE)
         self.last = Image.new("RGB", self.size, (0, 0, 0))
 
     def read(self):
         if self.k < self.n:
-            buf = self.p.stdout.read(CW * CH * 3)
-            if len(buf) == CW * CH * 3:
+            buf = self.p.stdout.read(self.fsz)
+            if len(buf) == self.fsz:
                 self.last = Image.frombuffer("RGB", self.size, buf)
             elif self.k < self.n - 2:  # hỏng giữa chừng (lọc sai, nguồn ngắn): dừng bản dựng, không ra thẻ đen / đứng hình (phản biện P2-3)
                 self.close()
@@ -573,13 +629,15 @@ class Split3:
     thứ 4); ô chỉ hiện khi thẻ đã thu ≥ 85 % (R3.3.6); đóng: ô mờ tại chỗ, thẻ phóng ra toàn khung."""
 
     def __init__(self, m3, reader, face_cx, tiles_media):
+        """face_cx ở hệ thiết kế; tiles_media: ảnh ô cỡ M3_TILE·RQ; reader trả khung (CW·RQ)×(CH·RQ). Vẽ ở RQ lúc tạo."""
         self.t0, self.t1, self.reader = m3["t0"], m3["t1"], reader
+        self.q = q = RQ
         self.tiles = [dict(x, img=im) for x, im in zip(m3["tiles"], tiles_media)]
         cw = (M3_CARD[2] - M3_CARD[0]) / (M3_CARD[3] - M3_CARD[1]) * CH  # bề rộng cửa sổ nguồn giữ tỉ lệ thẻ
-        self.win = (min(max(face_cx - cw / 2, 0), CW - cw), cw)
-        g = np.linspace(0, 1, CH)[:, None, None]
+        self.win = (min(max(face_cx - cw / 2, 0), CW - cw) * q, cw * q)  # px ở độ phân giải vẽ
+        g = np.linspace(0, 1, CH * q)[:, None, None]
         top, bot = np.array([0x0B, 0x14, 0x26]), np.array([0x16, 0x26, 0x3F])
-        self.bg = Image.fromarray((top * (1 - g) + bot * g).repeat(CW, 1).astype(np.uint8)).convert("RGBA")
+        self.bg = Image.fromarray((top * (1 - g) + bot * g).repeat(CW * q, 1).astype(np.uint8)).convert("RGBA")
 
     def progress(self, t):
         return max(0.0, ss((t - self.t0) / M3_OPEN) - ss((t - (self.t1 - M3_CLOSE)) / M3_CLOSE))
@@ -590,29 +648,32 @@ class Split3:
             return None
         src = self.reader.read()
         p = self.progress(t)
+        q = self.q
         L = lambda a, b: a + (b - a) * p  # noqa: E731
-        x0, y0, x1, y1 = L(0, M3_CARD[0]), L(0, M3_CARD[1]), L(CW, M3_CARD[2]), L(CH, M3_CARD[3])
+        x0, y0, x1, y1 = L(0, M3_CARD[0] * q), L(0, M3_CARD[1] * q), L(CW * q, M3_CARD[2] * q), L(CH * q, M3_CARD[3] * q)
         wx, ww = self.win
-        sx0, sx1 = L(0, wx), L(CW, wx + ww)
+        sx0, sx1 = L(0, wx), L(CW * q, wx + ww)
         out = self.bg.copy()
         w, h = max(2, int(round(x1 - x0))), max(2, int(round(y1 - y0)))
-        card = src.crop((int(sx0), 0, int(round(sx1)), CH)).resize((w, h), Image.BILINEAR).convert("RGBA")
-        r = int(20 * p)
+        card = src.crop((int(sx0), 0, int(round(sx1)), CH * q)).resize((w, h), Image.BILINEAR).convert("RGBA")
+        r = int(20 * q * p)
         if r:
             card.putalpha(rounded_mask((w, h), r, 0))
-            sh, pad = drop_shadow(card.getchannel("A"), 0.5 * p, 15, 7)
+            sh, pad = drop_shadow(card.getchannel("A"), 0.5 * p, 15 * q, 7 * q)
             out.alpha_composite(sh, (int(x0) - pad, int(y0) - pad))
         out.alpha_composite(card, (int(x0), int(y0)))
         if p > 0.02:
             rim = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-            ImageDraw.Draw(rim).rounded_rectangle((0, 0, w - 1, h - 1), radius=max(r, 1), outline=GOLD + (int(255 * 0.55 * p),), width=1)
+            ImageDraw.Draw(rim).rounded_rectangle((0, 0, w - 1, h - 1), radius=max(r, q), outline=GOLD + (int(255 * 0.55 * p),), width=q)
             out.alpha_composite(rim, (int(x0), int(y0)))
         return out
 
     def tiles_frame(self, t, layer):
-        """Cột ô ảnh (vẽ vào lớp nội dung để đo title-safe). Trả các hộp đã vẽ."""
+        """Cột ô ảnh (vẽ vào lớp nội dung (CW·RQ)×(CH·RQ) để đo title-safe). Trả các hộp đã vẽ (hệ thiết kế)."""
         if t < self.t0 or t >= self.t1:
             return []
+        q = self.q
+        tw, th = M3_TILE[0] * q, M3_TILE[1] * q
         boxes = []
         ready = self.t0 + 0.75 * M3_OPEN  # ss(0,75) ≈ 0,90 ≥ 85 %: thẻ đã thu đủ
         close_a = 1 - ss((t - (self.t1 - M3_CLOSE)) / (0.6 * M3_CLOSE))
@@ -634,14 +695,14 @@ class Split3:
             if y + M3_TILE[1] > M3_CARD[3] + 0.5:
                 continue
             tile = self.tiles[i]["img"].copy()
-            m = Image.new("L", M3_TILE, 0)
-            ImageDraw.Draw(m).rectangle((0, 0, M3_TILE[0], int((M3_TILE[1] + 40) * u)), fill=255)
-            m = ImageChops_multiply(m.filter(ImageFilter.GaussianBlur(14)), rounded_mask(M3_TILE, 12, 0))
+            m = Image.new("L", (tw, th), 0)
+            ImageDraw.Draw(m).rectangle((0, 0, tw, int((M3_TILE[1] + 40) * q * u)), fill=255)
+            m = ImageChops_multiply(m.filter(ImageFilter.GaussianBlur(14 * q)), rounded_mask((tw, th), 12 * q, 0))
             tile.putalpha(m)
             sc = 0.96 + 0.04 * u
-            b = paste_tf(layer, tile, M3_COL_X + M3_TILE[0] / 2, y + M3_TILE[1] / 2, sc, 0, min(fade3, close_a))
+            b = paste_tf(layer, tile, (M3_COL_X + M3_TILE[0] / 2) * q, (y + M3_TILE[1] / 2) * q, sc, 0, min(fade3, close_a))
             if b:
-                boxes.append(b)
+                boxes.append(b if q == 1 else tuple(v / q for v in b))
         return boxes
 
 
@@ -808,8 +869,181 @@ def self_test():
                 break
             t += 1 / 15
         check(1 <= most <= 3, f"M3: tối đa 3 ô cùng lúc (thấy {most})")
+    _test_face_track_stream(check)
+    _test_4k_native(check)
     print(f"ngang tự kiểm: {'đạt' if not bad else f'{bad} lỗi'}")
     return bad == 0
+
+
+def _hf(a):
+    """Chi tiết vượt nửa độ phân giải trên biên: |I − phóng×2(thu÷2(I))| trung bình ở điểm ảnh biên (cùng thước đo selftest 4K)."""
+    a = np.asarray(a, np.float32)
+    h, w = a.shape
+    rt = np.asarray(Image.fromarray(a).resize((w // 2, h // 2), Image.BOX).resize((w // 2 * 2, h // 2 * 2), Image.LANCZOS), np.float32)
+    a = a[:h // 2 * 2, :w // 2 * 2]
+    gy, gx = np.gradient(a)
+    edge = np.hypot(gx, gy) > 20
+    return float(np.abs(a - rt)[edge].mean()) if edge.sum() > 50 else 0.0
+
+
+def _test_face_track_stream(check):
+    """face_track đọc từng khung qua ống: (1) cùng mốc thời gian + cùng hộp mặt với cách cũ (đọc cả nguồn vào một mảng rồi dò);
+    (2) bộ nhớ Python đỉnh KHÔNG tăng theo thời lượng (clip 40 s ≈ clip 10 s), cách cũ tăng tuyến tính; (3) thứ tự hộp tất định.
+    Nguồn: lavfi + mặt vẽ bằng PIL (không tài sản ngoài)."""
+    import shutil
+    import tempfile
+    import tracemalloc
+    import cv2
+    d = tempfile.mkdtemp()
+    try:
+        fw, fh = 150, 188
+        fimg = Image.new("RGBA", (fw, fh), (0, 0, 0, 0))
+        dr = ImageDraw.Draw(fimg)
+        dr.ellipse((0, 0, fw - 1, fh - 1), fill=(200, 170, 140, 255))
+        for cx in (0.3, 0.7):
+            dr.rectangle((fw * (cx - 0.15), fh * 0.30, fw * (cx + 0.15), fh * 0.34), fill=(40, 34, 28, 255))
+            dr.ellipse((fw * (cx - 0.10), fh * 0.38, fw * (cx + 0.10), fh * 0.46), fill=(30, 26, 21, 255))
+        dr.polygon([(fw * 0.5, fh * 0.45), (fw * 0.42, fh * 0.62), (fw * 0.58, fh * 0.62)], fill=(150, 128, 105, 255))
+        dr.rectangle((fw * 0.33, fh * 0.72, fw * 0.67, fh * 0.76), fill=(60, 51, 42, 255))
+        fimg.filter(ImageFilter.GaussianBlur(2)).save(os.path.join(d, "face.png"))
+        vids = {}
+        for sec in (10, 40):
+            v = os.path.join(d, f"f{sec}.mp4")
+            # mặt đi ngang + ẩn / hiện theo chu kỳ, mặt thứ hai nhỏ hơn thỉnh thoảng (nhiều hộp / mẫu)
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"testsrc2=s=640x360:r=10:d={sec}", "-loop", "1", "-i", os.path.join(d, "face.png"),
+                            "-filter_complex", "[1:v]split[a][b];[b]scale=90:113[c];[0:v][a]overlay=x='60+300*(1+sin(t/3))/2':y=60:enable='lt(mod(t,9),7)':shortest=1[p];"
+                            "[p][c]overlay=x=520:y=120:enable='between(mod(t,7),2,5)':shortest=1", "-t", str(sec), "-c:v", "libx264", "-preset", "ultrafast",
+                            "-pix_fmt", "yuv420p", v], check=True)
+            vids[sec] = v
+        cas = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+
+        def old_way(src):  # bản cũ: cả nguồn vào MỘT mảng rồi mới dò
+            p = subprocess.run(["ffmpeg", "-v", "error", "-i", src, "-vf", f"fps=2.0000,scale={FT_W}:{FT_H},format=gray", "-f", "rawvideo", "-pix_fmt", "gray", "-"], capture_output=True)
+            raw = np.frombuffer(p.stdout, np.uint8)
+            return plausible([(k * 0.5, face_boxes(cas.detectMultiScale(raw[k * FT_W * FT_H:(k + 1) * FT_W * FT_H].reshape(FT_H, FT_W), 1.1, 6, minSize=(48, 48))))
+                              for k in range(len(raw) // (FT_W * FT_H))])
+
+        def peak(f, *a):
+            tracemalloc.start()
+            r = f(*a)
+            pk = tracemalloc.get_traced_memory()[1]
+            tracemalloc.stop()
+            return r, pk / 2 ** 20
+        new40, pk_new40 = peak(face_track, vids[40], {}, None)
+        old40, pk_old40 = peak(old_way, vids[40])
+        new10, pk_new10 = peak(face_track, vids[10], {}, None)
+        canon = lambda tr: [(t, sorted(b)) for t, b in tr]  # noqa: E731
+        check([t for t, _ in new40] == [k * 0.5 for k in range(80)], f"face_track luồng: mốc thời gian 0, 0,5 … 39,5 s ({len(new40)} mẫu)")
+        check(canon(new40) == canon(old40), "face_track luồng phải ra cùng hộp mặt với cách đọc cả mảng")
+        nf = sum(1 for _, b in new40 if b)
+        check(nf >= 30 and any(len(b) >= 2 for _, b in new40), f"clip thử phải có mặt để so (≥ 30 mẫu có mặt, có mẫu 2 mặt): {nf}")
+        check(face_track(vids[40], {}, None) == new40, "face_track tất định (cả thứ tự hộp)")
+        check(pk_new40 < 8 and pk_new40 < 1.5 * pk_new10 + 1, f"bộ nhớ đỉnh không tăng theo thời lượng: 10 s {pk_new10:.1f} MB, 40 s {pk_new40:.1f} MB")
+        check(pk_old40 > 4 * pk_new40, f"đối chứng: cách cũ phải tốn hơn hẳn ({pk_old40:.1f} MB vs {pk_new40:.1f} MB) — không thì phép đo không phân biệt được")
+        # lỗi trong lúc dò (sau khung đầu): ống / ffmpeg phải đóng NGAY khi face_track thoát, kể cả khi traceback còn được giữ
+        # (giữ traceback = giữ khung của face_track → không có closing thì generator + ffmpeg còn sống tới khi GC)
+        global face_boxes
+        procs, real_popen, real_fb = [], subprocess.Popen, face_boxes
+
+        def spy(*a, **k):
+            p = real_popen(*a, **k)
+            procs.append(p)
+            return p
+
+        def boom(fcs):
+            raise RuntimeError("thử lỗi dò mặt")
+        subprocess.Popen, face_boxes = spy, boom
+        err = None
+        try:
+            face_track(vids[40], {}, None)
+        except RuntimeError as e:
+            err = e
+        finally:
+            subprocess.Popen, face_boxes = real_popen, real_fb
+        check(err is not None and procs and procs[0].poll() is not None, f"lỗi giữa chừng: ffmpeg phải dừng ngay ({procs and procs[0].poll()})")
+        del err
+        print(f"ngang face_track luồng: {len(new40)} mẫu ({nf} có mặt) khớp cách cũ; đỉnh Python 40 s {pk_new40:.1f} MB (10 s {pk_new10:.1f} MB) — cách cũ {pk_old40:.1f} MB")
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def _test_4k_native(check):
+    """4K (RQ = 2): thẻ M1–M6 và M3 vẽ thẳng ở 3840×2160 — cỡ thẻ / ảnh trong thẻ gấp đôi, cùng bố cục với RQ = 1 (thu ÷2 khớp, hộp trả
+    về ở hệ thiết kế khớp), sắc hơn hẳn bản 1080 phóng ×2. RQ = 1 không đổi (đã kiểm ở trên và bằng so khung bản dựng 1080)."""
+    import tempfile
+    global RQ
+    d = tempfile.mkdtemp()
+    img = os.path.join(d, "detail.png")
+    yy, xx = np.mgrid[0:1800, 0:2880]
+    pat = np.where(((xx // 96) + (yy // 96)) % 2 == 0, 230, 25).astype(np.uint8)  # ô cờ 96 px + đường chéo mảnh: biên sắc, không răng cưa (moiré làm sai thước đo)
+    dimg = Image.fromarray(np.dstack([pat, 255 - pat, pat // 2]))
+    for k in range(0, 2880, 160):
+        ImageDraw.Draw(dimg).line([(k, 0), (k + 900, 1800)], fill=(255, 255, 255), width=6)
+    dimg.save(img)
+    rect = (140, 120, 840, 560)
+    rows = []
+    try:
+        for kind in ("M1", "M2", "M4", "M5", "M6"):
+            r = rect if kind != "M5" else (300, 80, 520, 530)
+            n = 3 if kind == "M6" else (2 if kind == "M5" else 1)
+            out = {}
+            for q in (1, 2):
+                RQ = q
+                c = Card(kind, 0.0, 3.0, r, [None] * n, "ĐỒNG ĐỘI" if kind == "M4" else "", 1)
+                c.media = [(load_media(img, c.media_size(j)), 1) for j in range(n)]
+                cv = Image.new("RGBA", (CW * q, CH * q), (0, 0, 0, 0))
+                box = c.frame(1.5, cv)
+                out[q] = (c, cv, box)
+            RQ = 1
+            (c1, cv1, b1), (c2, cv2, b2) = out[1], out[2]
+            check((c2.w, c2.h) == (2 * c1.w, 2 * c1.h), f"{kind} 4K: cỡ thẻ phải gấp đôi {c1.w}x{c1.h} → {c2.w}x{c2.h}")
+            ms1, ms2 = c1.media_size(0), c2.media_size(0)
+            check(all(abs(v2 - 2 * v1) <= 2 for v1, v2 in zip(ms1, ms2)), f"{kind} 4K: ảnh trong thẻ phải nạp ở cỡ gấp đôi {ms1} → {ms2}")
+            check(b1 is not None and b2 is not None and all(abs(v2 - v1) <= 2 for v1, v2 in zip(b1, b2)), f"{kind} 4K: hộp trả về (hệ thiết kế) phải khớp RQ=1: {b1} vs {b2}")
+            soft = lambda a: np.asarray(a.filter(ImageFilter.GaussianBlur(1.5)), np.float32)  # noqa: E731
+            lay = float(np.abs(soft(cv2.getchannel("A").resize((CW, CH), Image.BOX)) - soft(cv1.getchannel("A"))).mean())
+            check(lay < 1.0, f"{kind} 4K: thu ÷2 phải khớp bố cục RQ=1 (lệch alpha TB {lay:.2f})")
+            bb = cv2.getchannel("A").point(lambda v: 255 if v > 5 else 0).getbbox()
+            check(bb is not None and bb[0] >= SAFE[0] * 2 - 2 and bb[1] >= SAFE[1] * 2 - 2 and bb[2] <= SAFE[2] * 2 + 2 and bb[3] <= SUB_FORBID_Y * 2 + 2,
+                  f"{kind} 4K: trong title-safe {bb}")
+            g = lambda cv: np.asarray(cv.convert("L"), np.float32) * np.asarray(cv.getchannel("A"), np.float32) / 255  # noqa: E731
+            x0, y0, x1, y1 = bb
+            up = np.asarray(Image.fromarray(g(cv1)).resize((CW * 2, CH * 2), Image.LANCZOS), np.float32)[y0:y1, x0:x1]
+            s1, s2 = _hf(up), _hf(g(cv2)[y0:y1, x0:x1])
+            need = 1.2 if kind == "M6" else 1.5  # M6: ảnh in xoay (BICUBIC) mềm ở cả hai độ phân giải
+            check(s2 > need * s1, f"{kind} 4K: vẽ gốc phải sắc hơn 1080 phóng ×2 ≥ {need} lần (chi tiết {s1:.1f} → {s2:.1f})")
+            rows.append(f"{kind} {c1.w}x{c1.h}→{c2.w}x{c2.h} chi tiết {s1:.1f}→{s2:.1f}")
+        # M3: nền + cột ô vẽ thẳng 3840×2160, hộp ô (hệ thiết kế) khớp RQ = 1
+        m3 = pick_m3([{"t0": 70.0, "t1": 72.0, "file": "b"}, {"t0": 72.0, "t1": 74.0, "file": "c"}, {"t0": 73.5, "t1": 75.0, "file": "d"}], [], [], 90.0)
+
+        class FR:
+            def __init__(self, q):
+                self.im = Image.fromarray(np.dstack([pat] * 3)).resize((CW * q, CH * q))
+
+            def read(self):
+                return self.im
+        res = {}
+        for q in (1, 2):
+            RQ = q
+            sp = Split3(m3, FR(q), 960, [load_media(img, (M3_TILE[0] * q, M3_TILE[1] * q))[0].resize((M3_TILE[0] * q, M3_TILE[1] * q)) for _ in m3["tiles"]])
+            t = m3["tiles"][-1]["t"] + 1.0
+            base = sp.frame(t)
+            lay = Image.new("RGBA", (CW * q, CH * q), (0, 0, 0, 0))
+            res[q] = (base, sp.tiles_frame(t, lay), lay)
+        RQ = 1
+        check(res[2][0].size == (CW * 2, CH * 2) and res[1][0].size == (CW, CH), f"M3 4K: nền phải {CW * 2}x{CH * 2}: {res[2][0].size}")
+        check(len(res[1][1]) == len(res[2][1]) and all(abs(v2 - v1) <= 2 for p1, p2 in zip(res[1][1], res[2][1]) for v1, v2 in zip(p1, p2)),
+              f"M3 4K: hộp ô (hệ thiết kế) phải khớp RQ=1: {res[1][1]} vs {res[2][1]}")
+        b2 = np.asarray(res[2][0].convert("L").resize((CW, CH), Image.BOX), np.float32)
+        b1 = np.asarray(res[1][0].convert("L"), np.float32)
+        x0, y0, x1, y1 = M3_CARD
+        check(float(np.abs(b2 - b1)[y0 + 20:y1 - 20, x0 + 20:x1 - 20].mean()) < 25, "M3 4K: thẻ người nói thu ÷2 phải khớp bố cục RQ=1")
+        rows.append(f"M3 nền {res[2][0].size[0]}x{res[2][0].size[1]}, {len(res[2][1])} ô")
+        print("ngang 4K vẽ gốc: " + "; ".join(rows))
+    finally:
+        RQ = 1
+        import shutil
+        shutil.rmtree(d, ignore_errors=True)
 
 
 if __name__ == "__main__":

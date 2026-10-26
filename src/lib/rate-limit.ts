@@ -70,6 +70,10 @@ export const RATE_RULES = {
   workerPreview: { limit: 3000, windowMs: 10 * 60_000 },
   /** Nút "Tải lên" ở trang Tư liệu (mỗi tệp một yêu cầu), theo tài khoản. */
   assetUpload: { limit: 120, windowMs: 10 * 60_000 },
+  /** Quyết định cho tư liệu máy OWNER (duyệt / bỏ duyệt / xoá / huỷ) và sửa mô tả ảnh, theo tài khoản. */
+  assetDecision: { limit: 120, windowMs: 10 * 60_000 },
+  /** "Tự mô tả bằng AI" cho ảnh B-roll (mỗi lần một lượt gọi AI tính tiền), theo tài khoản. */
+  assetDescribeAi: { limit: 20, windowMs: 10 * 60_000 },
 } as const satisfies Record<string, RateLimitRule>;
 
 const g = globalThis as unknown as { __baorRateLimiter?: RateLimiter };

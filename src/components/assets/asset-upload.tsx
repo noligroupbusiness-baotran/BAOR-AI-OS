@@ -8,7 +8,7 @@ import { Pill, type Tone } from "@/components/ui/pill";
 import { inputClass } from "@/components/ui/field";
 import { cn } from "@/lib/format";
 import type { DropKind } from "@/lib/video/drop-kinds";
-import { UPLOAD_ACCEPT, UPLOAD_LIMIT_TEXT, UPLOAD_MAX_BYTES, UPLOAD_TARGETS, defaultTarget, extOf, mediaOfExt, targetAccepts } from "@/lib/video/asset-upload-rules";
+import { DESC_MAX, UPLOAD_ACCEPT, UPLOAD_LIMIT_TEXT, UPLOAD_MAX_BYTES, UPLOAD_TARGETS, defaultTarget, extOf, mediaOfExt, targetAccepts } from "@/lib/video/asset-upload-rules";
 
 type Item = {
   key: string;
@@ -17,6 +17,8 @@ type Item = {
   status: "ready" | "sending" | "imported" | "waiting" | "error";
   pct?: number;
   text?: string;
+  /** Mô tả ngắn (chỉ ảnh·clip, tuỳ chọn) — bộ dựng chọn ảnh theo nội dung này thay vì tên tệp. */
+  desc?: string;
 };
 type Reply = { ok: boolean; error?: string; state?: "imported" | "waiting"; to?: string; pending?: boolean; reason?: string };
 
@@ -31,7 +33,8 @@ function tooBig(f: File): string | null {
 /** Gửi một tệp (dạng luồng, có tiến độ) tới /api/video-assets/upload. */
 function sendOne(it: Item, license: string, keywords: string, onPct: (p: number) => void): Promise<Reply> {
   return new Promise((resolve) => {
-    const q = new URLSearchParams({ name: it.file.name, kind: it.target ?? "", license, ...(it.target === "anh-broll" && keywords ? { keywords } : {}) });
+    const desc = it.target === "anh-broll" ? (it.desc ?? "").trim() : "";
+    const q = new URLSearchParams({ name: it.file.name, kind: it.target ?? "", license, ...(it.target === "anh-broll" && keywords ? { keywords } : {}), ...(desc ? { desc } : {}) });
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `/api/video-assets/upload?${q.toString()}`);
     xhr.setRequestHeader("Content-Type", "application/octet-stream");
@@ -155,6 +158,16 @@ export function AssetUpload() {
                   )}
                   {p && <Pill tone={p.tone}>{p.label}</Pill>}
                   {it.text && it.status !== "imported" && <span className={cn("max-w-full text-[11.5px]", it.status === "waiting" ? "text-amber" : "text-brick")}>{it.text}</span>}
+                  {it.target === "anh-broll" && !locked && (
+                    <input
+                      value={it.desc ?? ""}
+                      onChange={(e) => patch(it.key, { desc: e.target.value })}
+                      maxLength={DESC_MAX}
+                      aria-label={`Mô tả: ${it.file.name}`}
+                      placeholder="Mô tả ngắn (tuỳ chọn) — vd hai người bắt tay ở văn phòng"
+                      className={cn(inputClass, "order-last h-8 basis-full text-[12px]")}
+                    />
+                  )}
                   {!locked && (
                     <button type="button" onClick={() => setItems((xs) => xs.filter((x) => x.key !== it.key))} aria-label={`Bỏ ${it.file.name}`} className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-full text-ink-3 hover:bg-ground-2 hover:text-ink">
                       <X size={13} aria-hidden />

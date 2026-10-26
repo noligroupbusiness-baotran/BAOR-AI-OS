@@ -3,7 +3,7 @@ import { Pill } from "@/components/ui/pill";
 import { Tiles, Tile } from "@/components/ui/stat";
 import { Table, Th, Td } from "@/components/ui/table";
 import { platformLabel } from "@/components/ui/platform";
-import { PostActions, postErrorShort } from "@/components/publishing/post-actions";
+import { PostActions, canReleaseLock, postErrorShort } from "@/components/publishing/post-actions";
 import { currentActor, isOwner } from "@/lib/permissions";
 import { listAds, listPosts } from "@/lib/queries";
 import { postStatusLabel } from "@/lib/labels";
@@ -15,6 +15,7 @@ import { Pager, paginate } from "@/components/ui/pager";
 import { MonthCalendar, monthOf } from "@/components/publishing/month-calendar";
 import { Segment } from "@/components/ui/segment";
 import { VideoPostsPanel } from "@/components/publishing/video-posts-panel";
+import { channelPageIds } from "@/lib/publishing/video";
 import { SamplePill } from "@/components/ui/sample";
 import { CampaignFilterChip } from "@/components/campaigns/campaign-filter-chip";
 import { isSamplePost } from "@/lib/sample";
@@ -54,12 +55,15 @@ export default async function PublishingPage({ searchParams }: { searchParams: P
   const postLinks = campaignRepo.linksForEntities("publication", posts.map((p) => p.id));
 
   const owner = isOwner(await currentActor());
+  // Page ID hiện tại của các kênh: đọc một lần cho cả danh sách (nút "Gỡ khoá kênh")
+  const pages = owner ? channelPageIds() : undefined;
   // Bài cần thao tác (chờ / lỗi / quá hạn) mỗi bài một dòng để nút tác động đúng bài; bài chữ và video không gộp chung.
   const ACTIONABLE = new Set(["scheduled", "failed", "overdue"]);
   type RowT = { ids: string[]; post: (typeof posts)[number]; title: string; at: string; platforms: string[]; status: string; reach: number; error?: string | null; video: boolean; sample: boolean };
   const rows = Object.values(
     posts.reduce<Record<string, RowT>>((acc, p) => {
-      const key = ACTIONABLE.has(p.status) ? p.id : `${p.videoId ? `v:${p.videoId}` : p.contentId}-${p.status}-${p.scheduledFor.slice(0, 10)}`;
+      // Bài OWNER gỡ khoá kênh được cũng một dòng riêng (nút tác động đúng bài)
+      const key = ACTIONABLE.has(p.status) || (owner && canReleaseLock(p, pages)) ? p.id : `${p.videoId ? `v:${p.videoId}` : p.contentId}-${p.status}-${p.scheduledFor.slice(0, 10)}`;
       if (!acc[key]) acc[key] = { ids: [], post: p, title: p.title, at: p.scheduledFor, platforms: [], status: p.status, reach: 0, error: p.error, video: !!p.videoId, sample: isSamplePost(p) };
       acc[key].ids.push(p.id);
       acc[key].platforms.push(platformLabel(p.platform as Platform));
@@ -122,7 +126,7 @@ export default async function PublishingPage({ searchParams }: { searchParams: P
                     <div className="flex flex-wrap items-center justify-end gap-1.5">
                       <Pill tone={st?.tone ?? "neutral"} className="num">{r.sample && r.status === "overdue" ? "Quá hạn" : st?.label ?? r.status}{r.reach ? ` · ${formatNumber(r.reach)} reach` : ""}</Pill>
                       {/* Bài video thao tác ở mục Bài video phía trên (cùng nút) */}
-                      {!r.video && <PostActions post={r.post} owner={owner} />}
+                      {!r.video && <PostActions post={r.post} owner={owner} pages={pages} />}
                     </div>
                   </Td>
                 </tr>

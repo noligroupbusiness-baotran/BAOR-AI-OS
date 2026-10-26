@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { Panel, PanelHeader } from "@/components/ui/card";
 import { Pill } from "@/components/ui/pill";
-import { Button, LinkButton } from "@/components/ui/button";
+import { LinkButton } from "@/components/ui/button";
+import { ConfirmAction } from "@/components/campaigns/confirm-action";
 import { Field, inputClass, textareaClass } from "@/components/ui/field";
 import { SubmitButton } from "@/components/campaigns/submit-button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -10,6 +11,7 @@ import { channelLines, getCompetitor, lines, listCompetitors, offerLines } from 
 import { SamplePill } from "@/components/ui/sample";
 import { isSample } from "@/lib/sample";
 import { formatDate, formatNumber, cn } from "@/lib/format";
+import { ChevronRight, Pencil, Plus, Trash2 } from "lucide-react";
 
 // Nghiên cứu & Insight › Đối thủ: theo dõi thủ công (kênh, định vị, gói / giá họ công bố, điểm mạnh yếu) — nghiên cứu thị trường.
 // Không còn so giá với danh mục của mình (chỉ marketing, OWNER 25/10/2026).
@@ -22,8 +24,9 @@ export function CompetitorsPanel({ editing }: { editing?: string }) {
     <Panel id="competitors">
       <PanelHeader
         title="Đối thủ"
-        sub="Theo dõi tay: kênh, định vị, gói họ công bố, điểm mạnh yếu."
-        action={showForm ? undefined : <LinkButton href="/insights/research?tab=insight&competitor=new#competitors" variant="primary">Thêm đối thủ</LinkButton>}
+        info="Theo dõi tay: kênh, định vị, gói họ công bố, điểm mạnh yếu. Bấm vào một đối thủ để xem chi tiết."
+        tags={competitors.length > 0 ? <Pill className="num">{competitors.length}</Pill> : undefined}
+        action={showForm ? undefined : <LinkButton href="/insights/research?tab=insight&competitor=new#competitors" icon={Plus}>Thêm đối thủ</LinkButton>}
       />
 
       {showForm && (
@@ -51,39 +54,60 @@ export function CompetitorsPanel({ editing }: { editing?: string }) {
         <EmptyState title="Chưa theo dõi đối thủ nào" hint="Thêm 2–3 đối thủ gần nhất để theo dõi kênh và cách họ làm nội dung." />
       ) : (
         <ul className="m-0 list-none p-0">
-          {competitors.map((c) => (
-            <li key={c.id} className={cn("grid gap-2 border-b border-border px-4 py-3 last:border-b-0 md:grid-cols-[minmax(0,1fr)_auto]", current?.id === c.id && "bg-jade-soft/30")}>
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[13px] font-semibold text-ink">{c.name}</span>
-                  {c.brand && <Pill>{c.brand}</Pill>}
-                  {isSample("competitor", c.id) && <SamplePill />}
-                  {c.lastCheckedAt && <span className="num text-[11.5px] text-ink-3">xem {formatDate(c.lastCheckedAt)}</span>}
-                </div>
-                {c.positioning && <div className="mt-0.5 text-[12.5px] text-ink-2">{c.positioning}</div>}
-                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[12px] text-ink-3">
-                  {c.channels.map((ch) => (
-                    <span key={ch.platform + ch.url}>
-                      {ch.url ? <Link href={ch.url} target="_blank" rel="noreferrer" className="text-jade hover:underline">{ch.platform}</Link> : ch.platform}
-                      {ch.followers ? <span className="num"> · {formatNumber(ch.followers)}</span> : null}
+          {competitors.map((c) => {
+            const hasDetail = c.channels.length > 0 || c.offers.length > 0 || c.strengths.length > 0 || c.weaknesses.length > 0 || !!c.note || !!c.lastCheckedAt;
+            return (
+            <li key={c.id} className={cn("flex items-start gap-2 border-b border-border px-4 py-2.5 last:border-b-0", current?.id === c.id && "bg-jade-soft/30")}>
+              {/* Hàng thu gọn (tên + nhãn + 1 dòng định vị); mở ra mới thấy kênh / số theo dõi / mạnh yếu (OWNER 27/10/2026: tối giản). */}
+              <details className="group/comp min-w-0 flex-1">
+                <summary className={cn("flex min-w-0 list-none items-start gap-1.5 [&::-webkit-details-marker]:hidden", hasDetail ? "cursor-pointer" : "pointer-events-none")}>
+                  <ChevronRight size={14} className={cn("mt-[3px] shrink-0 text-ink-3 transition-transform group-open/comp:rotate-90", !hasDetail && "invisible")} aria-hidden />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-[13px] font-semibold text-ink">{c.name}</span>
+                      {c.brand && <Pill>{c.brand}</Pill>}
+                      {isSample("competitor", c.id) && <SamplePill />}
                     </span>
-                  ))}
-                  {c.offers.length > 0 && <span>{c.offers.length} dịch vụ</span>}
-                </div>
-                {(c.strengths.length > 0 || c.weaknesses.length > 0) && (
-                  <div className="mt-1.5 grid gap-x-4 gap-y-0.5 text-[12px] md:grid-cols-2">
+                    {c.positioning && <span className="mt-0.5 block truncate text-[12.5px] text-ink-2" title={c.positioning}>{c.positioning}</span>}
+                  </span>
+                </summary>
+                {hasDetail && (
+                  <div className="ml-5 mt-1.5 grid gap-1 text-[12px]">
+                    {(c.channels.length > 0 || c.offers.length > 0 || c.lastCheckedAt) && (
+                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-ink-3">
+                        {c.channels.map((ch) => (
+                          <span key={ch.platform + ch.url}>
+                            {ch.url ? <Link href={ch.url} target="_blank" rel="noreferrer" className="text-jade hover:underline">{ch.platform}</Link> : ch.platform}
+                            {ch.followers ? <span className="num"> · {formatNumber(ch.followers)}</span> : null}
+                          </span>
+                        ))}
+                        {c.offers.length > 0 && <span>{c.offers.length} dịch vụ</span>}
+                        {c.lastCheckedAt && <span className="num">xem {formatDate(c.lastCheckedAt)}</span>}
+                      </div>
+                    )}
                     {c.strengths.length > 0 && <div><span className="text-jade">Mạnh:</span> <span className="text-ink-2">{c.strengths.join(" · ")}</span></div>}
                     {c.weaknesses.length > 0 && <div><span className="text-amber">Yếu:</span> <span className="text-ink-2">{c.weaknesses.join(" · ")}</span></div>}
+                    {c.note && <div className="text-ink-3">Ghi chú: {c.note}</div>}
                   </div>
                 )}
-                {c.note && <div className="mt-1 text-[12px] text-ink-3">Ghi chú: {c.note}</div>}
-              </div>
-              <div className="flex gap-1.5 md:justify-end">
-                <LinkButton href={`/insights/research?tab=insight&competitor=${c.id}#competitors`}>Sửa</LinkButton>
-                <form action={removeCompetitor}><input type="hidden" name="id" value={c.id} /><Button type="submit" variant="ghost">Xóa</Button></form>
+              </details>
+              <div className="flex shrink-0 gap-0.5">
+                <LinkButton href={`/insights/research?tab=insight&competitor=${c.id}#competitors`} variant="ghost" size="icon" aria-label={`Sửa ${c.name}`} title="Sửa" icon={Pencil} />
+                <ConfirmAction
+                  action={removeCompetitor}
+                  fields={{ id: c.id }}
+                  label={`Xóa ${c.name}`}
+                  title="Xóa đối thủ?"
+                  message={`Xóa “${c.name}” khỏi danh sách theo dõi (kênh, dịch vụ, điểm mạnh yếu đã ghi). Không khôi phục được.`}
+                  confirmLabel="Xóa"
+                  variant="ghost"
+                  danger
+                  iconOnly={<Trash2 size={16} aria-hidden />}
+                />
               </div>
             </li>
-          ))}
+            );
+          })}
         </ul>
       )}
 

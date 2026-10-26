@@ -203,8 +203,15 @@ test("lúc đăng: Page ID kênh đổi sau lúc lên lịch → KHÔNG gửi l�
     const p = pub.videoPostsFor("v_pubnow")[0];
     assert.equal(p.status, "failed");
     assert.match(p.error ?? "", /Page ID đã đổi/);
-    // Bài cũ chưa lưu trang (trước khi có target_page_id): đi tới bước gửi, lưu trang thật nhận lệnh đăng
+    // Bài cũ chưa lưu trang (trước khi có target_page_id) mà CSDL có dấu kênh từng ở trang khác (bài khác của kênh lưu trang 111):
+    // không đoán trang — lỗi rõ, không gửi (missingPageReason; không mơ hồ thì đóng dấu trang rồi gửi: publishing-send-guard 7a)
     d.update(db.schema.scheduledPosts).set({ status: "scheduled", error: null, targetPageId: null }).where(eq(db.schema.scheduledPosts.id, id)).run();
+    d.insert(db.schema.scheduledPosts).values({ id: "sp_pubnow_old", contentId: "", title: "cũ", platform: "facebook", scheduledFor: new Date(Date.now() - 86_400_000).toISOString(), status: "published", mode: "live", targetPageId: "111" }).run();
+    await pub.publishDueVideoPosts();
+    assert.equal(calls.length, 0, "bài chưa lưu trang, kênh từng là trang 111: không gửi lên 666");
+    assert.match(pub.videoPostsFor("v_pubnow")[0].error ?? "", /chưa lưu trang đích.*111.*666/);
+    // OWNER kiểm kênh rồi Đăng lại = trang hiện tại: đi tới bước gửi, lưu trang thật nhận lệnh đăng
+    assert.equal(pub.retryVideoPost(id).ok, true);
     await pub.publishDueVideoPosts();
     assert.ok(calls.length > 0, "đã đi tới bước gửi lệnh đăng");
     assert.equal(pub.videoPostsFor("v_pubnow")[0].targetPageId, "666", "lúc đăng: lưu trang thật nhận lệnh đăng");

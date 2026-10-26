@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Dialog } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
+import { Button, type ButtonVariant } from "@/components/ui/button";
 import { SubmitButton } from "./submit-button";
 
 // Nút hành động cần xác nhận: bấm → hộp thoại → xác nhận mới gửi lên máy chủ.
@@ -18,6 +18,7 @@ export function ConfirmAction({
   size = "sm",
   danger,
   withNote,
+  iconOnly,
 }: {
   action: (fd: FormData) => Promise<void>;
   fields: Record<string, string>;
@@ -25,18 +26,26 @@ export function ConfirmAction({
   title: string;
   message: string;
   confirmLabel?: string;
-  variant?: "primary" | "outline" | "soft" | "ghost";
+  variant?: ButtonVariant;
   size?: "sm" | "md";
   danger?: boolean;
   /** Cho phép ghi chú kèm quyết định (VD: lý do yêu cầu chỉnh sửa). */
   withNote?: { label: string; placeholder?: string; required?: boolean; minLength?: number };
+  /** Nút mở là ô icon 32 px (vd. <Trash2 size={16} aria-hidden />); label thành aria-label + title. Truyền phần tử, không truyền component (ranh giới server → client). */
+  iconOnly?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button type="button" variant={variant} size={size} onClick={() => setOpen(true)} className={danger ? "text-brick hover:border-brick" : undefined}>
-        {label}
-      </Button>
+      {iconOnly ? (
+        <Button type="button" variant={variant} size="icon" aria-label={label} title={label} onClick={() => setOpen(true)} className={danger && variant !== "danger" ? "hover:text-brick" : undefined}>
+          {iconOnly}
+        </Button>
+      ) : (
+        <Button type="button" variant={variant} size={size} onClick={() => setOpen(true)} className={danger && variant !== "danger" ? "text-brick hover:border-brick" : undefined}>
+          {label}
+        </Button>
+      )}
       <Dialog open={open} onClose={() => setOpen(false)} title={title}>
         <form action={action} className="grid gap-3">
           {Object.entries(fields).map(([k, v]) => (
@@ -53,7 +62,7 @@ export function ConfirmAction({
             <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
               Hủy
             </Button>
-            <SubmitButton variant={danger ? "outline" : "primary"} className={danger ? "border-brick text-brick hover:bg-brick-soft" : undefined}>
+            <SubmitButton variant={danger ? "danger" : "primary"}>
               {confirmLabel ?? label}
             </SubmitButton>
           </div>

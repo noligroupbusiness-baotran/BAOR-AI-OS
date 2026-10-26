@@ -11,7 +11,7 @@ import { catalogRepo } from "@/lib/catalog/repository";
 import type { ChannelGoalStatus, LinkedEntityType, NewCampaignInput, NewChannelGoalInput } from "@/lib/campaigns/types";
 import { withCampaignContext } from "@/lib/campaigns/context";
 import { campaignStatusLabel } from "@/lib/campaigns/labels";
-import { logActivity } from "./common";
+import { logActivity, toastUrl } from "./common";
 import { requirePermission } from "@/lib/permissions";
 
 // Mọi hành động: kiểm tra đăng nhập, chống lặp bằng idem key, kiểm tra trạng thái hợp lệ, ghi nhật ký.
@@ -28,8 +28,8 @@ async function actor(): Promise<string> {
 
 function finish(path: string, toast: string, tone: "ok" | "error" = "ok"): never {
   revalidatePath("/", "layout");
-  const sep = path.includes("?") ? "&" : "?";
-  redirect(`${path}${sep}toast=${encodeURIComponent(toast)}${tone === "error" ? "&tone=error" : ""}`);
+  // toastUrl: ?toast=/&tone= đứng trước #neo (back có thể là "/insights/research?tab=insight#insights").
+  redirect(toastUrl(path, toast, tone));
 }
 
 // ---------- Tạo chiến dịch (4 bước, gửi từ CampaignWizard) ----------

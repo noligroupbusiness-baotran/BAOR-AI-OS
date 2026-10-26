@@ -11,7 +11,7 @@ import { getResearchTask } from "@/lib/research";
 import { SOCIAL_KINDS } from "@/lib/research/social";
 import { topicInsights } from "@/lib/research/topic";
 import { roleById, roleSettings } from "@/lib/ai-roster";
-import { aiReadiness } from "@/lib/ai";
+import { aiReadiness, webSearchProvider } from "@/lib/ai";
 import { AiBlocked } from "@/components/ui/ai-blocked";
 import { SwitchSubmit } from "@/components/ui/switch";
 import { currentActor, can } from "@/lib/permissions";
@@ -28,9 +28,9 @@ export default async function TopicPage({ params }: { params: Promise<{ id: stri
   const insights = topicInsights(id);
   const role = roleById("research")!;
   const enabled = roleSettings(role).enabled;
-  // Trạng thái thật của nút AI: công tắc + khoá hãng của mô hình vị trí (+ Claude cho bước tìm web) + trần
+  // Trạng thái thật của nút AI: công tắc + khoá hãng của mô hình vị trí (+ hãng của bước tìm web: ChatGPT / Claude, Grok → Claude) + trần
   const ready = aiReadiness("research");
-  const webReady = aiReadiness("research", { alsoProvider: "anthropic" });
+  const webReady = aiReadiness("research", { alsoProvider: webSearchProvider("research") });
   const aiReady = ready.ok;
   const back = `/insights/research/${id}`;
   const groups = new Map<string, typeof insights>();

@@ -6,11 +6,12 @@ import { extractInsights } from "@/lib/ai";
 import { requirePermission, currentActor } from "@/lib/permissions";
 import { recordDecision } from "@/lib/router";
 import { logActivity } from "@/lib/activity";
-import { done } from "./common";
+import { done, withQuery } from "./common";
 import { deleteCompetitor, getCompetitor, parseChannels, parseOffers, saveCompetitor as saveCompetitorRow, splitLines } from "@/lib/insights/competitors";
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
-const fail = (path: string, msg: string): never => done(`${path}${path.includes("?") ? "&" : "?"}tone=error`, msg);
+// tone=error phải đứng trước #neo (vd. #proposed), nếu không lỗi hiện như thành công.
+const fail = (path: string, msg: string): never => done(withQuery(path, "tone", "error"), msg);
 
 // AI đọc inbox, lead, số liệu bài đăng để rút insight kèm bằng chứng; insight ở trạng thái chờ duyệt.
 export async function aiExtractInsights() {

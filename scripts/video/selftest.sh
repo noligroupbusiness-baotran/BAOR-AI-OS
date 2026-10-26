@@ -411,6 +411,62 @@ for name, t, box, thr in cases:
 assert not low, f"4K chưa sắc (giống 1080 phóng ×2): {low}"
 print(f"SELFTEST 4K VẼ GỐC (bản chính) ĐẠT: chi tiết vượt 1080 trên biên — {'; '.join(rows)}; F/T ghi @2160x3840")
 P
+# Thẻ ảnh tĩnh 9:16 (image_clip) ở 4K dựng thẳng 2160x3840 — trước đây dựng 1080 rồi bộ ghép phóng ×2. Cùng bố cục (thu ÷2 khớp bản
+# 1080), sắc hơn hẳn trong vùng thẻ. (Thẻ M1–M6 / M3 16:9 kiểm ở ngang.py --self-test; 1080 không đổi: so khung bản dựng trước / sau.)
+ffmpeg -v error -y -f lavfi -i "testsrc2=s=3000x2000" -frames:v 1 "$W/anh-chi-tiet.png"
+python3 - "$HERE" "$W" <<'P'
+import subprocess, sys; sys.path.insert(0, sys.argv[1]); sys.path.insert(0, sys.argv[2])
+import numpy as np
+from PIL import Image
+import esv_render as E
+from sharp import hf
+W = sys.argv[2]
+def frame0(p, w, h):
+    b = subprocess.run(["ffmpeg", "-v", "error", "-i", p, "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "gray", "-"], capture_output=True).stdout
+    return np.frombuffer(b, np.uint8).reshape(h, w).astype(np.float32)
+for q in (1, 2):
+    E.image_clip(f"{W}/anh-chi-tiet.png", f"{W}/anh-q{q}.mp4", 0.5, q)
+dims = [subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0", f"{W}/anh-q{q}.mp4"],
+                       capture_output=True, text=True).stdout.strip() for q in (1, 2)]
+assert dims == ["1080,1920", "2160,3840"], f"thẻ ảnh 4K phải dựng thẳng 2160x3840: {dims}"
+a1, a2 = frame0(f"{W}/anh-q1.mp4", 1080, 1920), frame0(f"{W}/anh-q2.mp4", 2160, 3840)
+dn = np.asarray(Image.fromarray(a2).resize((1080, 1920), Image.BOX), np.float32)
+psnr = 10 * np.log10(255 ** 2 / float(((dn - a1) ** 2).mean()))
+assert psnr > 30, f"thẻ ảnh 4K thu ÷2 phải khớp bố cục bản 1080 (PSNR {psnr:.1f} dB)"
+cy, cw, chh = int(E.LAY["card_cy"]), E.LAY["card_w"], E.LAY["card_w"] * 2 / 3  # ảnh 3:2 → thẻ rộng card_w
+x0, y0, x1, y1 = int(540 - cw / 2) + 10, int(cy - chh / 2) + 10, int(540 + cw / 2) - 10, int(cy + chh / 2) - 10
+up = np.asarray(Image.fromarray(a1).resize((2160, 3840), Image.LANCZOS), np.float32)
+s1, s2 = hf(up[2 * y0:2 * y1, 2 * x0:2 * x1]), hf(a2[2 * y0:2 * y1, 2 * x0:2 * x1])
+assert s2 > 1.5 * s1, f"thẻ ảnh 4K vẽ gốc phải sắc hơn bản 1080 phóng ×2 ≥ 1,5 lần (chi tiết {s1:.1f} → {s2:.1f})"
+print(f"SELFTEST THẺ ẢNH 9:16 4K GỐC ĐẠT: {dims[1]}, thu ÷2 khớp 1080 PSNR {psnr:.1f} dB, chi tiết vượt 1080 trong thẻ {s1:.1f} → {s2:.1f}")
+P
+# --- 16:9 4K đầu-cuối (phản biện 26/10 P2): thẻ M1–M6 + M3 vẽ gốc 3840x2160. Nguồn = raw169 cắt 20 s (ngắn nhất còn M3: ô ≥ 60 % + 0,9 s,
+# đóng ≤ hết − 2,5 s) phóng lên 4K — nền mềm nên chi tiết đo được trong cột ô M3 chỉ đến từ lớp thẻ vẽ gốc.
+ffmpeg -v error -y -i "$W/raw169.mp4" -t 20 -vf "scale=3840:2160:flags=lanczos" -c:v libx264 -preset ultrafast -crf 18 -pix_fmt yuv420p -c:a aac "$W/raw169-4k.mp4"
+cat > "$W/plan-169-4k.json" <<'J'
+{"by": "selftest", "emphasis": [], "diagrams": [],
+ "broll": [{"t0": 2.0, "t1": 4.4, "file": "goi-dien.jpg", "keyword": "gọi điện"}, {"t0": 13.0, "t1": 14.0, "file": "tap-the-2.jpg"}, {"t0": 14.0, "t1": 15.0, "file": "tap-the.jpg"}]}
+J
+BAOR_LLM_URL=http://127.0.0.1:9 DATA_DIR="$W/data" python3 "$HERE/esv_render.py" --input "$W/raw169-4k.mp4" --job-dir "$W/esv-169-4k" --plan "$W/plan-169-4k.json" \
+  --words "$W/esv/words_main.json" --aspect 16:9 --quality 4k --no-music --no-sfx 2>"$W/esv-169-4k.log" | tail -1
+python3 - "$W" "$W/esv-169-4k" <<'P'
+import json, sys; sys.path.insert(0, sys.argv[1])
+from sharp import grab, hf
+d = sys.argv[2]
+r = json.load(open(f"{d}/report.json"))
+qa = {q["id"]: q["status"] for q in r["qa"]}
+assert (r["output"]["width"], r["output"]["height"]) == (3840, 2160), f"16:9 4K: {r['output']}"
+bad = [k for k in "ABCDEFGHQRT" if qa.get(k) not in ("pass", "info")]
+assert not bad, f"16:9 4K: bảng kiểm chưa đạt {bad}: {[q for q in r['qa'] if q['id'] in bad]}"
+ev = r["broll"]["events"]
+m3 = [e for e in ev if e["template"] == "M3"]
+assert len(m3) == 2 and len(ev) == 3 and ev[0]["template"] != "M3", f"16:9 4K: cần 1 thẻ M1–M6 + M3 2 ô: {ev}"
+# cột ô M3 (x1350–1820, y60–940 @1080 → ×2) lúc cả hai ô đã vào: bản cũ (1080 phóng ×2) đo ≈ BASE trên đúng clip này
+v = hf(grab(f"{d}/master.mp4", m3[-1]["t0"] + 0.8, (2700, 120, 3640, 1880)))
+BASE = 7.1  # đo 26/10: code cũ 7,1 / vẽ gốc 21,1
+assert v > 2 * BASE, f"16:9 4K: cột ô M3 chưa sắc (giống 1080 phóng ×2): chi tiết {v:.1f} ≤ 2 × {BASE}"
+print(f"SELFTEST 16:9 4K GỐC ĐẠT: 3840x2160, thẻ {[(e['template'], e['file']) for e in ev]}, chi tiết vượt 1080 cột ô M3 {v:.1f} (cũ ≈ {BASE})")
+P
 
 # --- Zoom (OWNER 26/10/2026 "zoom còn thưa"): clip 36 s nói liên tục, 3 chữ nhấn, nhịp VỪA. Trước: 3 zoom (12 s / lần — chỉ zoom ở chữ
 # nhấn, lấp trống chỉ thử đầu câu). Nay: punch-in nhẹ trong cửa sổ chữ nhấn + lấp trống tới mốc sớm nhất hợp lệ → ≈ 1 zoom / 6–8 s,

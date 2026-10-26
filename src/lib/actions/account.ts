@@ -22,7 +22,7 @@ import {
   revokeAllSessions,
   verifySecondFactor,
 } from "@/lib/security";
-import { done } from "./common";
+import { done, withQuery } from "./common";
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 
@@ -40,7 +40,7 @@ export async function changeMyPassword(fd: FormData) {
   const next = str(fd, "password");
   const confirm = str(fd, "confirm");
   const back = "/account";
-  const fail = (msg: string) => done(`${back}?tone=error`, msg);
+  const fail = (msg: string) => done(withQuery(back, "tone", "error"), msg);
   if (!current) return fail("Cần nhập mật khẩu hiện tại.");
   const policy = checkPassword(next, { email: actor.email, name: actor.name });
   if (!policy.ok) return fail(policy.reason!);

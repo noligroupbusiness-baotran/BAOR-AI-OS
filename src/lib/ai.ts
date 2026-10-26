@@ -6,7 +6,7 @@ import { getDb, schema } from "@/db";
 import { getBrand, listInsights, listPersonas } from "@/lib/queries";
 import { aiBudgetAllows, estimateCostVnd, recordAiCall, recordDecision } from "@/lib/router";
 import { roleAllows, roleForPurpose, roleSettings } from "@/lib/ai-roster";
-import { AI_MODELS, PROVIDERS, ProviderError, clientFor, modelCostVnd, modelInfo, providerConfigured, servedCost, type AiProvider } from "@/lib/ai-providers";
+import { AI_MODELS, PROVIDERS, ProviderError, WEB_SEARCH_PROVIDERS, clientFor, modelCostVnd, modelInfo, providerConfigured, servedCost, type AiProvider } from "@/lib/ai-providers";
 import { sendAlert } from "@/lib/alerts";
 import { HOOK_COUNT, HOOK_PLATFORMS, hookContext, saveHooks } from "@/lib/content/hooks";
 import { buildCaption, buildPostTitle, captionDraft, captionSkill, postTitle, saveCaptionDraft, savePostTitle, setPostDraftSource } from "@/lib/publishing/caption";
@@ -16,9 +16,20 @@ import { buildCaption, buildPostTitle, captionDraft, captionSkill, postTitle, sa
 
 type Result<T> = ({ ok: true } & T) | { ok: false; error: string };
 
-/** Có khoá Claude (Nghiên cứu bước tìm nguồn dùng công cụ web_search riêng của Claude). */
+/** Có khoá Claude. Nút AI theo vị trí dùng aiReadiness (đúng hãng của mô hình vị trí), không dùng hàm này. */
 export function aiConfigured(): boolean {
   return providerConfigured("anthropic");
+}
+
+/**
+ * Hãng chạy bước tìm web của một vị trí (Nghiên cứu bước tìm nguồn): hãng của mô hình vị trí nếu BAOR đã nối công cụ tìm web của hãng
+ * đó (Claude, ChatGPT — WEB_SEARCH_PROVIDERS), ngược lại (Grok) → Claude. Dùng chung cho gate(…, { provider }), kiểm khoá trước khi chạy
+ * và trạng thái nút "AI tìm kiến thức trên mạng" — ba chỗ luôn khớp nhau.
+ */
+export function webSearchProvider(purpose: string): AiProvider {
+  const role = roleForPurpose(purpose);
+  const p = modelInfo(roleSettings(role).model)?.provider ?? "anthropic";
+  return WEB_SEARCH_PROVIDERS.includes(p) ? p : "anthropic";
 }
 
 /** Hãng của mô hình vị trí đang dùng đã có khoá chưa (để trang hiện đúng "chưa có khoá ChatGPT / Grok / Claude"). */
@@ -35,7 +46,8 @@ export const AI_TEAM_HREF = "/settings?tab=ai#ai-team";
  * Nút AI hiện ĐÚNG trạng thái (kiểm toán 26/10: vị trí đặt ChatGPT nhưng chỉ có khoá Claude → nút vẫn bấm được rồi hỏng):
  * cùng thứ tự kiểm như gate() — công tắc / trần riêng của vị trí → khoá hãng của mô hình vị trí → trần chung. Không gọi được thì trả
  * nhãn ngắn ("Thiếu khoá ChatGPT", "AI đang tắt", "Chạm trần AI") + lý do + đường tới Cài đặt › Đội AI để trang vô hiệu nút.
- * alsoProvider: bước cần thêm một hãng (Nghiên cứu web: bước tìm nguồn luôn chạy Claude).
+ * alsoProvider: bước cần thêm một hãng (Nghiên cứu web: hãng của bước tìm nguồn = webSearchProvider — Claude khi vị trí chọn Grok;
+ * Mô tả ảnh: Claude).
  */
 export function aiReadiness(purpose: string, opts: { alsoProvider?: AiProvider } = {}): AiReadiness {
   const role = roleForPurpose(purpose);
@@ -54,7 +66,7 @@ export function aiReadiness(purpose: string, opts: { alsoProvider?: AiProvider }
 // Cổng AI: mọi lần gọi mô hình đi qua đây để (1) kiểm tra công tắc "Cho phép gọi AI" + trần riêng của vị trí (Đội AI),
 // (2) kiểm tra trần ngân sách chung, (3) ghi sổ chi phí theo vị trí và giá của đúng mô hình, (4) ghi quyết định vào bộ định tuyến với
 // nhãn "AI đề xuất, cần người duyệt". Mô hình (và hãng) do vị trí quyết định (Cài đặt › Đội AI), truyền vào call.
-// opts.provider: bước chỉ chạy được trên một hãng (Nghiên cứu bước tìm nguồn dùng công cụ web_search riêng của Claude) → nếu mô hình vị trí
+// opts.provider: bước chỉ chạy được trên một số hãng (Nghiên cứu bước tìm nguồn: Claude hoặc ChatGPT — webSearchProvider) → nếu mô hình vị trí
 // thuộc hãng khác thì bước này dùng mô hình mặc định của hãng đó (công tắc, trần, sổ chi phí vẫn tính cho vị trí).
 // Kết quả: model = mô hình yêu cầu (vị trí chọn); servedModel = nhãn mô hình hãng THỰC SỰ chạy (response.model, kèm ghi chú nếu khác /
 // chưa có trong bảng giá) — đúng chuỗi ghi ở cột model của sổ ai_calls; costVnd = đúng số ₫ đã ghi sổ cho lần gọi này.
@@ -112,7 +124,7 @@ type UsageLike = { input_tokens?: number | null; output_tokens?: number | null }
 // Đồng hồ token của cổng AI: bọc client (Claude thật hoặc bộ chuyển đổi ChatGPT / Grok) để cộng usage của MỌI phản hồi hãng trả về
 // TRƯỚC khi chỗ gọi xử lý tiếp. messages.parse của SDK (và của bộ chuyển đổi) = this.create(...) rồi mới parse → gọi parse gốc với `this`
 // là proxy có đồng hồ ở create, nên lỗi parse (JSON hỏng / sai schema) vẫn ném ra như cũ nhưng token đã được đếm.
-// beta.messages (Nghiên cứu web_search) cũng qua đồng hồ. tests/ai-gate-usage.test.ts giữ giả định "parse gọi this.create" của SDK.
+// beta.messages (Nghiên cứu web_search của Claude) cũng qua đồng hồ; tìm web ChatGPT đi qua messages.create của bộ chuyển đổi. tests/ai-gate-usage.test.ts giữ giả định "parse gọi this.create" của SDK.
 // create của SDK trả APIPromise (.withResponse() / .asResponse()) → gắn đồng hồ bằng _thenUnwrap của chính APIPromise: vẫn là APIPromise,
 // đồng hồ chạy đúng MỘT lần khi thân phản hồi được parse (APIPromise nhớ kết quả parse; asResponse không parse → không đếm, như SDK).
 // Giá tính theo từng phản hồi với response.model (mô hình hãng thực chạy, vd fallbacks), thiếu / lạ → giá mô hình yêu cầu (servedCost).
@@ -202,6 +214,9 @@ function describeError(e: unknown): string {
   }
   if (e instanceof Anthropic.AuthenticationError) return "Khóa Claude API không hợp lệ.";
   if (e instanceof Anthropic.RateLimitError) return "Claude API đang quá tải, thử lại sau ít phút.";
+  // Khoá cấp tổ chức / khoá quản trị (không thuộc workspace) — Anthropic đòi header workspace; cách đúng là tạo khoá API thường trong một workspace
+  if (e instanceof Anthropic.APIError && /not scoped to a workspace|anthropic-workspace-id/i.test(e.message))
+    return "Khoá Claude này không gắn với workspace nào (thường là khoá quản trị). Vào console.anthropic.com › API keys › Create key, chọn workspace Default, rồi dán khoá mới (bắt đầu sk-ant-api…) ở Cài đặt › Kết nối › Claude.";
   if (e instanceof Anthropic.APIError) return `Lỗi Claude API (${e.status}): ${e.message}`;
   if (e instanceof Error && e.name === "TimeoutError") return "Hết thời gian chờ mô hình AI trả lời.";
   if (e instanceof Error && /parse structured output/i.test(e.message)) return `AI trả về không đúng định dạng: ${e.message.slice(0, 200)}`;

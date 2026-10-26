@@ -25,7 +25,9 @@ before(async () => {
 
 test("mục đích gọi cũ quy về đúng vị trí; mỗi vị trí một AI", () => {
   assert.equal(roster.roleForPurpose("ideas").id, "hooks");
-  assert.equal(roster.roleForPurpose("draft").id, "script");
+  assert.equal(roster.roleForPurpose("draft").id, "hooks"); // gộp Hook & Ý tưởng + Kịch bản (26/10)
+  assert.equal(roster.roleById("script")?.id, "hooks", "id cũ trong sổ / cài đặt quy về vị trí gộp");
+  assert.ok(!roster.AI_ROLES.some((r) => (r.id as string) === "script"));
   assert.equal(roster.roleForPurpose("research").id, "research");
   assert.equal(roster.roleForPurpose("video_plan").id, "video_edit");
   assert.equal(new Set(roster.AI_ROLES.map((r) => r.id)).size, roster.AI_ROLES.length);
@@ -39,19 +41,19 @@ test("tắt “Cho phép gọi AI” → cổng AI từ chối TRƯỚC khi gọ
     return { usage: { input_tokens: 1, output_tokens: 1 } };
   });
   assert.equal(r.ok, false);
-  assert.match(r.ok ? "" : r.error, /AI Hook & Ý tưởng đang TẮT/);
+  assert.match(r.ok ? "" : r.error, /AI Nội dung đang TẮT/);
   assert.equal(called, false);
   assert.ok(router.listDecisions(5).some((d) => d.lane === "rule" && d.outcome === "không gọi AI"));
   roster.saveRoleSettings("hooks", { enabled: true });
   const r2 = await ai.gate("ideas", "thử", async () => ({ usage: { input_tokens: 1, output_tokens: 1 } }));
-  assert.match(r2.ok ? "" : r2.error, /Chưa có khoá Claude/, "bật lại thì đi tiếp tới bước khoá API");
+  assert.match(r2.ok ? "" : r2.error, /Chưa có khoá ChatGPT/, "bật lại thì đi tiếp tới bước khoá API (mặc định ChatGPT từ 26/10)");
 });
 
 test("trần riêng của vị trí: chạm trần thì chặn vị trí đó, vị trí khác vẫn được gọi", () => {
-  roster.saveRoleSettings("script", { monthlyCapVnd: 5000 });
-  assert.equal(roster.roleAllows(roster.roleById("script")!).ok, true);
+  roster.saveRoleSettings("hooks", { monthlyCapVnd: 5000 });
+  assert.equal(roster.roleAllows(roster.roleById("hooks")!).ok, true);
   router.recordAiCall({ purpose: "draft", role: "script", model: "claude-opus-5-5", inputTokens: 5000, outputTokens: 2000, ok: true });
-  const blocked = roster.roleAllows(roster.roleById("script")!);
+  const blocked = roster.roleAllows(roster.roleById("hooks")!); // bản ghi role "script" cũ tính vào vị trí gộp
   assert.equal(blocked.ok, false);
   assert.match(blocked.reason, /trần riêng/);
   assert.equal(roster.roleAllows(roster.roleById("caption")!).ok, true);
@@ -76,8 +78,8 @@ test("báo cáo chung: chi phí theo từng AI, bản ghi cũ (không có role) 
   assert.equal(by.research.costVnd, router.estimateCostVnd(1000, 1000));
   assert.equal(by.video_edit.calls, 1);
   assert.equal(by.video_edit.costVnd, 0);
-  assert.equal(by.script.calls, 1);
-  assert.ok(by.script.costVnd > 0 && by.script.avgVnd === by.script.costVnd, "1 lần gọi → mỗi lần = tổng");
+  assert.equal(by.hooks.calls, 1);
+  assert.ok(by.hooks.costVnd > 0 && by.hooks.avgVnd === by.hooks.costVnd, "1 lần gọi → mỗi lần = tổng");
   const recent = roster.recentAiCalls(10);
   assert.ok(recent.some((c) => c.roleName === "AI Nghiên cứu" && c.role === null));
   assert.ok(recent.some((c) => c.roleName === "AI Edit Video"));

@@ -25,6 +25,7 @@ before(async () => {
   learning = await import("../src/lib/learning");
   review = await import("../src/lib/learning/ai-review");
   roster = await import("../src/lib/ai-roster");
+  roster.saveRoleSettings("measure", { model: "claude-sonnet-5-5" }); // ca dưới thử đường Claude (mô hình giả); mặc định từ 26/10 là ChatGPT
 });
 
 test("8.1 luật theo skill: thiếu CTA cuối bài, mở bằng “N cách…”, cảnh báo luật caption đi kèm", () => {

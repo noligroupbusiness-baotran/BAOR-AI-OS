@@ -11,7 +11,7 @@ import { displayStepOf } from "@/config/journey";
 // báo cáo chung: [Tên AI] – chi phí gọi"). Mỗi vị trí 1 AI, trần riêng, công tắc "Cho phép gọi AI" ở Cài đặt › Đội AI.
 export function AiCostPanel() {
   const b = getAiBudget();
-  const roles = roleSpendThisMonth();
+  const roles = roleSpendThisMonth().filter((r) => !r.role.pending || r.calls > 0); // vị trí chưa nối (AI Quảng cáo) ẩn khi chưa có lần gọi
   const calls = recentAiCalls(30);
   const totalCalls = roles.reduce((n, r) => n + r.calls, 0);
   return (

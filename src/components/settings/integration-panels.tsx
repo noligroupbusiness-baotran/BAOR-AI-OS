@@ -7,6 +7,7 @@ import { MoreOptions, SettingItem, SettingList, SettingSection } from "./setting
 import { Pill } from "@/components/ui/pill";
 import { Button } from "@/components/ui/button";
 import { Field, FormNotice, WithUnit, inputClass } from "@/components/ui/field";
+import { VndCapInput } from "@/components/ui/vnd-cap-input";
 import { SubmitButton } from "@/components/campaigns/submit-button";
 import { STALE_CLAUDE_NOTE, listIntegrationStatus, listRuns, maskedIntegrationConfig } from "@/lib/connectors/config";
 import { connectorFor } from "@/lib/connectors/registry";
@@ -206,8 +207,8 @@ export function AiBudgetPanel() {
           <div><dt className="lbl">Tháng này</dt><dd className={cn("num m-0 mt-0.5 text-[20px] font-bold", pctMonth >= 100 ? "text-brick" : pctMonth >= 80 ? "text-amber" : "text-ink")}>{formatCurrency(b.spentMonthVnd)}</dd><dd className="m-0 text-[11.5px] text-ink-3">{pctMonth}% trần tháng {formatCurrency(b.monthlyCapVnd)}</dd></div>
         </dl>
         <form action={saveAiBudget} className="flex flex-wrap items-end gap-2">
-          <Field label="Trần / ngày"><WithUnit unit="₫"><input name="dailyCapVnd" inputMode="numeric" defaultValue={b.dailyCapVnd} className={`${inputClass} w-[130px] pr-7`} /></WithUnit></Field>
-          <Field label="Trần / tháng"><WithUnit unit="₫"><input name="monthlyCapVnd" inputMode="numeric" defaultValue={b.monthlyCapVnd} className={`${inputClass} w-[140px] pr-7`} /></WithUnit></Field>
+          <Field label="Trần / ngày"><VndCapInput name="dailyCapVnd" defaultValue={b.dailyCapVnd} rate={vndPerUsd()} emptyHint="0 = dừng mọi AI" className="w-[130px]" /></Field>
+          <Field label="Trần / tháng"><VndCapInput name="monthlyCapVnd" defaultValue={b.monthlyCapVnd} rate={vndPerUsd()} emptyHint="0 = dừng mọi AI" className="w-[140px]" /></Field>
           <Field label="Tỷ giá"><WithUnit unit="₫/USD"><input name="vndPerUsd" inputMode="numeric" defaultValue={vndPerUsd()} className={`${inputClass} w-[130px] pr-14`} /></WithUnit></Field>
           <SubmitButton>Lưu</SubmitButton>
         </form>

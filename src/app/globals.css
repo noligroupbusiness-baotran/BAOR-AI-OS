@@ -146,6 +146,62 @@
   }
 }
 
+/* Token nút bấm (OWNER 27/10/2026). Màu chữ cố định ở .btn-* (trắng trên jade/gạch); ở đây chỉ nền, viền, bóng, vòng focus. */
+:root {
+  --btn-radius: 8px;
+  --btn-ring: #1e7a4b;
+  --btn-primary-border: #17643d;
+  --btn-primary-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 2px rgba(16, 48, 30, 0.24);
+  --btn-primary-shadow-hover: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 6px 14px -4px rgba(30, 122, 75, 0.45), 0 2px 4px -1px rgba(16, 48, 30, 0.2);
+  --btn-danger-border: #962c27;
+  --btn-danger-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 1px 2px rgba(80, 20, 16, 0.24);
+  --btn-danger-shadow-hover: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 6px 14px -4px rgba(183, 58, 52, 0.45), 0 2px 4px -1px rgba(80, 20, 16, 0.2);
+  --btn-outline-bg: #ffffff;
+  --btn-outline-bg-hover: #fdfcf9;
+  --btn-outline-border: #d3cdbd;
+  --btn-outline-border-hover: #b4ad9b;
+  --btn-outline-shadow: 0 1px 2px rgba(26, 31, 27, 0.06);
+  --btn-outline-shadow-hover: 0 4px 12px -4px rgba(26, 31, 27, 0.16), 0 1px 2px rgba(26, 31, 27, 0.06);
+  --btn-soft-hover: #cbe6d4;
+  --btn-ghost-hover: rgba(26, 31, 27, 0.06);
+}
+:root[data-theme="dark"] {
+  --btn-ring: #34d399;
+  --btn-primary-border: rgba(52, 211, 153, 0.3);
+  --btn-primary-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --btn-primary-shadow-hover: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 6px 18px -6px rgba(52, 211, 153, 0.4), 0 2px 4px rgba(0, 0, 0, 0.35);
+  --btn-danger-border: rgba(240, 122, 114, 0.35);
+  --btn-danger-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --btn-danger-shadow-hover: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 6px 18px -6px rgba(240, 122, 114, 0.4), 0 2px 4px rgba(0, 0, 0, 0.35);
+  --btn-outline-bg: #1a2b21;
+  --btn-outline-bg-hover: #213529;
+  --btn-outline-border: rgba(255, 255, 255, 0.14);
+  --btn-outline-border-hover: rgba(255, 255, 255, 0.26);
+  --btn-outline-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --btn-outline-shadow-hover: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 6px 16px -6px rgba(0, 0, 0, 0.6);
+  --btn-soft-hover: #24493a;
+  --btn-ghost-hover: rgba(255, 255, 255, 0.07);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) {
+    --btn-ring: #34d399;
+    --btn-primary-border: rgba(52, 211, 153, 0.3);
+    --btn-primary-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 1px 2px rgba(0, 0, 0, 0.4);
+    --btn-primary-shadow-hover: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 6px 18px -6px rgba(52, 211, 153, 0.4), 0 2px 4px rgba(0, 0, 0, 0.35);
+    --btn-danger-border: rgba(240, 122, 114, 0.35);
+    --btn-danger-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 1px 2px rgba(0, 0, 0, 0.4);
+    --btn-danger-shadow-hover: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 6px 18px -6px rgba(240, 122, 114, 0.4), 0 2px 4px rgba(0, 0, 0, 0.35);
+    --btn-outline-bg: #1a2b21;
+    --btn-outline-bg-hover: #213529;
+    --btn-outline-border: rgba(255, 255, 255, 0.14);
+    --btn-outline-border-hover: rgba(255, 255, 255, 0.26);
+    --btn-outline-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 1px 2px rgba(0, 0, 0, 0.3);
+    --btn-outline-shadow-hover: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 6px 16px -6px rgba(0, 0, 0, 0.6);
+    --btn-soft-hover: #24493a;
+    --btn-ghost-hover: rgba(255, 255, 255, 0.07);
+  }
+}
+
 @theme inline {
   --color-ground: var(--ground);
   --color-ground-2: var(--ground-2);
@@ -247,68 +303,159 @@ body {
     transition-duration: 90ms;
   }
 
-  /* ── Nút "liquid glass" ─────────────────────────────────────────── */
+  /* ── Nút bấm (OWNER 27/10/2026: "làm các nút bấm đẹp hơn") ─────────
+     Một hệ duy nhất; màu lấy từ token --btn-* (khai báo ngoài layer, đổi theo theme).
+     Thứ bậc: primary (jade đặc) › outline = .btn-glass (nền thẻ, viền rõ) › soft (jade nhạt) › ghost; danger (gạch) cho thao tác phá huỷ.
+     Kích thước + biến thể nằm ở lớp components nên tiện ích riêng từng nơi (h-6, text-brick…) vẫn đè được.
+     Chữ trên nút ≥ 4,5:1 ở cả hai theme (đo bằng script, xem báo cáo 27/10). */
   .btn {
     position: relative;
     isolation: isolate;
     overflow: hidden;
-    border-radius: 6px;
-    border-width: 1px;
-    border-style: solid;
+    border-radius: var(--btn-radius);
+    border: 1px solid transparent;
+    /* Sàn 32 px CỐ Ý (vùng bấm), áp cả nút viết tay (btn btn-glass h-7…): html 13 px nên h-7/h-8 chỉ còn 23–26 px.
+       h-* chỉ làm nút cao hơn; muốn thấp hơn phải thêm min-h-0. */
+    min-height: 32px;
+    font-weight: 600;
+    letter-spacing: normal;
+    -webkit-tap-highlight-color: transparent;
     transition:
+      transform 140ms var(--ease-out),
       box-shadow 180ms var(--ease-out),
-      border-color 180ms ease,
-      background-color 180ms ease,
-      color 180ms ease,
-      transform 120ms var(--ease-out);
+      border-color 160ms ease,
+      background-color 160ms ease,
+      color 160ms ease;
   }
-  .btn:active:not(:disabled) {
-    transform: translateY(1px) scale(0.985);
+  .btn > svg,
+  .btn > .btn-lead {
+    flex-shrink: 0;
   }
-  /* Vệt sáng quét ngang khi rê chuột */
-  .btn::after {
+  .btn:focus-visible {
+    outline: 2px solid var(--btn-ring);
+    outline-offset: 2px;
+  }
+  .btn:disabled,
+  .btn[aria-disabled="true"] {
+    cursor: not-allowed;
+    opacity: 0.5;
+    box-shadow: none;
+  }
+
+  /* Kích thước (px cố định: html 13 px nên rem nhỏ hơn thường) */
+  .btn-sm {
+    height: 32px;
+    padding-inline: 12px;
+    font-size: 12.5px;
+    gap: 6px;
+  }
+  .btn-md {
+    height: 40px;
+    padding-inline: 16px;
+    font-size: 13px;
+    gap: 8px;
+  }
+  .btn-icon {
+    height: 32px;
+    width: 32px;
+    padding: 0;
+    gap: 0;
+  }
+  /* Có icon đầu dòng: lề trái hẹp hơn để cân thị giác */
+  .btn-sm:has(> .btn-lead) {
+    padding-inline-start: 10px;
+  }
+  .btn-md:has(> .btn-lead) {
+    padding-inline-start: 13px;
+  }
+
+  /* Chính — jade đặc, gradient nhẹ + viền sáng trong, chữ trắng (cả hai theme) */
+  .btn-primary {
+    color: #ffffff;
+    border-color: var(--btn-primary-border);
+    background: linear-gradient(180deg, #208150 0%, #1b6f45 100%);
+    box-shadow: var(--btn-primary-shadow);
+  }
+  .btn-primary:hover:not(:disabled):not([aria-disabled="true"]) {
+    background: linear-gradient(180deg, #1d7849 0%, #186440 100%);
+    box-shadow: var(--btn-primary-shadow-hover);
+  }
+  /* Nguy hiểm — gạch đặc, cùng hình khối với nút chính */
+  .btn-danger {
+    color: #ffffff;
+    border-color: var(--btn-danger-border);
+    background: linear-gradient(180deg, #bd3f38 0%, #a8322c 100%);
+    box-shadow: var(--btn-danger-shadow);
+  }
+  .btn-danger:hover:not(:disabled):not([aria-disabled="true"]) {
+    background: linear-gradient(180deg, #b23a33 0%, #9c2d27 100%);
+    box-shadow: var(--btn-danger-shadow-hover);
+  }
+  /* Vệt sáng quét nhẹ khi rê chuột — chỉ nút đặc (OWNER 25/10 "liquid glass"), mờ hơn bản cũ */
+  .btn-primary::after,
+  .btn-danger::after {
     content: "";
     position: absolute;
     inset: 0;
     z-index: -1;
     pointer-events: none;
-    background: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, 0.55) 50%, transparent 70%);
+    background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, 0.18) 50%, transparent 65%);
     transform: translateX(-130%);
   }
-  .btn:hover:not(:disabled)::after {
+  .btn-primary:hover:not(:disabled)::after,
+  .btn-danger:hover:not(:disabled)::after {
     transform: translateX(130%);
-    transition: transform 0.65s var(--ease-out);
+    transition: transform 0.7s var(--ease-out);
   }
 
-  /* Nút chính — xanh ngọc chữ trắng ở cả hai chế độ (OWNER 26/10/2026: như nút "Đăng nhập" của màn đăng nhập gốc).
-     Tối cũng dùng xanh ngọc: nút trắng bạc quá chói trên nền xanh rừng; xanh ngọc liền mạch với quầng sáng jade. */
-  .btn-primary {
-    color: #ffffff;
-    border-color: #155d38;
-    background: linear-gradient(180deg, #1f7d4e 0%, #1e7a4b 55%, #1a6c43 100%);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.2),
-      0 1px 2px rgba(0, 0, 0, 0.18);
-  }
-  .btn-primary:hover:not(:disabled) {
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.24),
-      0 0 22px rgba(30, 122, 75, 0.35);
-  }
-  .btn-primary::after {
-    background: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, 0.28) 50%, transparent 70%);
-  }
-
-  /* Nút phụ — kính 135deg, viền bạc */
+  /* Phụ (outline) — nền thẻ, viền rõ, bóng mảnh */
   .btn-glass {
     color: var(--ink);
-    border-color: #cfc9b9;
-    background: linear-gradient(135deg, #ffffff 0%, #f7f4ec 100%);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 2px rgba(16, 16, 24, 0.05);
+    border-color: var(--btn-outline-border);
+    background: var(--btn-outline-bg);
+    box-shadow: var(--btn-outline-shadow);
   }
-  .btn-glass:hover:not(:disabled) {
-    border-color: #a9b39f;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 0 18px rgba(30, 122, 75, 0.18);
+  .btn-glass:hover:not(:disabled):not([aria-disabled="true"]) {
+    border-color: var(--btn-outline-border-hover);
+    background: var(--btn-outline-bg-hover);
+    box-shadow: var(--btn-outline-shadow-hover);
+  }
+
+  /* Nhạt — nền jade nhạt, không viền */
+  .btn-soft {
+    color: var(--jade-ink);
+    background: var(--jade-soft);
+  }
+  .btn-soft:hover:not(:disabled):not([aria-disabled="true"]) {
+    background: var(--btn-soft-hover);
+  }
+
+  /* Trong suốt — cho thao tác phụ, menu ⋯ */
+  .btn-ghost {
+    color: var(--ink-2);
+    background: transparent;
+  }
+  .btn-ghost:hover:not(:disabled):not([aria-disabled="true"]) {
+    color: var(--ink);
+    background: var(--btn-ghost-hover);
+  }
+
+  /* Nhấc 1 px khi rê chuột — chỉ thiết bị có chuột (tránh "dính hover" trên điện thoại) */
+  @media (hover: hover) {
+    .btn-primary:hover:not(:disabled):not([aria-disabled="true"]),
+    .btn-danger:hover:not(:disabled):not([aria-disabled="true"]),
+    .btn-glass:hover:not(:disabled):not([aria-disabled="true"]) {
+      transform: translateY(-1px);
+    }
+  }
+  /* Nhấn: lún nhẹ (đặt sau hover để thắng) */
+  .btn:active:not(:disabled):not([aria-disabled="true"]) {
+    transform: translateY(0) scale(0.98);
+    transition-duration: 80ms;
+  }
+  .btn-primary:active:not(:disabled):not([aria-disabled="true"]),
+  .btn-danger:active:not(:disabled):not([aria-disabled="true"]) {
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.22);
   }
 
   /* ── Tab / mục chọn dạng "liquid-metal pill" (đang chọn) ─────────── */
@@ -348,6 +495,11 @@ body {
   .tab-pill:hover {
     background: color-mix(in srgb, var(--ink) 6%, transparent);
     border-color: var(--border);
+  }
+  .tab-pill:focus-visible,
+  .metal-pill:focus-visible {
+    outline: 2px solid var(--btn-ring);
+    outline-offset: 2px;
   }
 
   /* Huy hiệu kim loại (kèm sao lấp lánh) cho nhãn nổi bật */
@@ -411,35 +563,15 @@ body {
 .tone-red { --chip: var(--tone-red); }
 .tone-slate { --chip: var(--tone-slate); }
 
-/* Bản tối của các thành phần kim loại / kính — trong @layer components để tiện ích (text-brick, border-brick của nút
+/* Bản tối của các thành phần kim loại / kính (nút: dùng token --btn-* ở khối token nút) — trong @layer components để tiện ích (text-brick, border-brick của nút
    nguy hiểm…) vẫn đè được */
 @layer components {
-:root[data-theme="dark"] .btn-glass {
-  color: #ffffff;
-  border-color: rgba(198, 198, 198, 0.45);
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.02) 100%), #142219;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
-}
-:root[data-theme="dark"] .btn-glass:hover:not(:disabled) {
-  border-color: rgba(220, 230, 255, 0.75);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 22px rgba(186, 208, 255, 0.25);
-}
 :root[data-theme="dark"] .nav-active {
   color: #ffffff;
   background: rgba(255, 255, 255, 0.06);
   box-shadow: none;
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]):not([data-theme="dark"]) .btn-glass {
-    color: #ffffff;
-    border-color: rgba(198, 198, 198, 0.45);
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.02) 100%), #142219;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  }
-  :root:not([data-theme="light"]):not([data-theme="dark"]) .btn-glass:hover:not(:disabled) {
-    border-color: rgba(220, 230, 255, 0.75);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 22px rgba(186, 208, 255, 0.25);
-  }
   :root:not([data-theme="light"]):not([data-theme="dark"]) .nav-active {
     color: #ffffff;
     background: rgba(255, 255, 255, 0.06);
@@ -650,7 +782,8 @@ input[type="checkbox"].switch:focus-visible { outline: 2px solid var(--jade); ou
   .chip-host:hover .chip > svg {
     animation: none !important;
   }
-  .btn::after,
+  .btn-primary::after,
+  .btn-danger::after,
   .metal-pill::before {
     display: none;
   }
@@ -658,8 +791,9 @@ input[type="checkbox"].switch:focus-visible { outline: 2px solid var(--jade); ou
   .lift:hover,
   a.card:active,
   .lift:active,
-  .btn:active:not(:disabled) {
-    transform: none;
+  .btn:hover,
+  .btn:active {
+    transform: none !important;
   }
   *,
   ::before,

@@ -8,7 +8,7 @@ import { isBannedMusic, musicApprovalError, musicUnapprovalError, readMusicManif
 import { isNull } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { latestDecisions, ownerMacStatus, parseMeta, rawMusicOf, remotePreviewUrl, type OwnerMacStatus } from "./remote-catalog";
-import type { CatalogKind, CatalogMedia } from "./catalog-wire";
+import { trashTargetOf, type CatalogKind, type CatalogMedia, type DecisionAction } from "./catalog-wire";
 
 export type AssetSource = "server" | "owner_mac";
 /** approved = nhạc đã duyệt · pending = nhạc chờ OWNER nghe duyệt · blocked = thiếu giấy phép / không đủ hồ sơ để duyệt ·
@@ -52,13 +52,15 @@ export interface AssetEntry {
   isDefault: boolean;
   /** Chỉ owner_mac: lần máy dựng báo mục này gần nhất. */
   lastSyncedAt: string | null;
-  /** Chỉ owner_mac: quyết định duyệt đã ghi, CHƯA được máy dựng áp → hiện "Đang chờ máy dựng áp dụng". */
-  pendingDecision: { action: "approve" | "unapprove"; by: string; at: string } | null;
+  /** Chỉ owner_mac: quyết định đã ghi, CHƯA được máy dựng áp → "Đang chờ máy dựng áp dụng" (duyệt) / "Chờ máy dựng xoá" (trash). */
+  pendingDecision: { action: DecisionAction; by: string; at: string } | null;
   /** Chỉ owner_mac: lần áp gần nhất không thành (vd tệp đã đổi) — null nếu không có. */
   decisionError: string | null;
   /** Duyệt / bỏ duyệt được ngay (đúng luật approveMusic); đang có quyết định chờ thì cả hai false, dùng nút Huỷ. */
   canApprove: boolean;
   canUnapprove: boolean;
+  /** Xoá được (OWNER): máy chủ → chuyển vào Đã xoá ngay; máy OWNER → ghi lệnh xoá, máy dựng xoá ở lần đồng bộ kế. */
+  canTrash: boolean;
 }
 
 const enc = encodeURIComponent;
@@ -74,7 +76,7 @@ function musicStatus(raw: Record<string, unknown>): AssetStatus {
 function serverEntries(): AssetEntry[] {
   const out: AssetEntry[] = [];
   const raws = new Map(readMusicManifest(musicDir()).map((x) => [String(x.file ?? ""), x]));
-  const base = { source: "server" as const, lastSyncedAt: null, pendingDecision: null, decisionError: null, note: "", desc: "" };
+  const base = { source: "server" as const, lastSyncedAt: null, pendingDecision: null, decisionError: null, note: "", desc: "", canTrash: true };
   for (const t of musicLibrary()) {
     const raw = raws.get(t.file) ?? {};
     const status = musicStatus(raw);
@@ -181,7 +183,7 @@ function ownerMacEntries(includeRemoved: boolean): AssetEntry[] {
     const m = parseMeta(r);
     const kind = r.kind as CatalogKind;
     const d = decisions.get(r.id);
-    const pending = d?.status === "pending" ? { action: d.action as "approve" | "unapprove", by: d.byName || d.by, at: d.at } : null;
+    const pending = d?.status === "pending" ? { action: d.action as DecisionAction, by: d.byName || d.by, at: d.at } : null;
     const raw = kind === "music" ? rawMusicOf(r) : null;
     const license = m.license ?? "";
     let status: AssetStatus;
@@ -215,6 +217,7 @@ function ownerMacEntries(includeRemoved: boolean): AssetEntry[] {
       decisionError: d && d.status === "failed" ? (d.error ?? "Không áp được") : null,
       canApprove: !!raw && !r.removedAt && !pending && !musicApprovalError(raw),
       canUnapprove: !!raw && !r.removedAt && !pending && !musicUnapprovalError(raw),
+      canTrash: !r.removedAt && kind !== "drop" && !!trashTargetOf(r.id) && !!r.sha256 && pending?.action !== "trash",
     });
   }
   return out;
