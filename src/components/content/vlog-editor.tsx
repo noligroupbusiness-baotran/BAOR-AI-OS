@@ -1,26 +1,28 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
-import { Check, ChevronDown, CircleAlert, RotateCcw, Sparkles, UserRound, X } from "lucide-react";
+import { Check, ChevronDown, CircleAlert, Settings2, Sparkles, UserRound, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AiBlocked } from "@/components/ui/ai-blocked";
 import { InfoTip } from "@/components/ui/info-tip";
 import { aiWriteDraft, submitForReview } from "@/lib/actions/content";
 import { VLOG_MAX_SEC } from "@/lib/content/formats";
-import { PATH_STAGES, VLOG_CARDS, experienceChecks, fillFromExperience, isMetaNote, serializeVlog, stageInfo, vlogChecks, vlogTimeline, type PathStage, type VlogCard, type VlogDoc, type VlogKey } from "@/lib/content/vlog-script";
-import { CONTENT_SKILL, emptyExperience, hasExperience, interviewQuestions, sceneHash, type ExperienceRef, type ExperienceSuggestion, type OwnerExperience, type Pronouns } from "@/lib/content/experience";
+import { PATH_STAGES, VLOG_CARDS, applyScriptText, draftHash, editorDraft, scenesShifted, textToSpeeches, experienceChecks, fillFromExperience, hasPlaceholder, isMetaNote, speechesToText, stageInfo, vlogChecks, vlogTimeline, type PathStage, type VlogDoc, type VlogKey } from "@/lib/content/vlog-script";
+import { CONTENT_SKILL, emptyExperience, hasExperience, interviewQuestions, type ExperienceRef, type ExperienceSuggestion, type OwnerExperience, type Pronouns } from "@/lib/content/experience";
 import { ExperienceGate, ExperiencePanel, type ExperiencePanelHandle } from "@/components/content/experience-panel";
+import { vlogHintStore } from "@/lib/client-store";
 import type { AiReadiness } from "@/lib/ai";
 import { cn } from "@/lib/format";
 
-// Trình soạn kịch bản vlog < 1 phút bằng 4 thẻ cảnh (OWNER 26/10). Nằm TRONG biểu mẫu lưu nháp của trang Kịch bản: thẻ cảnh được ghi lại
-// thành đúng bản chữ cảnh cũ (ô ẩn name="draft"), nên Lưu nháp / Gửi duyệt / AI viết / lịch sử phiên bản dùng nguyên server action hiện có.
+// Trình soạn kịch bản vlog < 1 phút: MỘT ô chữ chỉ có lời nói (OWNER 26/10: "phải viết thành 1 ô duy nhất chỉ nội dung thôi").
+// Đoạn 1 = Hook, 2 = Câu chuyện, 3 = Bài học, 4…n = Kết (applyScriptText); Hình ảnh / Chữ trên màn hình / Ý chính / Gợi ý OWNER / Căn cứ
+// vẫn lưu nguyên trong từng cảnh, chỉ không hiện. Nằm TRONG biểu mẫu lưu nháp của trang Kịch bản: ô ẩn name="draft" = đúng bản chữ cảnh
+// cũ (serializeVlog), nên Lưu nháp / Gửi duyệt / AI viết / lịch sử phiên bản dùng nguyên server action hiện có.
 
-const SEG = ["bg-jade", "bg-sky", "bg-violet", "bg-ink-3"];
-const DOT = ["bg-jade-soft text-jade-ink", "bg-sky-soft text-sky", "bg-violet-soft text-violet", "bg-ground-2 text-ink-2"];
 const field = "w-full rounded-md border border-border-2 bg-surface px-2.5 text-ink outline-none focus-visible:outline-2 focus-visible:outline-jade";
+const pop = "absolute left-0 top-full z-30 mt-1.5 w-[min(22rem,100%)] rounded-lg border border-border-2 bg-surface p-3 text-[12.5px] text-ink-2 shadow-[var(--shadow-lift)]";
 
 export interface BasisChip {
   kind: "finding" | "knowledge" | "insight";
@@ -50,64 +52,123 @@ export interface OwnerReviewView {
   hash: string | null;
 }
 
-// Gợi ý trong ô Lời nói theo SK-KNW-01 khi đã có chuyện thật (Hook → Real situation + Common mistake → BAOR observation + Why + Better approach → Lesson + CTA)
-const expHint = (k: VlogKey, p: Pronouns) =>
-  ({ hook: `Khoảnh khắc thật: “Lần đầu…, ${p.self}…” · ≤ 15 chữ`, story: "Tình huống thật + sai lầm phổ biến", value: `Điều ${p.self} thấy + vì sao + cách tốt hơn`, end: `Bài học một câu + hỏi ${p.audience}` })[k];
+/** Tên đoạn ngắn trong ô (thứ tự = VLOG_CARDS). */
+const PARA: Record<VlogKey, string> = { hook: "Hook", story: "Chuyện", value: "Bài học", end: "Kết" };
 
-export function VlogEditor({ initial, fallbackHook, defaultStage, ready, basis, beats, exp: ex }: { initial: VlogDoc; fallbackHook: string; defaultStage: PathStage; ready: AiReadiness; basis: BasisChip[]; beats: string[]; exp: ExperienceProps }) {
-  const [doc, setDoc] = useState<VlogDoc>(() => ({
+// Gợi ý theo SK-KNW-01 khi đã có chuyện thật (Hook → Real situation + Common mistake → BAOR observation + Why + Better approach → Lesson + CTA)
+const expHint = (k: VlogKey, p: Pronouns) =>
+  ({ hook: `Khoảnh khắc thật: “Lần đầu…, ${p.self}…”`, story: "Tình huống thật + sai lầm phổ biến", value: `Điều ${p.self} thấy + vì sao + cách tốt hơn`, end: `Bài học một câu + hỏi ${p.audience}` })[k];
+
+// Câu kiểm theo cảnh → theo đoạn trong ô (người dùng không còn thấy "cảnh")
+const asPara = (s: string) =>
+  s
+    .replace(/Cảnh Câu chuyện/g, "Đoạn 2 (Chuyện)")
+    .replace(/Cảnh Giá trị|Cảnh Bài học/g, "Đoạn 3 (Bài học)")
+    .replace(/Cảnh Kết/g, "Đoạn 4 (Kết)")
+    .replace(/Câu chuyện chưa/g, "Đoạn Chuyện chưa")
+    .replace(/Câu chuyện nên/g, "Đoạn Chuyện nên");
+
+/** Đóng lớp nổi khi bấm ra ngoài / Esc (trả focus về nút mở). */
+function useDismiss(open: boolean, close: () => void, box: React.RefObject<HTMLElement | null>, trigger: React.RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    if (!open) return;
+    const down = (e: PointerEvent) => {
+      const t = e.target as Node;
+      if (!box.current?.contains(t) && !trigger.current?.contains(t)) close();
+    };
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      close();
+      trigger.current?.focus();
+    };
+    document.addEventListener("pointerdown", down);
+    document.addEventListener("keydown", key);
+    return () => {
+      document.removeEventListener("pointerdown", down);
+      document.removeEventListener("keydown", key);
+    };
+  }, [open, close, box, trigger]);
+}
+
+export function VlogEditor({ initial, raw = "", fallbackHook, defaultStage, ready, basis, beats, exp: ex }: { initial: VlogDoc; /** Bản chữ đã lưu (c.draft) — chưa sửa gì thì gửi lại y hệt. */ raw?: string; fallbackHook: string; defaultStage: PathStage; ready: AiReadiness; basis: BasisChip[]; beats: string[]; exp: ExperienceProps }) {
+  const [base] = useState<VlogDoc>(() => ({
     ...initial,
     // Chưa có khối kinh nghiệm: hỏi 2 câu đầu theo chủ đề (INTERVIEW MODE — mỗi lần 1–2 câu)
     experience: initial.experience ?? { ...emptyExperience(), qa: interviewQuestions(ex.topic).map((q) => ({ q, a: "" })) },
     cards: initial.cards.map((c, i) => (i === 0 && !c.speech.trim() && fallbackHook ? { ...c, speech: fallbackHook } : c)),
   }));
+  const [doc, setDoc] = useState<VlogDoc>(base);
+  // Chữ trong ô giữ đúng như người dùng gõ (không dàn lại khi đang gõ); lời nói từng cảnh tách ra từ đây
+  const [text, setText] = useState(() => speechesToText(doc.cards.map((c) => c.speech)));
   const experience = doc.experience ?? emptyExperience();
   // Trang đã tích còn sống? (máy chủ gửi trạng thái; "DEAD" = đã gỡ / ARCHIVED / không còn là tư liệu OWNER; trang vừa tích từ gợi ý = sống)
   const live = (r: ExperienceRef) => (ex.refStatus[`${r.kind}:${r.id}`] ?? "LIVE") !== "DEAD";
   const haveExp = hasExperience(experience, live);
-  // Xác nhận gắn với chữ 4 cảnh của bản đã lưu: sửa chữ sau khi xác nhận → phải xác nhận lại (máy chủ cũng kiểm lúc gửi duyệt / duyệt)
-  const hash = useMemo(() => sceneHash(doc.cards), [doc.cards]);
-  const confirmedNow = !!ex.review.confirmedBy && ex.review.hash === hash;
-  const confirmNeeded = ex.review.items.length > 0 && !confirmedNow;
   const [expOpen, setExpOpen] = useState(() => !hasExperience(initial.experience, live));
   const [gate, setGate] = useState(false);
+  const [checksOpen, setChecksOpen] = useState(false);
+  const [setupOpen, setSetupOpen] = useState(false);
   const panel = useRef<ExperiencePanelHandle>(null);
-  const stage = doc.stage ?? defaultStage;
-  const draft = useMemo(() => serializeVlog(doc), [doc]);
-  const time = vlogTimeline(doc);
-  const checks = vlogChecks(doc);
-  const draftRefs = experience.refs.filter((r) => (ex.refStatus[`${r.kind}:${r.id}`] ?? ex.suggestions.find((s) => s.kind === r.kind && s.id === r.id)?.status) === "DRAFT").length;
-  const skillChecks = experienceChecks(doc, ex.pronouns, { draftRefs, live, review: { items: ex.review.items, valid: confirmedNow } });
-  const skillOk = skillChecks.filter((k) => k.ok).length;
-  const craftOk = checks.filter((k) => k.ok).length;
-  const filled = doc.cards.every((c) => c.speech.trim());
-  const { pending, data } = useFormStatus();
-  const aiScene = pending ? data?.get("scene") : null; // "" = cả kịch bản, "<cảnh>" = viết lại một cảnh, "save" / "submit" = lưu / gửi duyệt
-  const aiOff = !ready.ok || pending;
-  const scale = Math.max(VLOG_MAX_SEC, time.seconds);
+  const checksBtn = useRef<HTMLButtonElement>(null);
+  const checksBox = useRef<HTMLDivElement>(null);
+  const setupBtn = useRef<HTMLButtonElement>(null);
+  const setupBox = useRef<HTMLDivElement>(null);
+  const closeChecks = useMemo(() => () => setChecksOpen(false), []);
+  const closeSetup = useMemo(() => () => setSetupOpen(false), []);
+  useDismiss(checksOpen, closeChecks, checksBox, checksBtn);
+  useDismiss(setupOpen, closeSetup, setupBox, setupBtn);
+  const hint = vlogHintStore.use();
+  const [shifted, setShifted] = useState(false);
+  const hasShotNotes = doc.cards.some((c) => c.visual.trim() || c.onScreen.trim() || c.notes.length > 0);
 
-  const pickScene = (key: VlogKey | "" | "save" | "submit") => (e: React.MouseEvent<HTMLButtonElement>) => {
+  const stage = doc.stage ?? defaultStage;
+  // Mở rồi lưu mà không sửa gì (chữ, thiết lập, chuyện thật) và không tự điền hook dự phòng: gửi lại đúng bản đã lưu (byte-identical)
+  const draft = useMemo(() => editorDraft(raw, initial, doc, doc === base), [raw, initial, doc, base]);
+  // Xác nhận gắn với chữ 4 cảnh của bản sẽ lưu — băm đúng chữ máy chủ băm (draftHash): sửa chữ sau khi xác nhận → phải xác nhận lại
+  const hash = useMemo(() => draftHash(draft), [draft]);
+  const confirmedNow = !!ex.review.confirmedBy && ex.review.hash === hash;
+  const confirmNeeded = ex.review.items.length > 0 && !confirmedNow;
+  const time = vlogTimeline(doc);
+  const draftRefs = experience.refs.filter((r) => (ex.refStatus[`${r.kind}:${r.id}`] ?? ex.suggestions.find((s) => s.kind === r.kind && s.id === r.id)?.status) === "DRAFT").length;
+  // Kiểm giữ nguyên (SK-KNW-01 trước, luật nghề Kotler / Ogilvy sau) — chỉ hiện các mục chưa đạt, bằng câu thường
+  const failing = [...new Set([...experienceChecks(doc, ex.pronouns, { draftRefs, live, review: { items: ex.review.items, valid: confirmedNow } }), ...vlogChecks(doc)].filter((k) => !k.ok).map((k) => asPara(k.why ?? k.label)))];
+  const filled = doc.cards.every((c) => c.speech.trim());
+  // Còn chỗ anh cần kể: chỗ trống cũ "[OWNER KỂ: …]" trong lời nói, hoặc đoạn Chuyện trống mà AI đã để gợi ý
+  const story = doc.cards.find((c) => c.key === "story");
+  const tellHint = doc.cards.some((c) => hasPlaceholder(c.speech)) || (!!story && !story.speech.trim() && story.ownerHints.some((h) => h.includes("[OWNER KỂ")));
+  const tellWhat = story?.ownerHints.find((h) => h.includes("[OWNER KỂ"))?.replace(/^\[OWNER KỂ:\s*|\]$/gu, "");
+  const { pending, data } = useFormStatus();
+  const aiScene = pending ? data?.get("scene") : null; // "" = cả kịch bản, "save" / "submit" = lưu / gửi duyệt
+  const aiOff = !ready.ok || pending;
+  const pct = Math.min(100, (time.seconds / VLOG_MAX_SEC) * 100);
+  const segmentShort = doc.segment.trim().replace(/\s+/g, " ");
+  const summary = `${segmentShort ? (segmentShort.length > 28 ? `${segmentShort.slice(0, 27)}…` : segmentShort) : "Chưa chọn khách"} · ${stageInfo(stage).label}`;
+  const placeholder = VLOG_CARDS.map((d) => `${PARA[d.key]} — ${haveExp ? expHint(d.key, ex.pronouns) : d.key === "story" ? "chuyện thật của anh" : d.key === "end" ? stageInfo(stage).cta : d.hint}`).join("\n\n");
+
+  const pickScene = (key: "" | "save" | "submit") => (e: React.MouseEvent<HTMLButtonElement>) => {
     const input = e.currentTarget.form?.elements.namedItem("scene");
     if (input instanceof HTMLInputElement) input.value = key;
   };
   const setExperience = (e: OwnerExperience) => setDoc((d) => ({ ...d, experience: e }));
-  // Chưa có chuyện thật: "AI viết kịch bản" mở 3 câu hỏi trước (không gửi); "Viết khung trước" mới gửi
+  const openStory = () => {
+    setExpOpen(true);
+    requestAnimationFrame(() => panel.current?.focus());
+  };
+  // Chưa có chuyện thật: "AI viết kịch bản" mở câu hỏi trước (không gửi); "Viết khung trước" mới gửi
   const gateAi = (e: React.MouseEvent<HTMLButtonElement>) => {
     if (!haveExp) {
       e.preventDefault();
-      setExpOpen(true);
       setGate(true);
-      requestAnimationFrame(() => panel.current?.focus());
+      openStory();
       return;
     }
     pickScene("")(e);
   };
-  const setCard = (key: VlogKey, patch: Partial<VlogCard>) => setDoc((d) => ({ ...d, cards: d.cards.map((c) => (c.key === key ? { ...c, ...patch } : c)) }));
   const cleanBeats = beats.filter((b) => !isMetaNote(b));
 
   return (
     <div
-      className="grid gap-3"
+      className="grid gap-2.5"
       // Enter trong ô một dòng không gửi biểu mẫu (nút mặc định của biểu mẫu là "AI viết kịch bản")
       onKeyDown={(e) => {
         if (e.key === "Enter" && e.target instanceof HTMLInputElement) e.preventDefault();
@@ -116,7 +177,7 @@ export function VlogEditor({ initial, fallbackHook, defaultStage, ready, basis, 
       <input type="hidden" name="draft" value={draft} />
       <input type="hidden" name="hook" value={doc.cards[0]?.speech.replace(/\s+/g, " ").trim() || fallbackHook} />
       <input type="hidden" name="stage" value={stage} />
-      {/* Cảnh cần AI viết lại: nút gán ngay trước khi gửi (nút có formAction là server action thì React dùng thuộc tính name riêng) */}
+      {/* Việc nút cần làm: nút gán ngay trước khi gửi (nút có formAction là server action thì React dùng thuộc tính name riêng) */}
       <input type="hidden" name="scene" defaultValue="none" />
 
       <ExperiencePanel
@@ -129,14 +190,20 @@ export function VlogEditor({ initial, fallbackHook, defaultStage, ready, basis, 
         skillUrl={ex.skillUrl}
         open={expOpen}
         onOpenChange={setExpOpen}
-        onFill={() => setDoc((d) => fillFromExperience(d, stage, ex.pronouns))}
+        onFill={() => {
+          // Câu trả lời nhiều đoạn: gộp dòng trống trong từng lời nói để ô chữ và thẻ cảnh khớp nhau (gõ tiếp không dồn đoạn)
+          const filledDoc = fillFromExperience(doc, stage, ex.pronouns);
+          const t = speechesToText(filledDoc.cards.map((c) => c.speech));
+          setDoc(applyScriptText(filledDoc, t));
+          setText(t);
+        }}
         review={ex.review}
         confirmedNow={confirmedNow}
         canEdit={ex.canEdit}
         gate={
           gate && !haveExp ? (
             <ExperienceGate>
-              <Button type="submit" size="sm" variant="outline" formAction={aiWriteDraft} onClick={pickScene("")} disabled={aiOff} loading={aiScene === ""} className="h-7 min-h-0 px-2 text-[12px]" title="Viết hook, bài học, kết; cảnh Câu chuyện chờ anh kể">
+              <Button type="submit" size="sm" variant="outline" formAction={aiWriteDraft} onClick={pickScene("")} disabled={aiOff} loading={aiScene === ""} className="h-7 min-h-0 px-2 text-[12px]" title="Viết hook, bài học, kết; đoạn Chuyện chờ anh kể">
                 Viết khung trước
               </Button>
             </ExperienceGate>
@@ -144,204 +211,180 @@ export function VlogEditor({ initial, fallbackHook, defaultStage, ready, basis, 
         }
       />
 
-      {/* Cho ai (STP) · chặng khách 5A · AI viết */}
-      <div className="flex flex-wrap items-end gap-2">
-        <label className="block min-w-[200px] flex-1">
-          <span className="lbl">Cho ai</span>
-          <input
-            value={doc.segment}
-            onChange={(e) => setDoc((d) => ({ ...d, segment: e.target.value }))}
-            placeholder="VD: chủ shop mới bán online, chưa có khách quen"
-            className={cn(field, "mt-1 h-8 text-[13px]")}
-          />
-        </label>
-        <div>
-          <span className="flex h-[13px] items-center gap-0.5">
-            <span className="lbl">Chặng khách</span>
-            <InfoTip label="Chặng khách 5A" className="h-4 w-4">Hành trình khách 5A theo nguyên lý marketing của Philip Kotler: Biết → Thích → Hỏi → Làm → Giới thiệu. Cảnh Kết mời đúng một bước tiếp theo.</InfoTip>
+      {/* Thanh trên: thời lượng · trạng thái kiểm · thiết lập | AI viết · Lưu · Gửi duyệt */}
+      <div className="relative">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
+          <span className={cn("num whitespace-nowrap text-[12.5px] font-semibold", time.over ? "text-amber" : "text-ink-2")} title={`${time.words} chữ · ước tính theo tốc độ nói`}>
+            {time.seconds}s / {VLOG_MAX_SEC}s
           </span>
-          <div
-            role="radiogroup"
-            aria-label="Chặng khách"
-            className="mt-1 flex h-8 overflow-hidden rounded-md border border-border-2 text-[12px]"
-            // Phím mũi tên đổi chặng như nhóm radio chuẩn (roving tabindex: chỉ chặng đang chọn nhận Tab)
-            onKeyDown={(e) => {
-              const step = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
-              if (!step) return;
-              e.preventDefault();
-              const i = PATH_STAGES.findIndex((p) => p.key === stage);
-              const next = PATH_STAGES[(i + step + PATH_STAGES.length) % PATH_STAGES.length];
-              setDoc((d) => ({ ...d, stage: next.key }));
-              (e.currentTarget.querySelector(`[data-stage="${next.key}"]`) as HTMLButtonElement | null)?.focus();
-            }}
+          {failing.length ? (
+            <button
+              ref={checksBtn}
+              type="button"
+              onClick={() => setChecksOpen((o) => !o)}
+              aria-expanded={checksOpen}
+              aria-controls="vlog-checks"
+              data-testid="script-status"
+              className="inline-flex h-6 cursor-pointer items-center gap-1 whitespace-nowrap rounded-full bg-amber-soft px-2.5 text-[12px] font-semibold text-amber hover:brightness-95 focus-visible:outline-2 focus-visible:outline-jade"
+            >
+              <CircleAlert size={12} aria-hidden />
+              <span className="num">{failing.length}</span> điểm cần xem
+              <ChevronDown size={12} className={cn("transition-transform", checksOpen && "rotate-180")} aria-hidden />
+            </button>
+          ) : (
+            <span data-testid="script-status" role="status" className="inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-full bg-jade-soft px-2.5 text-[12px] font-semibold text-jade-ink">
+              <Check size={12} aria-hidden /> Sẵn sàng
+            </span>
+          )}
+          <button
+            ref={setupBtn}
+            type="button"
+            onClick={() => setSetupOpen((o) => !o)}
+            aria-expanded={setupOpen}
+            aria-controls="vlog-setup"
+            title="Thiết lập: cho ai · chặng khách"
+            className="inline-flex h-6 min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-full bg-ground-2 px-2.5 text-[12px] text-ink-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-jade"
           >
-            {PATH_STAGES.map((p) => (
-              <button
-                key={p.key}
-                type="button"
-                role="radio"
-                data-stage={p.key}
-                tabIndex={stage === p.key ? 0 : -1}
-                aria-checked={stage === p.key}
-                title={`${p.en}: ${p.cta}`}
-                onClick={() => setDoc((d) => ({ ...d, stage: p.key }))}
-                className={cn("cursor-pointer border-r border-border-2 px-2.5 last:border-r-0", stage === p.key ? "bg-jade-soft font-semibold text-jade-ink" : "bg-surface text-ink-2 hover:bg-ground-2")}
-              >
-                {p.label}
-              </button>
-            ))}
+            <Settings2 size={12} className="shrink-0" aria-hidden />
+            <span className="sr-only">Thiết lập: </span>
+            <span className="truncate">{summary}</span>
+          </button>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <AiBlocked ready={ready} />
+            <Button type="submit" variant={filled ? "soft" : "primary"} icon={Sparkles} formAction={aiWriteDraft} onClick={gateAi} disabled={aiOff} loading={aiScene === ""} title={haveExp ? "Bóc tách chuyện của anh rồi viết đủ kịch bản (một lần gọi AI)" : "Vlog chia sẻ cần chuyện thật của anh"}>
+              {aiScene === "" ? "AI đang viết…" : "AI viết kịch bản"}
+            </Button>
+            <Button type="submit" onClick={(e) => { pickScene("save")(e); vlogHintStore.set("hidden"); }} disabled={pending} loading={aiScene === "save"}>Lưu</Button>
+            <Button type="submit" variant={filled && !confirmNeeded ? "primary" : "outline"} formAction={submitForReview} onClick={pickScene("submit")} disabled={pending || confirmNeeded} loading={aiScene === "submit"} title={confirmNeeded ? "Cần anh xác nhận chuyện trước khi gửi duyệt" : undefined}>Gửi duyệt</Button>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button type="submit" size="md" variant={filled ? "soft" : "primary"} icon={Sparkles} formAction={aiWriteDraft} onClick={gateAi} disabled={aiOff} loading={aiScene === ""} title={haveExp ? "Bóc tách chuyện của anh rồi viết đủ 4 cảnh (một lần gọi AI)" : "Vlog chia sẻ cần chuyện thật của anh"}>
-            {aiScene === "" ? "AI đang viết…" : "AI viết kịch bản"}
-          </Button>
-          <AiBlocked ready={ready} />
+        <div className="mt-2 h-0.5 overflow-hidden rounded-full bg-ground-2" role="meter" aria-label="Thời lượng ước tính" aria-valuemin={0} aria-valuemax={VLOG_MAX_SEC} aria-valuenow={time.seconds} aria-valuetext={`${time.seconds} giây trên ${VLOG_MAX_SEC} giây`}>
+          <div className={cn("h-full rounded-full transition-[width]", time.over ? "bg-amber" : "bg-jade")} style={{ width: `${pct}%` }} />
         </div>
-      </div>
 
-      {/* Thời lượng ước tính theo cảnh so với 60 giây */}
-      <div aria-label={`Thời lượng ước tính ${time.seconds} giây trên ${VLOG_MAX_SEC} giây`}>
-        <div className={cn("relative flex h-2 overflow-hidden rounded-full bg-ground-2", time.over && "outline outline-1 outline-amber")}>
-          {time.cards.map((c, i) => (c.seconds > 0 ? <span key={c.key} className={cn("h-full border-r border-surface last:border-r-0", time.over ? "bg-amber" : SEG[i])} style={{ width: `${(c.seconds / scale) * 100}%` }} /> : null))}
-          {time.over && <span className="absolute inset-y-0 w-0.5 bg-ink" style={{ left: `${(VLOG_MAX_SEC / scale) * 100}%` }} aria-hidden />}
-        </div>
-        <div className="mt-1 flex items-center justify-between text-[11px] text-ink-3">
-          <span className="num">{time.words} chữ</span>
-          <span className={cn("num font-semibold", time.over ? "text-amber" : "text-ink-2")}>
-            {time.seconds}s / {VLOG_MAX_SEC}s{time.over ? " · nên cắt bớt" : ""}
-          </span>
-        </div>
-      </div>
+        {checksOpen && failing.length > 0 && (
+          <div ref={checksBox} id="vlog-checks" className={pop} data-testid="script-checks">
+            <ul className="m-0 grid list-none gap-1.5 p-0">
+              {failing.map((w) => (
+                <li key={w} className="flex items-start gap-1.5 text-ink">
+                  <CircleAlert size={12} className="mt-[3px] shrink-0 text-amber" aria-hidden />
+                  <span>{w}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-2 flex items-center gap-1 border-t border-border pt-1.5 text-[11px] text-ink-3">
+              {CONTENT_SKILL.code} · Kotler · Ogilvy
+              <InfoTip label="Cách kiểm" className="h-4 w-4">
+                <b>{CONTENT_SKILL.label}</b> trước: chuyện thật đã xác nhận, ví dụ thật, bài học áp dụng được, góc nhìn BAOR, không thêm chuyện. Sau đó luật nghề: <b>nói gì</b> theo nguyên lý marketing của Philip Kotler (một nhóm khách, một giá trị, một lời mời đúng chặng 5A), <b>viết thế nào</b> theo phong cách copywriting của David Ogilvy (hook cụ thể, dữ kiện thay tính từ, không nói quá, câu ngắn).
+              </InfoTip>
+            </div>
+          </div>
+        )}
 
-      {/* 4 thẻ cảnh */}
-      <ol className="m-0 grid list-none gap-2 p-0 md:grid-cols-2">
-        {VLOG_CARDS.map((def, i) => {
-          const c = doc.cards.find((x) => x.key === def.key)!;
-          const sec = time.cards[i]?.seconds ?? 0;
-          const ownerHint = c.ownerHints.find((h) => h.includes("[OWNER KỂ"));
-          // Dòng lạ / Căn cứ / ghi chú ngoài 3 trường: luôn thấy và sửa được ở "Ghi chú khác" (không ẩn chữ của OWNER)
-          const extraOpen = !!(c.visual || c.onScreen || c.extra.length);
-          const metaNotes = c.notes.filter(isMetaNote).length;
-          const hint = haveExp ? expHint(def.key, ex.pronouns) : def.key === "story" ? "Chờ chuyện thật của anh — trả lời ở trên" : def.key === "end" ? `Mời ${stageInfo(stage).cta.replace(/^mời /, "")}` : def.hint;
-          return (
-            <li key={def.key} className="rounded-lg border border-border bg-surface p-3" data-scene={def.key}>
-              <div className="flex items-center gap-2">
-                <span className={cn("num inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold", DOT[i])}>{i + 1}</span>
-                <span className="whitespace-nowrap font-semibold text-ink">{def.label}</span>
-                <span className="num hidden whitespace-nowrap text-[11px] text-ink-3 sm:inline">{def.seconds}</span>
-                {ownerHint && (
-                  <span title={ownerHint} className="inline-flex h-5 items-center gap-1 whitespace-nowrap rounded-full bg-amber-soft px-2 text-[11px] font-semibold text-amber">
-                    <UserRound size={11} aria-hidden /> OWNER kể
-                  </span>
-                )}
-                <span className="num ml-auto text-[11px] text-ink-3" title="Ước tính theo tốc độ nói">{sec}s</span>
-                <Button type="submit" size="sm" variant="ghost" icon={RotateCcw} formAction={aiWriteDraft} onClick={pickScene(def.key)} disabled={aiOff} loading={aiScene === def.key} title={`AI viết lại cảnh ${def.label}`} aria-label={`Viết lại cảnh ${def.label}`} className="min-h-0 h-7 px-2 text-[12px]">
-                  <span className="hidden sm:inline">Viết lại</span>
-                </Button>
+        {setupOpen && (
+          <div ref={setupBox} id="vlog-setup" className={cn(pop, "grid gap-2.5")} role="group" aria-label="Thiết lập">
+            <label className="block">
+              <span className="lbl">Cho ai</span>
+              <input
+                value={doc.segment}
+                onChange={(e) => setDoc((d) => ({ ...d, segment: e.target.value }))}
+                placeholder="VD: chủ shop mới bán online"
+                className={cn(field, "mt-1 h-8 text-[13px]")}
+              />
+            </label>
+            <div>
+              <span className="flex h-[13px] items-center gap-0.5">
+                <span className="lbl">Chặng khách</span>
+                <InfoTip label="Chặng khách 5A" className="h-4 w-4">Hành trình khách 5A theo nguyên lý marketing của Philip Kotler: Biết → Thích → Hỏi → Làm → Giới thiệu. Đoạn Kết mời đúng một bước tiếp theo.</InfoTip>
+              </span>
+              <div
+                role="radiogroup"
+                aria-label="Chặng khách"
+                className="mt-1 flex h-8 overflow-hidden rounded-md border border-border-2 text-[12px]"
+                // Phím mũi tên đổi chặng như nhóm radio chuẩn (roving tabindex: chỉ chặng đang chọn nhận Tab)
+                onKeyDown={(e) => {
+                  const step = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+                  if (!step) return;
+                  e.preventDefault();
+                  const i = PATH_STAGES.findIndex((p) => p.key === stage);
+                  const next = PATH_STAGES[(i + step + PATH_STAGES.length) % PATH_STAGES.length];
+                  setDoc((d) => ({ ...d, stage: next.key }));
+                  (e.currentTarget.querySelector(`[data-stage="${next.key}"]`) as HTMLButtonElement | null)?.focus();
+                }}
+              >
+                {PATH_STAGES.map((p) => (
+                  <button
+                    key={p.key}
+                    type="button"
+                    role="radio"
+                    data-stage={p.key}
+                    tabIndex={stage === p.key ? 0 : -1}
+                    aria-checked={stage === p.key}
+                    title={`${p.en}: ${p.cta}`}
+                    onClick={() => setDoc((d) => ({ ...d, stage: p.key }))}
+                    className={cn("flex-auto cursor-pointer whitespace-nowrap border-r border-border-2 px-1.5 last:border-r-0", stage === p.key ? "bg-jade-soft font-semibold text-jade-ink" : "bg-surface text-ink-2 hover:bg-ground-2")}
+                  >
+                    {p.label}
+                  </button>
+                ))}
               </div>
-              <label className="mt-2 block">
-                <span className="sr-only">Lời nói – {def.label}</span>
-                <textarea
-                  value={c.speech}
-                  onChange={(e) => setCard(def.key, { speech: e.target.value })}
-                  rows={def.key === "hook" ? 2 : 4}
-                  placeholder={hint}
-                  aria-label={`Lời nói – ${def.label}`}
-                  className={cn(field, "py-2 leading-relaxed [field-sizing:content]", def.key === "hook" ? "min-h-[3.5rem] text-[15px] font-semibold" : "min-h-[6.5rem] text-[13.5px]")}
-                />
-              </label>
-              <details className="group mt-1" open={extraOpen || undefined}>
-                <summary className="flex cursor-pointer list-none items-center gap-1 text-[11.5px] text-ink-3 hover:text-ink-2 [&::-webkit-details-marker]:hidden">
-                  <ChevronDown size={12} className="transition-transform group-open:rotate-180" aria-hidden />
-                  Hình ảnh · Chữ trên màn hình
-                  {c.notes.length + c.extra.length > 0 && <span> · Ghi chú <span className="num">{c.notes.length + c.extra.length}</span></span>}
-                  {metaNotes > 0 && <span className="ml-1 inline-flex h-4 items-center rounded-full bg-amber-soft px-1.5 text-[10.5px] font-semibold text-amber">ghi chú nội bộ</span>}
-                </summary>
-                <div className="mt-1.5 grid gap-1.5">
-                  <input value={c.visual} onChange={(e) => setCard(def.key, { visual: e.target.value })} placeholder="Hình ảnh: cận mặt, nói thẳng vào camera" aria-label={`Hình ảnh – ${def.label}`} className={cn(field, "h-7 text-[12px]")} />
-                  <input value={c.onScreen} onChange={(e) => setCard(def.key, { onScreen: e.target.value })} placeholder="Chữ trên màn hình (≤ 8 chữ)" aria-label={`Chữ trên màn hình – ${def.label}`} className={cn(field, "h-7 text-[12px]")} />
-                  {c.notes.length > 0 && (
-                    <ul className="m-0 grid list-none gap-1 p-0 text-[12px]" aria-label={`Ý chính – ${def.label}`}>
-                      {c.notes.map((n, k) => (
-                        <li key={k} className="flex items-start gap-1.5 rounded-md bg-ground px-2 py-1 text-ink-2">
-                          {isMetaNote(n) && <span className="mt-px shrink-0 rounded-full bg-amber-soft px-1.5 text-[10.5px] font-semibold text-amber">nội bộ</span>}
-                          <span className="min-w-0 flex-1">{n}</span>
-                          <button type="button" aria-label="Bỏ ý chính này" title="Bỏ" onClick={() => setCard(def.key, { notes: c.notes.filter((_, j) => j !== k) })} className="shrink-0 cursor-pointer rounded text-ink-3 hover:text-ink">
-                            <X size={12} aria-hidden />
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  {c.extra.length > 0 && (
-                    <textarea
-                      value={c.extra.join("\n")}
-                      onChange={(e) => setCard(def.key, { extra: e.target.value.split("\n") })}
-                      aria-label={`Ghi chú khác – ${def.label}`}
-                      placeholder="Ghi chú khác"
-                      className={cn(field, "py-1 text-[12px] [field-sizing:content]")}
-                    />
-                  )}
-                </div>
-              </details>
-            </li>
-          );
-        })}
-      </ol>
+            </div>
+          </div>
+        )}
+      </div>
 
-      {/* Kiểm chất lượng: skill của OWNER (SK-KNW-01) trước; luật nghề Kotler / Ogilvy chỉ hiện mục chưa đạt */}
-      <div className="flex flex-wrap items-center gap-1.5 text-[11.5px]" data-testid="skill-checks">
-        <span className="inline-flex items-center gap-1 text-ink-3">
-          {CONTENT_SKILL.code}
-          <InfoTip label={CONTENT_SKILL.label}>
-            <b>{CONTENT_SKILL.label}</b> — Quality check trước khi dùng: kinh nghiệm thật của BAOR, đã xác nhận, không biến kinh nghiệm thành sự thật chung, có ví dụ thật, bài học áp dụng được, có góc nhìn BAOR, không chung chung, không có phần AI tự thêm.
-          </InfoTip>
-        </span>
-        <span className={cn("num inline-flex h-5 items-center gap-1 rounded-full px-2 font-semibold", skillOk === skillChecks.length ? "bg-jade-soft text-jade-ink" : "bg-ground-2 text-ink-2")} title={skillChecks.filter((k) => k.ok).map((k) => k.label).join(" · ")}>
-          <Check size={11} aria-hidden />
-          {skillOk}/{skillChecks.length}
-        </span>
-        {skillChecks
-          .filter((k) => !k.ok)
-          .map((k) => (
-            <span key={k.key} title={k.why} className="inline-flex h-5 items-center gap-1 rounded-full bg-amber-soft px-2 font-semibold text-amber">
-              <CircleAlert size={11} aria-hidden />
-              {k.label}
+      {/* Một ô duy nhất: chỉ lời nói, các đoạn cách nhau một dòng trống */}
+      <label className="block">
+        <span className="sr-only">Kịch bản — lời nói (đoạn 1 Hook, đoạn 2 Chuyện, đoạn 3 Bài học, đoạn 4 Kết; cách nhau một dòng trống)</span>
+        <textarea
+          value={text}
+          onChange={(e) => {
+            const v = e.target.value;
+            setText(v);
+            // Cả một đoạn dời sang cảnh khác → nhắc ghi chú quay (đang ẩn) có thể lệch lời
+            if (!shifted && hasShotNotes && scenesShifted(doc.cards.map((c) => c.speech), textToSpeeches(v, doc.cards.length))) setShifted(true);
+            setDoc((d) => applyScriptText(d, v));
+          }}
+          placeholder={placeholder}
+          spellCheck={false}
+          data-testid="script-text"
+          className="-mx-2 block min-h-[14rem] w-[calc(100%+1rem)] resize-none rounded-lg border border-transparent bg-transparent px-2 py-1.5 text-[15.5px] leading-7 text-ink outline-none transition-colors [field-sizing:content] placeholder:text-ink-3 hover:bg-ground-2/40 focus:border-border-2 focus:bg-[var(--input-bg)] focus:ring-2 focus:ring-jade/20"
+        />
+      </label>
+
+      {(hint === "show" || tellHint || shifted) && (
+        <div className="flex flex-wrap items-center gap-2 text-[11.5px] text-ink-3">
+          {tellHint && (
+            <button type="button" onClick={openStory} title={tellWhat ? `Anh kể: ${tellWhat}` : undefined} className="inline-flex h-5 cursor-pointer items-center gap-1 rounded-full bg-amber-soft px-2 font-semibold text-amber hover:underline focus-visible:outline-2 focus-visible:outline-jade">
+              <UserRound size={11} aria-hidden /> Còn chỗ anh cần kể
+            </button>
+          )}
+          {shifted && (
+            <span className="inline-flex h-5 items-center gap-1 rounded-full bg-amber-soft px-2 font-semibold text-amber" role="status">
+              <CircleAlert size={11} aria-hidden /> Đoạn đã đổi vị trí — ghi chú quay có thể lệch
             </span>
-          ))}
-      </div>
-      <div className="flex flex-wrap items-center gap-1.5 text-[11.5px]" data-testid="craft-checks">
-        <span className="inline-flex items-center gap-1 text-ink-3">
-          Kotler · Ogilvy
-          <InfoTip label="Luật nghề">
-            Luật nghề phụ, sau skill của anh. <b>Nói gì</b> — theo nguyên lý marketing của Philip Kotler (lấy khách hàng làm trung tâm): một nhóm khách, MỘT giá trị khách nhận được, một lời mời đúng chặng 5A.
-            <br />
-            <b>Viết thế nào</b> — theo phong cách copywriting của David Ogilvy: một ý lớn, hook như tiêu đề (cụ thể), dữ kiện thay tính từ, không nói quá, câu ngắn, lời mời trung thực.
-          </InfoTip>
-        </span>
-        <span className={cn("num inline-flex h-5 items-center gap-1 rounded-full px-2 font-semibold", craftOk === checks.length ? "bg-jade-soft text-jade-ink" : "bg-ground-2 text-ink-2")} title={checks.filter((k) => k.ok).map((k) => k.label).join(" · ")}>
-          <Check size={11} aria-hidden />
-          {craftOk}/{checks.length}
-        </span>
-        {checks
-          .filter((k) => !k.ok)
-          .map((k) => (
-            <span key={k.key} title={k.why} className="inline-flex h-5 items-center gap-1 rounded-full bg-amber-soft px-2 font-semibold text-amber">
-              <CircleAlert size={11} aria-hidden />
-              {k.label}
+          )}
+          {(hint === "show" || shifted) && (
+            <span>
+              {VLOG_CARDS.map((d, i) => `Đoạn ${i + 1}: ${PARA[d.key]}`).join(" · ")}
+              {hint === "show" && (
+                <button type="button" aria-label="Ẩn dòng nhắc" title="Ẩn" onClick={() => vlogHintStore.set("hidden")} className="ml-1 inline-flex cursor-pointer rounded align-[-2px] text-ink-3 hover:text-ink focus-visible:outline-2 focus-visible:outline-jade">
+                  <X size={12} aria-hidden />
+                </button>
+              )}
             </span>
-          ))}
-      </div>
+          )}
+        </div>
+      )}
 
       {(basis.length > 0 || cleanBeats.length > 0) && (
-        <details className="group rounded-md border border-border bg-ground px-3 py-2 text-[12px]">
-          <summary className="flex cursor-pointer list-none items-center gap-1 text-ink-2 [&::-webkit-details-marker]:hidden">
+        <details className="group text-[11.5px]">
+          <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-ink-3 hover:text-ink-2 [&::-webkit-details-marker]:hidden">
             <ChevronDown size={12} className="transition-transform group-open:rotate-180" aria-hidden />
             Căn cứ · <span className="num">{basis.length + cleanBeats.length}</span>
           </summary>
           {cleanBeats.length > 0 && (
-            <ol className="mt-1.5 list-decimal space-y-0.5 pl-5 text-ink">
+            <ol className="mt-1.5 list-decimal space-y-0.5 pl-5 text-[12px] text-ink">
               {cleanBeats.map((b, k) => <li key={k}>{b}</li>)}
             </ol>
           )}
@@ -360,11 +403,6 @@ export function VlogEditor({ initial, fallbackHook, defaultStage, ready, basis, 
           )}
         </details>
       )}
-
-      <div className="flex flex-wrap gap-2">
-        <Button type="submit" onClick={pickScene("save")} disabled={pending} loading={aiScene === "save"}>Lưu nháp</Button>
-        <Button type="submit" variant={filled && !confirmNeeded ? "primary" : "outline"} formAction={submitForReview} onClick={pickScene("submit")} disabled={pending || confirmNeeded} loading={aiScene === "submit"} title={confirmNeeded ? "Cần anh xác nhận chuyện trước khi gửi duyệt" : undefined}>Gửi duyệt</Button>
-      </div>
     </div>
   );
 }
