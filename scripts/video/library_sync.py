@@ -157,14 +157,34 @@ def merge(manifest, new, revoked=None):
     return manifest
 
 
+def trashed_names(data_dir):
+    """Tệp OWNER đã xoá trên web theo loại → đồng bộ kho KHÔNG tải lại / không thêm lại vào danh mục (Khôi phục trên web mới đưa về).
+    Đọc cả thùng "Đã xoá" (da-xoa/index.json) lẫn bia mộ vĩnh viễn (da-xoa/removed.json, còn sau khi thùng dọn hẳn 30 ngày)
+    — src/lib/video/asset-trash.ts."""
+    out = {"music": set(), "sfx": set()}
+    for name in ("index.json", "removed.json"):
+        try:
+            items = json.load(open(os.path.join(data_dir, "video-assets", "da-xoa", name), encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        for t in items if isinstance(items, list) else []:
+            if isinstance(t, dict) and t.get("kind") in out:
+                out[t["kind"]].add(str(t.get("file") or ""))
+    return out
+
+
 def sync(rows, data_dir, dry_run=False, fetch=download, log=print):
     out = {"music": [], "sfx": []}
+    trashed = trashed_names(data_dir)
     report = {"added": 0, "present": 0, "skipped": [], "failed": [], "revoked": []}
     in_catalog = {(r.get("ten_tep") or "").strip() for r in rows}
     revoked = {}
     for r in rows:
         name, status = (r.get("ten_tep") or "").strip(), (r.get("trang_thai") or "").strip()
         kind = "sfx" if (r.get("the_loai") or "").startswith("SFX") or (r.get("duong_dan") or "").startswith("SFX/") else "music"
+        if name in trashed[kind]:
+            report["skipped"].append({"file": name, "reason": "OWNER đã xoá trên web (Đã xoá) → không tải lại"})
+            continue
         if status != OK_STATUS:
             report["skipped"].append({"file": name, "reason": f"trạng thái kho {status or 'trống'} → không dùng"})
             revoked[name] = (status or "trống", f"kho tư liệu ghi {status or 'trống'} → không dùng (thu hồi khi đồng bộ)")
@@ -314,6 +334,25 @@ def self_test():
         m10 = {m["file"]: m for m in json.load(open(mf, encoding="utf-8"))}["buoi-sang.mp3"]
         check(not m10.get("exclude") and m10["catalogStatus"] == OWNER_STATUS and m10.get("ownerApproved") and "buoi-sang.mp3" not in rep10["revoked"],
               f"nhạc OWNER thả vào phải giữ nguyên qua đồng bộ kho: {m10} {rep10['revoked']}")
+        # Xoá trên web (asset-trash.ts): tệp vào da-xoa + gỡ khỏi danh mục → đồng bộ kho không tải lại, không thêm lại
+        cur = [m for m in json.load(open(mf, encoding="utf-8")) if m.get("file") != "upbeat_a_pixabay1.mp3"]
+        json.dump(cur, open(mf, "w", encoding="utf-8"))
+        os.remove(os.path.join(tmp, "video-assets", "music", "upbeat_a_pixabay1.mp3"))
+        os.makedirs(os.path.join(tmp, "video-assets", "da-xoa"), exist_ok=True)
+        json.dump([{"id": "music:x", "kind": "music", "file": "upbeat_a_pixabay1.mp3", "trashed": "music/x-upbeat_a_pixabay1.mp3"}],
+                  open(os.path.join(tmp, "video-assets", "da-xoa", "index.json"), "w", encoding="utf-8"))
+        rep11 = sync(rows, tmp, fetch=fake, log=lambda *_: None)
+        m11 = [m["file"] for m in json.load(open(mf, encoding="utf-8"))]
+        check("upbeat_a_pixabay1.mp3" not in m11 and not os.path.exists(os.path.join(tmp, "video-assets", "music", "upbeat_a_pixabay1.mp3"))
+              and any(x["file"] == "upbeat_a_pixabay1.mp3" and "đã xoá" in x["reason"] for x in rep11["skipped"]), f"bài OWNER đã xoá không được tải lại: {m11}")
+        # Sau 30 ngày thùng dọn hẳn (index.json không còn mục) — bia mộ removed.json vẫn chặn tải lại
+        json.dump([], open(os.path.join(tmp, "video-assets", "da-xoa", "index.json"), "w", encoding="utf-8"))
+        json.dump([{"kind": "music", "file": "upbeat_a_pixabay1.mp3", "at": "2026-10-26T00:00:00Z"}],
+                  open(os.path.join(tmp, "video-assets", "da-xoa", "removed.json"), "w", encoding="utf-8"))
+        rep12 = sync(rows, tmp, fetch=fake, log=lambda *_: None)
+        check(not os.path.exists(os.path.join(tmp, "video-assets", "music", "upbeat_a_pixabay1.mp3"))
+              and "upbeat_a_pixabay1.mp3" not in [m["file"] for m in json.load(open(mf, encoding="utf-8"))]
+              and any(x["file"] == "upbeat_a_pixabay1.mp3" for x in rep12["skipped"]), "bia mộ sau khi dọn thùng vẫn chặn tải lại")
     print(f"library_sync tự kiểm: {'đạt' if not bad else f'{bad} lỗi'}")
     return bad == 0
 

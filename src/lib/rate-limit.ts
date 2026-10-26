@@ -68,6 +68,8 @@ export const RATE_RULES = {
   workerCatalog: { limit: 30, windowMs: 10 * 60_000 },
   /** Máy dựng gửi tệp xem trước (lần đầu vài trăm tệp; sau đó chỉ tệp mới). */
   workerPreview: { limit: 3000, windowMs: 10 * 60_000 },
+  /** Nút "Tải lên" ở trang Tư liệu (mỗi tệp một yêu cầu), theo tài khoản. */
+  assetUpload: { limit: 120, windowMs: 10 * 60_000 },
 } as const satisfies Record<string, RateLimitRule>;
 
 const g = globalThis as unknown as { __baorRateLimiter?: RateLimiter };

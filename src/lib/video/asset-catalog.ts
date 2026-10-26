@@ -3,7 +3,7 @@
 // (src/lib/actions/asset-catalog.ts). Mỗi mục có sẵn trạng thái, nhãn ngắn, đường dẫn xem trước để giao diện chỉ việc hiển thị.
 import path from "node:path";
 import { brollLibrary } from "./jobs";
-import { licenseSource, musicDir, musicLibrary, sfxLibrary } from "./music-library";
+import { licenseSource, musicDir, musicLibrary, musicSourceLabel, sfxLibrary, sfxNewLibrary } from "./music-library";
 import { isBannedMusic, musicApprovalError, musicUnapprovalError, readMusicManifest } from "./music-rules";
 import { isNull } from "drizzle-orm";
 import { getDb, schema } from "@/db";
@@ -92,7 +92,7 @@ function serverEntries(): AssetEntry[] {
       previewUrl: /\.(mp3|wav)$/i.test(t.file) ? `/api/video-assets/music?file=${enc(t.file)}` : null,
       status,
       statusLabel: ASSET_STATUS_LABEL[status],
-      licenseShort: licenseSource(t.license),
+      licenseShort: musicSourceLabel(t.license, raw.catalogStatus),
       license: t.license,
       isDefault: t.isDefault,
       canApprove: !musicApprovalError(raw),
@@ -114,6 +114,29 @@ function serverEntries(): AssetEntry[] {
       previewUrl: /\.(mp3|wav)$/i.test(s.file) ? `/api/video-assets/sfx?file=${enc(s.file)}` : null,
       status: "ready",
       statusLabel: ASSET_STATUS_LABEL.ready,
+      licenseShort: licenseSource(s.license),
+      license: s.license,
+      isDefault: false,
+      canApprove: false,
+      canUnapprove: false,
+    });
+  }
+  // Hiệu ứng OWNER thả vào / tải lên (sfx-owner/moi): nghe thử + xoá được; chưa gán vai trò → bộ dựng chưa dùng (không tự gán)
+  for (const s of sfxNewLibrary()) {
+    out.push({
+      ...base,
+      id: `server:sfx-owner/moi/${s.file}`,
+      type: "sfx",
+      media: "audio",
+      file: `sfx-owner/moi/${s.file}`,
+      title: s.title,
+      author: "",
+      durationSec: s.durationSec,
+      tags: ["moi"],
+      thumbUrl: null,
+      previewUrl: /\.(mp3|wav)$/i.test(s.file) ? `/api/video-assets/sfx?set=moi&file=${enc(s.file)}` : null,
+      status: "ready",
+      statusLabel: "Mới · chưa gán vai",
       licenseShort: licenseSource(s.license),
       license: s.license,
       isDefault: false,
@@ -183,7 +206,7 @@ function ownerMacEntries(includeRemoved: boolean): AssetEntry[] {
       previewUrl: r.previewType === "mp3" ? prev : null,
       status,
       statusLabel: ASSET_STATUS_LABEL[status],
-      licenseShort: license ? licenseSource(license) : "",
+      licenseShort: license ? (raw ? musicSourceLabel(license, raw.catalogStatus) : licenseSource(license)) : "",
       license,
       note: m.reason ?? m.excludeReason ?? "",
       isDefault: !!m.isDefault,

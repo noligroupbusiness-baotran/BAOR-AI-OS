@@ -2,18 +2,21 @@ import { AudioLines, Library, Lock, ShieldAlert, Undo2 } from "lucide-react";
 import { Panel, PanelHeader } from "@/components/ui/card";
 import { Pill, type Tone } from "@/components/ui/pill";
 import { SubmitButton } from "@/components/campaigns/submit-button";
-import { PlayButton } from "@/components/assets/play-button";
-import { LicenseTag, TrackRow } from "@/components/assets/track-row";
+import { InfoTip } from "@/components/ui/info-tip";
+import { LicenseTag } from "@/components/assets/track-row";
+import { AssetTile, TILE_GRID } from "@/components/assets/asset-tile";
 import { FacetList, type Facet } from "@/components/assets/facet-list";
-import { DecisionErrorTag, ORIGIN_LABEL, OriginTag } from "@/components/assets/asset-tags";
-import { setAssetApproval } from "@/lib/actions/asset-catalog";
+import { DecisionErrorTag, ORIGIN_LABEL, OriginTag, PendingTag } from "@/components/assets/asset-tags";
+import { DeleteAssetButton } from "@/components/assets/delete-asset-button";
+import { setAssetApproval, trashAssetAction } from "@/lib/actions/asset-catalog";
 import type { AssetEntry } from "@/lib/video/asset-catalog";
 import { can, currentActor } from "@/lib/permissions";
 
 // Tư liệu › Thư viện nhạc nền — danh mục hợp nhất (listAssetCatalog): bài trên máy chủ + bài "Máy của anh" (máy dựng báo lên).
 // OWNER nghe thử rồi duyệt; bộ dựng chỉ TỰ chọn bài đã duyệt. Bài máy chủ duyệt ngay; bài máy của anh ghi quyết định, máy dựng
 // áp ở lần đồng bộ kế ("Đang chờ máy dựng áp dụng", huỷ được). Chữ "chờ nghe duyệt", "x/y bài đã duyệt", "Duyệt dùng",
-// "Bỏ duyệt", data-track (= tên tệp với bài máy chủ) và thẻ <audio> trong dòng được tests-e2e/music-library.spec.ts chọn — giữ nguyên.
+// "Bỏ duyệt", data-track (= tên tệp với bài máy chủ) và thẻ <audio> trong ô được tests-e2e/music-library.spec.ts chọn — giữ nguyên.
+// 26/10: lưới ô gọn như Hiệu ứng âm thanh (AssetTile, 1/2/3 cột) thay cho danh sách dòng dài.
 const GENRE: Record<string, string> = {
   "lofi-chill": "Lofi",
   upbeat: "Sôi động",
@@ -22,7 +25,7 @@ const GENRE: Record<string, string> = {
   "corporate-truyen-cam-hung": "Doanh nghiệp",
   acoustic: "Acoustic",
 };
-const SFX_KIND: Record<string, string> = { whoosh: "Whoosh", swoosh: "Swoosh", pop: "Pop", click: "Click", "riser-impact": "Riser · impact" };
+const SFX_KIND: Record<string, string> = { moi: "Mới tải lên", whoosh: "Whoosh", swoosh: "Swoosh", pop: "Pop", click: "Click", "riser-impact": "Riser · impact" };
 const BACK = "/assets#music-library";
 
 const mmss = (s: number | null) => (s == null ? "" : s < 10 ? `${s.toFixed(1)} s` : `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`);
@@ -68,6 +71,12 @@ function musicAction(e: AssetEntry, isOwner: boolean) {
   return null;
 }
 
+/** Thùng rác cho tư liệu MÁY CHỦ (OWNER); tư liệu "Máy của anh" nằm trên Mac → không xoá từ web. */
+function removeButton(e: AssetEntry, isOwner: boolean) {
+  if (!isOwner || e.source !== "server") return null;
+  return <DeleteAssetButton action={trashAssetAction} fields={{ id: e.id }} name={e.file.replace(/^(sfx-owner\/moi|music|sfx)\//, "")} />;
+}
+
 export async function MusicLibraryPanel({ entries, ownerSynced }: { entries: AssetEntry[]; ownerSynced: boolean }) {
   // Chỉ OWNER (quyền quản trị) duyệt / bỏ duyệt; vai trò khác chỉ nghe thử (máy chủ vẫn chặn trong setAssetApproval)
   const isOwner = can(await currentActor(), "admin");
@@ -102,34 +111,33 @@ export async function MusicLibraryPanel({ entries, ownerSynced }: { entries: Ass
             countDone
             groupBy="genre"
             always={ownerSynced ? ["source"] : []}
+            listClassName={TILE_GRID}
             facets={[sourceFacet, { key: "genre", label: "Thể loại nhạc", options: genres.map((g) => ({ key: g, label: GENRE[g] ?? (g === "khac" ? "Khác" : g) })) }]}
             items={tracks.map((e) => ({
               id: e.id,
               values: { source: e.source, genre: e.tags[0] || "khac" },
               done: e.status === "approved",
               node: (
-                <TrackRow
-                  t={{
-                    id: trackKey(e),
-                    title: e.title,
-                    author: e.author,
-                    duration: mmss(e.durationSec),
-                    previewUrl: e.previewUrl,
-                    status: musicStatus(e),
-                    licenseShort: e.licenseShort || undefined,
-                    licenseFull: e.license || undefined,
-                    pendingDecision: !!e.pendingDecision,
-                    origin: e.source === "owner_mac" ? "owner_mac" : undefined,
-                    extra: (
-                      <>
-                        {e.isDefault && <Pill tone="jade">mặc định</Pill>}
-                        {/ĐỀ NGHỊ|đề nghị|Credit/i.test(e.license) && <Pill tone="amber">cần ghi công</Pill>}
-                        <DecisionErrorTag error={e.decisionError} />
-                      </>
-                    ),
-                    note: e.note,
-                    action: musicAction(e, isOwner),
-                  }}
+                <AssetTile
+                  stacked
+                  data={{ "data-track": trackKey(e) }}
+                  title={e.title}
+                  previewUrl={e.previewUrl}
+                  duration={mmss(e.durationSec)}
+                  tags={
+                    <>
+                      <Pill tone={musicStatus(e).tone}>{musicStatus(e).label}</Pill>
+                      {e.note && <InfoTip label="Lý do">{e.note}</InfoTip>}
+                      <PendingTag pending={!!e.pendingDecision} />
+                      {e.isDefault && <Pill tone="jade">mặc định</Pill>}
+                      {/ĐỀ NGHỊ|đề nghị|Credit/i.test(e.license) && <Pill tone="amber">cần ghi công</Pill>}
+                      <DecisionErrorTag error={e.decisionError} />
+                      {e.source === "owner_mac" && <OriginTag origin="owner_mac" />}
+                      {e.licenseShort && <LicenseTag short={e.licenseShort} full={[e.author && `Tác giả: ${e.author}`, e.license].filter(Boolean).join(" · ") || undefined} />}
+                    </>
+                  }
+                  action={musicAction(e, isOwner)}
+                  remove={removeButton(e, isOwner)}
                 />
               ),
             }))}
@@ -141,7 +149,8 @@ export async function MusicLibraryPanel({ entries, ownerSynced }: { entries: Ass
 }
 
 // Tư liệu › Hiệu ứng âm thanh: chỉ nghe thử (bộ dựng dùng theo vai trò, mức ≤ −19 dB dưới giọng; whoosh chỉ 16:9).
-export function SfxPanel({ entries, ownerSynced }: { entries: AssetEntry[]; ownerSynced: boolean }) {
+export async function SfxPanel({ entries, ownerSynced }: { entries: AssetEntry[]; ownerSynced: boolean }) {
+  const isOwner = can(await currentActor(), "admin");
   const sfx = entries.filter((e) => e.type === "sfx");
   if (!sfx.length) return null;
   const kinds = [...new Set(sfx.map((e) => e.tags[0] || "khac"))];
@@ -158,19 +167,27 @@ export function SfxPanel({ entries, ownerSynced }: { entries: AssetEntry[]; owne
         <FacetList
           groupBy="kind"
           always={ownerSynced ? ["source"] : []}
-          listClassName="sm:grid-cols-2 lg:grid-cols-3"
+          listClassName={TILE_GRID}
           facets={[sourceFacet, { key: "kind", label: "Loại hiệu ứng", options: kinds.map((k) => ({ key: k, label: SFX_KIND[k] ?? (k === "khac" ? "Khác" : k) })) }]}
           items={sfx.map((e) => ({
             id: e.id,
             values: { source: e.source, kind: e.tags[0] || "khac" },
             node: (
-              <li data-sfx={e.file} className="flex min-w-0 items-center gap-2.5 rounded-lg border border-border bg-ground px-2 py-1.5">
-                {e.previewUrl ? <PlayButton size="sm" src={e.previewUrl} label={e.title} /> : <span className="h-8 w-8 shrink-0" aria-hidden />}
-                <span className="min-w-0 flex-1 truncate font-medium text-ink" title={e.title}>{e.title}</span>
-                {e.durationSec != null && <span className="num shrink-0 text-[11px] text-ink-3">{mmss(e.durationSec)}</span>}
-                {e.source === "owner_mac" && <OriginTag origin="owner_mac" />}
-                {e.licenseShort ? <LicenseTag short={e.licenseShort} full={e.license} /> : <Pill tone="brick">chưa có giấy phép</Pill>}
-              </li>
+              <AssetTile
+                stacked={e.file.startsWith("sfx-owner/moi/")}
+                data={{ "data-sfx": e.file }}
+                title={e.title}
+                previewUrl={e.previewUrl}
+                duration={e.durationSec != null ? mmss(e.durationSec) : undefined}
+                tags={
+                  <>
+                    {e.file.startsWith("sfx-owner/moi/") && <Pill tone="sky">{e.statusLabel}</Pill>}
+                    {e.source === "owner_mac" && <OriginTag origin="owner_mac" />}
+                    {e.licenseShort ? <LicenseTag short={e.licenseShort} full={e.license} /> : <Pill tone="brick">chưa có giấy phép</Pill>}
+                  </>
+                }
+                remove={removeButton(e, isOwner)}
+              />
             ),
           }))}
         />

@@ -60,6 +60,18 @@ function runFfmpeg(src: string, out: string, video: boolean): Promise<boolean> {
   });
 }
 
+const thumbKey = (src: string, st: fs.Stats) => crypto.createHash("sha1").update(`${src}\0${st.size}\0${st.mtimeMs}\0${THUMB_PX}`).digest("hex");
+
+/** Đường dẫn ảnh thu nhỏ ĐÃ có trong cache của tệp `src` (đường dẫn thật), hoặc null — để dọn khi xoá tư liệu. */
+export function cachedThumbPath(src: string): string | null {
+  try {
+    const out = path.join(thumbCacheDir(), `${thumbKey(src, fs.statSync(src))}.jpg`);
+    return fs.existsSync(out) ? out : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Đường dẫn ảnh thu nhỏ (tạo nếu chưa có) của một tệp ĐÃ kiểm nằm trong thư viện (brollFilePath). null nếu ffmpeg không tạo được.
  * `src` phải là đường dẫn thật trả về từ brollFilePath / libraryFile — hàm này không tự kiểm thư mục.
@@ -71,7 +83,7 @@ export async function serverThumb(src: string, video: boolean): Promise<string |
   } catch {
     return null;
   }
-  const key = crypto.createHash("sha1").update(`${src}\0${st.size}\0${st.mtimeMs}\0${THUMB_PX}`).digest("hex");
+  const key = thumbKey(src, st);
   const dir = thumbCacheDir();
   const out = path.join(dir, `${key}.jpg`);
   if (fs.existsSync(out)) return out;

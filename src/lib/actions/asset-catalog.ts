@@ -1,5 +1,6 @@
 "use server";
 
+import fs from "node:fs";
 import { requirePermission } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { done } from "./common";
@@ -50,4 +51,43 @@ export async function setAssetApproval(fd: FormData) {
   }
   if (r.state === "queued") logActivity("human", `${actor.name} ${approve ? "duyệt dùng" : "bỏ duyệt"} nhạc nền máy OWNER “${name}” — chờ máy dựng áp dụng.`, "settings");
   done(back, `${approve ? "Đã duyệt" : "Đã bỏ duyệt"} “${name}” — đang chờ máy dựng áp dụng.`);
+}
+
+const TRASH_BACK: Record<string, string> = { music: "/assets#music-library", sfx: "/assets#sfx", "sfx-new": "/assets#sfx", broll: "/assets#broll" };
+/** Tiền tố AssetEntry.id (tư liệu máy chủ) → loại trong thùng "Đã xoá". */
+const TRASH_ID = /^server:(music|sfx|broll|sfx-owner\/moi)\/(.+)$/;
+
+/**
+ * Xoá (chuyển vào "Đã xoá", khôi phục được 30 ngày) một tư liệu MÁY CHỦ: id = AssetEntry.id "server:<music|sfx|broll|sfx-owner/moi>/<tệp>".
+ * Tư liệu "Máy của anh" không xoá từ đây. Quyền quản trị (OWNER). Tệp phải nằm trong thư mục thư viện và có trong danh mục
+ * (src/lib/video/asset-trash.ts); ảnh thu nhỏ trong cache được dọn theo.
+ */
+export async function trashAssetAction(fd: FormData) {
+  const m = TRASH_ID.exec(str(fd, "id"));
+  const kind = m ? (m[1] === "sfx-owner/moi" ? "sfx-new" : (m[1] as "music" | "sfx" | "broll")) : null;
+  const back = kind ? TRASH_BACK[kind] : "/assets";
+  const actor = await requirePermission("admin", back);
+  if (!m || !kind) return fail(back, "Chỉ xoá được tư liệu trên máy chủ");
+  const file = m[2];
+  const { dataDir, brollFilePath } = await import("@/lib/video/jobs");
+  const { trashAsset } = await import("@/lib/video/asset-trash");
+  const { cachedThumbPath } = await import("@/lib/video/thumb-cache");
+  const real = kind === "broll" ? brollFilePath(file)?.path : undefined;
+  const cached = real ? cachedThumbPath(real) : null; // tính trước khi chuyển tệp (khoá theo đường dẫn + cỡ + mtime)
+  const r = trashAsset(dataDir(), kind, file, actor.email);
+  if (!r.ok) return fail(back, r.error);
+  if (cached) fs.rmSync(cached, { force: true });
+  logActivity("human", `${actor.name} xoá tư liệu ${m[1]}/${file} (chuyển vào Đã xoá, khôi phục được 30 ngày).`, "settings");
+  done(back, `Đã xoá “${r.entry.title}”. Khôi phục được trong mục Đã xoá.`);
+}
+
+/** Khôi phục một mục trong "Đã xoá" về thư viện máy chủ (trả nguyên mục danh mục: giấy phép, từ khoá, trạng thái duyệt). */
+export async function restoreAssetAction(fd: FormData) {
+  const actor = await requirePermission("admin", "/assets#da-xoa");
+  const { dataDir } = await import("@/lib/video/jobs");
+  const { restoreAsset } = await import("@/lib/video/asset-trash");
+  const r = restoreAsset(dataDir(), str(fd, "id"));
+  if (!r.ok) return fail("/assets#da-xoa", r.error);
+  logActivity("human", `${actor.name} khôi phục tư liệu ${r.entry.kind}/${r.file} từ Đã xoá.`, "settings");
+  done(TRASH_BACK[r.entry.kind] ?? "/assets", `Đã khôi phục “${r.entry.title}”.`);
 }

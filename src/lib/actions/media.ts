@@ -73,12 +73,16 @@ export async function uploadMusic(fd: FormData) {
 }
 
 export async function deleteMusic(fd: FormData) {
-  await requirePermission("manager", "/assets#music");
+  const actor = await requirePermission("manager", "/assets#music");
   const id = str(fd, "id");
   const u = getUpload(id);
   if (!u || u.kind !== "music") return fail("/assets#music", "Không tìm thấy bản nhạc");
+  // Bài đang được chọn làm nhạc nền cố định cho bộ dựng → bỏ chọn (bộ dựng quay về tự chọn theo thư viện đã duyệt)
+  const inUse = getSetting("video.musicUploadId") === id;
+  if (inUse) setSetting("video.musicUploadId", "");
   deleteUpload(id);
-  done("/assets#music", "Đã xóa bản nhạc");
+  logActivity("human", `${actor.name} xoá nhạc tải lên “${String(u.meta.title || u.name)}”${inUse ? " (đang là nhạc nền cố định → bộ dựng quay về tự chọn)" : ""}.`, "settings");
+  done("/assets#music", inUse ? "Đã xóa bản nhạc. Bộ dựng quay về tự chọn nhạc đã duyệt." : "Đã xóa bản nhạc");
 }
 
 // ---------- Cảnh báo ra ngoài ----------

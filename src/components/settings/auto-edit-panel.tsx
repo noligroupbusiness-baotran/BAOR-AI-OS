@@ -103,7 +103,7 @@ function topicOf(e: AssetEntry, driveSource: string): string {
   return t || e.tags[0] || "Khác";
 }
 
-export function BrollPanel({ entries, ownerSynced }: { entries: AssetEntry[]; ownerSynced: boolean }) {
+export function BrollPanel({ entries, ownerSynced, isOwner = false }: { entries: AssetEntry[]; ownerSynced: boolean; isOwner?: boolean }) {
   const broll = entries.filter((e) => e.type === "broll" && (e.media === "image" || e.media === "video"));
   const drive = new Map(brollLibrary().map((b) => [`broll/${b.file}`, b.source]));
   const items: GalleryItem[] = broll.map((e) => {
@@ -139,7 +139,7 @@ export function BrollPanel({ entries, ownerSynced }: { entries: AssetEntry[]; ow
         action={<Pill tone={usable === items.length ? "jade" : "amber"}>{usable}/{items.length} dùng được</Pill>}
       />
       <div className="grid gap-3 px-4 py-3">
-        {items.length > 0 ? <BrollGallery items={items} showOrigin={ownerSynced} /> : <p className="m-0 text-[12.5px] text-ink-3">Chưa có ảnh / clip.</p>}
+        {items.length > 0 ? <BrollGallery items={items} showOrigin={ownerSynced} canDelete={isOwner} /> : <p className="m-0 text-[12.5px] text-ink-3">Chưa có ảnh / clip.</p>}
         <MoreOptions label="Thêm clip B-roll">
           <BrollDrop />
         </MoreOptions>

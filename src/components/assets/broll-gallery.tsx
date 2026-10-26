@@ -8,6 +8,8 @@ import { cn } from "@/lib/format";
 import { ChipRow } from "./chip-tabs";
 import { pauseOthers } from "./play-button";
 import { ORIGIN_LABEL, OriginTag, PendingTag, type AssetOrigin } from "./asset-tags";
+import { DeleteAssetButton } from "./delete-asset-button";
+import { trashAssetAction } from "@/lib/actions/asset-catalog";
 
 export interface GalleryItem {
   /** Khoá duy nhất (AssetEntry.id). */
@@ -36,7 +38,8 @@ const useMounted = () => useSyncExternalStore(() => () => {}, () => true, () => 
 // Tư liệu › Ảnh / B-roll (OWNER 26/10/2026: "hiển thị dư thừa mà tôi đâu trực tiếp xem được"): lưới ảnh thu nhỏ thay danh
 // sách đường dẫn. Bấm ô → xem lớn (Esc / bấm nền / ✕ để đóng, ← → chuyển ảnh). Đường dẫn tệp và giấy phép chỉ nằm trong ô xem lớn.
 // Lọc theo nguồn (Máy chủ / Máy của anh — hiện khi máy của anh đã từng đồng bộ hoặc có cả hai nguồn), chủ đề, từ khoá.
-export function BrollGallery({ items, showOrigin = false }: { items: GalleryItem[]; showOrigin?: boolean }) {
+// `canDelete` (OWNER): thùng rác trên ô ảnh máy chủ (rê chuột) và trong ô xem lớn → chuyển vào "Đã xoá" (khôi phục được 30 ngày).
+export function BrollGallery({ items, showOrigin = false, canDelete = false }: { items: GalleryItem[]; showOrigin?: boolean; canDelete?: boolean }) {
   const [origin, setOrigin] = useState<"all" | AssetOrigin>("all");
   const [filter, setFilter] = useState<{ type: "all" | "topic" | "kw"; value: string }>({ type: "all", value: "" });
   const [limit, setLimit] = useState(PAGE);
@@ -94,7 +97,7 @@ export function BrollGallery({ items, showOrigin = false }: { items: GalleryItem
         {shown.slice(0, limit).map((it, i) => {
           const dot = it.pendingDecision ? "Đang chờ máy dựng áp dụng" : it.status;
           return (
-            <li key={it.id} data-broll={it.file}>
+            <li key={it.id} data-broll={it.file} className="group relative">
               <button
                 type="button"
                 onClick={() => setOpen(i)}
@@ -130,6 +133,7 @@ export function BrollGallery({ items, showOrigin = false }: { items: GalleryItem
                   </span>
                 )}
               </button>
+              {canDelete && it.origin === "server" && <DeleteAssetButton overlay action={trashAssetAction} fields={{ id: it.id }} name={it.file.replace(/^broll\//, "")} className="absolute left-1.5 top-1.5" />}
             </li>
           );
         })}
@@ -144,6 +148,7 @@ export function BrollGallery({ items, showOrigin = false }: { items: GalleryItem
       {open !== null && shown[open] && (
         <Lightbox
           item={shown[open]}
+          canDelete={canDelete}
           index={open}
           total={shown.length}
           onClose={() => setOpen(null)}
@@ -161,7 +166,7 @@ export function BrollGallery({ items, showOrigin = false }: { items: GalleryItem
 /** Phím ← → không chuyển ảnh khi đang thao tác trên trình phát / ô nhập (← → là tua video). */
 const keepsArrows = (el: Element | null) => !!el && (el.tagName === "VIDEO" || el.tagName === "AUDIO" || el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT");
 
-function Lightbox({ item, index, total, onClose, onMove, onKeyword }: { item: GalleryItem; index: number; total: number; onClose: () => void; onMove: (d: number) => void; onKeyword: (k: string) => void }) {
+function Lightbox({ item, canDelete, index, total, onClose, onMove, onKeyword }: { item: GalleryItem; canDelete: boolean; index: number; total: number; onClose: () => void; onMove: (d: number) => void; onKeyword: (k: string) => void }) {
   const mounted = useMounted();
   const closeRef = useRef<HTMLButtonElement>(null);
   const onKey = useCallback(
@@ -228,6 +233,7 @@ function Lightbox({ item, index, total, onClose, onMove, onKeyword }: { item: Ga
               </button>
             ))}
             <span className="num ml-auto text-[11px] text-ink-3">{index + 1}/{total}</span>
+            {canDelete && item.origin === "server" && <DeleteAssetButton action={trashAssetAction} fields={{ id: item.id }} name={item.file.replace(/^broll\//, "")} always />}
           </div>
           {item.desc && <p className="m-0 mt-2 text-ink">{item.desc}</p>}
           <details className="mt-2 text-[11.5px]">

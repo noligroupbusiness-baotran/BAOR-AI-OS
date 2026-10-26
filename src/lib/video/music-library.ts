@@ -3,6 +3,7 @@ import path from "node:path";
 import { dataDir } from "./jobs";
 import { libraryFile } from "./safe-path";
 import { approveMusicIn, isBannedMusic, readMusicManifest, unapproveMusicIn } from "./music-rules";
+import { OWNER_STATUS } from "./drop-import";
 
 // Thư viện nhạc nền + SFX của bộ dựng: DATA_DIR/video-assets/{music,sfx}/manifest.json.
 // Nạp từ kho tư liệu bằng scripts/video/library_sync.py (chỉ bài kho ghi ĐỦ-HỒ-SƠ, đúng sha256). "ĐỦ-HỒ-SƠ" là kiểm hồ sơ
@@ -88,6 +89,26 @@ export function sfxLibrary(): SfxItem[] {
     }));
 }
 
+/** Hiệu ứng âm thanh OWNER thả vào / tải lên (drop-import.ts → video-assets/sfx-owner/moi): vào kho, CHƯA gán vai trò trong bộ dựng
+ *  (vai trò nằm ở sfx-owner/manifest.json, OWNER gán tay). Ở đây chỉ để nghe thử / xoá ở trang Tư liệu. */
+export function sfxNewDir(): string {
+  return path.join(dataDir(), "video-assets", "sfx-owner", "moi");
+}
+
+export function sfxNewLibrary(): SfxItem[] {
+  const dir = sfxNewDir();
+  return readManifest(dir)
+    .filter((x) => typeof x.file === "string" && String(x.license ?? "").trim() && fs.existsSync(path.join(dir, String(x.file))))
+    .map((x) => ({ file: String(x.file), title: String(x.title ?? String(x.file).replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ")), kind: "", durationSec: typeof x.durationSec === "number" ? x.durationSec : null, license: String(x.license) }));
+}
+
+/** Tệp hiệu ứng mới để nghe thử — chỉ tệp có trong manifest của sfx-owner/moi, nằm trong đúng thư mục đó. */
+export function sfxNewFilePath(file: string): string | null {
+  const dir = sfxNewDir();
+  if (!readManifest(dir).some((x) => x.file === file)) return null;
+  return libraryFile(dir, file);
+}
+
 export function sfxCount(): number {
   return sfxLibrary().length;
 }
@@ -105,6 +126,15 @@ export function licenseSource(license: string): string {
   if (/^\s*pixabay/i.test(license)) return "Pixabay";
   if (/owner|tự quay|tự khai/i.test(license)) return "OWNER";
   return "Khác";
+}
+
+/** Nhãn nguồn của NHẠC chỉ theo câu giấy phép gốc (bỏ đuôi trạng thái "— chờ OWNER nghe duyệt" / "— OWNER nghe duyệt …" mà app tự
+ *  gắn, không thì bài nào cũng thành "OWNER"). Bài OWNER tự thả vào / tải lên (OWNER-CUNG-CAP) mà giấy phép không thuộc kho quen
+ *  (Mixkit / Pixabay / OWNER) → "Anh tải lên". */
+export function musicSourceLabel(license: string, catalogStatus?: unknown): string {
+  const own = license.replace(/\s*—\s*(chờ OWNER nghe duyệt|OWNER nghe duyệt\b.*)$/u, "").trim();
+  const s = licenseSource(own);
+  return s === "Khác" && catalogStatus === OWNER_STATUS ? "Anh tải lên" : s;
 }
 
 /** Đường dẫn tệp nhạc để nghe thử — chỉ tệp có trong manifest, không bị cấm, nằm trong thư mục thư viện. */

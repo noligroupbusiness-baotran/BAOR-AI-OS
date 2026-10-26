@@ -1,5 +1,6 @@
 // Dọn dữ liệu cũ để CSDL không phình theo thời gian. Chạy mỗi ngày từ bộ chạy nền (scheduler).
-// Chỉ xóa nhật ký kỹ thuật; không đụng tới chiến dịch, khách hàng, đơn hàng, nội dung.
+// Chỉ xóa nhật ký kỹ thuật; không đụng tới chiến dịch, khách hàng, đơn hàng, nội dung. Tư liệu OWNER đã xoá (thùng "Đã xoá")
+// được dọn hẳn sau 30 ngày (src/lib/video/asset-trash.ts).
 import fs from "node:fs";
 import path from "node:path";
 import { eq, lt } from "drizzle-orm";
@@ -7,6 +8,7 @@ import { getDb, schema } from "@/db";
 import { getSetting } from "@/lib/admin";
 import { listUploads, uploadsDir } from "@/lib/uploads";
 import { pruneSecurityEvents } from "@/lib/security";
+import { purgeTrash } from "@/lib/video/asset-trash";
 
 export interface RetentionPolicy {
   /** Nhật ký hoạt động, quyết định router, lịch sử automation, lần đồng bộ (ngày). */
@@ -35,13 +37,15 @@ export interface RetentionResult {
   securityEvents: number;
   orphanFiles: number;
   orphanRows: number;
+  /** Tư liệu trong "Đã xoá" (video-assets/da-xoa) quá 30 ngày — dọn hẳn. */
+  trashFiles: number;
 }
 
 export function pruneOldData(policy: RetentionPolicy = retentionPolicy(), now = Date.now()): RetentionResult {
   const db = getDb();
   const logsBefore = new Date(now - policy.logsDays * 86_400_000).toISOString();
   const auditBefore = new Date(now - policy.auditDays * 86_400_000).toISOString();
-  const r: RetentionResult = { activity: 0, decisions: 0, automationRuns: 0, syncRuns: 0, campaignLogs: 0, aiCalls: 0, securityEvents: 0, orphanFiles: 0, orphanRows: 0 };
+  const r: RetentionResult = { activity: 0, decisions: 0, automationRuns: 0, syncRuns: 0, campaignLogs: 0, aiCalls: 0, securityEvents: 0, orphanFiles: 0, orphanRows: 0, trashFiles: 0 };
   r.activity = db.delete(schema.activity).where(lt(schema.activity.at, logsBefore)).run().changes;
   r.decisions = db.delete(schema.marketingDecisions).where(lt(schema.marketingDecisions.at, logsBefore)).run().changes;
   r.automationRuns = db.delete(schema.automationRuns).where(lt(schema.automationRuns.at, logsBefore)).run().changes;
@@ -50,6 +54,7 @@ export function pruneOldData(policy: RetentionPolicy = retentionPolicy(), now = 
   r.aiCalls = db.delete(schema.aiCalls).where(lt(schema.aiCalls.at, auditBefore)).run().changes;
   r.securityEvents = pruneSecurityEvents(auditBefore);
   Object.assign(r, cleanOrphanUploads());
+  r.trashFiles = purgeTrash(process.env.DATA_DIR ?? path.join(process.cwd(), "data"), now);
   return r;
 }
 

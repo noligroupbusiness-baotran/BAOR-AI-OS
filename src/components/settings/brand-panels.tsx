@@ -5,7 +5,9 @@ import { Pill } from "@/components/ui/pill";
 import { Button } from "@/components/ui/button";
 import { Field, inputClass, textareaClass } from "@/components/ui/field";
 import { SubmitButton } from "@/components/campaigns/submit-button";
-import { TrackRow } from "@/components/assets/track-row";
+import { LicenseTag } from "@/components/assets/track-row";
+import { AssetTile, TILE_GRID } from "@/components/assets/asset-tile";
+import { DeleteAssetButton } from "@/components/assets/delete-asset-button";
 import { saveBrand } from "@/lib/actions/settings";
 import { deleteMusic, removeAppLogo, saveAlerts, saveAppLogo, saveBrandIdentity, testAlert, uploadMusic } from "@/lib/actions/media";
 import { getBrand } from "@/lib/queries";
@@ -115,37 +117,33 @@ export function BrandPanel() {
   );
 }
 
-// Tư liệu › Nhạc anh tải lên: Agent Edit Video chỉ được dùng nhạc trong kho (có ghi bản quyền). Mỗi bài một dòng: ▶ nghe thử,
-// tên, tâm trạng, nhãn nguồn + (i); biểu mẫu thêm bài gập sau nút "Thêm bài".
+// Tư liệu › Nhạc anh tải lên: Agent Edit Video chỉ được dùng nhạc trong kho (có ghi bản quyền). Lưới ô gọn như thư viện nhạc
+// (AssetTile): ▶ nghe thử, tên, tâm trạng, nhãn nguồn + (i); biểu mẫu thêm bài gập sau nút "Thêm bài".
 export function MusicPanel() {
   const tracks = listUploads("music");
   return (
     <Panel id="music">
       <PanelHeader title="Nhạc anh tải lên" sub={tracks.length ? `${tracks.length} bài` : "Nhạc anh có quyền dùng"} icon={Music} tone="pink" info="Bài anh tự có (đã mua / có quyền dùng). Ghi rõ nguồn để tránh bị gỡ video." />
       {tracks.length > 0 && (
-        <ul className="m-0 grid list-none gap-1.5 p-4 pb-0 text-[12.5px]">
+        <ul className={cn("m-0 grid list-none gap-1.5 p-4 pb-0 text-[12.5px]", TILE_GRID)}>
           {tracks.map((t) => {
             const title = String(t.meta.title || t.name);
             const license = t.meta.license ? String(t.meta.license) : "";
             return (
-              <TrackRow
+              <AssetTile
                 key={t.id}
-                dataAttr="data-upload"
-                t={{
-                  id: t.id,
-                  title,
-                  duration: `${Math.round((t.size / 1024 / 1024) * 10) / 10} MB · ${formatDateTime(t.createdAt)}`,
-                  previewUrl: fileUrl(t.id),
-                  licenseShort: license ? "có nguồn" : undefined,
-                  licenseFull: license || undefined,
-                  extra: (
-                    <>
-                      <Pill>{String(t.meta.mood || "chung")}</Pill>
-                      {!license && <Pill tone="amber"><TriangleAlert size={11} aria-hidden />chưa ghi nguồn</Pill>}
-                    </>
-                  ),
-                  action: <form action={deleteMusic}><input type="hidden" name="id" value={t.id} /><Button type="submit" variant="ghost">Xóa</Button></form>,
-                }}
+                stacked
+                data={{ "data-upload": t.id }}
+                title={title}
+                previewUrl={fileUrl(t.id)}
+                duration={`${Math.round((t.size / 1024 / 1024) * 10) / 10} MB`}
+                tags={
+                  <>
+                    <Pill>{String(t.meta.mood || "chung")}</Pill>
+                    {license ? <LicenseTag short="có nguồn" full={`${license} · ${formatDateTime(t.createdAt)}`} /> : <Pill tone="amber"><TriangleAlert size={11} aria-hidden />chưa ghi nguồn</Pill>}
+                  </>
+                }
+                remove={<DeleteAssetButton action={deleteMusic} fields={{ id: t.id }} name={title} note="Xoá hẳn bài này khỏi kho nhạc tải lên (không khôi phục được)." />}
               />
             );
           })}

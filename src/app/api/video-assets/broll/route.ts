@@ -7,6 +7,7 @@ import { logActivity } from "@/lib/activity";
 import { brollDir, brollFilePath } from "@/lib/video/jobs";
 import { mediaResponse } from "@/lib/media-response";
 import { serverThumb } from "@/lib/video/thumb-cache";
+import { sameOrigin } from "@/lib/same-origin";
 
 // Thêm clip vào thư viện B-roll (CP03). Nhận thân yêu cầu dạng luồng (loại khỏi proxy như api/video-sources).
 // Bắt buộc ghi giấy phép và từ khoá: clip không có giấy phép thì không vào thư viện.
@@ -18,9 +19,7 @@ const EXT = new Set([".mp4", ".mov", ".m4v", ".webm"]);
 export async function POST(req: Request) {
   const user = await getCurrentUser();
   if (!user) return Response.json({ ok: false, error: "Chưa đăng nhập" }, { status: 401 });
-  const origin = req.headers.get("origin");
-  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
-  if (!origin || !host || new URL(origin).host !== host) return Response.json({ ok: false, error: "Nguồn yêu cầu không hợp lệ" }, { status: 403 });
+  if (!sameOrigin(req)) return Response.json({ ok: false, error: "Nguồn yêu cầu không hợp lệ" }, { status: 403 });
   const actor = actorFor(user.email);
   if (!can(actor, "manager")) return Response.json({ ok: false, error: "Cần quyền quản lý" }, { status: 403 });
 

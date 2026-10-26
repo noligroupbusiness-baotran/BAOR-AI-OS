@@ -103,7 +103,7 @@ async function tickBody() {
         parts.push(`kho video lỗi: ${e instanceof Error ? e.message : e}`);
       }
       const r = pruneOldData();
-      const total = r.activity + r.decisions + r.automationRuns + r.syncRuns + r.campaignLogs + r.aiCalls + r.orphanFiles + r.orphanRows;
+      const total = r.activity + r.decisions + r.automationRuns + r.syncRuns + r.campaignLogs + r.aiCalls + r.orphanFiles + r.orphanRows + r.trashFiles;
       if (total) parts.push(`dọn ${total} mục cũ`);
     }
   } catch (e) {
