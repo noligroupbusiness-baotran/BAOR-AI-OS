@@ -786,3 +786,44 @@ export const hookIdeas = sqliteTable("hook_ideas", {
   createdBy: text("created_by").notNull().default(""),
   createdAt: text("created_at").notNull(),
 });
+
+// Kho tư liệu trên MÁY CỦA OWNER (nhạc, SFX, ảnh / B-roll, tư liệu thả vào) do máy dựng (scripts/video/render-worker.mts) báo lên
+// bằng khoá máy dựng — chỉ metadata + tệp xem trước nhỏ (ảnh thu nhỏ / đoạn nghe thử ở DATA_DIR/remote-assets/previews/<sha256>.*),
+// KHÔNG có tệp gốc. Mỗi lần đồng bộ thay bản trước: mục không còn → removed_at. src/lib/video/asset-catalog.ts.
+export const remoteAssets = sqliteTable(
+  "remote_assets",
+  {
+    /** Đường dẫn tương đối trong video-assets của máy OWNER, vd "music/a.mp3", "broll/anh/x.jpg" — chỉ là nhãn, không dùng làm đường dẫn ở máy chủ. */
+    id: text("id").primaryKey(),
+    kind: text("kind").notNull(), // music | sfx | broll | drop
+    title: text("title").notNull().default(""),
+    sha256: text("sha256").notNull().default(""),
+    meta: text("meta").notNull().default("{}"), // JSON RemoteAssetMeta (tác giả, thời lượng, giấy phép, trạng thái kho…)
+    previewSha: text("preview_sha"),
+    previewType: text("preview_type"), // jpg | mp3
+    firstSeenAt: text("first_seen_at").notNull(),
+    syncedAt: text("synced_at").notNull(),
+    removedAt: text("removed_at"),
+  },
+  (t) => [index("remote_assets_kind_idx").on(t.kind), index("remote_assets_removed_idx").on(t.removedAt)],
+);
+
+// Quyết định duyệt / bỏ duyệt nhạc của máy OWNER bấm trên web: máy chủ chỉ GHI quyết định (ai, khi nào, đúng sha256 + tên tệp);
+// máy dựng kéo về, áp vào manifest máy OWNER bằng music-rules.approveMusicIn / unapproveMusicIn rồi xác nhận lại.
+export const remoteAssetDecisions = sqliteTable(
+  "remote_asset_decisions",
+  {
+    id: text("id").primaryKey(),
+    assetId: text("asset_id").notNull(),
+    file: text("file").notNull(), // tên tệp trong manifest nhạc của máy OWNER
+    sha256: text("sha256").notNull(),
+    action: text("action").notNull(), // approve | unapprove
+    by: text("by").notNull(),
+    byName: text("by_name").notNull().default(""),
+    at: text("at").notNull(),
+    status: text("status").notNull().default("pending"), // pending | applied | failed | cancelled
+    resultAt: text("result_at"),
+    error: text("error"),
+  },
+  (t) => [index("remote_asset_decisions_status_idx").on(t.status)],
+);

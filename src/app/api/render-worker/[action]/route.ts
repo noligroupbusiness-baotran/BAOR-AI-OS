@@ -5,6 +5,9 @@ import { fileBody } from "@/lib/file-stream";
 import { claimRemoteJob, completeRemoteJob, failRemoteJob, heartbeatRemote, jobDir, remoteFileNameOk, remoteJobFor, remoteMusicPath, remoteSourcePath, renderMode } from "@/lib/video/jobs";
 import { touchWorker, workerAuthorized, workerName } from "@/lib/video/worker-auth";
 import type { JobProgress } from "@/lib/video/job-types";
+import { CATALOG_LIMITS } from "@/lib/video/catalog-wire";
+import { pendingDecisionCount, savePreview, syncRemoteCatalog, validateCatalog } from "@/lib/video/remote-catalog";
+import { RATE_RULES, limitOr429 } from "@/lib/rate-limit";
 
 // API cho máy dựng của OWNER (scripts/video/render-worker.mts). Mọi lời gọi cần "Authorization: Bearer <khoá máy dựng>".
 //   POST claim      → việc kế tiếp (204 khi không có / máy chủ không ở chế độ máy dựng)
@@ -15,6 +18,11 @@ import type { JobProgress } from "@/lib/video/job-types";
 //                     số byte phải khớp Content-Length và mã băm phải khớp, không thì từ chối (không nhận tệp cụt / hỏng)
 //   POST complete   → hoàn tất (máy chủ đưa bản chính vào kho, video → Chờ kiểm tra)
 //   POST fail       → báo lỗi dựng
+//   POST catalog    → danh mục tư liệu MÁY CỦA OWNER (JSON ≤ 8 MB, chỉ metadata + mã băm, KHÔNG tệp gốc) + xác nhận quyết định duyệt
+//                     đã áp; trả tệp xem trước còn thiếu + quyết định duyệt đang chờ (src/lib/video/remote-catalog.ts)
+//   PUT  preview    → một tệp xem trước (?sha=<sha256>&type=jpg|mp3): ảnh thu nhỏ ≤ 160 KB / nghe thử ≤ 400 KB, mã băm + magic bytes
+//                     phải khớp, chỉ tệp danh mục hiện hành trỏ tới
+//   claim trả thêm header x-baor-decisions = số quyết định duyệt đang chờ → máy dựng đồng bộ ngay, không đợi chu kỳ 10 phút
 export const runtime = "nodejs";
 
 const MAX_FILE_BYTES = 8 * 1024 * 1024 * 1024;
@@ -24,6 +32,26 @@ function target(url: URL): { videoId: string; version: number } | null {
   const videoId = url.searchParams.get("videoId") ?? "";
   const version = Number(url.searchParams.get("version"));
   return /^[\w-]{1,64}$/.test(videoId) && Number.isInteger(version) && version >= 1 ? { videoId, version } : null;
+}
+
+/** Đọc thân yêu cầu dạng chữ, tối đa `max` byte (null = quá cỡ; dừng đọc ngay, không giữ cả thân lớn trong bộ nhớ). */
+async function readCapped(req: Request, max: number): Promise<string | null> {
+  if (Number(req.headers.get("content-length") ?? 0) > max) return null;
+  if (!req.body) return "";
+  const reader = req.body.getReader();
+  const parts: Uint8Array[] = [];
+  let n = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    n += value.byteLength;
+    if (n > max) {
+      reader.cancel().catch(() => {});
+      return null;
+    }
+    parts.push(value);
+  }
+  return Buffer.concat(parts).toString("utf8");
 }
 
 async function auth(req: Request): Promise<string | Response> {
@@ -49,9 +77,26 @@ export async function POST(req: Request, { params }: { params: Promise<{ action:
   if (w instanceof Response) return w;
   const { action } = await params;
   if (action === "claim") {
-    if (renderMode() !== "remote") return new Response(null, { status: 204 });
+    const hint = { "x-baor-decisions": String(pendingDecisionCount()) };
+    if (renderMode() !== "remote") return new Response(null, { status: 204, headers: hint });
     const spec = claimRemoteJob(w);
-    return spec ? json(spec) : new Response(null, { status: 204 });
+    return spec ? Response.json(spec, { headers: hint }) : new Response(null, { status: 204, headers: hint });
+  }
+  if (action === "catalog") {
+    const limited = limitOr429("render-worker:catalog", RATE_RULES.workerCatalog);
+    if (limited) return limited;
+    const text = await readCapped(req, CATALOG_LIMITS.maxBodyBytes);
+    if (text === null) return json({ error: `Danh mục vượt ${CATALOG_LIMITS.maxBodyBytes / 1024 / 1024} MB` }, 413);
+    let body: unknown;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      return json({ error: "Danh mục không phải JSON" }, 400);
+    }
+    const v = validateCatalog(body);
+    if (!v.ok) return json({ error: v.error }, 400);
+    const r = syncRemoteCatalog(v.req, w);
+    return r.ok ? json(r) : json({ error: r.error }, 507);
   }
   const t = target(new URL(req.url));
   if (!t) return json({ error: "Thiếu videoId / version" }, 400);
@@ -75,6 +120,12 @@ export async function PUT(req: Request, { params }: { params: Promise<{ action: 
   if (w instanceof Response) return w;
   const { action } = await params;
   const url = new URL(req.url);
+  if (action === "preview") {
+    const limited = limitOr429("render-worker:preview", RATE_RULES.workerPreview);
+    if (limited) return limited;
+    const r = await savePreview(url.searchParams.get("sha") ?? "", url.searchParams.get("type") ?? "", req.body, req.headers.get("content-length"));
+    return r.ok ? json({ ok: true, bytes: r.bytes }) : json({ error: r.error }, r.status);
+  }
   const t = target(url);
   const name = url.searchParams.get("name") ?? "";
   if (action !== "file" || !t || !remoteFileNameOk(name)) return json({ error: "Tên tệp không hợp lệ" }, 400);

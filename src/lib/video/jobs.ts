@@ -19,6 +19,7 @@ import { campaignRepo } from "@/lib/campaigns/repository";
 import { parseShootingScript } from "@/lib/content/shooting-script";
 import { roleAllows, roleById } from "@/lib/ai-roster";
 import { skillChangeNote } from "./skill-freshness";
+import { libraryFile } from "./safe-path";
 import { recordAiCall } from "@/lib/router";
 
 export const SKILL = skillJson as unknown as {
@@ -191,12 +192,35 @@ export interface BrollItem {
   license: string;
   source: string;
   exists: boolean;
+  /** "image" | "video" (manifest ghi sẵn; thiếu thì đoán theo đuôi tệp). */
+  kind: "image" | "video";
+  /** Mô tả nội dung nhìn thấy (nếu có) — chỉ để hiển thị. */
+  desc: string;
 }
+
+const VIDEO_EXT = /\.(mp4|mov|m4v|webm)$/i;
 
 export function brollLibrary(): BrollItem[] {
   const d = brollDir();
-  const items = readJson<{ file?: string; keywords?: string[]; license?: string; source?: string }[]>(path.join(d, "manifest.json")) ?? [];
-  return items.map((it) => ({ file: String(it.file ?? ""), keywords: (it.keywords ?? []).map(String), license: String(it.license ?? ""), source: String(it.source ?? ""), exists: !!it.file && fs.existsSync(path.join(d, String(it.file))) }));
+  const items = readJson<{ file?: string; keywords?: string[]; license?: string; source?: string; kind?: string; desc?: string }[]>(path.join(d, "manifest.json")) ?? [];
+  return items.map((it) => ({
+    file: String(it.file ?? ""),
+    keywords: (it.keywords ?? []).map(String),
+    license: String(it.license ?? ""),
+    source: String(it.source ?? ""),
+    exists: !!it.file && fs.existsSync(path.join(d, String(it.file))),
+    kind: it.kind === "video" || (it.kind !== "image" && VIDEO_EXT.test(String(it.file ?? ""))) ? "video" : "image",
+    desc: String(it.desc ?? ""),
+  }));
+}
+
+const BROLL_TYPES: Record<string, string> = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".mp4": "video/mp4", ".m4v": "video/mp4", ".mov": "video/quicktime", ".webm": "video/webm" };
+
+/** Tệp ảnh / clip trong thư viện B-roll để xem (route GET /api/video-assets/broll): chỉ đuôi ảnh / video, chỉ trong thư mục thư viện. */
+export function brollFilePath(rel: string): { path: string; type: string } | null {
+  const type = BROLL_TYPES[path.extname(rel).toLowerCase()];
+  const p = type ? libraryFile(brollDir(), rel) : null;
+  return p && type ? { path: p, type } : null;
 }
 
 /** Lời thoại của kịch bản đã duyệt: gợi ý cho bộ nhận lời (đúng từ chuyên ngành, tên riêng). */

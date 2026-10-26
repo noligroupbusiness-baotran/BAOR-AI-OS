@@ -64,6 +64,10 @@ export const RATE_RULES = {
   export: { limit: 20, windowMs: 60_000 },
   /** Điểm kiểm tra sức khỏe công khai, theo IP. */
   health: { limit: 60, windowMs: 60_000 },
+  /** Máy dựng gửi danh mục tư liệu máy OWNER (chu kỳ 10 phút + khi đổi / có quyết định duyệt). */
+  workerCatalog: { limit: 30, windowMs: 10 * 60_000 },
+  /** Máy dựng gửi tệp xem trước (lần đầu vài trăm tệp; sau đó chỉ tệp mới). */
+  workerPreview: { limit: 3000, windowMs: 10 * 60_000 },
 } as const satisfies Record<string, RateLimitRule>;
 
 const g = globalThis as unknown as { __baorRateLimiter?: RateLimiter };

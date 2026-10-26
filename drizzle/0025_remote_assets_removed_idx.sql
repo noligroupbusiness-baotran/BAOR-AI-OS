@@ -1,0 +1,1 @@
+CREATE INDEX `remote_assets_removed_idx` ON `remote_assets` (`removed_at`);

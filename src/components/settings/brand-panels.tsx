@@ -1,11 +1,11 @@
-import { BellRing, ImageIcon, MessageSquareQuote, Music, Palette, SwatchBook, TriangleAlert } from "lucide-react";
+import { BellRing, ImageIcon, MessageSquareQuote, Music, Palette, Plus, SwatchBook, TriangleAlert } from "lucide-react";
 import { Panel, PanelHeader } from "@/components/ui/card";
 import { InfoTip } from "@/components/ui/info-tip";
 import { Pill } from "@/components/ui/pill";
 import { Button } from "@/components/ui/button";
-import { EmptyState } from "@/components/ui/empty-state";
 import { Field, inputClass, textareaClass } from "@/components/ui/field";
 import { SubmitButton } from "@/components/campaigns/submit-button";
+import { TrackRow } from "@/components/assets/track-row";
 import { saveBrand } from "@/lib/actions/settings";
 import { deleteMusic, removeAppLogo, saveAlerts, saveAppLogo, saveBrandIdentity, testAlert, uploadMusic } from "@/lib/actions/media";
 import { getBrand } from "@/lib/queries";
@@ -115,39 +115,60 @@ export function BrandPanel() {
   );
 }
 
-// Cài đặt › Kho nhạc: Agent Edit Video chỉ được dùng nhạc trong kho (có ghi bản quyền).
+// Tư liệu › Nhạc anh tải lên: Agent Edit Video chỉ được dùng nhạc trong kho (có ghi bản quyền). Mỗi bài một dòng: ▶ nghe thử,
+// tên, tâm trạng, nhãn nguồn + (i); biểu mẫu thêm bài gập sau nút "Thêm bài".
 export function MusicPanel() {
   const tracks = listUploads("music");
   return (
     <Panel id="music">
-      <PanelHeader title="Nhạc anh tải lên" sub="Nhạc anh có quyền dùng" icon={Music} tone="pink" info="Bài anh tự có (đã mua / có quyền dùng). Ghi rõ nguồn để tránh bị gỡ video." />
-      <form action={uploadMusic} className="grid gap-3 border-b border-border bg-ground px-4 py-3 md:grid-cols-4">
-        <Field label="Tệp nhạc" hint="MP3 / WAV / AAC ≤ 25 MB" className="md:col-span-2"><input type="file" name="file" required accept="audio/*" className="block w-full text-[12.5px] text-ink-2 file:mr-2 file:rounded-full file:border file:border-border-2 file:bg-surface file:px-2.5 file:py-1 file:text-[12px] file:text-ink" /></Field>
-        <Field label="Tên hiển thị"><input name="title" className={inputClass} placeholder="VD: Nhẹ nhàng buổi sáng" /></Field>
-        <Field label="Tâm trạng">
-          <select name="mood" defaultValue="chung" className={inputClass}>
-            {["chung", "nhẹ nhàng", "sôi động", "cảm xúc", "sang trọng", "hài hước"].map((m) => <option key={m} value={m}>{m}</option>)}
-          </select>
-        </Field>
-        <Field label="Nguồn / bản quyền" className="md:col-span-3"><input name="license" className={inputClass} placeholder="VD: Mua trên Epidemic Sound, giấy phép đến 12/2027" /></Field>
-        <div className="flex items-end"><SubmitButton pendingText="Đang tải…">Thêm vào kho</SubmitButton></div>
-      </form>
-      {tracks.length === 0 ? (
-        <EmptyState title="Kho nhạc trống" />
-      ) : (
-        <ul className="m-0 list-none p-0">
-          {tracks.map((t) => (
-            <li key={t.id} className="grid grid-cols-[1fr_auto] items-center gap-3 border-b border-border px-4 py-2.5 last:border-b-0">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2"><span className="font-semibold text-ink">{String(t.meta.title || t.name)}</span><Pill>{String(t.meta.mood || "chung")}</Pill><span className="num text-[11px] text-ink-3">{Math.round(t.size / 1024 / 1024 * 10) / 10} MB</span></div>
-                <div className="text-[12px] text-ink-2">{t.meta.license ? String(t.meta.license) : <span className="text-amber">Chưa ghi nguồn</span>} · {formatDateTime(t.createdAt)}</div>
-                <audio controls preload="none" src={fileUrl(t.id)} className="mt-1.5 h-8 w-full max-w-[420px]" aria-label={`Nghe thử ${String(t.meta.title || t.name)}`} />
-              </div>
-              <form action={deleteMusic}><input type="hidden" name="id" value={t.id} /><Button type="submit" variant="ghost">Xóa</Button></form>
-            </li>
-          ))}
+      <PanelHeader title="Nhạc anh tải lên" sub={tracks.length ? `${tracks.length} bài` : "Nhạc anh có quyền dùng"} icon={Music} tone="pink" info="Bài anh tự có (đã mua / có quyền dùng). Ghi rõ nguồn để tránh bị gỡ video." />
+      {tracks.length > 0 && (
+        <ul className="m-0 grid list-none gap-1.5 p-4 pb-0 text-[12.5px]">
+          {tracks.map((t) => {
+            const title = String(t.meta.title || t.name);
+            const license = t.meta.license ? String(t.meta.license) : "";
+            return (
+              <TrackRow
+                key={t.id}
+                dataAttr="data-upload"
+                t={{
+                  id: t.id,
+                  title,
+                  duration: `${Math.round((t.size / 1024 / 1024) * 10) / 10} MB · ${formatDateTime(t.createdAt)}`,
+                  previewUrl: fileUrl(t.id),
+                  licenseShort: license ? "có nguồn" : undefined,
+                  licenseFull: license || undefined,
+                  extra: (
+                    <>
+                      <Pill>{String(t.meta.mood || "chung")}</Pill>
+                      {!license && <Pill tone="amber"><TriangleAlert size={11} aria-hidden />chưa ghi nguồn</Pill>}
+                    </>
+                  ),
+                  action: <form action={deleteMusic}><input type="hidden" name="id" value={t.id} /><Button type="submit" variant="ghost">Xóa</Button></form>,
+                }}
+              />
+            );
+          })}
         </ul>
       )}
+      <div className="p-4">
+        <details className="group/add">
+          <summary className="btn btn-glass inline-flex h-7 cursor-pointer list-none items-center gap-1.5 px-2.5 text-[12px] font-medium [&::-webkit-details-marker]:hidden">
+            <Plus size={13} aria-hidden />Thêm bài
+          </summary>
+          <form action={uploadMusic} className="mt-3 grid gap-3 rounded-lg border border-border bg-ground p-3 md:grid-cols-4">
+            <Field label="Tệp nhạc" hint="MP3 / WAV / AAC ≤ 25 MB" className="md:col-span-2"><input type="file" name="file" required accept="audio/*" className={fileInputClass} /></Field>
+            <Field label="Tên hiển thị"><input name="title" className={inputClass} placeholder="VD: Nhẹ nhàng buổi sáng" /></Field>
+            <Field label="Tâm trạng">
+              <select name="mood" defaultValue="chung" className={inputClass}>
+                {["chung", "nhẹ nhàng", "sôi động", "cảm xúc", "sang trọng", "hài hước"].map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </Field>
+            <Field label="Nguồn / bản quyền" className="md:col-span-3"><input name="license" className={inputClass} placeholder="VD: Mua trên Epidemic Sound, giấy phép đến 12/2027" /></Field>
+            <div className="flex items-end"><SubmitButton pendingText="Đang tải…">Thêm vào kho</SubmitButton></div>
+          </form>
+        </details>
+      </div>
     </Panel>
   );
 }
