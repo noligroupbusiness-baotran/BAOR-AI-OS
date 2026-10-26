@@ -9,6 +9,8 @@ import { roleAllows, roleForPurpose, roleSettings } from "@/lib/ai-roster";
 import { AI_MODELS, PROVIDERS, ProviderError, WEB_SEARCH_PROVIDERS, clientFor, modelCostVnd, modelInfo, providerConfigured, servedCost, type AiProvider } from "@/lib/ai-providers";
 import { sendAlert } from "@/lib/alerts";
 import { HOOK_COUNT, HOOK_PLATFORMS, hookContext, saveHooks } from "@/lib/content/hooks";
+import { DEFAULT_STAGE, PATH_STAGES, VLOG_CARDS, emptyVlogDoc, parseVlogDraft, serializeVlog, stripMetaHooks, unquoteAi, vlogFormulaRules, type PathStage, type VlogKey } from "@/lib/content/vlog-script";
+import { scriptContext } from "@/lib/content/script-context";
 import { buildCaption, buildPostTitle, captionDraft, captionSkill, postTitle, saveCaptionDraft, savePostTitle, setPostDraftSource } from "@/lib/publishing/caption";
 
 // Bộ não AI của hệ thống. Mô hình theo từng vị trí: src/lib/ai-roster.ts (Cài đặt › Đội AI) — Claude, ChatGPT hoặc Grok
@@ -258,16 +260,18 @@ const HooksSchema = z.object({
       z.object({
         hook: z.string().describe("câu mở đầu 3 giây đầu, nói thành lời, tối đa 12-15 chữ; không kể trải nghiệm / con số riêng của OWNER nếu căn cứ không có"),
         angle: z.string().describe("góc tiếp cận / vì sao người xem dừng lại"),
-        beats: z.array(z.string()).describe("đúng 3 nhịp: (1) câu chuyện / trải nghiệm thật, (2) MỘT bài học cụ thể, (3) kết nhẹ, CTA mềm"),
+        beats: z
+          .array(z.string())
+          .describe("đúng 3 nhịp NỘI DUNG nói với người xem: (1) tình huống / khoảnh khắc của khách, (2) MỘT giá trị khách nhận được, (3) lời mời nhẹ — không phải ghi chú về dữ liệu / độ tin cậy"),
         durationSec: z.number().int().describe("độ dài dự kiến, giây, tối đa 60"),
         platforms: z.array(z.string()).describe(`trong: ${HOOK_PLATFORMS.join(", ")}`),
         basisRefs: z.array(z.string()).describe("ref căn cứ dạng finding:<id> / knowledge:<id> / insight:<id>, chỉ lấy từ ngữ cảnh"),
       }),
     )
-    .describe(`đúng ${HOOK_COUNT} phần tử`),
+    .describe(`tối đa ${HOOK_COUNT} phần tử; căn cứ không đủ cho một góc thì bỏ góc đó (trả ít hơn)`),
 });
 
-export async function generateHooks(topic: string, by: string, researchId?: string): Promise<Result<{ batchId: string; count: number; dropped: number; short: number }>> {
+export async function generateHooks(topic: string, by: string, researchId?: string): Promise<Result<{ batchId: string; count: number; dropped: number; short: number; meta: number }>> {
   const ctx = hookContext(topic, researchId);
   const gated = await gate("ideas", `AI Hook: 10 hook “${topic.slice(0, 60)}”`, (client, model) =>
     client.messages.parse({
@@ -275,23 +279,30 @@ export async function generateHooks(topic: string, by: string, researchId?: stri
       max_tokens: 16000,
       system:
         "Bạn là biên tập viên vlog chia sẻ cho thương hiệu cá nhân Việt Nam. Định dạng: vlog chia sẻ ngôi thứ nhất, dưới 60 giây (~130–160 từ lời thoại), " +
-        "cấu trúc: hook 3 giây → câu chuyện / trải nghiệm thật → MỘT bài học cụ thể → kết nhẹ (CTA mềm như hỏi ý kiến, lưu lại; không chào bán). " +
+        "cấu trúc theo nguyên lý marketing của Philip Kotler (lấy khách hàng làm trung tâm): hook 3 giây = nỗi đau / nhu cầu của MỘT nhóm khách cụ thể, nói bằng lời của khách → " +
+        "câu chuyện = tình huống của khách → MỘT giá trị / bài học khách nhận được (lợi ích, không phải tính năng) → kết nhẹ (CTA mềm như hỏi ý kiến, lưu lại; không chào bán). " +
         "Hook nói thành lời, tự nhiên, cụ thể, tối đa 12–15 chữ; mỗi hook một góc khác nhau. Không viết giọng bán hàng, không khẳng định quá lời. " +
+        "Viết hook theo phong cách copywriting của David Ogilvy: như một tiêu đề — một ý lớn, cụ thể, mang lợi ích hoặc điều mới, nói với một người (\"bạn\"); chi tiết / con số cụ thể (chỉ từ căn cứ) thay cho tính từ; " +
+        "không so sánh nhất, không thổi phồng, không chơi chữ cho vui. " +
+        "Dàn ý là NỘI DUNG sẽ nói với người xem — tuyệt đối không viết ghi chú cho biên tập về chất lượng dữ liệu hay quy trình (\"AI suy luận\", \"chưa kiểm chứng\", \"bản nháp nội bộ\", \"chưa phải căn cứ\", \"nói rõ rằng…\"). " +
+        "Căn cứ không đủ cho một góc thì BỎ hook đó (trả ít hơn " + HOOK_COUNT + "), không viết lời rào đón. " +
         "Ngôi thứ nhất chỉ để dẫn dắt (\"mình hay thấy…\", \"nhiều bạn hỏi mình…\"); trải nghiệm riêng, kết quả, số tiền, con số của OWNER chỉ được dùng khi có trong căn cứ " +
         "(tri thức [OWNER] / Second Brain) — không có thì KHÔNG viết (\"mình từng mất 5 triệu…\" là bịa), dàn ý ghi \"[OWNER KỂ: …]\" để OWNER tự kể. Câu chuyện dựa trên bình luận / insight khách. " +
         "Chỉ dựa trên căn cứ được đưa (phát hiện nghiên cứu, Second Brain, insight); không bịa số liệu, giá, công dụng. " +
         "Tuân chính sách nền tảng: không khẳng định tuyệt đối (100%, cam kết, đảm bảo), không tuyên bố chữa bệnh / giảm cân cụ thể, " +
         "không khẳng định thuộc tính cá nhân người xem (\"bạn đang béo / nợ…\"), không hứa thu nhập. Vlog dưới 1 phút.",
-      messages: [{ role: "user", content: `${brandContext()}\n\n${ctx.text}\n\nChủ đề OWNER đề xuất: ${topic}\n\nViết đúng ${HOOK_COUNT} hook vlog chia sẻ dưới 1 phút, mỗi hook kèm dàn ý 3 nhịp (chuyện · bài học · kết).` }],
+      messages: [{ role: "user", content: `${brandContext()}\n\n${ctx.text}\n\nChủ đề OWNER đề xuất: ${topic}\n\nViết tối đa ${HOOK_COUNT} hook vlog chia sẻ dưới 1 phút (bỏ góc không đủ căn cứ), mỗi hook kèm dàn ý 3 nhịp nội dung (tình huống khách · giá trị · lời mời).` }],
       output_config: { format: zodOutputFormat(HooksSchema) },
     }),
   );
   if (!gated.ok) return gated;
-  const hooks = (gated.res.parsed_output?.hooks ?? []).slice(0, HOOK_COUNT);
-  if (!hooks.length) return { ok: false, error: "AI không trả về hook nào." };
+  // Bộ lọc sau: nhịp dàn ý là ghi chú nội bộ bị bỏ; hook chỉ còn ghi chú bị bỏ cả (src/lib/content/vlog-script.ts › stripMetaHooks)
+  const filtered = stripMetaHooks((gated.res.parsed_output?.hooks ?? []).slice(0, HOOK_COUNT));
+  const hooks = filtered.items;
+  if (!hooks.length) return { ok: false, error: filtered.metaHooks ? "AI chỉ trả về ghi chú nội bộ, không có hook dùng được. Bổ sung insight cho chủ đề rồi thử lại." : "AI không trả về hook nào." };
   const saved = saveHooks(topic, hooks, { source: "ai", by, allowed: ctx.basis, researchId });
   const dropped = hooks.reduce((n, h) => n + h.basisRefs.filter((r) => !ctx.basis.some((b) => `${b.kind}:${b.id}` === r)).length, 0);
-  return { ok: true, batchId: saved.batchId, count: saved.ids.length, dropped, short: Math.max(0, HOOK_COUNT - saved.ids.length) };
+  return { ok: true, batchId: saved.batchId, count: saved.ids.length, dropped, short: Math.max(0, HOOK_COUNT - saved.ids.length), meta: filtered.metaBeats };
 }
 
 // Bài đăng theo skill (Personal Brand System 6.1): AI Viết bài đăng viết TIÊU ĐỀ + caption cho video theo skill viết content trong
@@ -384,18 +395,108 @@ const VLOG_SCRIPT_FORMAT =
   "reel / story / script = kịch bản VLOG CHIA SẺ ngôi thứ nhất, dưới 60 giây (~130–160 từ lời thoại, giọng kể tự nhiên, không giọng bán hàng), đúng 4 cảnh " +
   "1. HOOK (0–3s), 2. CÂU CHUYỆN (3–25s), 3. BÀI HỌC (25–50s), 4. KẾT (50–60s); mỗi cảnh có ba dòng Hình ảnh / Lời thoại / Chữ trên màn hình. " +
   "Câu chuyện dựa trên hook, dàn ý và insight được đưa; không bịa trải nghiệm riêng, số liệu hay kết quả — giữ nguyên mọi dòng 'Gợi ý OWNER: [OWNER KỂ: …]' để OWNER tự kể. " +
-  "Bài học: MỘT điều cụ thể làm được ngay. Kết: nhẹ nhàng, CTA mềm (hỏi người xem đã gặp chưa, lưu lại), không chào bán";
+  "Theo nguyên lý marketing của Philip Kotler (lấy khách hàng làm trung tâm): hook = nỗi đau / nhu cầu của một nhóm khách cụ thể, bằng lời của khách; câu chuyện = tình huống của khách. " +
+  "Bài học: MỘT lợi ích cụ thể khách nhận được, làm được ngay. Kết: nhẹ nhàng, CTA mềm (hỏi người xem đã gặp chưa, lưu lại), không chào bán. Lời thoại không chứa ghi chú nội bộ về dữ liệu. " +
+  "Cách viết theo phong cách copywriting của David Ogilvy: một ý lớn, hook như tiêu đề (cụ thể, có lợi ích), dữ kiện thay tính từ, không so sánh nhất / thổi phồng, câu ngắn đời thường, một lý do để tin, lời mời rõ ràng và trung thực";
 const BRIEF_SCRIPT_FORMAT = "reel / story / script = kịch bản video 15–60 giây theo 5 cảnh Hook (0–3s), Vấn đề, Giải pháp, Bằng chứng, Kêu gọi, mỗi cảnh có ba dòng Hình ảnh / Lời thoại / Chữ trên màn hình";
 
 export function draftPurpose(format: string): "draft" | "caption" {
   return format === "reel" || format === "story" || format === "script" ? "draft" : "caption";
 }
 
+// Kịch bản vlog soạn bằng thẻ cảnh: AI trả CẤU TRÚC (4 cảnh × lời nói / hình ảnh / chữ trên màn hình) → ghi lại đúng dạng chữ cảnh
+// (serializeVlog) nên scriptCheck / bản đọc khi quay / bộ dựng không đổi. Một lần gọi viết đủ 4 cảnh; "Viết lại" một cảnh dùng cùng lần gọi
+// nhưng chỉ nhận cảnh đó.
+const VlogSceneSchema = z.object({
+  speech: z.string().describe("Lời nói của OWNER trong cảnh, nói thẳng vào camera, câu ngắn; không ghi chú nội bộ"),
+  visual: z.string().describe("Hình ảnh: một câu ngắn, quay được bằng điện thoại"),
+  onScreen: z.string().describe("Chữ trên màn hình, tối đa 8 chữ"),
+});
+const VlogDraftSchema = z.object({
+  segment: z.string().describe("STP: MỘT nhóm khách cụ thể video này nói với (ai, đang ở tình huống nào), một câu ngắn"),
+  hook: VlogSceneSchema.describe("HOOK 0–3s: nỗi đau / nhu cầu của nhóm khách, bằng lời của khách, ≤ 12–15 chữ"),
+  story: VlogSceneSchema.describe("CÂU CHUYỆN 3–25s: tình huống / khoảnh khắc sự thật của khách"),
+  value: VlogSceneSchema.describe("GIÁ TRỊ / BÀI HỌC 25–50s: MỘT lợi ích cụ thể khách nhận được, có bằng chứng thì dẫn 'theo …'"),
+  end: VlogSceneSchema.describe("KẾT 50–60s: MỘT lời mời nhẹ đúng chặng khách 5A"),
+});
+
+export interface WriteDraftOptions {
+  /** Chỉ viết lại một cảnh (thẻ "Viết lại"); bỏ trống = cả 4 cảnh. */
+  scene?: VlogKey;
+  /** Chặng khách 5A OWNER chọn trên trình soạn; bỏ trống = theo bản nháp / mục tiêu nội dung. */
+  stage?: PathStage;
+}
+
+async function writeVlogDraft(item: typeof schema.contentItems.$inferSelect, opts: WriteDraftOptions): Promise<Result<{ draft: string }>> {
+  const db = getDb();
+  const doc = parseVlogDraft(item.draft ?? "") ?? emptyVlogDoc(item.title);
+  const ctx = scriptContext(item.id);
+  const stage: PathStage = opts.stage ?? doc.stage ?? ctx.stage ?? DEFAULT_STAGE;
+  const only = opts.scene ? VLOG_CARDS.find((c) => c.key === opts.scene) : undefined;
+  const current = doc.cards
+    .map((c, i) => `${i + 1}. ${VLOG_CARDS[i].label}: ${c.speech.trim() || "(trống)"}${c.ownerHints.length ? ` — gợi ý OWNER: ${c.ownerHints.join(" ")}` : ""}`)
+    .join("\n");
+  const gated = await gate(draftPurpose(item.format), `AI viết kịch bản “${item.title}”${only ? ` · cảnh ${only.label}` : ""}`, (client, model) =>
+    client.messages.parse({
+      model,
+      max_tokens: 8000,
+      system:
+        "Bạn là biên tập viên vlog chia sẻ cho thương hiệu cá nhân Việt Nam, viết kịch bản dưới 60 giây để OWNER nói thẳng vào camera, ngôi thứ nhất, tiếng Việt tự nhiên. " +
+        "Hệ thống chỉ làm marketing (không chào bán, không nêu giá). Chỉ dựa trên căn cứ được đưa; không bịa số liệu, công dụng, kết quả. " +
+        "Tuân chính sách nền tảng: không khẳng định tuyệt đối (100%, cam kết, đảm bảo), không tuyên bố chữa bệnh / giảm cân, không khẳng định thuộc tính cá nhân người xem, không hứa thu nhập.\n\n" +
+        vlogFormulaRules(stage, getBrand().voice || ""),
+      messages: [
+        {
+          role: "user",
+          content:
+            `${brandContext()}\n\nCĂN CỨ CỦA KỊCH BẢN NÀY:\n${ctx.basisText || "(không có căn cứ riêng — chỉ dùng insight ở trên)"}\n\n` +
+            `Chủ đề: ${item.pillar}\nTiêu đề: ${item.title}\nHook đã chọn ở bước 2: ${item.hook || "(chưa có)"}\n` +
+            `Dàn ý: ${ctx.beats.length ? ctx.beats.map((b, i) => `${i + 1}. ${b}`).join(" · ") : "(không có)"}\n` +
+            `Khách mục tiêu hiện ghi: ${doc.segment || "(chưa có)"}\n` +
+            `Chặng khách (5A): ${PATH_STAGES.find((p) => p.key === stage)!.label}\n\n` +
+            `Kịch bản hiện có (lời OWNER đã viết mà hợp công thức thì giữ; không xoá chỗ [OWNER KỂ: …] nếu chưa có chuyện thật trong căn cứ):\n${current}\n\n` +
+            (only
+              ? `Chỉ viết lại cảnh ${only.label}; các cảnh khác trả lại đúng như hiện có.`
+              : "Viết đủ 4 cảnh. Hook đã chọn đạt công thức thì giữ nguyên, chỉ sửa khi dài quá 15 chữ hoặc không nói nỗi đau của khách."),
+        },
+      ],
+      output_config: { format: zodOutputFormat(VlogDraftSchema) },
+    }),
+  );
+  if (!gated.ok) return gated;
+  const out = gated.res.parsed_output;
+  if (!out) return { ok: false, error: "AI trả về không đúng định dạng kịch bản." };
+  const next = {
+    ...doc,
+    segment: only ? doc.segment || out.segment.trim() : out.segment.trim() || doc.segment,
+    stage,
+    cards: doc.cards.map((c) => {
+      if (only && c.key !== only.key) return c;
+      const sc = out[c.key];
+      // AI hay bọc cả câu trong “…” — bỏ cặp ngoặc đó (chữ OWNER thì không đụng)
+      return { ...c, speech: unquoteAi(sc.speech), visual: sc.visual.trim() || c.visual, onScreen: unquoteAi(sc.onScreen) };
+    }),
+  };
+  const draft = serializeVlog(next);
+  // Trong lúc AI viết, nội dung có thể đã được duyệt: chỉ ghi khi vẫn đang viết / chờ duyệt.
+  const now = db.select({ status: schema.contentItems.status }).from(schema.contentItems).where(eq(schema.contentItems.id, item.id)).get();
+  if (now?.status !== "in_progress" && now?.status !== "review") return { ok: false, error: "Nội dung đã đổi trạng thái trong lúc AI viết; không ghi đè." };
+  const hook = next.cards[0].speech.trim() || item.hook;
+  db.update(schema.contentItems).set({ draft, hook }).where(eq(schema.contentItems.id, item.id)).run();
+  return { ok: true, draft };
+}
+
+/** Kịch bản vlog soạn bằng thẻ cảnh (không từ brief, không khung cũ 5 cảnh). */
+export function isCardVlog(format: string, draft: string | null, hasBrief: boolean): boolean {
+  return draftPurpose(format) === "draft" && !hasBrief && parseVlogDraft(draft ?? "") !== null;
+}
+
 /** `briefRules`: khi nội dung sinh từ brief nghiên cứu, AI chỉ được viết lại kịch bản quay hiện có theo các luật này. */
-export async function writeDraft(contentId: string, briefRules?: string, validate?: (draft: string) => string[]): Promise<Result<{ draft: string }>> {
+export async function writeDraft(contentId: string, briefRules?: string, validate?: (draft: string) => string[], opts: WriteDraftOptions = {}): Promise<Result<{ draft: string }>> {
   const db = getDb();
   const item = db.select().from(schema.contentItems).where(eq(schema.contentItems.id, contentId)).get();
   if (!item) return { ok: false, error: "Không tìm thấy nội dung." };
+  if (!briefRules && isCardVlog(item.format, item.draft, false)) return writeVlogDraft(item, opts);
   // Đội AI: kịch bản video (reel / story / script) → AI Kịch bản; bài đăng / caption / bài viết / carousel / ảnh → AI Viết bài đăng
   const gated = await gate(draftPurpose(item.format), `AI viết nháp “${item.title}”`, (client, model) =>
     client.messages.create({

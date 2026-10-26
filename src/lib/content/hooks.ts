@@ -1,10 +1,12 @@
 // Bảng Hook & kịch bản video ngắn (Personal Brand System bước 3). Phần LOGIC ở đây (không gọi AI): ngữ cảnh căn cứ, luật ngôn từ theo
 // nền tảng, lưu / chọn / bỏ hook, hook nhập tay. Phần gọi AI (10 hook mỗi lần) ở src/lib/ai.ts › generateHooks, qua Đội AI "AI Hook & Ý tưởng".
-import { and, desc, eq, isNull, like, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, like, or } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { searchKnowledge } from "@/lib/knowledge";
 import { usableStatus } from "@/lib/knowledge/types";
 import { VLOG_MAX_SEC, vlogTemplate } from "./formats";
+import { cleanBeats } from "./vlog-script";
+import { policyIssues } from "./policy";
 
 export const HOOK_COUNT = 10; // sơ đồ OWNER: "mỗi lần gọi trả về 10 kết quả"
 // OWNER 26/10: "content viết ra nên là dạng vlog chia sẻ dưới 1 phút" (trước: dưới 3 phút). Chỉ áp cho hook / kịch bản MỚI:
@@ -37,34 +39,8 @@ export interface HookRow {
   createdAt: string;
 }
 
-// ---------- Luật ngôn từ theo nền tảng (kiểm theo luật, không AI) ----------
-// Luật nội bộ tóm từ tiêu chuẩn quảng cáo / cộng đồng CÔNG KHAI của Meta (Facebook, Instagram), TikTok, YouTube: khẳng định tuyệt đối,
-// tuyên bố y tế / giảm cân, khẳng định thuộc tính cá nhân người xem (Meta), hứa thu nhập. Là CẢNH BÁO để người sửa — không thay
-// cho việc đọc chính sách gốc; OWNER bổ sung / chốt danh sách trong Second Brain.
-const W = (re: string) => new RegExp(`(?<![\\p{L}\\p{N}])(?:${re})(?![\\p{L}\\p{N}])`, "iu");
-interface PolicyRule {
-  id: string;
-  platforms: readonly string[] | "all";
-  test: RegExp;
-  message: string;
-}
-export const POLICY_RULES: PolicyRule[] = [
-  { id: "absolute", platforms: "all", test: W("100\\s*%|chắc chắn|cam kết|đảm bảo|tuyệt đối|số 1|duy nhất"), message: "khẳng định tuyệt đối (100%, cam kết, đảm bảo, số 1…)" },
-  { id: "medical", platforms: "all", test: W("chữa (?:khỏi|bệnh|dứt)|điều trị|trị (?:dứt|khỏi)|khỏi hẳn|thay thế thuốc"), message: "tuyên bố chữa / điều trị bệnh" },
-  { id: "weight", platforms: "all", test: /(?:giảm|xuống)\s*\d+\s*(?:kg|ký|cân)|\d+\s*(?:kg|ký)\s*trong\s*\d+\s*(?:ngày|tuần)|trước\s*(?:và|-|\/)\s*sau/iu, message: "hứa kết quả giảm cân cụ thể / so sánh trước-sau" },
-  { id: "personal", platforms: ["facebook", "instagram"], test: W("bạn (?:đang |có )?(?:béo|mập|thừa cân|nợ nần|nghèo|bị bệnh|trầm cảm|xấu|già)"), message: "khẳng định thuộc tính cá nhân người xem (Meta cấm: “bạn đang béo / nợ…”)" },
-  { id: "income", platforms: "all", test: /(?:thu nhập|kiếm|lãi|doanh thu)[^.!?\n]{0,30}\d+\s*(?:triệu|tr\b|tỷ|tỉ|k\b|nghìn)|làm giàu nhanh|việc nhẹ lương cao/iu, message: "hứa thu nhập / doanh thu cụ thể (cần ghi “kết quả cá nhân, không cam kết” và nguồn)" },
-];
-
-export function policyIssues(text: string, platforms: readonly string[], durationSec?: number): string[] {
-  const out: string[] = [];
-  for (const r of POLICY_RULES) {
-    const hit = r.platforms === "all" ? platforms : platforms.filter((p) => (r.platforms as readonly string[]).includes(p));
-    if (hit.length && r.test.test(text)) out.push(`${r.message} — ${r.platforms === "all" ? "mọi nền tảng" : hit.join(", ")}`);
-  }
-  if (durationSec !== undefined && durationSec > MAX_SHORT_SEC) out.push(`dài ${durationSec} giây — vượt 1 phút của vlog chia sẻ`);
-  return out;
-}
+// Luật ngôn từ theo nền tảng: src/lib/content/policy.ts (hàm thuần, dùng được cả trong trình duyệt). Giữ tên xuất cũ.
+export { POLICY_RULES, policyIssues } from "./policy";
 
 // ---------- Căn cứ cho AI: phát hiện nghiên cứu đã kiểm (bước 2) + Second Brain + insight đã duyệt ----------
 export interface HookContext {
@@ -175,6 +151,12 @@ export function listHooks(limit = 200, where: { topic?: string; status?: HookRow
   return getDb().select().from(schema.hookIdeas).where(conds.length ? and(...conds) : undefined).orderBy(desc(schema.hookIdeas.createdAt)).limit(limit).all().map(toRow);
 }
 
+/** Hook đã sinh ra các kịch bản này (hook_ideas.content_id). */
+export function hooksByContent(contentIds: string[]): HookRow[] {
+  if (!contentIds.length) return [];
+  return getDb().select().from(schema.hookIdeas).where(inArray(schema.hookIdeas.contentId, contentIds)).all().map(toRow);
+}
+
 /** Số đếm gọn của mọi hook (không giới hạn) để đếm theo chủ đề trên bảng chủ đề. */
 export function hookStubs(): { id: string; researchId: string | null; topic: string; status: string; contentId: string | null }[] {
   return getDb().select({ id: schema.hookIdeas.id, researchId: schema.hookIdeas.researchId, topic: schema.hookIdeas.topic, status: schema.hookIdeas.status, contentId: schema.hookIdeas.contentId }).from(schema.hookIdeas).all();
@@ -188,6 +170,7 @@ export function pickHook(id: string): { ok: true; contentId: string } | { ok: fa
   if (h.status === "rejected") return { ok: false, error: "Hook đã bỏ, không chọn được" };
   if (h.status === "picked" && h.contentId) return { ok: true, contentId: h.contentId };
   const r = toRow(h);
+  const beats = r.source === "ai" ? cleanBeats(r.beats).beats : r.beats;
   const contentId = newId("ct");
   const now = new Date().toISOString();
   db.insert(schema.contentItems)
@@ -199,9 +182,10 @@ export function pickHook(id: string): { ok: true; contentId: string } | { ok: fa
       insightId: r.basis.find((b) => b.kind === "insight")?.id ?? null,
       pillar: r.topic.slice(0, 100),
       hook: r.hook,
-      outline: JSON.stringify(r.beats),
+      // Dàn ý: hook AI tạo trước bộ lọc có thể mang ghi chú nội bộ ("AI suy luận, chưa kiểm chứng"…) → bỏ; dàn ý OWNER nhập tay giữ nguyên
+      outline: JSON.stringify(beats),
       // Điền sẵn khung vlog chia sẻ < 1 phút (hook ở cảnh 1, dàn ý vào từng cảnh) — câu chuyện thật để OWNER kể
-      draft: vlogTemplate({ title: r.hook.slice(0, 120), hook: r.hook, beats: r.beats }),
+      draft: vlogTemplate({ title: r.hook.slice(0, 120), hook: r.hook, beats }),
       assignee: "human",
       createdAt: now,
       source: r.source === "ai" ? "ai" : "manual",

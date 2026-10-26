@@ -104,11 +104,26 @@ export function isLegacyScript(draft: string): boolean {
   return !vlogOnly && ["Vấn đề", "Giải pháp", "Bằng chứng", "Kêu gọi"].some((n) => hasHeading(draft, n));
 }
 
-/** Số từ (âm tiết) trong các dòng "Lời thoại:" và thời lượng nói ước tính ở tốc độ vlog bình thường. */
+/**
+ * Số từ (âm tiết) lời thoại và thời lượng nói ước tính ở tốc độ vlog bình thường. Lời thoại = dòng "Lời thoại:" + các dòng nối tiếp ngay
+ * sau nó (tới dòng trống, dòng nhãn trường "Hình ảnh: / Chữ trên màn hình: / …" hoặc dòng đánh số) — cùng cách bản đọc khi quay (parseShootingScript) ghép lời thoại nhiều dòng.
+ */
 export function speechEstimate(draft: string): { words: number; seconds: number } {
-  const lines = draft.normalize("NFC").split("\n").filter((l) => /^\s*lời thoại\s*:/iu.test(l));
-  const words = lines.reduce((n, l) => n + l.replace(/^\s*lời thoại\s*:/iu, "").replace(/\[[^\]]*\]/g, " ").split(/[^\p{L}\p{N}]+/u).filter(Boolean).length, 0);
+  let words = 0;
+  let inSpeech = false;
+  for (const l of draft.normalize("NFC").split("\n")) {
+    if (/^\s*lời thoại\s*:/iu.test(l)) {
+      inSpeech = true;
+      words += countWords(l.replace(/^\s*lời thoại\s*:/iu, ""));
+    } else if (inSpeech && l.trim() && !/^\s*[-•*]*\s*\**\s*(?:hình ảnh|lời thoại|lời nói|chữ trên màn hình|căn cứ|gợi ý owner|ý chính|nhạc nền|ghi chú dựng|khách mục tiêu|chặng khách)\b[^:]{0,40}:/iu.test(l) && !/^\s*[#*_]*\s*\d+\s*[.)]/u.test(l)) {
+      words += countWords(l);
+    } else inSpeech = false;
+  }
   return { words, seconds: Math.round(words / VLOG_WORDS_PER_SEC) };
+}
+
+function countWords(s: string): number {
+  return s.replace(/\[[^\]]*\]/g, " ").split(/[^\p{L}\p{N}]+/u).filter(Boolean).length;
 }
 
 /** Kiểm tra kịch bản có đủ các cảnh bắt buộc chưa (khớp theo tên cảnh, không phân biệt hoa thường). Tự nhận khung vlog (mặc định) hay khung cũ 5 cảnh. */
