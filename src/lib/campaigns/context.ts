@@ -24,8 +24,11 @@ export function readCampaignContext(params: Params): CampaignContext {
 
 // Gắn ngữ cảnh vào một đường dẫn bất kỳ, giữ nguyên query đã có.
 export function withCampaignContext(path: string, ctx: Partial<CampaignContext>): string {
-  const [base, query = ""] = path.split("?");
-  const [pathname, hash] = base.split("#");
+  // Tách #hash trước (#insights có thể đứng sau ?tab=…): tách ? trước sẽ dán hash vào giá trị tham số cuối
+  const hashAt = path.indexOf("#");
+  const hash = hashAt >= 0 ? path.slice(hashAt + 1) : "";
+  const noHash = hashAt >= 0 ? path.slice(0, hashAt) : path;
+  const [pathname, query = ""] = noHash.split("?");
   const sp = new URLSearchParams(query);
   if (ctx.campaignId) sp.set(CAMPAIGN_PARAM, ctx.campaignId);
   else sp.delete(CAMPAIGN_PARAM);

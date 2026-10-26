@@ -77,17 +77,30 @@ export function sanitizeUploadName(raw: string): string | null {
 /** Một dòng chữ an toàn cho tệp .txt kèm theo (không xuống dòng → không chèn được dòng "Giấy phép:" / "Từ khoá:" giả). */
 export const oneLine = (s: string, max: number) => s.replace(/\s+/g, " ").trim().slice(0, max); // \s gồm cả \r \n \t và U+2028 / U+2029
 
+/** Mô tả ảnh / clip B-roll tối đa (ký tự). */
+export const DESC_MAX = 200;
+/**
+ * Mô tả ảnh / clip an toàn (đi thẳng vào lời nhắc của bộ dựng — scripts/video/ai_plan.py › asset_text): MỘT dòng như oneLine, bỏ ký tự
+ * điều khiển, bỏ ngoặc [] {} <> ` (không giả được nhãn "[CÓ SẢN PHẨM …]" của bộ dựng), tối đa `max`. Rỗng = không có mô tả.
+ */
+export function cleanDesc(raw: unknown, max = DESC_MAX): string {
+  if (typeof raw !== "string") return "";
+  return oneLine(raw.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/[[\]{}<>`]/g, ""), max).trim();
+}
+
 export interface UploadRequest {
   name: string;
   target: string;
   license: string;
   keywords?: string;
+  /** Mô tả ngắn nội dung ảnh / clip (tuỳ chọn, chỉ ngăn Ảnh·clip) — ghi dòng "Mô tả:" của tệp .txt kèm theo. */
+  desc?: string;
   /** Kích thước khai báo (Content-Length) — 0 nếu không rõ; giới hạn thật còn được đếm khi ghi luồng. */
   size?: number;
 }
 
 export type UploadCheck =
-  | { ok: true; name: string; target: DropKind; ext: string; media: UploadMedia; maxBytes: number; license: string; keywords: string[] }
+  | { ok: true; name: string; target: DropKind; ext: string; media: UploadMedia; maxBytes: number; license: string; keywords: string[]; desc: string }
   | { ok: false; status: number; error: string };
 
 /** Kiểm một tệp trước khi nhận (máy chủ gọi lại đủ, không tin trình duyệt). Không đọc nội dung — xem sniffMedia. */
@@ -104,7 +117,8 @@ export function checkUpload(r: UploadRequest): UploadCheck {
   const license = oneLine(r.license ?? "", 300);
   if (!license) return { ok: false, status: 400, error: "Cần ghi nguồn / giấy phép" };
   const keywords = target === "anh-broll" ? oneLine(r.keywords ?? "", 300).split(/[,;]/).map((k) => k.trim()).filter(Boolean).slice(0, 20) : [];
-  return { ok: true, name, target, ext, media, maxBytes, license, keywords };
+  const desc = target === "anh-broll" ? cleanDesc(r.desc ?? "") : "";
+  return { ok: true, name, target, ext, media, maxBytes, license, keywords, desc };
 }
 
 const at = (b: Uint8Array, off: number, s: string) => s.split("").every((c, i) => b[off + i] === c.charCodeAt(0));

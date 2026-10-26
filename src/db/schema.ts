@@ -48,6 +48,12 @@ export const scheduledPosts = sqliteTable("scheduled_posts", {
   /** Page ID Facebook đích của bài: lưu lúc lên lịch, cập nhật lúc gửi lệnh đăng. Chống trùng theo trang dùng giá trị này
    *  (OWNER sửa Page ID kênh sau khi đã đăng thì bài cũ vẫn tính đúng trang cũ). null = kênh không phải Facebook / chưa có Page ID. */
   targetPageId: text("target_page_id"),
+  /** Quyền gửi (claimForSend): tiến trình đang gửi lệnh đăng ("<máy>:<pid>:<ngẫu nhiên>") + nhịp sống cuối. Bài "publishing" có
+   *  claimed_at quá hạn (tiến trình chết giữa lúc gửi) mới bị coi là kẹt — không dựa vào bộ nhớ riêng từng tiến trình. */
+  claimedBy: text("claimed_by"),
+  claimedAt: text("claimed_at"),
+  /** OWNER "Gỡ khoá kênh" (bài đã lên trang nhập nhầm giữ dedupe_key mãi): lý do + người + giờ. Bài không bị xoá. */
+  lockReleasedNote: text("lock_released_note"),
 });
 
 export const adCampaigns = sqliteTable("ad_campaigns", {

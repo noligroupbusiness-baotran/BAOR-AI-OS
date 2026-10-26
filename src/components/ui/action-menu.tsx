@@ -1,5 +1,6 @@
 import { MoreHorizontal } from "lucide-react";
 import type { ReactNode } from "react";
+import { buttonClass } from "./button";
 
 // Nút "⋯" gom thao tác phụ (OWNER 25/10/2026: "giao diện đơn giản, chuyên nghiệp, ít chữ, tương tác bằng nút bấm") — mỗi thẻ chỉ để
 // lộ MỘT nút chính. Hộp xác nhận (Dialog) render qua portal nên mở được từ trong menu.
@@ -10,7 +11,7 @@ export function ActionMenu({ children, label = "Thao tác khác", align = "right
       <summary
         aria-label={label}
         title={label}
-        className="grid h-8 w-8 cursor-pointer list-none place-items-center rounded-full border border-border-2 text-ink-2 hover:border-ink-3 hover:text-ink focus-visible:outline-2 focus-visible:outline-jade [&::-webkit-details-marker]:hidden"
+        className={buttonClass("outline", "icon", "list-none text-ink-2 hover:text-ink group-open/menu:text-ink [&::-webkit-details-marker]:hidden")}
       >
         <MoreHorizontal size={16} aria-hidden />
       </summary>

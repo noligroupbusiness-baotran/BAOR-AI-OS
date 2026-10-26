@@ -101,7 +101,7 @@ OWNER 25/10/2026 (tối): edit video LẠI ("edit lại đi") — lệnh "ngưng
       tình hình chung (chi tiêu AI, kết nối, nơi dựng, sao lưu, lỗi) + 8 bước + việc cần làm.
    M. XONG (commit kế) — Đội AI nhiều hãng: Claude / ChatGPT (OpenAI) / Grok (xAI) cho từng vị trí (Responses API, giá chính thức đọc 25/10/2026
       trong src/lib/ai-providers.ts — hãng đổi giá thì sửa ở đó); chi phí ghi theo giá từng mô hình × tỷ giá (Cài đặt › Đội AI); kiểm khoá thật
-      (GET /v1/models). Nghiên cứu bước tìm nguồn (web_search) luôn chạy Claude. CHƯA gọi thật ChatGPT / Grok (chưa có khoá).
+      (GET /v1/models). Nghiên cứu bước tìm nguồn (web_search) chạy theo hãng của AI Nghiên cứu (ChatGPT dùng công cụ web_search của Responses API từ 26/10; Grok vẫn qua Claude). CHƯA gọi thật ChatGPT / Grok (chưa có khoá).
    N. XONG (commit kế) — Hành trình video 4→5→6 (OWNER 25/10 "đơn giản, chuyên nghiệp, ít chữ, nút bấm"): lưới thẻ + xem nhanh, đổi tên
       hiện rõ, MỘT nút "Duyệt" cho người có quyền (approve_direct, src/lib/videos/transition.ts), duyệt → Kho video (lưới, lên lịch tại chỗ),
       AI viết tiêu đề + nội dung khi video vào Kho (after(); lỗi → bản theo luật, không ghi đè bản OWNER), gợi ý giờ đăng theo giờ vàng (VN),
@@ -151,22 +151,22 @@ OWNER 25/10/2026 (tối): edit video LẠI ("edit lại đi") — lệnh "ngưng
    bộ lập kế hoạch AI nay tự đặt FS-06 (khung toàn màn hình, người nói thu vào khung viền vàng) kèm sơ đồ / trích dẫn và vệt sáng trước
    khung chương (trước đây chỉ kế hoạch làm tay có); cụm mô hình viết diễn giải → hỏi lại chép nguyên văn; "X thì Y" trích vế chính;
    zoom lấp trống theo khoảng KHÔNG zoom (≥ 6 s từ lúc zoom trước bắt đầu). Bản 9: FS-06 + trích dẫn + 3 zoom + nhạc.
-   CÒN: K1–K10 (CHƯA CHỐT — chờ OWNER #134a); giấy phép SFX OWNER CHƯA XÁC MINH;
-   mô tả ảnh mới tải lên chưa có (ảnh mới rơi về tên tệp, có đánh dấu).
+   CÒN: K1–K10 (CHƯA CHỐT — chờ OWNER #134a); giấy phép SFX OWNER CHƯA XÁC MINH.
+   XONG 26/10 (feature/backlog-1027): ô "Mô tả" khi tải ảnh, sửa mô tả trong lightbox, lọc "Chưa có mô tả", nút "Tự mô tả bằng AI"
+   (Haiku, chỉ khi OWNER bấm); xoá tư liệu máy OWNER từ web (lệnh "trash" → máy dựng kiểm sha / thư mục / manifest rồi chuyển vào da-xoa,
+   ≤ 20 lệnh / lượt); ngang.face_track đọc theo luồng (10 phút 1650 → 176 MB); thẻ ảnh 9:16 / M1–M6 / M3 vẽ gốc 4K (1080 giữ nguyên
+   từng khung); đăng bài: claimed_by / claimed_at (migration 0026) + nhịp sống, bài chưa lưu trang đích kiểm lúc gửi, nút "Gỡ khoá kênh".
 3. Nợ đã ghi (không chặn):
-   - Chống trùng nhiều tiến trình: recoverStuckPublishing dựa vào inFlight riêng từng tiến trình (báo động giả, không đăng trùng; muốn
-     hết cần cột claimed_by / claimed_at + migration); bước kiểm lúc lên lịch chưa nguyên tử giữa nhiều tiến trình (lớp chặn cuối là
-     giành quyền lúc gửi BEGIN IMMEDIATE).
-   - Bài có targetPageId trống (trước migration 0023 / kênh chưa nhập Page ID) không được kiểm đổi trang lúc gửi.
-   - Bài đã có mã nền tảng trên trang nhập nhầm giữ khoá kênh vĩnh viễn (chưa có nút gỡ).
+   - Đăng bài (sau 26/10): tiến trình chết giữa lúc trả bài chưa gửi về "chờ đăng" → sau 10 phút thành lỗi mơ hồ (thiên an toàn);
+     dấu hiệu "kênh từng ở trang khác" là heuristic (bài cũ chưa lưu trang có thể phải bấm Đăng lại).
    - script_align: tên ở mép lời nói / ngữ cảnh < 3 từ một phía không sửa (đánh đổi chủ ý); đổi tên chỉ khác dấu trong khối khớp dài.
    - Phủ định là heuristic theo từ khoá: văn nói có dấu câu thật từ Whisper có thể cho ranh giới vế khác ca thử; "đâu" ở câu sau
      do ngắt hơi có thể lọt.
-   - 4K: thẻ ảnh tĩnh 9:16 (image_clip), thẻ / M3 16:9 (ngang.py) vẫn là 1080 phóng ×2. Số punch-in zoom (0,4 / 0,8–1,4 / 0,5 s,
+   - 4K: ảnh nguồn nhỏ hơn thẻ 4K vẫn phóng trong thẻ; dựng 4K 16:9 RAM đỉnh +15 %. Số punch-in zoom (0,4 / 0,8–1,4 / 0,5 s,
      ×1,04–1,05) AI chọn — CHỜ OWNER xem.
    - deleteVideo khi bộ dựng tại chỗ đang chạy: sự kiện close có thể tạo lại thư mục job mồ côi (có từ trước).
-   - 16:9: ngang.face_track giải mã cả nguồn vào một mảng (~0,5 MB / khung ở 2 khung/s) → RAM tăng theo thời lượng (10 phút ≈ 0,6 GB);
-     nên dò mặt theo từng khung. (Bộ đệm phụ đề đã sửa 26/10: 4K 9:16 120 s 1559 → 184 MB, khung hình không đổi.)
+   - Đội AI (26/10): mặc định ChatGPT; "AI Nội dung" gộp Hook & Ý tưởng + Kịch bản (sổ cũ role "script" tính vào đây); AI Quảng cáo ẩn
+     tới khi nối Meta; trần nhập bằng $ (lưu ₫, chặn > 100 triệu ₫). Web search ChatGPT chưa chạy với khoá thật (theo tài liệu OpenAI).
    - Máy dựng: các P3 phản biện 9042beb; nghiên cứu: các P3 phản biện 49c69ba.
    - Đồng bộ danh mục máy OWNER: bộ đếm dung lượng xem trước theo từng tiến trình (nhiều tiến trình → trần N×512 MB); PUT treo giữ chỗ
      tới requestTimeout của Node; máy chủ bị chiếm có thể duyệt bài hợp lệ đang chờ (không duyệt được bài cấm — máy Mac kiểm lại);

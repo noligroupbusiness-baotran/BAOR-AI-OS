@@ -3,7 +3,11 @@
 // trước nhỏ do ffmpeg tạo tại máy (ảnh JPEG ≤ 480 px ~60 KB, nghe thử MP3 ≤ 30 s 64 kbps). KHÔNG BAO GIỜ gửi tệp gốc.
 // Quyết định duyệt nhạc OWNER bấm trên web: kéo về, kiểm đúng tệp (tên + sha256), áp bằng music-rules.approveMusicIn /
 // unapproveMusicIn (cùng hàm máy chủ dùng), rồi xác nhận trong lần gửi danh mục kế tiếp.
-// Máy dựng chỉ GHI: DATA_DIR/preview-cache/ (tệp xem trước + bộ nhớ mã băm) và music/manifest.json (qua approveMusicIn).
+// Lệnh XOÁ OWNER bấm trên web (quyết định "trash"): kiểm lại tại máy (loại hợp lệ, tên an toàn, có trong manifest, tệp trong thư mục
+// thư viện, đúng sha256) rồi chuyển tệp vào DATA_DIR/video-assets/da-xoa bằng asset-trash.trashAsset (cùng hàm nút Xoá của app) —
+// gỡ khỏi manifest, ghi bia mộ removed.json (library_sync.py không tải lại), khôi phục được 30 ngày ở Tư liệu › Đã xoá của app trên Mac.
+// Máy dựng chỉ GHI: DATA_DIR/preview-cache/ (tệp xem trước + bộ nhớ mã băm), music/manifest.json (qua approveMusicIn) và — khi có lệnh
+// xoá — manifest của đúng thư viện + DATA_DIR/video-assets/da-xoa (qua trashAsset).
 import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
@@ -11,7 +15,8 @@ import { execFile } from "node:child_process";
 import { lastDropReport } from "../../src/lib/video/drop-import.js";
 import { approveMusicIn, isBannedMusic, readMusicManifest, unapproveMusicIn } from "../../src/lib/video/music-rules.js";
 import { libraryFile } from "../../src/lib/video/safe-path.js";
-import { CATALOG_LIMITS, PREVIEW_TARGET, PREVIEW_TYPES, isSha256, safeCatalogPath, stripAbsPaths, type CatalogAck, type CatalogItemIn, type CatalogKind, type CatalogSyncResponse, type DecisionOut, type PreviewType } from "../../src/lib/video/catalog-wire.js";
+import { TRASH_KINDS, TRASH_LIB_DIR, listTrash, trashAsset, type TrashKind } from "../../src/lib/video/asset-trash.js";
+import { CATALOG_LIMITS, PREVIEW_TARGET, PREVIEW_TYPES, isSha256, safeCatalogPath, stripAbsPaths, trashTargetOf, type CatalogAck, type CatalogItemIn, type CatalogKind, type CatalogSyncResponse, type DecisionOut, type PreviewType } from "../../src/lib/video/catalog-wire.js";
 
 type Raw = Record<string, unknown>;
 const PREVIEW_VERSION = "p1"; // đổi cách tạo xem trước → tăng số để tạo lại
@@ -291,14 +296,29 @@ export function fitCatalogBody(items: CatalogItemIn[]): { items: CatalogItemIn[]
 
 // ---------- Áp quyết định duyệt từ web ----------
 
+/** Số lệnh XOÁ tối đa máy dựng áp trong một vòng đồng bộ (phản biện P2): lệnh dư không xác nhận → vẫn chờ, áp ở vòng / lần sau. */
+export const MAX_TRASH_PER_ROUND = 20;
+
 /** Áp từng quyết định vào music/manifest.json của máy này — chỉ khi đúng tệp (tên + sha256). Đã ở đúng trạng thái → coi là đã áp
- *  (xác nhận lần trước bị mất trên đường truyền không làm hỏng quyết định). */
-export async function applyDecisions(dataDir: string, decisions: DecisionOut[], cache = new HashCache(dataDir)): Promise<CatalogAck[]> {
+ *  (xác nhận lần trước bị mất trên đường truyền không làm hỏng quyết định). Lệnh xoá: tối đa MAX_TRASH_PER_ROUND mỗi lần gọi. */
+export async function applyDecisions(dataDir: string, decisions: DecisionOut[], cache = new HashCache(dataDir), opts: { log?: (...x: unknown[]) => void; maxTrash?: number } = {}): Promise<CatalogAck[]> {
   const dir = path.join(dataDir, "video-assets", "music");
   const acks: CatalogAck[] = [];
+  const maxTrash = opts.maxTrash ?? MAX_TRASH_PER_ROUND;
+  let trashed = 0;
+  let deferred = 0;
   for (const d of decisions) {
     const id = typeof d.id === "string" ? d.id.slice(0, 80) : "";
     if (!id) continue;
+    if (d.action === "trash") {
+      if (trashed >= maxTrash) {
+        deferred++;
+        continue;
+      }
+      trashed++;
+      acks.push(await applyTrash(dataDir, d, id, cache));
+      continue;
+    }
     if (!isSha256(d.sha256) || typeof d.file !== "string" || (d.action !== "approve" && d.action !== "unapprove")) {
       acks.push({ id, ok: false, error: "Quyết định không hợp lệ" });
       continue;
@@ -320,8 +340,29 @@ export async function applyDecisions(dataDir: string, decisions: DecisionOut[], 
     } else r = it.ownerApproved ? unapproveMusicIn(dir, d.file) : { ok: true };
     acks.push(r.ok ? { id, ok: true } : { id, ok: false, error: r.error });
   }
+  if (deferred) opts.log?.(`Cảnh báo: ${deferred} lệnh xoá vượt mức ${maxTrash} / vòng — để lại, áp ở vòng đồng bộ sau`);
   cache.save();
   return acks;
+}
+
+/** Lệnh xoá từ web: chỉ khi mọi kiểm tại máy đều qua; tệp đã nằm trong Đã xoá (xác nhận lần trước mất) → coi là đã áp. */
+async function applyTrash(dataDir: string, d: DecisionOut, id: string, cache: HashCache): Promise<CatalogAck> {
+  const kind = d.kind as TrashKind;
+  if (!isSha256(d.sha256) || typeof d.file !== "string" || !TRASH_KINDS.includes(kind)) return { id, ok: false, error: "Lệnh xoá không hợp lệ" };
+  // Tên tệp phải là đường dẫn danh mục an toàn của ĐÚNG loại đó (không "..", không tuyệt đối, không thành phần ẩn)
+  const t = trashTargetOf(`${TRASH_LIB_DIR[kind]}/${d.file}`);
+  if (!t || t.kind !== kind || t.file !== d.file) return { id, ok: false, error: "Tên tệp không hợp lệ — không xoá" };
+  const dir = path.join(dataDir, "video-assets", TRASH_LIB_DIR[kind]);
+  const it = readMusicManifest(dir).find((x) => x.file === d.file);
+  if (!it) {
+    if (listTrash(dataDir).some((x) => x.kind === kind && x.file === d.file)) return { id, ok: true };
+    return { id, ok: false, error: "Không còn tệp này trên máy OWNER" };
+  }
+  const abs = libraryFile(dir, d.file);
+  if (!abs) return { id, ok: false, error: "Tệp không nằm trong thư mục thư viện — không xoá" };
+  if ((await cache.sha(abs)) !== d.sha256) return { id, ok: false, error: "Tệp trên máy OWNER đã đổi (sha256 khác) — không xoá" };
+  const r = trashAsset(dataDir, kind, d.file, `web: ${String(d.by ?? "OWNER").slice(0, 120)}`);
+  return r.ok ? { id, ok: true } : { id, ok: false, error: r.error };
 }
 
 // ---------- Đồng bộ với máy chủ ----------
@@ -360,7 +401,7 @@ export async function syncCatalog(ctx: SyncCtx): Promise<SyncResult> {
       }
     }
     if (!res.decisions?.length) return { ok: true, items: cat.items.length, previewsSent, applied, failed, rounds: round };
-    acks = await applyDecisions(ctx.dataDir, res.decisions);
+    acks = await applyDecisions(ctx.dataDir, res.decisions, undefined, { log: ctx.log });
     applied += acks.filter((a) => a.ok).length;
     failed += acks.filter((a) => !a.ok).length;
   }

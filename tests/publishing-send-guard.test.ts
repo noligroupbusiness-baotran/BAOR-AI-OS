@@ -94,23 +94,37 @@ function cloneAs(srcId: string, id: string, patch: Partial<typeof db.schema.sche
   db.getDb().insert(S().scheduledPosts).values({ ...src, id, dedupeKey: null, ...patch }).run();
 }
 
-/** "Tiến trình B": mở CÙNG tệp CSDL, BEGIN IMMEDIATE, giành bài `id` ("publishing"), giữ khoá `holdMs` rồi COMMIT. */
-function otherProcessClaims(id: string, holdMs: number): Promise<{ done: Promise<void> }> {
+/** "Tiến trình B" thật (node con, CÙNG tệp CSDL): BEGIN IMMEDIATE, chạy `sql` (tham số `id`), báo "locked", giữ khoá `holdMs` rồi
+ *  COMMIT. `beatMs` > 0: sau commit còn sống `lifeMs` và đập nhịp claimed_at như holdClaim (rồi "chết" không nhả quyền). */
+function otherProcess(sql: string, id: string, holdMs: number, opt: { beatMs?: number; lifeMs?: number } = {}): Promise<{ done: Promise<void> }> {
   const code = `
     const Database = require("better-sqlite3");
     const db = new Database(process.env.T_DB);
+    const now = () => new Date().toISOString();
     db.exec("BEGIN IMMEDIATE");
-    db.prepare("UPDATE scheduled_posts SET status = 'publishing', attempts = attempts + 1 WHERE id = ? AND status = 'scheduled'").run(process.env.T_ID);
+    db.prepare(process.env.T_SQL).run({ id: process.env.T_ID, now: now(), owner: "proc-B" });
     process.stdout.write("locked\\n");
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(process.env.T_HOLD));
     db.exec("COMMIT");
+    const beat = Number(process.env.T_BEAT), end = Date.now() + Number(process.env.T_LIFE);
+    while (beat > 0 && Date.now() < end) {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, beat);
+      db.prepare("UPDATE scheduled_posts SET claimed_at = ? WHERE id = ? AND status = 'publishing' AND claimed_by = 'proc-B'").run(now(), process.env.T_ID);
+    }
     db.close();`;
-  const child = spawn(process.execPath, ["-e", code], { cwd: process.cwd(), env: { ...process.env, T_DB: process.env.DATABASE_PATH, T_ID: id, T_HOLD: String(holdMs) }, stdio: ["ignore", "pipe", "inherit"] });
+  const env = { ...process.env, T_DB: process.env.DATABASE_PATH, T_SQL: sql, T_ID: id, T_HOLD: String(holdMs), T_BEAT: String(opt.beatMs ?? 0), T_LIFE: String(opt.lifeMs ?? 0) };
+  const child = spawn(process.execPath, ["-e", code], { cwd: process.cwd(), env, stdio: ["ignore", "pipe", "inherit"] });
   const done = new Promise<void>((res, rej) => child.on("exit", (c) => (c === 0 ? res() : rej(new Error(`tiến trình B thoát ${c}`)))));
   return new Promise((res, rej) => {
     child.stdout.on("data", (b: Buffer) => b.toString().includes("locked") && res({ done }));
     child.on("error", rej);
   });
+}
+
+/** Tiến trình B giành bài `id` như claimForSend (status "publishing" + claimed_by / claimed_at của B), giữ khoá `holdMs` rồi COMMIT. */
+const CLAIM_SQL = "UPDATE scheduled_posts SET status = 'publishing', attempts = attempts + 1, claimed_by = @owner, claimed_at = @now WHERE id = @id AND status = 'scheduled'";
+function otherProcessClaims(id: string, holdMs: number, opt?: { beatMs?: number; lifeMs?: number }) {
+  return otherProcess(CLAIM_SQL, id, holdMs, opt);
 }
 
 // ---- 1. Kiểm lại trang NGAY lúc gửi ----
@@ -317,4 +331,210 @@ test("5: isSamplePost của cổng đăng bài là CÙNG hàm với src/lib/samp
   assert.equal(guards.isSamplePost({ id: "sp_x", contentId: "ct_md2" }), true);
   assert.equal(guards.isSamplePost({ id: "sp_x", videoId: "v_md1" }), true);
   assert.equal(guards.isSamplePost({ id: "sp_x", contentId: "ct_md2", videoId: "v_that" }), false, "video THẬT theo kịch bản mẫu");
+});
+
+// ---- 6. Bài kẹt "publishing" theo quyền gửi trong CSDL (claimed_by / claimed_at), không theo bộ nhớ từng tiến trình ----
+
+const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
+function seedPublishing(id: string, claimedBy: string | null, claimedAt: string | null) {
+  db.getDb().insert(S().scheduledPosts).values({ id, contentId: "", title: `Bài ${id}`, platform: "tiktok", scheduledFor: past(), status: "publishing", mode: "live", claimedBy, claimedAt }).run();
+}
+
+test("6a recoverStuckPublishing: quyền gửi còn sống của tiến trình KHÁC không bị báo kẹt; quyền quá hạn / của chính tiến trình mà không gửi / bài cũ không quyền → lỗi mơ hồ", () => {
+  seedPublishing("sp_cl_live", "may-khac:42:abcd", ago(30_000)); // tiến trình khác đang gửi (nhịp 30 s trước)
+  seedPublishing("sp_cl_dead", "may-khac:43:dead", ago(guards.CLAIM_STALE_MS + 60_000)); // tiến trình khác chết giữa lúc gửi
+  seedPublishing("sp_cl_mine", guards.CLAIM_OWNER, ago(1_000)); // của tiến trình này nhưng không còn trong lượt gửi
+  seedPublishing("sp_cl_legacy", null, null); // bài trước migration 0026
+  seedPublishing("sp_cl_flight", guards.CLAIM_OWNER, ago(guards.CLAIM_STALE_MS * 3)); // tiến trình này đang gửi
+  guards.inFlight.add("sp_cl_flight");
+  try {
+    assert.equal(guards.recoverStuckPublishing(), 3);
+  } finally {
+    guards.inFlight.delete("sp_cl_flight");
+  }
+  assert.equal(row("sp_cl_live").status, "publishing", "không báo động giả cho tiến trình khác đang gửi");
+  assert.equal(row("sp_cl_flight").status, "publishing");
+  for (const id of ["sp_cl_dead", "sp_cl_mine", "sp_cl_legacy"]) {
+    assert.equal(row(id).status, "failed", id);
+    assert.equal(guards.isAmbiguousFailure(row(id)), true, `${id}: lỗi mơ hồ, không tự đăng lại`);
+  }
+});
+
+test("6b holdClaim đập nhịp claimed_at khi đang gửi; nhả xong thì bài còn 'publishing' của tiến trình này là kẹt", async () => {
+  seedPublishing("sp_cl_beat", guards.CLAIM_OWNER, ago(guards.CLAIM_STALE_MS + 60_000));
+  const before = row("sp_cl_beat").claimedAt!;
+  const release = guards.holdClaim("sp_cl_beat", 30);
+  await new Promise((r) => setTimeout(r, 120));
+  assert.equal(guards.recoverStuckPublishing(), 0, "đang gửi: không kẹt");
+  assert.ok(row("sp_cl_beat").claimedAt! > before, "claimed_at được làm mới");
+  release();
+  assert.equal(guards.inFlight.has("sp_cl_beat"), false);
+  assert.equal(guards.recoverStuckPublishing(), 1);
+  assert.equal(row("sp_cl_beat").status, "failed");
+});
+
+test("6c HAI TIẾN TRÌNH: B giành bài + đập nhịp → lượt đăng của A không báo kẹt; B chết (hết nhịp) → quá hạn mới là lỗi mơ hồ", async () => {
+  db.getDb().insert(S().scheduledPosts).values({ id: "sp_cl_b", contentId: "", title: "Bài B", platform: "tiktok", scheduledFor: new Date(Date.now() + 3_600_000).toISOString(), status: "scheduled", mode: "live" }).run();
+  const b = await otherProcessClaims("sp_cl_b", 50, { beatMs: 100, lifeMs: 900 });
+  await new Promise((r) => setTimeout(r, 400));
+  const first = row("sp_cl_b").claimedAt!;
+  assert.equal(row("sp_cl_b").claimedBy, "proc-B");
+  await pub.publishDueVideoPosts(); // gọi recoverStuckPublishing — bản cũ (inFlight riêng tiến trình) đánh lỗi bài của B ở đây
+  await text.publishDueTextPosts();
+  assert.equal(row("sp_cl_b").status, "publishing", "B còn sống: không báo động giả");
+  await b.done;
+  assert.ok(row("sp_cl_b").claimedAt! > first, "B đã đập nhịp");
+  assert.equal(guards.recoverStuckPublishing(), 0, "vừa hết nhịp: chưa quá hạn");
+  assert.equal(guards.recoverStuckPublishing(Date.now() + guards.CLAIM_STALE_MS + 1_000), 1, "quá hạn nhịp → kẹt");
+  assert.equal(guards.isAmbiguousFailure(row("sp_cl_b")), true);
+});
+
+test("6d HAI TIẾN TRÌNH: A thấy quyền của B quá hạn, nhưng B đang giữ khoá ghi và vừa đập nhịp → A chờ khoá, đọc lại trong khoá, KHÔNG đánh lỗi", async () => {
+  seedPublishing("sp_cl_race", "proc-B", ago(guards.CLAIM_STALE_MS + 60_000));
+  const b = await otherProcess("UPDATE scheduled_posts SET claimed_at = @now WHERE id = @id AND claimed_by = @owner", "sp_cl_race", 800);
+  const t0 = Date.now();
+  const n = guards.recoverStuckPublishing(); // đọc ngoài khoá thấy quá hạn → BEGIN IMMEDIATE chờ B → đọc lại: nhịp mới
+  assert.ok(Date.now() - t0 >= 500, "A phải chờ khoá của B");
+  await b.done;
+  assert.equal(n, 0);
+  assert.equal(row("sp_cl_race").status, "publishing");
+});
+
+// ---- 7. Bài chưa lưu trang đích (trước 0023 / kênh chưa có Page ID) lúc gửi ----
+
+function seedLegacyVideoPost(videoId: string, id: string, platform: string) {
+  seedVideo(videoId);
+  db.getDb().insert(S().scheduledPosts).values({ id, contentId: "", title: `Video ${videoId}`, platform, scheduledFor: past(), status: "scheduled", videoId, mode: "live", dedupeKey: `${platform}:${videoId}`, targetPageId: null }).run();
+}
+
+test("7a bài chưa lưu trang, kênh có Page ID, không có dấu kênh từng đổi trang → đóng dấu trang hiện tại trong giao dịch giành quyền rồi gửi", async () => {
+  config.writeIntegrationConfig("facebook_page_2", { ...FAKE, pageId: "202" });
+  db.getDb().update(S().integrations).set({ connected: true }).where(eq(S().integrations.key, "facebook_page_2")).run();
+  seedLegacyVideoPost("v_leg_ok", "sp_leg_ok", "facebook_page_2");
+  const sends = fakeMeta();
+  await pub.publishDueVideoPosts();
+  assert.deepEqual(sends.map((u) => u.match(/\/(\d+)\/videos$/)?.[1]), ["202"]);
+  assert.equal(row("sp_leg_ok").targetPageId, "202");
+  assert.equal(row("sp_leg_ok").status, "verifying");
+});
+
+test("7b bài chưa lưu trang mà kênh TỪNG ở trang khác (bài khác cùng kênh lưu trang khác) → mơ hồ: không gửi, lỗi rõ; Đăng lại = trang hiện tại", async () => {
+  config.writeIntegrationConfig("facebook_page_2", { ...FAKE, pageId: "203" }); // 7a để lại bài cùng kênh ở trang 202
+  seedLegacyVideoPost("v_leg_amb", "sp_leg_amb", "facebook_page_2");
+  const sends = fakeMeta();
+  await pub.publishDueVideoPosts();
+  assert.equal(sends.length, 0, "không đoán trang");
+  assert.equal(row("sp_leg_amb").status, "failed");
+  assert.match(row("sp_leg_amb").error ?? "", /^Page ID đã đổi — kiểm lại kênh/);
+  assert.match(row("sp_leg_amb").error ?? "", /202/);
+  assert.match(row("sp_leg_amb").error ?? "", /203/);
+  assert.equal(guards.needsPageCheck(row("sp_leg_amb")), false, "chưa gửi gì");
+  assert.equal(pub.retryVideoPost("sp_leg_amb").ok, true);
+  assert.equal(row("sp_leg_amb").targetPageId, "203");
+  await pub.publishDueVideoPosts();
+  assert.deepEqual(sends.map((u) => u.match(/\/(\d+)\/videos$/)?.[1]), ["203"]);
+});
+
+test("7c bài chưa lưu trang, kênh Facebook chưa có Page ID → không gửi, lỗi rõ (nhập Page ID rồi Đăng lại)", async () => {
+  config.writeIntegrationConfig("facebook_page_4", { ...FAKE, pageId: "" });
+  db.getDb().update(S().integrations).set({ connected: true }).where(eq(S().integrations.key, "facebook_page_4")).run();
+  seedLegacyVideoPost("v_leg_none", "sp_leg_none", "facebook_page_4");
+  const sends = fakeMeta();
+  await pub.publishDueVideoPosts();
+  assert.equal(sends.length, 0);
+  assert.equal(row("sp_leg_none").status, "failed");
+  assert.match(row("sp_leg_none").error ?? "", /chưa có Page ID/);
+  assert.equal(pub.missingPageReason({ id: "x", platform: "tiktok", targetPageId: null }), null, "kênh không phải Facebook: không có khái niệm trang");
+});
+
+// ---- 8. "Gỡ khoá kênh": bài đã lên trang nhập nhầm ----
+
+test("8 Gỡ khoá kênh: chỉ OWNER, chỉ khi trang bài ≠ Page ID kênh hiện tại; bài giữ nguyên + ghi lý do + nhật ký; trang cũ vẫn chặn trùng", async () => {
+  admin.setSetting("admin.email", "owner@baor.test");
+  const owner = { email: "owner@baor.test", name: "OWNER" };
+  seedVideo("v_lock");
+  assert.equal(pub.scheduleVideoPosts({ videoId: "v_lock", platforms: ["facebook"], whenIso: past(), caption: "Bình luận bên dưới", by: "t" }).ok, true);
+  const id = pub.videoPostsFor("v_lock")[0].id;
+  // Đã lên trang 111 (Page ID nhập nhầm) và đã xác minh
+  db.getDb().update(S().scheduledPosts).set({ status: "published", externalId: "VID_WRONG", permalink: "https://fb.test/x", verifiedAt: past() }).where(eq(S().scheduledPosts.id, id)).run();
+  assert.match(pub.channelLockReleaseBlock(row(id)) ?? "", /đúng trang/, "kênh chưa sửa Page ID: khoá đúng, không gỡ");
+  assert.equal(pub.releaseChannelLock(id, owner).ok, false);
+  // OWNER sửa Page ID kênh thành trang đúng 999 → kênh vẫn bị khoá bởi bài trang nhầm
+  config.writeIntegrationConfig("facebook_page", { ...FAKE, pageId: "999" });
+  const blocked = pub.scheduleVideoPosts({ videoId: "v_lock", platforms: ["facebook"], whenIso: past(), caption: "Bình luận bên dưới", by: "t" });
+  assert.equal(blocked.ok, false);
+  assert.match(blocked.ok ? "" : blocked.error, /Mỗi kênh một bài/);
+  assert.equal(pub.channelLockReleaseBlock(row(id)), null);
+  assert.match(pub.releaseChannelLock(id, { email: "staff@baor.test" }).error ?? "", /Chỉ OWNER/);
+  assert.equal(row(id).dedupeKey, "facebook:v_lock");
+  assert.equal(pub.releaseChannelLock(id, owner).ok, true);
+  const after = row(id);
+  assert.equal(after.status, "published", "bài giữ nguyên");
+  assert.equal(after.externalId, "VID_WRONG");
+  assert.equal(after.dedupeKey, null);
+  assert.match(after.lockReleasedNote ?? "", /111/);
+  assert.match(after.lockReleasedNote ?? "", /999/);
+  assert.match(after.lockReleasedNote ?? "", /OWNER/);
+  const log = db.getDb().select().from(S().activity).all().filter((a) => /gỡ khoá kênh/.test(a.message));
+  assert.ok(log.length >= 1, "ghi nhật ký");
+  assert.equal(pub.releaseChannelLock(id, owner).ok, false, "gỡ lần hai: không còn khoá");
+  // Trang cũ 111 (Fanpage 3) vẫn chặn đăng trùng; trang đúng 999 lên lịch được
+  const old = pub.scheduleVideoPosts({ videoId: "v_lock", platforms: ["facebook_page_3"], whenIso: past(), caption: "Bình luận bên dưới", by: "t" });
+  assert.equal(old.ok, false, "trang 111 đã có video này");
+  assert.equal(pub.scheduleVideoPosts({ videoId: "v_lock", platforms: ["facebook"], whenIso: past(), caption: "Bình luận bên dưới", by: "t" }).ok, true);
+  const fresh = pub.videoPostsFor("v_lock").find((p) => p.id !== id)!;
+  assert.equal(fresh.targetPageId, "999");
+  assert.equal(fresh.dedupeKey, "facebook:v_lock");
+  // Bài đang chờ / bài thử không gỡ được
+  assert.match(pub.channelLockReleaseBlock(fresh) ?? "", /chưa gửi xong/);
+});
+
+// ---- 9. Lên lịch nguyên tử giữa nhiều tiến trình ----
+
+test("9 HAI TIẾN TRÌNH lên lịch: B đang giữ khoá, vừa chèn bài cùng nội dung cùng trang (chưa commit) → A kiểm LẠI trong khoá, không tạo bài trùng", async () => {
+  seedContent("ct_sched_race");
+  const insertB = "INSERT INTO scheduled_posts (id, content_id, title, platform, scheduled_for, status, attempts, mode, dedupe_key, target_page_id) VALUES (@id, 'ct_sched_race', 'Bài B', 'facebook_page_3', @now, 'scheduled', 0, 'live', 'facebook_page_3:ct:ct_sched_race', '111')";
+  const b = await otherProcess(insertB, "sp_sched_b", 800);
+  const r = text.scheduleTextPosts({ contentId: "ct_sched_race", platforms: ["facebook"], whenIso: new Date(Date.now() + 3_600_000).toISOString(), by: "t" });
+  await b.done;
+  assert.equal(r.ok, false, "bản kiểm ngoài khoá thấy trang trống; kiểm lại trong khoá thấy bài B");
+  assert.match(r.ok ? "" : r.error, /Không đăng trùng/);
+  const rows = db.getDb().select().from(S().scheduledPosts).where(eq(S().scheduledPosts.contentId, "ct_sched_race")).all();
+  assert.deepEqual(rows.map((x) => x.id), ["sp_sched_b"]);
+});
+
+// ---- 10. Lỗi giữa giành quyền và gọi nền tảng (phản biện P1) ----
+
+test("10 startRun lỗi SAU khi giành quyền (bài chữ + video): không gửi, không rò timer / inFlight, bài về 'chờ đăng' (không kẹt, không mơ hồ); lượt sau đăng được", async () => {
+  seedContent("ct_leak");
+  db.getDb().insert(S().scheduledPosts).values({ id: "sp_leak_t", contentId: "ct_leak", title: "Bài ct_leak", platform: "facebook", scheduledFor: past(), status: "scheduled", mode: "live", targetPageId: "111" }).run();
+  seedVideo("v_leak");
+  db.getDb().insert(S().scheduledPosts).values({ id: "sp_leak_v", contentId: "", title: "Video v_leak", platform: "facebook_page_3", scheduledFor: past(), status: "scheduled", videoId: "v_leak", mode: "live", dedupeKey: "facebook_page_3:v_leak", targetPageId: "111" }).run();
+  const sends = fakeMeta();
+  const timers = () => process.getActiveResourcesInfo().filter((r) => r === "Timeout").length;
+  const t0 = timers();
+  const sqlite = db.getSqlite();
+  sqlite.exec("ALTER TABLE sync_runs RENAME TO sync_runs_hong"); // startRun ném "no such table"
+  try {
+    const rt = await text.publishDueTextPosts();
+    const rv = await pub.publishDueVideoPosts();
+    assert.ok(rt.skipped >= 1 && rv.skipped >= 1);
+  } finally {
+    sqlite.exec("ALTER TABLE sync_runs_hong RENAME TO sync_runs");
+  }
+  assert.equal(sends.length, 0, "chưa gửi gì");
+  for (const id of ["sp_leak_t", "sp_leak_v"]) {
+    assert.equal(row(id).status, "scheduled", `${id}: về chờ đăng`);
+    assert.equal(row(id).attempts, 0, `${id}: hoàn số lần thử`);
+    assert.equal(row(id).claimedBy, null);
+    assert.match(row(id).error ?? "", /^Chưa gửi/);
+    assert.equal(guards.inFlight.has(id), false);
+  }
+  assert.equal(timers(), t0, "không rò timer đập nhịp");
+  assert.equal(guards.recoverStuckPublishing(Date.now() + guards.CLAIM_STALE_MS * 2), 0, "không bài nào kẹt");
+  await text.publishDueTextPosts();
+  await pub.publishDueVideoPosts();
+  assert.equal(sends.length, 2, "lượt sau đăng bình thường");
+  assert.equal(row("sp_leak_t").status, "verifying");
+  assert.equal(row("sp_leak_v").status, "verifying");
 });

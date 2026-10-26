@@ -7,7 +7,7 @@ import { LicenseTag } from "@/components/assets/track-row";
 import { AssetTile, TILE_GRID } from "@/components/assets/asset-tile";
 import { FacetList, type Facet } from "@/components/assets/facet-list";
 import { DecisionErrorTag, ORIGIN_LABEL, OriginTag, PendingTag } from "@/components/assets/asset-tags";
-import { DeleteAssetButton } from "@/components/assets/delete-asset-button";
+import { CancelTrashButton, DeleteAssetButton, OWNER_MAC_TRASH_NOTE } from "@/components/assets/delete-asset-button";
 import { setAssetApproval, trashAssetAction } from "@/lib/actions/asset-catalog";
 import type { AssetEntry } from "@/lib/video/asset-catalog";
 import { can, currentActor } from "@/lib/permissions";
@@ -54,6 +54,7 @@ function ApprovalForm({ e, approve, label, pendingText, variant }: { e: AssetEnt
 function musicAction(e: AssetEntry, isOwner: boolean) {
   if (e.pendingDecision) {
     if (!isOwner) return null;
+    if (e.pendingDecision.action === "trash") return <CancelTrashButton action={trashAssetAction} id={e.id} name={shortName(e)} />;
     return (
       <form action={setAssetApproval}>
         <input type="hidden" name="id" value={e.id} />
@@ -71,10 +72,14 @@ function musicAction(e: AssetEntry, isOwner: boolean) {
   return null;
 }
 
-/** Thùng rác cho tư liệu MÁY CHỦ (OWNER); tư liệu "Máy của anh" nằm trên Mac → không xoá từ web. */
+const shortName = (e: AssetEntry) => e.file.replace(/^(sfx-owner\/moi|music|sfx)\//, "");
+
+/** Thùng rác (OWNER): máy chủ → Đã xoá ngay; "Máy của anh" → lệnh xoá cho máy dựng (đang chờ → nút Huỷ xoá; nhạc có nút này ở ô hành động). */
 function removeButton(e: AssetEntry, isOwner: boolean) {
-  if (!isOwner || e.source !== "server") return null;
-  return <DeleteAssetButton action={trashAssetAction} fields={{ id: e.id }} name={e.file.replace(/^(sfx-owner\/moi|music|sfx)\//, "")} />;
+  if (!isOwner) return null;
+  if (e.pendingDecision?.action === "trash") return e.type === "music" ? null : <CancelTrashButton action={trashAssetAction} id={e.id} name={shortName(e)} />;
+  if (!e.canTrash) return null;
+  return <DeleteAssetButton action={trashAssetAction} fields={{ id: e.id }} name={shortName(e)} note={e.source === "owner_mac" ? OWNER_MAC_TRASH_NOTE : undefined} />;
 }
 
 export async function MusicLibraryPanel({ entries, ownerSynced }: { entries: AssetEntry[]; ownerSynced: boolean }) {
@@ -128,7 +133,7 @@ export async function MusicLibraryPanel({ entries, ownerSynced }: { entries: Ass
                     <>
                       <Pill tone={musicStatus(e).tone}>{musicStatus(e).label}</Pill>
                       {e.note && <InfoTip label="Lý do">{e.note}</InfoTip>}
-                      <PendingTag pending={!!e.pendingDecision} />
+                      <PendingTag pending={!!e.pendingDecision} action={e.pendingDecision?.action} />
                       {e.isDefault && <Pill tone="jade">mặc định</Pill>}
                       {/ĐỀ NGHỊ|đề nghị|Credit/i.test(e.license) && <Pill tone="amber">cần ghi công</Pill>}
                       <DecisionErrorTag error={e.decisionError} />
@@ -174,7 +179,7 @@ export async function SfxPanel({ entries, ownerSynced }: { entries: AssetEntry[]
             values: { source: e.source, kind: e.tags[0] || "khac" },
             node: (
               <AssetTile
-                stacked={e.file.startsWith("sfx-owner/moi/")}
+                stacked={e.file.startsWith("sfx-owner/moi/") || !!e.pendingDecision}
                 data={{ "data-sfx": e.file }}
                 title={e.title}
                 previewUrl={e.previewUrl}
@@ -182,6 +187,7 @@ export async function SfxPanel({ entries, ownerSynced }: { entries: AssetEntry[]
                 tags={
                   <>
                     {e.file.startsWith("sfx-owner/moi/") && <Pill tone="sky">{e.statusLabel}</Pill>}
+                    <PendingTag pending={!!e.pendingDecision} action={e.pendingDecision?.action} />
                     {e.source === "owner_mac" && <OriginTag origin="owner_mac" />}
                     {e.licenseShort ? <LicenseTag short={e.licenseShort} full={e.license} /> : <Pill tone="brick">chưa có giấy phép</Pill>}
                   </>

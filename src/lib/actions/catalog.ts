@@ -4,11 +4,11 @@ import { catalogRepo, personEditBlock, type Permission } from "@/lib/catalog/rep
 import { requirePermission } from "@/lib/permissions";
 import { checkPassword } from "@/lib/password-policy";
 import { logSecurityEvent, revokeAllSessions } from "@/lib/security";
-import { done, logActivity } from "./common";
+import { done, logActivity, withQuery } from "./common";
 
 // Cài đặt › Nhân sự và phân quyền. (Sản phẩm và bảng giá đã bỏ — chỉ marketing, OWNER 25/10/2026.)
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
-const fail = (path: string, msg: string): never => done(`${path}${path.includes("?") ? "&" : "?"}tone=error`, msg);
+const fail = (path: string, msg: string): never => done(withQuery(path, "tone", "error"), msg);
 
 export async function savePerson(fd: FormData) {
   const actor = await requirePermission("admin", "/settings#people");

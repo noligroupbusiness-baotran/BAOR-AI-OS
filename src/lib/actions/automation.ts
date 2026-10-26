@@ -4,11 +4,11 @@ import { deleteRule, getRule, saveFaq, saveRule, setFaqActive, setRuleStatus, li
 import { actionLabel, triggerLabel, type Action, type Condition, type Params, type RuleStatus, type Trigger } from "@/lib/automation/types";
 import { requirePermission } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
-import { done } from "./common";
+import { done, withQuery } from "./common";
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 const num = (fd: FormData, k: string) => Number(String(fd.get(k) ?? "").replace(/[^\d]/g, "")) || 0;
-const fail = (path: string, msg: string): never => done(`${path}${path.includes("?") ? "&" : "?"}tone=error`, msg);
+const fail = (path: string, msg: string): never => done(withQuery(path, "tone", "error"), msg);
 
 export async function saveRuleAction(fd: FormData) {
   await requirePermission("manager", "/settings?tab=tu-dong#rules");

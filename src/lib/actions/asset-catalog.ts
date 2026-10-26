@@ -3,7 +3,8 @@
 import fs from "node:fs";
 import { requirePermission } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
-import { done } from "./common";
+import { RATE_RULES, rateLimiter, type RateLimitRule } from "@/lib/rate-limit";
+import { done, withQuery } from "./common";
 import { setLibraryMusicApproval } from "./media";
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
@@ -12,7 +13,12 @@ const backOf = (fd: FormData) => {
   const b = str(fd, "back");
   return /^\/(assets|settings)([?#/]|$)/.test(b) ? b : "/assets#music-library";
 };
-const fail = (back: string, msg: string): never => done(`${back}${back.includes("?") ? "&" : "?"}tone=error`, msg);
+const fail = (back: string, msg: string): never => done(withQuery(back, "tone", "error"), msg);
+/** Giới hạn tần suất bấm theo tài khoản (quyết định máy OWNER, sửa mô tả, gọi AI) — vượt thì báo lỗi, không làm gì. */
+function limited(key: string, rule: RateLimitRule, back: string) {
+  const r = rateLimiter().check(key, rule);
+  if (!r.ok) fail(back, `Bấm quá nhanh — thử lại sau ${r.retryAfterSec} giây`);
+}
 
 /**
  * Duyệt / Bỏ duyệt / Huỷ cho một bài nhạc trong danh mục hợp nhất (listAssetCatalog). Form gửi:
@@ -33,6 +39,7 @@ export async function setAssetApproval(fd: FormData) {
     return setLibraryMusicApproval(f);
   }
   if (!id.startsWith("owner_mac:music/")) return fail(back, "Chỉ duyệt được nhạc nền");
+  limited(`asset-decision:${actor.email}`, RATE_RULES.assetDecision, back);
   const assetId = id.slice("owner_mac:".length);
   const { cancelMusicDecision, requestMusicDecision } = await import("@/lib/video/remote-catalog");
   const name = assetId.replace(/^music\//, "");
@@ -54,21 +61,37 @@ export async function setAssetApproval(fd: FormData) {
 }
 
 const TRASH_BACK: Record<string, string> = { music: "/assets#music-library", sfx: "/assets#sfx", "sfx-new": "/assets#sfx", broll: "/assets#broll" };
-/** Tiền tố AssetEntry.id (tư liệu máy chủ) → loại trong thùng "Đã xoá". */
-const TRASH_ID = /^server:(music|sfx|broll|sfx-owner\/moi)\/(.+)$/;
+/** Tiền tố AssetEntry.id → loại trong thùng "Đã xoá" (máy chủ: xoá ngay; máy OWNER: ghi lệnh xoá cho máy dựng). */
+const TRASH_ID = /^(server|owner_mac):(music|sfx|broll|sfx-owner\/moi)\/(.+)$/;
 
 /**
- * Xoá (chuyển vào "Đã xoá", khôi phục được 30 ngày) một tư liệu MÁY CHỦ: id = AssetEntry.id "server:<music|sfx|broll|sfx-owner/moi>/<tệp>".
- * Tư liệu "Máy của anh" không xoá từ đây. Quyền quản trị (OWNER). Tệp phải nằm trong thư mục thư viện và có trong danh mục
- * (src/lib/video/asset-trash.ts); ảnh thu nhỏ trong cache được dọn theo.
+ * Xoá (chuyển vào "Đã xoá", khôi phục được 30 ngày) một tư liệu: id = AssetEntry.id "<server|owner_mac>:<music|sfx|broll|sfx-owner/moi>/<tệp>".
+ * Máy chủ: chuyển ngay (src/lib/video/asset-trash.ts; tệp phải nằm trong thư mục thư viện và có trong danh mục), dọn ảnh thu nhỏ.
+ * "Máy của anh": ghi lệnh xoá (đúng sha256 + tên tệp) — máy dựng kiểm lại và xoá TRÊN Mac ở lần đồng bộ kế; `cancel=1` huỷ lệnh chưa áp.
+ * Quyền quản trị (OWNER).
  */
 export async function trashAssetAction(fd: FormData) {
   const m = TRASH_ID.exec(str(fd, "id"));
-  const kind = m ? (m[1] === "sfx-owner/moi" ? "sfx-new" : (m[1] as "music" | "sfx" | "broll")) : null;
+  const kind = m ? (m[2] === "sfx-owner/moi" ? "sfx-new" : (m[2] as "music" | "sfx" | "broll")) : null;
   const back = kind ? TRASH_BACK[kind] : "/assets";
   const actor = await requirePermission("admin", back);
-  if (!m || !kind) return fail(back, "Chỉ xoá được tư liệu trên máy chủ");
-  const file = m[2];
+  if (!m || !kind) return fail(back, "Không xoá được mục này");
+  const file = m[3];
+  if (m[1] === "owner_mac") {
+    limited(`asset-decision:${actor.email}`, RATE_RULES.assetDecision, back);
+    const assetId = `${m[2]}/${file}`;
+    const { cancelAssetDecision, requestTrashDecision } = await import("@/lib/video/remote-catalog");
+    if (str(fd, "cancel") === "1") {
+      const r = cancelAssetDecision(assetId, actor);
+      if (!r.ok) return fail(back, r.error);
+      logActivity("human", `${actor.name} huỷ lệnh xoá tư liệu máy OWNER ${assetId} (chưa áp).`, "settings");
+      return done(back, `Đã huỷ lệnh xoá “${file}”.`);
+    }
+    const r = requestTrashDecision(assetId, { email: actor.email, name: actor.name });
+    if (!r.ok) return fail(back, r.error);
+    if (r.state === "queued") logActivity("human", `${actor.name} xoá tư liệu máy OWNER ${assetId} — chờ máy dựng chuyển vào Đã xoá trên Mac.`, "settings");
+    return done(back, `Đã ghi lệnh xoá “${file}” — chờ máy dựng xoá.`);
+  }
   const { dataDir, brollFilePath } = await import("@/lib/video/jobs");
   const { trashAsset } = await import("@/lib/video/asset-trash");
   const { cachedThumbPath } = await import("@/lib/video/thumb-cache");
@@ -77,8 +100,41 @@ export async function trashAssetAction(fd: FormData) {
   const r = trashAsset(dataDir(), kind, file, actor.email);
   if (!r.ok) return fail(back, r.error);
   if (cached) fs.rmSync(cached, { force: true });
-  logActivity("human", `${actor.name} xoá tư liệu ${m[1]}/${file} (chuyển vào Đã xoá, khôi phục được 30 ngày).`, "settings");
+  logActivity("human", `${actor.name} xoá tư liệu ${m[2]}/${file} (chuyển vào Đã xoá, khôi phục được 30 ngày).`, "settings");
   done(back, `Đã xoá “${r.entry.title}”. Khôi phục được trong mục Đã xoá.`);
+}
+
+/** Id ảnh / clip B-roll MÁY CHỦ ("server:broll/<tệp>") → tên trong manifest; khác → null. */
+const brollFileOf = (id: string) => (/^server:broll\/(.+)$/.exec(id)?.[1] ?? null);
+
+/** Sửa / xoá mô tả một ảnh·clip B-roll máy chủ (ô xem lớn › Sửa mô tả). Một dòng, ≤ 200 ký tự (broll-desc.ts › cleanDesc). */
+export async function setBrollDescAction(fd: FormData) {
+  const back = "/assets#broll";
+  const actor = await requirePermission("admin", back);
+  const file = brollFileOf(str(fd, "id"));
+  if (!file) return fail(back, "Chỉ sửa được mô tả ảnh trên máy chủ");
+  limited(`asset-decision:${actor.email}`, RATE_RULES.assetDecision, back);
+  const { dataDir } = await import("@/lib/video/jobs");
+  const { setBrollDesc } = await import("@/lib/video/broll-desc");
+  const r = setBrollDesc(dataDir(), file, String(fd.get("desc") ?? ""), `OWNER (${actor.email})`);
+  if (!r.ok) return fail(back, r.error);
+  logActivity("human", `${actor.name} ${r.desc ? "sửa" : "xoá"} mô tả ảnh B-roll ${file}.`, "settings");
+  done(back, r.desc ? "Đã lưu mô tả." : "Đã xoá mô tả.");
+}
+
+/** "Tự mô tả bằng AI" cho MỘT ảnh·clip B-roll máy chủ — qua cổng AI (công tắc + trần của "AI Mô tả ảnh", trần chung, sổ chi phí). */
+export async function describeBrollAction(fd: FormData) {
+  const back = "/assets#broll";
+  const actor = await requirePermission("admin", back);
+  const file = brollFileOf(str(fd, "id"));
+  if (!file) return fail(back, "Chỉ mô tả được ảnh trên máy chủ");
+  limited(`asset-describe-ai:${actor.email}`, RATE_RULES.assetDescribeAi, back);
+  const { brollLibrary } = await import("@/lib/video/jobs");
+  const { describeBroll } = await import("@/lib/video/broll-describe");
+  const r = await describeBroll(file, actor.email, brollLibrary().find((b) => b.file === file)?.keywords ?? []);
+  if (!r.ok) return fail(back, r.error);
+  logActivity("ai", `AI Mô tả ảnh tả ${file} (${r.model}, ${r.costVnd.toLocaleString("vi-VN")} ₫) theo yêu cầu của ${actor.name}.`, "settings");
+  done(back, `AI đã mô tả: “${r.desc}”`);
 }
 
 /** Khôi phục một mục trong "Đã xoá" về thư viện máy chủ (trả nguyên mục danh mục: giấy phép, từ khoá, trạng thái duyệt). */

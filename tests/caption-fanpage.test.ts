@@ -32,6 +32,7 @@ before(async () => {
   knowledge = await import("../src/lib/knowledge");
   ai = await import("../src/lib/ai");
   roster = await import("../src/lib/ai-roster");
+  roster.saveRoleSettings("caption", { model: "claude-sonnet-5-5" }); // ca dưới thử đường Claude (mô hình giả); mặc định từ 26/10 là ChatGPT
   admin = await import("../src/lib/admin");
 });
 

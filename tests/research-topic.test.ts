@@ -21,6 +21,7 @@ before(async () => {
   topic = await import("../src/lib/research/topic");
   hooks = await import("../src/lib/content/hooks");
   roster = await import("../src/lib/ai-roster");
+  roster.saveRoleSettings("research", { model: "claude-sonnet-5-5" }); // ca dưới thử đường Claude (mô hình giả); mặc định từ 26/10 là ChatGPT
 });
 
 const FB = ["Làm sao để khách không cúp máy?", "em sợ bị từ chối lắm", "gọi giờ nào thì hợp?", "khách hay nghĩ là cuộc gọi rác"].join("\n");

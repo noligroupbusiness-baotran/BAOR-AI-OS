@@ -6,7 +6,9 @@ import { z } from "zod";
 import type Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { getDb, schema } from "@/db";
-import { aiConfigured, gate } from "@/lib/ai";
+import { gate, webSearchProvider } from "@/lib/ai";
+import { PROVIDERS, compatWebSearch, modelInfo, providerConfigured, webSearchFeeVnd, type AiProvider } from "@/lib/ai-providers";
+import { roleForPurpose, roleSettings } from "@/lib/ai-roster";
 import { getSetting, setSetting } from "@/lib/admin";
 import { recordAiCall, WEB_SEARCH_MODEL_PREFIX } from "@/lib/router";
 import { getKnowledgePages, searchKnowledge } from "@/lib/knowledge";
@@ -96,8 +98,6 @@ export function createResearchTask(input: { question: string; purposeKind: Purpo
 
 /** Quá thời gian này mà vẫn "running" (máy chủ khởi động lại / tiến trình chết giữa chừng) → coi là lỗi, cho chạy lại. */
 export const RESEARCH_STALE_MS = Number(process.env.BAOR_RESEARCH_STALE_MIN ?? 20) * 60_000;
-/** Phí công cụ web_search (≈ 10 USD / 1.000 lượt) — ghi vào sổ ai_calls để tính trần ngày / tháng / vị trí. */
-export const VND_PER_SEARCH = 260;
 const startedKey = (id: string) => `research.startedAt.${id}`;
 // Nhiệm vụ đang chạy TRONG tiến trình này (không bao giờ bị coi là kẹt khi còn ở đây)
 const inFlight = ((globalThis as unknown as { __baorResearchRunning?: Set<string> }).__baorResearchRunning ??= new Set());
@@ -304,7 +304,7 @@ export function buildBriefDeterministic(taskId: string, meta: { topic: string; g
   return saveBrief({ taskId, ...meta, keyMessage: "", angle: "", points, gaps, by }, r.sources.map((s) => ({ id: s.id, grade: s.grade })), r.pages);
 }
 
-// ---------------------------------------------------------------- chạy bằng AI (Claude + web search)
+// ---------------------------------------------------------------- chạy bằng AI (tìm web phía hãng: ChatGPT hoặc Claude)
 
 const RESEARCH_SYSTEM = `Bạn là nhà nghiên cứu cho thương hiệu cá nhân Trần Thanh Bảo (đào tạo, bán hàng, tư duy kinh doanh, edit video).
 Nhiệm vụ: trả lời câu hỏi nghiên cứu bằng nguồn bên ngoài đáng tin, đối chiếu với tri thức nội bộ (Second Brain) được cung cấp.
@@ -324,10 +324,19 @@ function knowledgeContext(question: string) {
   return { hits, text };
 }
 
+/** Hãng mà một lần Nghiên cứu web sẽ gọi: bước tìm nguồn + bước lập hồ sơ (mô hình vị trí). */
+function researchProviders(): AiProvider[] {
+  const step2 = modelInfo(roleSettings(roleForPurpose("research")).model)?.provider ?? "anthropic";
+  return [...new Set<AiProvider>([webSearchProvider("research"), step2])];
+}
+
 type RunOut = { usage: { input_tokens: number; output_tokens: number }; text: string; urls: Map<string, { title: string; pageAge: string | null }>; searches: number };
 
 export async function runResearchWithAi(taskId: string, by: string, opts: { append?: boolean } = {}): Promise<{ ok: true; summary: string } | { ok: false; error: string }> {
-  if (!aiConfigured()) return { ok: false, error: "Chưa có khóa Claude API. Vào Cài đặt › Kết nối › Claude API để nhập khóa." };
+  // Khoá của ĐÚNG hãng sẽ gọi: bước 1 (tìm web — webSearchProvider) + bước 2 (mô hình vị trí). Công tắc / trần: gate() kiểm và ghi lỗi
+  for (const p of researchProviders()) {
+    if (!providerConfigured(p)) return { ok: false, error: `Chưa có khoá ${PROVIDERS[p].label}. Vào Cài đặt › Kết nối để nhập khoá, hoặc đổi mô hình ở Cài đặt › Đội AI.` };
+  }
   const db = getDb();
   recoverStaleResearch();
   const task = db.select().from(schema.researchTasks).where(eq(schema.researchTasks.id, taskId)).get();
@@ -357,11 +366,18 @@ async function runResearchSteps(taskId: string, task: typeof schema.researchTask
   const kc = knowledgeContext(task.question);
   const maxSearches = 8;
 
-  // Bước 1: tìm và đọc nguồn ngoài (công cụ web_search chạy phía Anthropic — ghim Claude dù vị trí chọn hãng khác)
+  // Bước 1: tìm và đọc nguồn ngoài bằng công cụ tìm web PHÍA HÃNG. Vị trí chọn ChatGPT → tool web_search của Responses API; chọn Claude
+  // → web_search của Anthropic; chọn Grok (chưa nối tìm web) → Claude (webSearchProvider). Công tắc, trần, sổ chi phí vẫn của vị trí.
+  const searchProvider = webSearchProvider("research");
+  const prompt = `Câu hỏi nghiên cứu: ${task.question}\nMục tiêu sử dụng: ${task.purpose}\n\nTri thức nội bộ liên quan (Second Brain):\n${kc.text}\n\nHãy tìm nguồn ngoài, rồi viết báo cáo: kết luận, các quan điểm khác nhau, giới hạn bằng chứng, độ tin cậy, góc ứng dụng và chủ đề content đề xuất. Mỗi ý dẫn nguồn.`;
   const step1 = await gate<RunOut>("research", `Nghiên cứu: ${task.question.slice(0, 80)}`, async (client, model) => {
-    const messages: Anthropic.Beta.BetaMessageParam[] = [
-      { role: "user", content: `Câu hỏi nghiên cứu: ${task.question}\nMục tiêu sử dụng: ${task.purpose}\n\nTri thức nội bộ liên quan (Second Brain):\n${kc.text}\n\nHãy tìm nguồn ngoài, rồi viết báo cáo: kết luận, các quan điểm khác nhau, giới hạn bằng chứng, độ tin cậy, góc ứng dụng và chủ đề content đề xuất. Mỗi ý dẫn nguồn.` },
-    ];
+    if (modelInfo(model)?.provider === "openai") {
+      const r = await compatWebSearch(client, { model, max_tokens: 16000, system: RESEARCH_SYSTEM, prompt, maxSearches });
+      if (r.stop_reason === "refusal") throw new Error("Mô hình từ chối nhiệm vụ nghiên cứu này.");
+      const urls = new Map<string, { title: string; pageAge: string | null }>([...r.sources].map(([u, title]) => [u, { title, pageAge: null }]));
+      return { usage: r.usage, text: r.text, urls, searches: r.searches };
+    }
+    const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: prompt }];
     const usage = { input_tokens: 0, output_tokens: 0 };
     const urls = new Map<string, { title: string; pageAge: string | null }>();
     let text = "";
@@ -388,15 +404,16 @@ async function runResearchSteps(taskId: string, task: typeof schema.researchTask
       messages.push({ role: "assistant", content: res.content });
     }
     return { usage, text, urls, searches };
-  }, { provider: "anthropic" }); // web_search chỉ có ở Claude: vị trí chọn ChatGPT / Grok thì bước này vẫn chạy Claude
+  }, { provider: searchProvider });
   if (!step1.ok) {
     db.update(schema.researchTasks).set({ status: "error", error: step1.error }).where(eq(schema.researchTasks.id, taskId)).run();
     return step1;
   }
   const r1 = step1.res;
-  // Phí web_search đã phát sinh ở bước 1 (kể cả khi bước sau lỗi) → ghi sổ ai_calls để tính vào trần ngày / tháng / vị trí
-  const searchCostVnd = r1.searches * VND_PER_SEARCH;
-  if (r1.searches > 0) recordAiCall({ purpose: "research", role: "research", model: `${WEB_SEARCH_MODEL_PREFIX} × ${r1.searches}`, inputTokens: 0, outputTokens: 0, ok: true, costVnd: searchCostVnd });
+  // Phí tìm web đã phát sinh ở bước 1 (kể cả khi bước sau lỗi) → ghi sổ ai_calls để tính vào trần ngày / tháng / vị trí.
+  // Nhãn bắt đầu bằng WEB_SEARCH_MODEL_PREFIX: có chi phí nhưng không đếm là một lần gọi mô hình (router CALL_COUNT).
+  const searchCostVnd = webSearchFeeVnd(searchProvider, r1.searches);
+  if (r1.searches > 0) recordAiCall({ purpose: "research", role: "research", model: `${WEB_SEARCH_MODEL_PREFIX} × ${r1.searches}${searchProvider === "anthropic" ? "" : ` (${PROVIDERS[searchProvider].label})`}`, inputTokens: 0, outputTokens: 0, ok: true, costVnd: searchCostVnd });
   if (r1.urls.size === 0) {
     db.update(schema.researchTasks).set({ status: "error", error: "Không tìm được nguồn ngoài nào." }).where(eq(schema.researchTasks.id, taskId)).run();
     return { ok: false, error: "Không tìm được nguồn ngoài nào." };
@@ -424,8 +441,8 @@ async function runResearchSteps(taskId: string, task: typeof schema.researchTask
     db.update(schema.researchTasks).set({ status: "error", error: "AI không trả về hồ sơ hợp lệ." }).where(eq(schema.researchTasks.id, taskId)).run();
     return { ok: false, error: "AI không trả về hồ sơ hợp lệ." };
   }
-  // Chi phí = đúng số đã ghi sổ ai_calls: hai bước qua cổng AI (giá theo mô hình hãng THỰC SỰ chạy — bước 1 bật fallbacks "default"
-  // nên có thể khác mô hình yêu cầu) + phí web_search ghi riêng ở trên.
+  // Chi phí = đúng số đã ghi sổ ai_calls: hai bước qua cổng AI (giá theo mô hình hãng THỰC SỰ chạy — bước 1 Claude bật fallbacks "default",
+  // ChatGPT trả response.model, nên có thể khác mô hình yêu cầu) + phí tìm web ghi riêng ở trên.
   const cost = step1.costVnd + step2.costVnd + searchCostVnd;
   saveResearchResult(taskId, out, { runner: "ai", allowedUrls: new Set(r1.urls.keys()), model: step1.servedModel === step2.servedModel ? step2.servedModel : `${step1.servedModel} + ${step2.servedModel}`, searchCount: r1.searches, costVnd: cost, by, append: opts.append });
   return { ok: true, summary: out.summary };

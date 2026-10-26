@@ -6,7 +6,9 @@ import { readIntegrationConfig } from "@/lib/connectors/config";
 // của Claude (Anthropic), ChatGPT (OpenAI) hoặc Grok (xAI); cổng AI chung (src/lib/ai.ts › gate) giữ nguyên công tắc, trần, sổ chi phí.
 // ChatGPT / Grok gọi qua Responses API (POST {base}/responses, Bearer) — cả hai hãng dùng cùng chuẩn này. Bộ chuyển đổi trả về đúng dạng
 // Anthropic mà các chỗ gọi đang dùng (messages.create / messages.parse → content[].text, usage, stop_reason, parsed_output), nên không phải
-// sửa từng chỗ gọi. Tính năng riêng của Claude (công cụ web_search ở Nghiên cứu bước tìm nguồn) vẫn chạy bằng Claude.
+// sửa từng chỗ gọi. Nghiên cứu bước tìm nguồn (công cụ tìm web phía hãng): Claude (web_search của Anthropic) hoặc ChatGPT (công cụ
+// web_search của Responses API — OWNER 27/10/2026 "chuyển phần này thành của gpt luôn"); Grok chưa có tài liệu đủ (dạng nguồn trả về,
+// giá mỗi lượt) nên vị trí chọn Grok thì bước tìm nguồn vẫn chạy Claude (WEB_SEARCH_PROVIDERS).
 
 export type AiProvider = "anthropic" | "openai" | "xai";
 
@@ -78,6 +80,35 @@ export function servedCost(requested: string, served: string | null | undefined,
   return { model: ran, pricedAs, costVnd, note: `${ran} chưa có trong bảng giá, tính theo giá ${requested}` };
 }
 
+// ---------- Tìm web phía hãng (Nghiên cứu bước tìm nguồn) ----------
+
+/**
+ * Hãng có công cụ tìm web phía hãng mà BAOR đã nối, kèm giá MỖI lượt tìm (USD) — đọc 27/10/2026:
+ * - Claude: web_search, 10 USD / 1.000 lượt (platform.claude.com/docs/en/about-claude/pricing).
+ * - ChatGPT: tool "web_search" của Responses API, "$10.00 / 1k calls + Search content tokens billed at model rates"
+ *   (developers.openai.com/api/docs/pricing#built-in-tools; developers.openai.com/api/docs/guides/tools-web-search).
+ *   Token nội dung tìm được đã nằm trong usage.input_tokens → cổng AI tính theo giá mô hình như thường.
+ * Grok (xAI) có tool web_search nhưng tài liệu chưa ghi dạng nguồn trả về / giá mỗi lượt → chưa nối, bước này chạy Claude.
+ */
+export const WEB_SEARCH_USD_PER_CALL: Partial<Record<AiProvider, number>> = { anthropic: 0.01, openai: 0.01 };
+export const WEB_SEARCH_PROVIDERS = Object.keys(WEB_SEARCH_USD_PER_CALL) as AiProvider[];
+
+/** Phí công cụ tìm web (₫) cho n lượt của hãng — ghi riêng vào sổ ai_calls để tính trần ngày / tháng / vị trí. */
+export function webSearchFeeVnd(provider: AiProvider, calls: number): number {
+  return Math.round(calls * (WEB_SEARCH_USD_PER_CALL[provider] ?? 0.01) * vndPerUsd());
+}
+
+export interface WebSearchResult {
+  model: string;
+  usage: { input_tokens: number; output_tokens: number };
+  stop_reason: string;
+  text: string;
+  /** URL → tiêu đề: nguồn trích dẫn (url_citation) + mọi nguồn đã tìm (web_search_call.action.sources). */
+  sources: Map<string, string>;
+  /** Số mục web_search_call hãng đã chạy (tính phí theo lượt). */
+  searches: number;
+}
+
 export function providerKey(p: AiProvider): string {
   return readIntegrationConfig(PROVIDERS[p].integration).apiKey || process.env[PROVIDERS[p].env] || "";
 }
@@ -106,6 +137,8 @@ interface CompatParams {
   system?: string | { type: string; text?: string }[];
   messages: Msg[];
   output_config?: { format?: { type: string; schema?: unknown; parse?: (s: string) => unknown } | null } | null;
+  /** Bật tool tìm web của Responses API (chỉ ChatGPT — xem WEB_SEARCH_PROVIDERS); maxCalls → max_tool_calls. */
+  web_search?: { maxCalls: number };
 }
 
 const asText = (c: Msg["content"] | CompatParams["system"]): string => (typeof c === "string" ? c : (c ?? []).map((b) => b.text ?? "").join("\n"));
@@ -115,7 +148,15 @@ interface ResponsesBody {
   model?: string;
   status?: string;
   incomplete_details?: { reason?: string } | null;
-  output?: { type: string; content?: { type: string; text?: string; refusal?: string }[] }[];
+  // Tìm web (developers.openai.com/api/reference/resources/responses/methods/create): mục { type: "web_search_call", status,
+  // action: { type: "search", query, sources?: [{ type: "url", url }] } | { type: "open_page", url } | … }; chữ trả lời mang
+  // annotations [{ type: "url_citation", url, title, start_index, end_index }].
+  output?: {
+    type: string;
+    status?: string;
+    action?: { type?: string; url?: string | null; sources?: { type?: string; url?: string }[] } | null;
+    content?: { type: string; text?: string; refusal?: string; annotations?: { type: string; url?: string; title?: string }[] }[];
+  }[];
   usage?: { input_tokens?: number; output_tokens?: number };
   error?: { message?: string } | null;
 }
@@ -131,7 +172,11 @@ async function callResponses(provider: AiProvider, p: CompatParams, fetchImpl: t
     max_output_tokens: p.max_tokens,
     store: false,
     ...(format?.schema ? { text: { format: { type: "json_schema", name: "ket_qua", schema: format.schema, strict: false } } } : {}),
+    // Tool tìm web: "web_search" (bản mới, không dùng web_search_preview cũ); include để nhận ĐỦ nguồn đã tìm, không chỉ nguồn được trích;
+    // max_tool_calls chặn số lượt (mỗi lượt tính phí)
+    ...(p.web_search ? { tools: [{ type: "web_search" }], include: ["web_search_call.action.sources"], max_tool_calls: p.web_search.maxCalls } : {}),
   };
+  if (p.web_search && provider !== "openai") throw new ProviderError(provider, 400, `${PROVIDERS[provider].label}: chưa nối công cụ tìm web.`);
   const r = await fetchImpl(`${PROVIDERS[provider].base}/responses`, {
     method: "POST",
     headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
@@ -143,6 +188,17 @@ async function callResponses(provider: AiProvider, p: CompatParams, fetchImpl: t
   const parts = (json.output ?? []).filter((o) => o.type === "message").flatMap((o) => o.content ?? []);
   const text = parts.filter((c) => c.type === "output_text").map((c) => c.text ?? "").join("");
   const refused = parts.some((c) => c.type === "refusal");
+  const sources = new Map<string, string>();
+  const isUrl = (u: unknown): u is string => typeof u === "string" && /^https?:\/\/\S+$/i.test(u);
+  for (const c of parts) for (const a of c.annotations ?? []) if (a.type === "url_citation" && isUrl(a.url)) sources.set(a.url, a.title?.trim() || sources.get(a.url) || a.url);
+  const calls = (json.output ?? []).filter((o) => o.type === "web_search_call");
+  // Chỉ nhận URL từ lượt tool ĐÃ XONG: lượt "failed" (trang không mở được — URL bịa hoặc cài vào câu hỏi / Second Brain) không thành nguồn
+  for (const o of calls.filter((c) => c.status === "completed")) {
+    for (const src of o.action?.sources ?? []) if ((src.type ?? "url") === "url" && isUrl(src.url) && !sources.has(src.url)) sources.set(src.url, src.url);
+    if (o.action?.type === "open_page" && isUrl(o.action.url) && !sources.has(o.action.url)) sources.set(o.action.url, o.action.url);
+  }
+  // Phí theo tài liệu OpenAI: "Search actions incur a tool call cost" — chỉ action search tính phí (open_page / find_in_page thì không)
+  const searches = calls.filter((c) => c.action?.type === "search").length;
   const stop_reason = refused ? "refusal" : json.status === "incomplete" && json.incomplete_details?.reason === "max_output_tokens" ? "max_tokens" : "end_turn";
   return {
     // Trả mô hình thực chạy như response.model của Claude: meterClient (src/lib/ai.ts) ghi sổ + tính giá theo nó; thiếu → mô hình yêu cầu
@@ -152,6 +208,8 @@ async function callResponses(provider: AiProvider, p: CompatParams, fetchImpl: t
     stop_reason,
     text,
     format,
+    // Chỉ có khi bật web_search (bộ chuyển đổi bỏ đi ở messages.create thường)
+    web_search: p.web_search ? { sources, searches } : undefined,
   };
 }
 
@@ -160,10 +218,10 @@ export function compatClient(provider: Exclude<AiProvider, "anthropic">, fetchIm
   const client = {
     messages: {
       async create(p: CompatParams) {
-        const { text, format, ...res } = await callResponses(provider, p, fetchImpl);
-        void text;
+        const { text, format, web_search, ...res } = await callResponses(provider, p, fetchImpl);
         void format;
-        return res;
+        // Tìm web: trả thêm chữ + nguồn + số lượt (đồng hồ của cổng AI vẫn đếm usage như mọi phản hồi)
+        return web_search ? { ...res, text, sources: web_search.sources, searches: web_search.searches } : res;
       },
       // Qua this.create như SDK Anthropic: cổng AI (src/lib/ai.ts › meterClient) đếm token của phản hồi TRƯỚC khi parse → JSON hỏng /
       // sai schema vẫn ném lỗi nhưng sổ chi phí ghi đúng token hãng đã tính tiền.
@@ -179,6 +237,18 @@ export function compatClient(provider: Exclude<AiProvider, "anthropic">, fetchIm
   };
   // Chỉ phần messages.create / messages.parse được dùng qua cổng AI; kiểu Anthropic để các chỗ gọi không phải đổi
   return client as unknown as Anthropic;
+}
+
+/**
+ * Một lượt tìm web bằng ChatGPT (Responses API, tool "web_search") qua client của cổng AI — client PHẢI là client gate() đưa vào call
+ * (đã bọc đồng hồ: token ghi sổ ai_calls theo vị trí + giá mô hình thực chạy, công tắc / trần đã kiểm). Phí mỗi lượt tìm ghi riêng
+ * ở chỗ gọi bằng webSearchFeeVnd. Hãng chạy vòng tìm → đọc → trả lời phía máy chủ trong MỘT phản hồi (không có pause_turn như Claude).
+ */
+export async function compatWebSearch(client: Anthropic, p: { model: string; max_tokens: number; system: string; prompt: string; maxSearches: number }): Promise<WebSearchResult> {
+  const params: CompatParams = { model: p.model, max_tokens: p.max_tokens, system: p.system, messages: [{ role: "user", content: p.prompt }], web_search: { maxCalls: p.maxSearches } };
+  const res = (await client.messages.create(params as never)) as unknown as Partial<WebSearchResult> & { model: string; usage: WebSearchResult["usage"]; stop_reason: string };
+  if (!(res.sources instanceof Map)) throw new Error("Client không phải bộ chuyển đổi ChatGPT — không chạy được tìm web.");
+  return { model: res.model, usage: res.usage, stop_reason: res.stop_reason, text: res.text ?? "", sources: res.sources, searches: res.searches ?? 0 };
 }
 
 export function clientFor(provider: AiProvider): Anthropic | null {

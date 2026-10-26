@@ -1671,35 +1671,38 @@ def broll_library(broll_dir):
     return lib
 
 
-def image_clip(src, out, d):
+def image_clip(src, out, d, q=1):
     """Ảnh tĩnh → clip 9:16: nền là chính ảnh phủ kín + làm mờ + tối; ảnh dạng thẻ bo góc ở giữa, đẩy vào chậm 1,00→1,05
-    theo đường cos (biến đổi affine dưới điểm ảnh, không làm tròn → không giật). Ảnh nhỏ (vd 720 px) không bị phóng vỡ."""
+    theo đường cos (biến đổi affine dưới điểm ảnh, không làm tròn → không giật). Ảnh nhỏ (vd 720 px) không bị phóng vỡ.
+    q = 2 (4K): dựng thẳng ở (CW·q)×(CH·q) — thẻ lấy ảnh gốc ở cỡ 4K cần dùng (không thu về 1080 rồi phóng ×2), bo góc / bóng /
+    làm mờ nền theo px đích. Ảnh gốc nhỏ hơn cỡ thẻ 4K vẫn phải phóng (giới hạn của ảnh, không phải của bộ dựng). q = 1: như cũ."""
     from PIL import ImageEnhance, ImageOps
+    OW_, OH_ = CW * q, CH * q
     im = ImageOps.exif_transpose(Image.open(src)).convert("RGB")
-    s = max(CW / im.width, CH / im.height)
+    s = max(OW_ / im.width, OH_ / im.height)
     bg = im.resize((math.ceil(im.width * s), math.ceil(im.height * s)), Image.BILINEAR)
-    bg = bg.crop(((bg.width - CW) // 2, (bg.height - CH) // 2, (bg.width - CW) // 2 + CW, (bg.height - CH) // 2 + CH))
-    bg = ImageEnhance.Brightness(bg.filter(ImageFilter.GaussianBlur(36))).enhance(0.5).convert("RGBA")
-    base = min(LAY["card_w"] / im.width, LAY["card_h"] / im.height)  # cỡ thẻ khi z = 1 (px khung / px ảnh)
+    bg = bg.crop(((bg.width - OW_) // 2, (bg.height - OH_) // 2, (bg.width - OW_) // 2 + OW_, (bg.height - OH_) // 2 + OH_))
+    bg = ImageEnhance.Brightness(bg.filter(ImageFilter.GaussianBlur(36 * q))).enhance(0.5).convert("RGBA")
+    base = min(LAY["card_w"] * q / im.width, LAY["card_h"] * q / im.height)  # cỡ thẻ khi z = 1 (px khung đích / px ảnh)
     zmax = 1.05
     k0 = min(1.0, base * zmax)  # giữ ảnh gốc ở cỡ cần dùng lớn nhất (không phóng trước)
     fg = im.resize((max(1, round(im.width * k0)), max(1, round(im.height * k0))), Image.LANCZOS).convert("RGBA")
     m = Image.new("L", fg.size, 0)
-    ImageDraw.Draw(m).rounded_rectangle((0, 0, fg.width - 1, fg.height - 1), radius=max(6, round(28 * k0 / base)), fill=255)  # bo 28 px trên khung
+    ImageDraw.Draw(m).rounded_rectangle((0, 0, fg.width - 1, fg.height - 1), radius=max(6 * q, round(28 * q * k0 / base)), fill=255)  # bo 28 px @1080 trên khung
     fg.putalpha(m)
-    cx, cy = CW / 2, LAY["card_cy"]  # tâm thẻ: vùng mặt (ĐỎ), chừa dải chữ phía dưới
-    sh = Image.new("RGBA", (CW, CH), (0, 0, 0, 0))
+    cx, cy = OW_ / 2, LAY["card_cy"] * q  # tâm thẻ: vùng mặt (ĐỎ), chừa dải chữ phía dưới
+    sh = Image.new("RGBA", (OW_, OH_), (0, 0, 0, 0))
     sw, shh = im.width * base * 1.025, im.height * base * 1.025
-    ImageDraw.Draw(sh).rounded_rectangle((cx - sw / 2, cy - shh / 2 + 18, cx + sw / 2, cy + shh / 2 + 18), radius=30, fill=(0, 0, 0, 150))
-    bg.alpha_composite(sh.filter(ImageFilter.GaussianBlur(22)))
+    ImageDraw.Draw(sh).rounded_rectangle((cx - sw / 2, cy - shh / 2 + 18 * q, cx + sw / 2, cy + shh / 2 + 18 * q), radius=30 * q, fill=(0, 0, 0, 150))
+    bg.alpha_composite(sh.filter(ImageFilter.GaussianBlur(22 * q)))
     n = max(2, int(round(d * FPS)))
-    proc = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{CW}x{CH}", "-r", str(FPS), "-i", "-",
+    proc = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{OW_}x{OH_}", "-r", str(FPS), "-i", "-",
                              "-c:v", "libx264", "-preset", "medium", "-crf", "16", "-pix_fmt", "yuv420p", out], stdin=subprocess.PIPE)
     fcx, fcy = fg.width / 2, fg.height / 2
     for i in range(n):
         e = 0.5 - 0.5 * math.cos(math.pi * i / (n - 1))
         k = base * (1.0 + (zmax - 1.0) * e) / k0  # px khung trên 1 px của fg
-        layer = fg.transform((CW, CH), Image.AFFINE, (1 / k, 0, fcx - cx / k, 0, 1 / k, fcy - cy / k), resample=Image.BICUBIC)
+        layer = fg.transform((OW_, OH_), Image.AFFINE, (1 / k, 0, fcx - cx / k, 0, 1 / k, fcy - cy / k), resample=Image.BICUBIC)
         frame = bg.copy()
         frame.alpha_composite(layer)
         proc.stdin.write(frame.convert("RGB").tobytes())
@@ -1772,6 +1775,7 @@ def plan_ngang(src, info, cropf, plan, words, emph, dias, fs_events, rev_spans, 
     thẻ ảnh M1–M6 vào chỗ trống lớn nhất xa mặt (R3.0.1). Trả (cards, bỏ qua kèm lý do, vị trí sơ đồ)."""
     import ngang as NG
     NG.FONT = font
+    NG.RQ = RQ  # thẻ ảnh / M3 vẽ thẳng ở độ phân giải đích (4K gốc, không phóng ×2)
     track = NG.face_track(src, info, cropf)
 
     def faces(t0, t1):
@@ -1871,8 +1875,11 @@ def plan_ngang(src, info, cropf, plan, words, emph, dias, fs_events, rev_spans, 
         ms_ = [m] + extras[:n - 1]
         side = 1 if (rect[0] + rect[2]) / 2 > fcx else -1
         c = NG.Card(kind, t0, t1, rect, [None] * n, label if kind == "M4" else "", side, counts.get("M2", 0))
-        c.media = [(NG.load_media(os.path.join(broll_dir, x["file"]), c.media_size(j), yc=float(x.get("yc", 0.38)), t0=float(b.get("from", 0)), dur=t1 - t0),
-                    1 if (len(cards) + j) % 2 == 0 else -1) for j, x in enumerate(ms_)]
+        # ảnh nạp lúc thẻ bắt đầu hiện, nhả sau t1 (ngang.Card.loader) — cùng hàm, cùng tham số như nạp sẵn → khung không đổi
+        c.media = None
+        c.loader = (lambda c=c, ms_=ms_, b=b, t0=t0, t1=t1, k0=len(cards):
+                    [(NG.load_media(os.path.join(broll_dir, x["file"]), c.media_size(j), yc=float(x.get("yc", 0.38)), t0=float(b.get("from", 0)), dur=t1 - t0),
+                      1 if (k0 + j) % 2 == 0 else -1) for j, x in enumerate(ms_)])
         c.files = [x["file"] for x in ms_]
         c.license = "; ".join(sorted({str(x.get("license", "")) for x in ms_}))
         c.source = "; ".join(sorted({str(x.get("source", "")) for x in ms_}))
@@ -1888,9 +1895,9 @@ _DARK169 = {}
 
 def draw_ngang(t, cards, dias, dia_pos, emph, rev_spans, disc_img, units, sub_cache, fsub_ss, split3=None):
     """Một khung lớp chữ 16:9 (1920×1080, ×RQ khi 4K): thẻ ảnh → sơ đồ (trên nền tối mềm) → chữ nhấn → dòng miễn trừ → phụ đề.
-    Thẻ ảnh / M3 do ngang.py vẽ ở hệ 1920×1080 (4K: phóng ×RQ); sơ đồ, chữ nhấn, dòng miễn trừ, phụ đề vẽ thẳng ở độ phân giải đích."""
+    Mọi lớp — kể cả thẻ ảnh M1–M6 và M3 (ngang.py, NG.RQ = RQ) — vẽ thẳng ở độ phân giải đích; hộp đo ở hệ thiết kế 1920×1080."""
     import ngang as NG
-    layer = Image.new("RGBA", (CW, CH), (0, 0, 0, 0))
+    layer = Image.new("RGBA", (CW * RQ, CH * RQ), (0, 0, 0, 0))
     boxes = []
     base3 = split3.frame(t) if split3 else None
     if split3:
@@ -1899,10 +1906,6 @@ def draw_ngang(t, cards, dias, dia_pos, emph, rev_spans, disc_img, units, sub_ca
         b = c.frame(t, layer)
         if b:
             boxes.append(("card", b))
-    if RQ != 1:
-        layer = layer.resize((CW * RQ, CH * RQ), Image.LANCZOS) if layer.getbbox() else Image.new("RGBA", (CW * RQ, CH * RQ), (0, 0, 0, 0))
-        if base3 is not None:
-            base3 = base3.resize((CW * RQ, CH * RQ), Image.LANCZOS)
     for d in dias:
         if not (d.t0 <= t < d.t1):
             continue
@@ -2149,15 +2152,16 @@ def main():
     if FULL:
         cards, card_skips, dia_pos, track169 = plan_ngang(src, info, cropf, plan, words, emph, dias, fs_events, rev_spans, zooms, (ax * CW, ay * CH), broll_dir, m3)
         if m3:
-            base_vf = ",".join(["fps=30"] + ([cropf] if cropf else []) + GRADE + [f"scale={CW}:{CH}:flags=lanczos", "unsharp=5:5:0.3"])
+            base_vf = ",".join(["fps=30"] + ([cropf] if cropf else []) + GRADE + [f"scale={CW * RQ}:{CH * RQ}:flags=lanczos", "unsharp=5:5:0.3"])
             f0 = int(math.floor(m3["t0"] * FPS))
             while f0 / FPS < m3["t0"]:  # đúng điều kiện vòng vẽ dùng (t = f / FPS ≥ t0), tránh lệch 1 khung do số thực (phản biện P3-1)
                 f0 += 1
             fcs = [(q[0] + q[2]) / 2 for tt, b in track169 if m3["t0"] <= tt <= m3["t1"] for q in b]
             lib_ = {m["file"]: m for m in broll_library(broll_dir)}
+            m3t = (NG.M3_TILE[0] * RQ, NG.M3_TILE[1] * RQ)  # ô ảnh M3 ở độ phân giải đích
             split3 = NG.Split3(m3, NG.VideoReader(src, (f0 - 0.5) / FPS, int((m3["t1"] - f0 / FPS) * FPS) + 2, base_vf),
                                float(np.median(fcs)) if fcs else ax * CW,
-                               [NG.load_media(os.path.join(broll_dir, x["file"]), NG.M3_TILE, yc=float(lib_[x["file"]].get("yc", 0.38)))[0].resize(NG.M3_TILE) for x in m3["tiles"]])
+                               [NG.load_media(os.path.join(broll_dir, x["file"]), m3t, yc=float(lib_[x["file"]].get("yc", 0.38)))[0].resize(m3t) for x in m3["tiles"]])
     frame_boxes = {}
     yy_ = np.arange(BH, dtype=np.float32) if RQ == 1 else (np.arange(BH * RQ, dtype=np.float32) + 0.5) / RQ - 0.5
     xx_ = np.arange(W, dtype=np.float32) if RQ == 1 else (np.arange(W * RQ, dtype=np.float32) + 0.5) / RQ - 0.5
@@ -2353,7 +2357,7 @@ def main():
         start = float(b.get("from", 0))
         if fpath.lower().endswith(IMG_EXT):
             clip = job.p("work", f"anh_{k:02d}.mp4")
-            image_clip(fpath, clip, d)
+            image_clip(fpath, clip, d, Q)
             fpath, start = clip, 0.0
         b_args += ["-ss", f"{start:.3f}", "-t", f"{d:.3f}", "-i", fpath]
         b_fc += (f"[{idx}:v]fps=30,scale={OW}:{OH}:force_original_aspect_ratio=increase:flags=lanczos,crop={OW}:{OH},setsar=1,format=yuva420p,"

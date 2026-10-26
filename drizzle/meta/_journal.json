@@ -183,6 +183,13 @@
       "when": 1792986132419,
       "tag": "0025_remote_assets_removed_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1792993974369,
+      "tag": "0026_post_send_claim",
+      "breakpoints": true
     }
   ]
 }

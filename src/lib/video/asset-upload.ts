@@ -128,7 +128,7 @@ export function contentOk(file: string, c: OkCheck): boolean {
 
 /** Ghi tệp .txt kèm theo, đổi tên tệp tạm thành tên thật, rồi nhận NGAY vào thư viện (đúng bộ nhận của thư mục thả). */
 export function finishUpload(dataDir: string, s: StagedUpload, c: OkCheck, now = new Date()): UploadResult {
-  const lines = [`Giấy phép: ${c.license}`, ...(c.keywords.length ? [`Từ khoá: ${c.keywords.join(", ")}`] : [])];
+  const lines = [`Giấy phép: ${c.license}`, ...(c.keywords.length ? [`Từ khoá: ${c.keywords.join(", ")}`] : []), ...(c.desc ? [`Mô tả: ${c.desc}`] : [])];
   placeNoClobber(s, `${lines.join("\n")}\n`);
   const r = importDrop(dataDir, now, { fresh: [s.final] });
   const done = r.imported.find((i) => i.kind === c.target && i.file === s.rel);

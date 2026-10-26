@@ -24,6 +24,9 @@ before(async () => {
   db = await import("../src/db");
   research = await import("../src/lib/research");
   admin = await import("../src/lib/admin");
+  // Ca dưới chạy đường Claude (chỉ có khoá Claude giả); mặc định vị trí từ 26/10 là ChatGPT → bước tìm web sẽ cần khoá ChatGPT
+  const roster = await import("../src/lib/ai-roster");
+  roster.saveRoleSettings("research", { enabled: true, model: "claude-sonnet-5-5" });
 });
 
 const status = (id: string) => db.getDb().select().from(db.schema.researchTasks).where(eq(db.schema.researchTasks.id, id)).get()!;

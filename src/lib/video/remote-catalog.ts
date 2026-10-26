@@ -4,6 +4,8 @@
 // (DATA_DIR/remote-assets/previews/<sha256>.<jpg|mp3>) nên tên tệp ở máy chủ không bao giờ lấy từ dữ liệu gửi lên.
 // Duyệt nhạc trên web: máy chủ chỉ GHI quyết định (ai, khi nào, đúng sha256 + tên tệp), máy dựng kéo về, áp bằng
 // music-rules.approveMusicIn / unapproveMusicIn trên máy OWNER rồi xác nhận trong lần gửi danh mục kế tiếp.
+// Xoá tư liệu máy OWNER trên web (OWNER 27/10/2026): cùng đường đó — quyết định "trash" (đúng sha256 + tên tệp), máy dựng chuyển tệp vào
+// Đã xoá trên Mac bằng asset-trash.trashAsset (khôi phục được 30 ngày ở Tư liệu › Đã xoá của app trên Mac), lần gửi kế không còn mục đó.
 import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
@@ -21,12 +23,14 @@ import {
   previewMagicOk,
   stripAbsPaths,
   safeCatalogPath,
+  trashTargetOf,
   type CatalogAck,
   type CatalogItemIn,
   type CatalogKind,
   type CatalogMedia,
   type CatalogSyncRequest,
   type CatalogSyncResponse,
+  type DecisionAction,
   type DecisionOut,
   type PreviewType,
 } from "./catalog-wire";
@@ -217,7 +221,9 @@ export function syncRemoteCatalog(req: CatalogSyncRequest, worker: string, now =
         const it = incoming.get(d.assetId);
         let status: "applied" | "failed" = a.ok ? "applied" : "failed";
         let error = a.ok ? null : stripAbsPaths(a.error || "Máy dựng không áp được");
-        if (a.ok && (!it || it.sha256 !== d.sha256 || (d.action === "approve" ? !it.approvedBy : !!it.approvedBy))) {
+        // Xoá: "đã áp" = mục không còn trong danh mục vừa gửi; duyệt / bỏ duyệt: mục còn, đúng sha256, đúng trạng thái duyệt
+        const unchanged = d.action === "trash" ? !!it : !it || it.sha256 !== d.sha256 || (d.action === "approve" ? !it.approvedBy : !!it.approvedBy);
+        if (a.ok && unchanged) {
           status = "failed";
           error = "Máy dựng báo đã áp nhưng danh mục trên máy OWNER chưa đổi";
         }
@@ -226,8 +232,12 @@ export function syncRemoteCatalog(req: CatalogSyncRequest, worker: string, now =
       // Quyết định còn chờ nhưng bài không còn / tệp đã đổi → không áp nhầm bản khác
       for (const d of tx.select().from(schema.remoteAssetDecisions).where(eq(schema.remoteAssetDecisions.status, "pending")).all()) {
         const it = incoming.get(d.assetId);
-        if (!it) tx.update(schema.remoteAssetDecisions).set({ status: "cancelled", error: "Bài không còn trên máy OWNER", resultAt: at }).where(eq(schema.remoteAssetDecisions.id, d.id)).run();
-        else if (it.sha256 !== d.sha256) tx.update(schema.remoteAssetDecisions).set({ status: "failed", error: "Tệp trên máy OWNER đã đổi — nghe lại rồi duyệt", resultAt: at }).where(eq(schema.remoteAssetDecisions.id, d.id)).run();
+        const trash = d.action === "trash";
+        if (!it && trash) {
+          // Lệnh xoá chỉ "đã áp" khi máy dựng XÁC NHẬN (phản biện P3): mục vắng mặt có thể chỉ vì máy OWNER đọc hỏng manifest. Giữ chờ —
+          // máy dựng nhận lại lệnh: tệp đã nằm trong Đã xoá (xác nhận lần trước mất) → xác nhận đúng; không còn / manifest hỏng → báo lỗi.
+        } else if (!it) tx.update(schema.remoteAssetDecisions).set({ status: "cancelled", error: "Bài không còn trên máy OWNER", resultAt: at }).where(eq(schema.remoteAssetDecisions.id, d.id)).run();
+        else if (it.sha256 !== d.sha256) tx.update(schema.remoteAssetDecisions).set({ status: "failed", error: trash ? "Tệp trên máy OWNER đã đổi — không xoá" : "Tệp trên máy OWNER đã đổi — nghe lại rồi duyệt", resultAt: at }).where(eq(schema.remoteAssetDecisions.id, d.id)).run();
       }
     });
   } catch (e) {
@@ -417,7 +427,11 @@ export function pendingDecisions(): DecisionOut[] {
     .where(eq(schema.remoteAssetDecisions.status, "pending"))
     .orderBy(sql`rowid`)
     .all()
-    .map((d) => ({ id: d.id, file: d.file, sha256: d.sha256, action: d.action as DecisionOut["action"], by: d.by, at: d.at }));
+    .map((d) => {
+      const action = d.action as DecisionAction;
+      const kind = action === "trash" ? trashTargetOf(d.assetId)?.kind : undefined;
+      return { id: d.id, file: d.file, sha256: d.sha256, action, ...(kind ? { kind } : {}), by: d.by, at: d.at };
+    });
 }
 
 export function pendingDecisionCount(): number {
@@ -445,6 +459,7 @@ export function requestMusicDecision(assetId: string, approve: boolean, actor: {
   const action = approve ? "approve" : "unapprove";
   const pending = db.select().from(schema.remoteAssetDecisions).where(and(eq(schema.remoteAssetDecisions.assetId, assetId), eq(schema.remoteAssetDecisions.status, "pending"))).get();
   if (pending) {
+    if (pending.action === "trash") return { ok: false, error: "Bài đang chờ máy dựng xoá — huỷ xoá trước" };
     if (pending.action === action) return { ok: true, state: "already" };
     db.update(schema.remoteAssetDecisions).set({ status: "cancelled", error: `Huỷ bởi ${actor.email}`, resultAt: nowIso(now) }).where(eq(schema.remoteAssetDecisions.id, pending.id)).run();
     return { ok: true, state: "cancelled" };
@@ -456,7 +471,28 @@ export function requestMusicDecision(assetId: string, approve: boolean, actor: {
   return { ok: true, state: "queued" };
 }
 
-/** Huỷ quyết định đang chờ (chưa áp) của một mục. */
+/**
+ * OWNER bấm Xoá một tư liệu của máy OWNER (nhạc / hiệu ứng / ảnh·clip). Chỉ mục đang hiện, đúng thư mục asset-trash xoá được
+ * (trashTargetOf). Gắn sha256 + tên tệp: máy dựng chỉ xoá khi tệp trên máy vẫn đúng mã băm đó. Quyết định duyệt đang chờ của cùng mục
+ * bị thay bằng lệnh xoá (một mục chỉ một quyết định chờ).
+ */
+export function requestTrashDecision(assetId: string, actor: { email: string; name: string }, now = new Date()): DecisionResult {
+  const db = getDb();
+  const row = db.select().from(schema.remoteAssets).where(and(eq(schema.remoteAssets.id, assetId), isNull(schema.remoteAssets.removedAt))).get();
+  const target = trashTargetOf(assetId);
+  if (!row || !target || row.kind === "drop") return { ok: false, error: "Không xoá được mục này trên máy OWNER" };
+  if (!isSha256(row.sha256)) return { ok: false, error: "Mục chưa có mã băm — chờ lần đồng bộ kế" };
+  const D = schema.remoteAssetDecisions;
+  const pending = db.select().from(D).where(and(eq(D.assetId, assetId), eq(D.status, "pending"))).get();
+  if (pending?.action === "trash") return { ok: true, state: "already" };
+  db.transaction((tx) => {
+    if (pending) tx.update(D).set({ status: "cancelled", error: `Thay bằng lệnh xoá của ${actor.email}`, resultAt: nowIso(now) }).where(eq(D.id, pending.id)).run();
+    tx.insert(D).values({ id: newId(), assetId, file: target.file, sha256: row.sha256, action: "trash", by: actor.email, byName: actor.name, at: nowIso(now), status: "pending" }).run();
+  });
+  return { ok: true, state: "queued" };
+}
+
+/** Huỷ quyết định đang chờ (chưa áp) của một mục — duyệt / bỏ duyệt / xoá. */
 export function cancelMusicDecision(assetId: string, actor: { email: string }, now = new Date()): DecisionResult {
   const r = getDb()
     .update(schema.remoteAssetDecisions)
@@ -465,6 +501,7 @@ export function cancelMusicDecision(assetId: string, actor: { email: string }, n
     .run();
   return r.changes ? { ok: true, state: "cancelled" } : { ok: false, error: "Không có quyết định đang chờ" };
 }
+export const cancelAssetDecision = cancelMusicDecision;
 
 // ---------- Trạng thái ----------
 

@@ -1,22 +1,25 @@
 import { Bot, Users } from "lucide-react";
 import { Panel, PanelHeader } from "@/components/ui/card";
 import { Pill } from "@/components/ui/pill";
-import { Field, WithUnit, inputClass } from "@/components/ui/field";
+import { Field, inputClass } from "@/components/ui/field";
+import { VndCapInput } from "@/components/ui/vnd-cap-input";
 import { SubmitButton } from "@/components/campaigns/submit-button";
 import { saveAiRole } from "@/lib/actions/settings";
 import { AI_ROLES, roleSettings } from "@/lib/ai-roster";
-import { AI_MODELS, PROVIDERS, modelInfo, providerConfigured, type AiProvider } from "@/lib/ai-providers";
+import { AI_MODELS, PROVIDERS, modelInfo, providerConfigured, vndPerUsd, type AiProvider } from "@/lib/ai-providers";
 import { formatCurrency } from "@/lib/format";
 import { displayStepOf } from "@/config/journey";
 import { SettingItem, SettingList } from "./setting-item";
 
 // Cài đặt › Đội AI: mỗi vị trí 1 AI — một dòng "Bật / Tắt · mô hình · trần"; bấm mới chỉnh công tắc, mô hình, trần riêng / tháng.
 export function AiTeamPanel() {
+  const rate = vndPerUsd();
   return (
     <Panel id="ai-team">
       <PanelHeader title="Đội AI" sub="Mỗi bước một AI" icon={Users} tone="violet" info="Mỗi bước một AI — chọn Claude, ChatGPT hoặc Grok. Tắt thì bước đó chỉ chạy theo luật, không tốn tiền AI." />
       <SettingList>
-        {AI_ROLES.map((role) => {
+        {/* Vị trí chưa có chỗ gọi (AI Quảng cáo — quảng cáo đang tự dừng / tăng theo luật) ẩn tới khi nối (OWNER 26/10) */}
+        {AI_ROLES.filter((role) => !role.pending).map((role) => {
           const s = roleSettings(role);
           const info = modelInfo(s.model);
           const model = role.local ? "tại máy · ₫0" : info?.label ?? s.model;
@@ -51,8 +54,8 @@ export function AiTeamPanel() {
                     </select>
                   )}
                 </Field>
-                <Field label="Trần / tháng" hint="0 = trần chung">
-                  <WithUnit unit="₫"><input name="monthlyCapVnd" inputMode="numeric" defaultValue={s.monthlyCapVnd} className={`${inputClass} w-[130px] pr-7`} /></WithUnit>
+                <Field label="Trần / tháng">
+                  <VndCapInput name="monthlyCapVnd" defaultValue={s.monthlyCapVnd} rate={rate} emptyHint="0 = trần chung" className="w-[130px]" />
                 </Field>
                 <SubmitButton>Lưu</SubmitButton>
               </form>

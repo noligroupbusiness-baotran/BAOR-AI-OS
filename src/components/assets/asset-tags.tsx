@@ -1,4 +1,4 @@
-import { CircleAlert, HardDrive, Laptop, RefreshCw } from "lucide-react";
+import { CircleAlert, HardDrive, Laptop, PenLine, RefreshCw, Trash2 } from "lucide-react";
 import { Pill } from "@/components/ui/pill";
 import { InfoTip } from "@/components/ui/info-tip";
 import { formatDateTime } from "@/lib/format";
@@ -19,10 +19,22 @@ export function OriginTag({ origin }: { origin?: AssetOrigin }) {
   );
 }
 
-/** Quyết định duyệt đã ghi trên web nhưng máy dựng chưa nhận / áp dụng. */
-export function PendingTag({ pending }: { pending?: boolean }) {
+/** Nhãn ngắn của quyết định đang chờ máy dựng: xoá → "Chờ máy dựng xoá"; duyệt / bỏ duyệt → "Đang chờ máy dựng áp dụng". */
+export const pendingLabel = (action?: string) => (action === "trash" ? "Chờ máy dựng xoá" : "Đang chờ máy dựng áp dụng");
+
+/** Quyết định (duyệt / xoá) đã ghi trên web nhưng máy dựng chưa nhận / áp dụng. */
+export function PendingTag({ pending, action }: { pending?: boolean; action?: string }) {
   if (!pending) return null;
-  return <Pill tone="sky"><RefreshCw size={11} aria-hidden />Đang chờ máy dựng áp dụng</Pill>;
+  return action === "trash" ? (
+    <Pill tone="amber"><Trash2 size={11} aria-hidden />{pendingLabel(action)}</Pill>
+  ) : (
+    <Pill tone="sky"><RefreshCw size={11} aria-hidden />{pendingLabel(action)}</Pill>
+  );
+}
+
+/** Ảnh / clip chưa có mô tả: bộ dựng chỉ chọn theo tên tệp + từ khoá. */
+export function NoDescTag() {
+  return <Pill tone="amber"><PenLine size={11} aria-hidden />Chưa có mô tả</Pill>;
 }
 
 /** Lần áp quyết định gần nhất không thành: nhãn đỏ ngắn + (i) lý do. */

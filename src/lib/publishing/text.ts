@@ -13,8 +13,8 @@ import type { PublishResult } from "@/lib/connectors/types";
 import { kindOf } from "@/lib/content/formats";
 import { getAutomation } from "@/lib/queries";
 import { recordDecision } from "@/lib/router";
-import { AMBIGUOUS_MARK, PAGE_CHANGED_PREFIX, SAMPLE_NOTE, inFlight, isAmbiguousFailure, isDryRun, isSamplePost, ambiguousRetryBlock, parseRescheduleWhen, previousExternalId, recoverStuckPublishing, releaseContentIfIdle, sweepOverduePosts } from "./guards";
-import { cancelPostRow, channelPageId, claimForSend, describeBlockers, overdueOnSamePage, pageBlockersAmong } from "./video";
+import { AMBIGUOUS_MARK, PAGE_CHANGED_PREFIX, SAMPLE_NOTE, holdClaim, releaseUnsentClaim, isAmbiguousFailure, isDryRun, isSamplePost, ambiguousRetryBlock, parseRescheduleWhen, previousExternalId, recoverStuckPublishing, releaseContentIfIdle, sweepOverduePosts } from "./guards";
+import { cancelPostRow, channelPageId, claimForSend, describeBlockers, overdueOnSamePage, pageBlockersAmong, scheduleTx } from "./video";
 
 /** Kênh nhận bài CHỮ và khoá kết nối của kênh. TikTok / YouTube chỉ nhận video, Instagram cần ảnh / video → không nhận bài chữ. */
 export const TEXT_PLATFORMS: Record<string, { key: string; label: string }> = {
@@ -100,16 +100,23 @@ export function scheduleTextPosts(input: { contentId: string; platforms: string[
   if (!Number.isFinite(when)) return { ok: false, error: "Giờ đăng không hợp lệ" };
   if (when < Date.now() - PAST_GRACE_MS) return { ok: false, error: "Giờ đăng đã qua: chọn giờ từ bây giờ trở đi." };
   const dry = isDryRun();
-  // Chống trùng theo TRANG ĐÍCH (cùng luật bài video): bài thật còn sống / đã gửi lệnh đăng / lỗi mơ hồ chặn tạo bài mới.
-  const live = pageBlockersAmong(textPostsFor(item.id), platforms, dry);
-  if (dry && live.length) return { ok: false, error: `Nội dung đã có bài thử đang chờ trên ${describeBlockers(live, platforms)}. Không tạo bài trùng.` };
-  if (!dry && live.some((e) => isAmbiguousFailure(e)))
-    return { ok: false, error: `Bài trên ${describeBlockers(live.filter((e) => isAmbiguousFailure(e)), platforms)} lỗi mơ hồ, có thể đã lên trang. Kiểm tra trang rồi dùng “Đăng lại” ở Đăng bài (ghi đã kiểm tra), không lên lịch mới.` };
-  if (!dry && live.length) return { ok: false, error: `Nội dung đã có bài trên ${describeBlockers(live, platforms)} (${live.map((e) => e.status).join(", ")}). Không đăng trùng.` };
   const keys = platforms.map((p) => dedupeKeyFor(p, item.id));
-  const existing = dry ? [] : db.select().from(schema.scheduledPosts).where(inArray(schema.scheduledPosts.dedupeKey, keys)).all();
-  const holders = existing.filter((x) => x.externalId || !["failed", "cancelled", "overdue"].includes(x.status));
-  if (holders.length) return { ok: false, error: `Kênh ${holders.map((x) => `${x.platform} đã có bài này (${x.status})`).join("; ")}. Không đăng trùng.` };
+  // Kiểm chống trùng: một lần để báo lỗi nhanh, rồi LẠI trong giao dịch BEGIN IMMEDIATE cùng lệnh ghi (scheduleTx) — tiến trình khác
+  // cùng tệp CSDL không chen được bài cùng trang giữa lúc kiểm và lúc ghi.
+  const check = (): { ok: false; error: string } | { ok: true; existing: PostRow[] } => {
+    // Chống trùng theo TRANG ĐÍCH (cùng luật bài video): bài thật còn sống / đã gửi lệnh đăng / lỗi mơ hồ chặn tạo bài mới.
+    const live = pageBlockersAmong(textPostsFor(item.id), platforms, dry);
+    if (dry && live.length) return { ok: false, error: `Nội dung đã có bài thử đang chờ trên ${describeBlockers(live, platforms)}. Không tạo bài trùng.` };
+    if (!dry && live.some((e) => isAmbiguousFailure(e)))
+      return { ok: false, error: `Bài trên ${describeBlockers(live.filter((e) => isAmbiguousFailure(e)), platforms)} lỗi mơ hồ, có thể đã lên trang. Kiểm tra trang rồi dùng “Đăng lại” ở Đăng bài (ghi đã kiểm tra), không lên lịch mới.` };
+    if (!dry && live.length) return { ok: false, error: `Nội dung đã có bài trên ${describeBlockers(live, platforms)} (${live.map((e) => e.status).join(", ")}). Không đăng trùng.` };
+    const existing = dry ? [] : db.select().from(schema.scheduledPosts).where(inArray(schema.scheduledPosts.dedupeKey, keys)).all();
+    const holders = existing.filter((x) => x.externalId || !["failed", "cancelled", "overdue"].includes(x.status));
+    if (holders.length) return { ok: false, error: `Kênh ${holders.map((x) => `${x.platform} đã có bài này (${x.status})`).join("; ")}. Không đăng trùng.` };
+    return { ok: true, existing };
+  };
+  const pre = check();
+  if (!pre.ok) return pre;
   const iso = new Date(when).toISOString();
   const rows = platforms.map((p) => ({
     id: newId("sp"),
@@ -122,13 +129,17 @@ export function scheduleTextPosts(input: { contentId: string; platforms: string[
     dedupeKey: dry ? null : dedupeKeyFor(p, item.id),
     targetPageId: channelPageId(p),
   }));
-  db.transaction((tx) => {
-    if (!dry) for (const e of existing) tx.update(schema.scheduledPosts).set({ dedupeKey: null }).where(eq(schema.scheduledPosts.id, e.id)).run();
+  const wrote = scheduleTx(() => {
+    const c = check();
+    if (!c.ok) return c;
+    if (!dry) for (const e of c.existing) db.update(schema.scheduledPosts).set({ dedupeKey: null }).where(eq(schema.scheduledPosts.id, e.id)).run();
     // Bài quá hạn cũ cùng nội dung + cùng trang đã được thay bằng bài mới → huỷ (không còn treo "cần xếp lại")
-    for (const e of overdueOnSamePage(textPostsFor(item.id), platforms)) tx.update(schema.scheduledPosts).set({ status: "cancelled", dedupeKey: null, error: "Đã thay bằng bài lên lịch mới." }).where(eq(schema.scheduledPosts.id, e.id)).run();
-    tx.insert(schema.scheduledPosts).values(rows).run();
-    tx.update(schema.contentItems).set({ status: "scheduled", scheduledFor: iso }).where(eq(schema.contentItems.id, item.id)).run();
+    for (const e of overdueOnSamePage(textPostsFor(item.id), platforms)) db.update(schema.scheduledPosts).set({ status: "cancelled", dedupeKey: null, error: "Đã thay bằng bài lên lịch mới." }).where(eq(schema.scheduledPosts.id, e.id)).run();
+    db.insert(schema.scheduledPosts).values(rows).run();
+    db.update(schema.contentItems).set({ status: "scheduled", scheduledFor: iso }).where(eq(schema.contentItems.id, item.id)).run();
+    return { ok: true };
   });
+  if (!wrote.ok) return wrote;
   campaignRepo.syncEntityStatus("content", item.id, "scheduled");
   for (const r of rows) campaignRepo.inheritLinks("content", item.id, "publication", r.id, "scheduled");
   logActivity("human", `${input.by} lên lịch “${item.title}” trên ${platforms.length} kênh${dry ? " (chế độ thử, không đăng thật)" : ""}.`, "publishing");
@@ -221,13 +232,23 @@ export async function publishDueTextPosts(): Promise<{ published: number; tested
       }
       continue;
     }
-    recordDecision({ lane: "rule", domain: "publish", subject: `Đăng “${post.title}” lên ${post.platform}`, entityType: "publication", entityId: post.id, outcome: "cho phép", reason: "Đủ điều kiện đăng.", needsApproval: false });
-    inFlight.add(post.id);
-    const runId = startRun(gate.key, "publish");
+    // Giữa giành quyền và gọi nền tảng: lỗi ở đây (CSDL bận / hỏng) = CHƯA gửi gì → trả bài về "chờ đăng", không để kẹt "publishing".
+    let runId: string;
+    let ctx: ReturnType<typeof connectorContext>;
+    try {
+      recordDecision({ lane: "rule", domain: "publish", subject: `Đăng “${post.title}” lên ${post.platform}`, entityType: "publication", entityId: post.id, outcome: "cho phép", reason: "Đủ điều kiện đăng.", needsApproval: false });
+      ctx = connectorContext(gate.key);
+      runId = startRun(gate.key, "publish");
+    } catch (e) {
+      releaseUnsentClaim(post.id, claim.post.attempts - 1, `Chưa gửi (${e instanceof Error ? e.message : e}); thử lại lượt sau.`);
+      out.skipped++;
+      continue;
+    }
+    const release = holdClaim(post.id);
     try {
       let res: PublishResult;
       try {
-        res = await connectorFor(gate.key)!.publish!(connectorContext(gate.key), { postId: post.id, contentId: post.contentId, title: post.title, message, platform: post.platform });
+        res = await connectorFor(gate.key)!.publish!(ctx, { postId: post.id, contentId: post.contentId, title: post.title, message, platform: post.platform });
       } catch (e) {
         res = { ok: false, ambiguous: true, message: `Lỗi khi gửi lệnh đăng (${e instanceof Error ? e.message : e}). Kiểm tra trang trước khi thử lại.` };
       }
@@ -247,7 +268,7 @@ export async function publishDueTextPosts(): Promise<{ published: number; tested
         void sendAlert({ level: "error", title: `Đăng bài lỗi: ${post.title}`, text: msg, href: "/publishing" });
       }
     } finally {
-      inFlight.delete(post.id);
+      release();
     }
   }
   return out;
