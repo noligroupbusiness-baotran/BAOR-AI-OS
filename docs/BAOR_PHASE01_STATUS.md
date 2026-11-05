@@ -138,6 +138,35 @@ OWNER 25/10/2026 (tối): edit video LẠI ("edit lại đi") — lệnh "ngưng
       máy dựng áp quyết định về manifest Mac (luật duyệt một nguồn music-rules.ts, kiểm ở cả hai đầu). Migration 0024 / 0025 (chỉ thêm
       bảng / chỉ mục). Phản biện bảo mật 3 vòng (P1 vượt trần cỡ tệp bằng khoá prototype + DoS bộ nhớ đã vá; bảng tự dọn; rò giữ chỗ).
       SAU KHI GHÉP: OWNER cài lại máy dựng (`npm run render-worker:install`) để bật đồng bộ.
+   R. XONG (commit kế, OWNER 05/11 "edit trên máy… kéo sang cho hệ thống tự viết bài để đăng"): thư mục 2.BAOR.vn/7.VIDEO-DA-DUYET
+      trên Mac OWNER → máy dựng (render-worker, chạy nền) quét mỗi phút, chuyển lời nói thành chữ tại máy (Whisper), gửi nối tiếp lên
+      /api/render-worker/intake bằng khoá máy dựng (chống trùng theo sha256) → video vào thẳng Kho (đã duyệt, OWNER) → tự viết tiêu đề +
+      nội dung từ LỜI ĐÃ NÓI (+ .txt cùng tên = ghi chú OWNER). Tệp gửi xong cất vào DA-GUI/. Kho video có dải trạng thái thư mục.
+      Cũng vá: OWNER tải video tự edit qua web vào Kho trước đây KHÔNG tự viết bài (chỉ Duyệt mới viết) — nay viết luôn.
+      SAU KHI GHÉP: máy OWNER `git pull` + `npm run render-worker:install` (LaunchAgent nạp mã mới) → kéo video vào thư mục là chạy.
+   S. XONG (commit kế, OWNER 05/11 "giao diện cũng phải khác… tối giản, đơn giản, dễ dùng"): hành trình 7 bước → 4 bước
+      (src/config/journey.ts giữ n, chỉ đổi `step`): 1 Kịch bản (/content/hooks; chủ đề & insight là trang phụ), 2 Video (Kho video;
+      Studio dựng trong app là nút phụ), 3 Đăng, 4 Kết quả (/insights/learning: Số liệu · Quảng cáo · Cải tiến; /ads chuyển hướng
+      vào tab Quảng cáo giữ tham số). Thanh bên 4 mục (Alt+1…4), mục ẩn vẫn mở được và làm sáng mục cha. Tổng quan 4 thẻ, mỗi thẻ ≤ 2 số
+      / 2 nút. Trang Kịch bản: mỗi hook một dòng + "Viết kịch bản" / "Bỏ", chi tiết gập. Mã bước sơ đồ (8.2 → 4, 6.1 → 3, 4.2 → 2).
+      Tối 05/11 OWNER: "khâu kịch bản cũng không cần… chỉ cần Video, Đăng và Kết quả" → 3 bước (commit kế): 1 Video (Kho gắn thư mục
+      VIDEO-DA-DUYET) · 2 Đăng · 3 Kết quả; Kịch bản / Chủ đề & insight / Studio = trang phụ (`step: 0`, `parent: 1`) mở qua menu
+      Tạo mới hoặc đường dẫn, làm sáng bước Video; Alt+1…3; mã sơ đồ 8.2 → 3, 6.1 → 2, 4.2 → 1, 2 / 3 → "—".
+   T. XONG (commit kế, OWNER 05/11 tối, chọn mẫu 3 "thẻ nổi 3D, giữ màu BAOR" trong 5 mẫu trên canvas): bước 2 · Đăng làm lại
+      (src/components/publishing/video-board.tsx, src/lib/publishing/auto-post.ts): mỗi video đã duyệt chưa đăng một hàng thẻ nổi —
+      ảnh video, bài GPT viết từ lời nói (chip nguồn), MỖI NỀN TẢNG MỘT Ô: "Đăng" = xếp giờ hiện tại + bộ chạy nền gửi ngay,
+      "Hẹn giờ" mở khung chọn giờ trong ô (giờ vàng gợi ý), đã hẹn → Đổi giờ / Huỷ, đã đăng → Xem bài, chưa nối / chưa hỗ trợ → Kết nối;
+      fanpage phụ chưa nối không chiếm ô. Nút "✦ Tự động": GPT đọc video → viết bài (fallback luật) → xếp mọi nền tảng còn mở vào khung
+      giờ vàng trống gần nhất (mỗi khung một video). Công tắc "Tự động cho video mới" (publishing.autoNew, quyền quản trị) móc vào
+      post-draft: video vào Kho (thư mục / tải lên / duyệt) → bài xong → tự xếp lịch; lỗi chỉ ghi nhật ký. Chế độ thử / chống trùng /
+      trần caption vẫn ở scheduleVideoPosts. Kho video: nút chính "Đăng ›" sang bước Đăng. CSS .card3d / .board3d / .tilt3d.
+      Test tests/auto-post.test.ts (6). Chạy thật dev: Đăng ngay / Hẹn giờ (GPT viết thật) / Tự động (khung kế khi 20:30 đã có bài);
+      vòng khép kín: máy dựng tạm trỏ dev + thư mục thử → clip kéo vào → 2 phút sau lên trang Đăng với bài GPT viết từ ghi chú .txt,
+      tự xếp khung giờ vàng trống (công tắc bật). Trang Đăng chỉ còn: dải thư mục VIDEO-DA-DUYET · công tắc · hàng video; lịch sử +
+      lịch tháng gập dưới một nút. "Áo" mẫu 3 cho toàn app: thanh bên thành thẻ nổi tách mép, mục chọn viên đậm, thẻ cạnh dày 2px +
+      bóng xa (--card-edge / --shadow), bo 14px, nút chính cạnh 3D, tiêu đề trang 26px. Phản biện độc lập APPROVE; P2 đã sửa (khoá
+      Đăng / Hẹn giờ khi GPT đang viết), công tắc tự động lên quyền quản trị (P3-3). Nợ: gộp vnLocalToIso với whenIso ở actions;
+      rescheduleVideoPost nhận giờ quá khứ (UI mặc định tương lai); platformSlots truy vấn nhiều (ổn với dữ liệu hiện tại).
    CHỜ OWNER: khoá Meta / Google / YouTube / TikTok (đăng bài + quảng cáo 7.2–7.5), hồ sơ cá nhân Facebook (6.2.1.1).
 2. Skill ESV + Skill Edit Video Ngang v0.1.r2 — XONG phần Phần chung A (4255aca, ff638df): nhạc A5 (chưa có bài đạt → KHÔNG nhạc),
    SFX OWNER theo vai trò, cắt lặng A11.4 (+ bảo vệ khoảng có từ), xem trước 720p, số A13, ảnh theo mô tả nội dung A4.1.

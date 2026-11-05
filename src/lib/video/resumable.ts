@@ -3,6 +3,7 @@
 // Khúc phải gửi ĐÚNG vị trí (offset = số byte đã nhận) — gửi lặp / lệch vị trí bị từ chối kèm vị trí đúng (không ghi đè, không hở).
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { uploadsDir } from "@/lib/uploads";
 import { EXT_MIME, MAX_SOURCE_BYTES, newUploadId, registerSource, type IntakeParams } from "./source-intake";
 
@@ -102,7 +103,7 @@ export function openSession(i: { original: string; size: number; key: string; pa
 
 export type AppendResult =
   | { ok: true; offset: number; done: false }
-  | { ok: true; offset: number; done: true; videoId: string }
+  | { ok: true; offset: number; done: true; videoId: string; approved: boolean }
   | { ok: false; error: string; status: number; offset?: number };
 
 /** Ghi nối một khúc tại `offset`. Đủ byte → hoàn tất: chuyển vào kho, tạo bản ghi + video, xoá phiên. */
@@ -120,7 +121,7 @@ async function appendLocked(sid: string, offset: number, body: ReadableStream<Ui
   const s = read(sid);
   if (!s) return { ok: false, error: "Phiên tải lên không tồn tại hoặc đã hết hạn", status: 404 };
   if (s.by.email !== by.email) return { ok: false, error: "Phiên tải lên của người khác", status: 403 };
-  if (s.doneVideoId) return { ok: true, offset: s.size, done: true, videoId: s.doneVideoId }; // khúc cuối gửi lại sau khi đã xong
+  if (s.doneVideoId) return { ok: true, offset: s.size, done: true, videoId: s.doneVideoId, approved: false }; // khúc cuối gửi lại sau khi đã xong (bài đã được khởi động lần đầu)
   const have = received(sid);
   if (offset !== have) return { ok: false, error: `Sai vị trí: máy chủ đã nhận ${have} byte`, status: 409, offset: have };
   if (!body) return { ok: false, error: "Không có dữ liệu", status: 400 };
@@ -149,9 +150,21 @@ async function appendLocked(sid: string, offset: number, body: ReadableStream<Ui
   }
   const now = received(sid);
   if (now < s.size) return { ok: true, offset: now, done: false };
-  const { videoId } = registerSource({ tmpPath: partPath(sid), uploadId: s.uploadId, original: s.original, ext: s.ext, size: s.size, params: s.params, by: s.by });
+  // Có khai mã băm (máy dựng gửi từ thư mục đã duyệt): so với byte thực nhận; lệch → bỏ cả phần đã nhận, máy gửi lại từ đầu
+  const want = s.params.meta?.sha256;
+  if (want && (await sha256Of(partPath(sid))) !== want) {
+    fs.truncateSync(partPath(sid), 0);
+    return { ok: false, error: "Mã băm không khớp — tệp hỏng trên đường truyền, gửi lại từ đầu", status: 400, offset: 0 };
+  }
+  const { videoId, approved } = registerSource({ tmpPath: partPath(sid), uploadId: s.uploadId, original: s.original, ext: s.ext, size: s.size, params: s.params, by: s.by });
   fs.writeFileSync(metaPath(sid), JSON.stringify({ ...s, doneVideoId: videoId })); // giữ dấu "đã xong" (dọn sau 48 giờ)
-  return { ok: true, offset: now, done: true, videoId };
+  return { ok: true, offset: now, done: true, videoId, approved };
+}
+
+async function sha256Of(p: string): Promise<string> {
+  const h = createHash("sha256");
+  for await (const chunk of fs.createReadStream(p)) h.update(chunk as Buffer);
+  return h.digest("hex");
 }
 
 export function sessionInfo(sid: string, by: { email: string }): { ok: true; offset: number; size: number; done?: boolean; videoId?: string } | { ok: false; status: number; error: string } {

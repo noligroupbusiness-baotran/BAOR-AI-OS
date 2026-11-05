@@ -356,7 +356,8 @@ test("kiểm toán 26/10: tự tăng ngân sách có thời gian chờ 24 giờ 
   const d = db.getDb();
   const admin = await import("../src/lib/admin");
   d.insert(db.schema.adCampaigns).values({ id: "ad_cd", name: "Chờ", objective: "video_views", status: "active", dailyBudget: 100_000, spent: 300_000, impressions: 20_000, clicks: 400, leads: 12, audience: "", startedAt: new Date(Date.now() - 3 * 86_400_000).toISOString() }).run();
-  auth.saveAuthorization(A({ allowAutoScale: true }));
+  // Trần tháng đủ rộng cho mọi ngày trong tháng (trần tháng chia theo số ngày còn lại: đầu tháng 120.000 × ~26 ngày > 3.000.000 → ca này từng đỏ theo lịch)
+  auth.saveAuthorization(A({ allowAutoScale: true, monthlyCapVnd: 10_000_000 }));
   const budget = () => d.select().from(db.schema.adCampaigns).where(eq(db.schema.adCampaigns.id, "ad_cd")).get()!.dailyBudget;
   const others = d.select().from(db.schema.adCampaigns).where(eq(db.schema.adCampaigns.status, "active")).all().filter((a) => a.id !== "ad_cd");
   for (const a of others) d.update(db.schema.adCampaigns).set({ status: "paused" }).where(eq(db.schema.adCampaigns.id, a.id)).run();

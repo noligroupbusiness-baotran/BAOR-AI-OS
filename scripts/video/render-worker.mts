@@ -9,8 +9,11 @@
 //   BAOR_WORKER_KEY=bw_...            (hiện một lần khi tạo)
 //   BAOR_WORKER_NAME=may-bao          (tuỳ chọn)
 //   DATA_DIR=/đường/dẫn/data          (tuỳ chọn, mặc định ./data của repo)
+//   BAOR_APPROVED_DIR=/…/7.VIDEO-DA-DUYET  (tuỳ chọn; mặc định 2.BAOR.vn/7.VIDEO-DA-DUYET hoặc ~/Desktop/VIDEO-DA-DUYET)
+//   BAOR_WHISPER=off / BAOR_WHISPER_MODEL=small  (chuyển lời nói thành chữ trước khi gửi video đã duyệt)
 // Chưa có khoá / khoá bị thu hồi: máy dựng chờ và đọc lại cấu hình mỗi phút (không thoát) — dán khoá mới là tự nhận.
-// Khi rảnh: gửi danh mục tư liệu trên máy này lên máy chủ (mỗi 10 phút, khi kho đổi, hoặc ngay khi web có quyết định duyệt nhạc
+// Khi rảnh: quét thư mục VIDEO-DA-DUYET (OWNER kéo video edit xong vào) mỗi phút → gửi lên Kho video, máy chủ tự viết bài
+// (scripts/video/approved-intake.mts); gửi danh mục tư liệu trên máy này lên máy chủ (mỗi 10 phút, khi kho đổi, hoặc ngay khi web có quyết định duyệt nhạc
 // chờ áp — header x-baor-decisions của lệnh claim) và áp quyết định duyệt vào manifest máy này (scripts/video/owner-catalog.mts).
 import fs from "node:fs";
 import os from "node:os";
@@ -20,6 +23,7 @@ import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { importDrop } from "../../src/lib/video/drop-import.js";
 import { catalogSignature, syncCatalog } from "./owner-catalog.mjs";
+import { approvedDir, newScanState, runApprovedIntake } from "./approved-intake.mjs";
 
 export interface Spec {
   videoId: string;
@@ -158,6 +162,26 @@ export async function maybeSyncCatalog(ctx: { base: string; headers: Record<stri
   }
 }
 
+// Thư mục đã duyệt trên máy OWNER (7.VIDEO-DA-DUYET): quét mỗi phút khi rảnh; video kéo vào → gửi lên Kho (scripts/video/approved-intake.mts).
+const approvedState = newScanState();
+let lastApproved = 0;
+let saidApprovedDir = "";
+export async function maybeApprovedIntake(ctx: { base: string; headers: Record<string, string> }, now = Date.now()): Promise<void> {
+  if (now - lastApproved < 60_000) return;
+  lastApproved = now;
+  const dir = approvedDir();
+  if (!dir) {
+    if (saidApprovedDir !== "-") log((saidApprovedDir = "-") && "Chưa thấy thư mục VIDEO-DA-DUYET (đặt BAOR_APPROVED_DIR nếu để chỗ khác) — bỏ qua nhận video đã duyệt.");
+    return;
+  }
+  if (saidApprovedDir !== dir) log(`Thư mục đã duyệt: ${(saidApprovedDir = dir)} — kéo video vào là tự lên Kho.`);
+  try {
+    await runApprovedIntake({ ...ctx, dir, log }, approvedState, now);
+  } catch (e) {
+    log("Lỗi quét thư mục đã duyệt:", e instanceof Error ? e.message : e);
+  }
+}
+
 /** Chờ tới khi có cấu hình hợp lệ (đọc lại mỗi phút); `bad` = khoá vừa bị máy chủ từ chối → chờ khoá KHÁC. */
 async function waitConfig(bad = ""): Promise<ReturnType<typeof readConfig>> {
   let said = "";
@@ -181,7 +205,8 @@ async function main() {
     let spec: Spec | null = null;
     let decisionsHint = 0;
     try {
-      const r = await fetch(`${base}/api/render-worker/claim`, { method: "POST", headers });
+      // Báo máy chủ có thấy thư mục đã duyệt không (Kho video hiện đúng trạng thái, không báo xanh khi thư mục chưa có)
+      const r = await fetch(`${base}/api/render-worker/claim`, { method: "POST", headers: { ...headers, "x-baor-approved-dir": approvedDir() ? "ok" : "missing" } });
       if (r.status === 401) {
         cfg = await waitConfig(cfg.key);
         ({ base, name, dataDir } = cfg);
@@ -196,6 +221,7 @@ async function main() {
     }
     if (!spec) {
       maybeImport(dataDir);
+      await maybeApprovedIntake({ base, headers });
       await maybeSyncCatalog({ base, headers, dataDir }, decisionsHint);
       await sleep(20_000);
       continue;

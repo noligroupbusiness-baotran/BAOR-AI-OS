@@ -75,7 +75,7 @@ export function getBrandPipeline(): BrandPipeline {
   const ai = aiConfigured();
   const research: Stage = {
     key: "research",
-    step: 1,
+    step: 0,
     name: "Nghiên cứu",
     href: "/insights/research",
     state: tasks.length === 0 ? "not_started" : noHook.length ? "waiting" : noInsight.length ? "working" : "done",
@@ -97,7 +97,7 @@ export function getBrandPipeline(): BrandPipeline {
   const cs = countBy(realContent, (c) => c.status);
   const script: Stage = {
     key: "content",
-    step: 2,
+    step: 0,
     name: "Kịch bản",
     href: "/content?tab=mine",
     state: realContent.length === 0 ? "not_started" : cs.review ? "waiting" : cs.in_progress ? "working" : "done",
@@ -126,7 +126,7 @@ export function getBrandPipeline(): BrandPipeline {
   const renderFailed = videosRenderFailed(allVideos).length;
   const video: Stage = {
     key: "video",
-    step: 3,
+    step: 1,
     name: "Video",
     href: "/video-studio",
     state: realVideos.length === 0 ? "not_started" : toReview ? "waiting" : working ? "working" : renderFailed > 0 ? "waiting" : "done",
@@ -148,7 +148,7 @@ export function getBrandPipeline(): BrandPipeline {
   const publishPlatforms = ["facebook_page", "instagram", "tiktok", "youtube", "zalo_oa"].filter((k) => connected.has(k));
   const publish: Stage = {
     key: "publish",
-    step: 4,
+    step: 2,
     name: "Đăng bài",
     href: "/publishing",
     state: publishPlatforms.length === 0 ? "waiting" : ps.failed ? "waiting" : ps.scheduled ? "working" : realPosts.length ? "done" : "not_started",
@@ -170,7 +170,7 @@ export function getBrandPipeline(): BrandPipeline {
   const metaAds = connected.has("meta_ads");
   const adStage: Stage = {
     key: "ads",
-    step: 5,
+    step: 3,
     name: "Quảng cáo",
     href: "/ads",
     state: !metaAds ? "waiting" : as.pending_approval ? "waiting" : as.active ? "working" : "not_started",
@@ -191,9 +191,9 @@ export function getBrandPipeline(): BrandPipeline {
   if (waitingProposals) actions.push({ stage: "Đo lường", text: `Xem ${waitingProposals} đề xuất cải tiến (giả thuyết từ số liệu thật): chấp nhận hoặc bỏ qua.`, href: "/insights/learning" });
   const measure: Stage = {
     key: "measure",
-    step: 6,
+    step: 3,
     name: "Đo lường",
-    href: waitingProposals ? "/insights/learning" : "/reports",
+    href: waitingProposals ? "/insights/learning?tab=cai-tien" : "/insights/learning",
     state: waitingProposals ? "waiting" : measuredPosts ? "working" : "not_started",
     summary: measuredPosts ? `${measuredPosts} bài thật đã có số liệu.` : "Chưa có số liệu thật; báo cáo hiện ghi rõ phần dữ liệu mẫu.",
     lines: [

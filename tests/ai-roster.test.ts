@@ -127,13 +127,14 @@ test("trần riêng tính cả bản ghi cũ chưa có cột vị trí (khớp v
   assert.equal(roster.roleAllows(roster.roleById("reply")!).ok, false);
 });
 
-test("Đội AI hiển thị bước theo 7 bước (mã sơ đồ 8.2 → 7, 6.1 → 5, 4.2 → 3); vị trí ngoài hành trình giữ '—'", async () => {
+test("Đội AI hiển thị bước theo 3 bước (mã sơ đồ 8.2 → 3, 6.1 → 2, 4.2 → 1); nghiên cứu / hook đã rời hành trình và vị trí ngoài hành trình hiện '—'", async () => {
   const { displayStepOf } = await import("../src/config/journey");
   const step = (id: string) => displayStepOf(roster.AI_ROLES.find((r) => r.id === id)!.step);
-  assert.equal(step("measure"), "7");
-  assert.equal(step("caption"), "5");
-  assert.equal(step("video_edit"), "3");
-  assert.equal(step("research"), "1");
+  assert.equal(step("measure"), "3");
+  assert.equal(step("caption"), "2");
+  assert.equal(step("video_edit"), "1");
+  assert.equal(step("research"), "—");
+  assert.equal(step("hooks"), "—");
   assert.equal(step("reply"), "—");
   for (const r of roster.AI_ROLES) assert.ok(!/Second Brain/.test(r.job), `${r.id}: không hiện "Second Brain" trên giao diện`);
 });

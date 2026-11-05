@@ -66,6 +66,8 @@ export const RATE_RULES = {
   health: { limit: 60, windowMs: 60_000 },
   /** Máy dựng gửi danh mục tư liệu máy OWNER (chu kỳ 10 phút + khi đổi / có quyết định duyệt). */
   workerCatalog: { limit: 30, windowMs: 10 * 60_000 },
+  /** Mở phiên nhận video từ thư mục đã duyệt trên máy OWNER (mỗi tệp một lần mở; khúc gửi không giới hạn riêng). */
+  workerIntake: { limit: 120, windowMs: 10 * 60_000 },
   /** Máy dựng gửi tệp xem trước (lần đầu vài trăm tệp; sau đó chỉ tệp mới). */
   workerPreview: { limit: 3000, windowMs: 10 * 60_000 },
   /** Nút "Tải lên" ở trang Tư liệu (mỗi tệp một yêu cầu), theo tài khoản. */

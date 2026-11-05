@@ -2,6 +2,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { actorFor } from "@/lib/permissions";
 import { appendChunk, openSession, sessionInfo } from "@/lib/video/resumable";
 import { sameOrigin } from "@/lib/same-origin";
+import { startPostDraft } from "@/lib/publishing/post-draft";
 
 // Tải video gốc NỐI TIẾP được: POST mở phiên (hoặc tìm lại phiên cũ theo dấu vân tay tệp), PUT gửi từng khúc tại đúng
 // vị trí, GET hỏi đã nhận bao nhiêu byte. Đường dẫn nằm dưới api/video-sources → loại khỏi proxy (không đệm 10 MB).
@@ -36,6 +37,8 @@ export async function PUT(req: Request) {
   if (g.error) return g.error;
   const url = new URL(req.url);
   const r = await appendChunk(url.searchParams.get("sid") ?? "", Number(url.searchParams.get("offset") ?? "-1"), req.body, { email: g.actor!.email });
+  // Video OWNER tự edit vào thẳng Kho → tự viết tiêu đề + nội dung bài đăng (như khi bấm Duyệt)
+  if (r.ok && r.done && r.approved) startPostDraft(r.videoId);
   return r.ok ? Response.json(r) : Response.json(r, { status: r.status });
 }
 

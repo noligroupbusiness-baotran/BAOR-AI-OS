@@ -8,6 +8,10 @@ import type { JobProgress } from "@/lib/video/job-types";
 import { CATALOG_LIMITS } from "@/lib/video/catalog-wire";
 import { pendingDecisionCount, savePreview, syncRemoteCatalog, validateCatalog } from "@/lib/video/remote-catalog";
 import { RATE_RULES, limitOr429 } from "@/lib/rate-limit";
+import { openApprovedIntake, recordApprovedFolder, recordApprovedIntake } from "@/lib/video/approved-intake";
+import { appendChunk, sessionInfo } from "@/lib/video/resumable";
+import { getAdminEmail } from "@/lib/admin";
+import { startPostDraft } from "@/lib/publishing/post-draft";
 
 // API cho máy dựng của OWNER (scripts/video/render-worker.mts). Mọi lời gọi cần "Authorization: Bearer <khoá máy dựng>".
 //   POST claim      → việc kế tiếp (204 khi không có / máy chủ không ở chế độ máy dựng)
@@ -23,6 +27,10 @@ import { RATE_RULES, limitOr429 } from "@/lib/rate-limit";
 //   PUT  preview    → một tệp xem trước (?sha=<sha256>&type=jpg|mp3): ảnh thu nhỏ ≤ 160 KB / nghe thử ≤ 400 KB, mã băm + magic bytes
 //                     phải khớp, chỉ tệp danh mục hiện hành trỏ tới
 //   claim trả thêm header x-baor-decisions = số quyết định duyệt đang chờ → máy dựng đồng bộ ngay, không đợi chu kỳ 10 phút
+//   POST intake     → mở phiên nhận một video từ thư mục đã duyệt trên máy OWNER (?name=&size=&sha256=; thân JSON {transcript, note}
+//                     ≤ 256 KB). Trùng mã băm → {duplicate:true, videoId}. Không thì {sid, offset} (nối tiếp được).
+//   PUT  intake     → một khúc (?sid=&offset=), ≤ 64 MB, đúng vị trí; khúc cuối → video vào Kho (đã duyệt) + AI viết bài
+//   GET  intake     → đã nhận tới byte nào (?sid=)
 export const runtime = "nodejs";
 
 const MAX_FILE_BYTES = 8 * 1024 * 1024 * 1024;
@@ -65,6 +73,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ action: 
   const w = await auth(req);
   if (w instanceof Response) return w;
   const { action } = await params;
+  if (action === "intake") {
+    const r = sessionInfo(new URL(req.url).searchParams.get("sid") ?? "", { email: getAdminEmail() });
+    return r.ok ? json(r) : json({ error: r.error }, r.status);
+  }
   if (action !== "source" && action !== "music") return json({ error: "Không có" }, 404);
   const t = target(new URL(req.url));
   const p = t ? (action === "music" ? remoteMusicPath(t.videoId, t.version, w) : remoteSourcePath(t.videoId, t.version, w)) : null;
@@ -77,6 +89,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ action:
   if (w instanceof Response) return w;
   const { action } = await params;
   if (action === "claim") {
+    const dir = req.headers.get("x-baor-approved-dir");
+    recordApprovedFolder(dir === "ok" ? "ok" : dir === "missing" ? "missing" : "outdated");
     const hint = { "x-baor-decisions": String(pendingDecisionCount()) };
     if (renderMode() !== "remote") return new Response(null, { status: 204, headers: hint });
     const spec = claimRemoteJob(w);
@@ -97,6 +111,24 @@ export async function POST(req: Request, { params }: { params: Promise<{ action:
     if (!v.ok) return json({ error: v.error }, 400);
     const r = syncRemoteCatalog(v.req, w);
     return r.ok ? json(r) : json({ error: r.error }, 507);
+  }
+  if (action === "intake") {
+    const limited = limitOr429("render-worker:intake", RATE_RULES.workerIntake);
+    if (limited) return limited;
+    const url = new URL(req.url);
+    const text = await readCapped(req, 256 * 1024);
+    if (text === null) return json({ error: "Lời nói / ghi chú kèm theo vượt 256 KB" }, 413);
+    let extra: { transcript?: string; note?: string } = {};
+    if (text.trim()) {
+      try {
+        const b = JSON.parse(text) as Record<string, unknown>;
+        extra = { transcript: typeof b.transcript === "string" ? b.transcript : undefined, note: typeof b.note === "string" ? b.note : undefined };
+      } catch {
+        return json({ error: "Thân yêu cầu không phải JSON" }, 400);
+      }
+    }
+    const r = openApprovedIntake({ name: url.searchParams.get("name") ?? "", size: Number(url.searchParams.get("size") ?? "0"), sha256: url.searchParams.get("sha256") ?? "", worker: w, ...extra });
+    return r.ok ? json(r) : json({ error: r.error }, r.status);
   }
   const t = target(new URL(req.url));
   if (!t) return json({ error: "Thiếu videoId / version" }, 400);
@@ -125,6 +157,15 @@ export async function PUT(req: Request, { params }: { params: Promise<{ action: 
     if (limited) return limited;
     const r = await savePreview(url.searchParams.get("sha") ?? "", url.searchParams.get("type") ?? "", req.body, req.headers.get("content-length"));
     return r.ok ? json({ ok: true, bytes: r.bytes }) : json({ error: r.error }, r.status);
+  }
+  if (action === "intake") {
+    const sid = url.searchParams.get("sid") ?? "";
+    const r = await appendChunk(sid, Number(url.searchParams.get("offset") ?? "-1"), req.body, { email: getAdminEmail() });
+    if (r.ok && r.done && r.approved) {
+      recordApprovedIntake({ worker: w, videoId: r.videoId, name: url.searchParams.get("name") ?? "" });
+      startPostDraft(r.videoId);
+    }
+    return r.ok ? json(r) : json(r, r.status);
   }
   const t = target(url);
   const name = url.searchParams.get("name") ?? "";

@@ -33,16 +33,16 @@ function previewOf(videoId: string | null): string | null {
 }
 
 /** campaignIds: đang lọc theo chiến dịch (?campaign=&goal=) → chỉ bài đã gắn chiến dịch hoặc bài của video đã gắn chiến dịch. */
-export function VideoPostsPanel({ focus, owner = false, campaignIds = null }: { focus?: string; owner?: boolean; campaignIds?: Set<string> | null }) {
+export function VideoPostsPanel({ focus, owner = false, campaignIds = null, compact = false }: { focus?: string; owner?: boolean; campaignIds?: Set<string> | null; compact?: boolean }) {
   const posts = listVideoPosts().filter((p) => postInCampaign(p, campaignIds));
   const dry = isDryRun();
   const pages = owner ? channelPageIds() : undefined;
   return (
     <Panel id="video-posts">
       <PanelHeader
-        title="Bài video"
-        sub="Video đã duyệt ở Kho. “Đã đăng” chỉ khi đọc lại được bài trên nền tảng. Chế độ thử không gọi nền tảng."
-        action={
+        title={compact ? "Lịch sử bài video" : "Bài video"}
+        sub={compact ? "“Đã đăng” chỉ khi đọc lại được bài trên nền tảng." : "Video đã duyệt ở Kho. “Đã đăng” chỉ khi đọc lại được bài trên nền tảng. Chế độ thử không gọi nền tảng."}
+        action={compact ? undefined :
           <ConfirmAction
             action={setDryRunAction}
             fields={{ on: dry ? "0" : "1" }}
@@ -54,12 +54,12 @@ export function VideoPostsPanel({ focus, owner = false, campaignIds = null }: { 
           />
         }
       />
-      <div className="flex flex-wrap gap-1.5 border-b border-border px-4 py-2 text-[12px]">
+      {!compact && <div className="flex flex-wrap gap-1.5 border-b border-border px-4 py-2 text-[12px]">
         {videoChannels().map((c) => {
           const st = channelStatus(c.platform);
           return <Pill key={c.platform} tone={st.canPublish ? "jade" : c.blocked ? "neutral" : "amber"}>{c.label}: {st.reason}</Pill>;
         })}
-      </div>
+      </div>}
       {posts.length === 0 ? (
         <EmptyState title={campaignIds ? "Chiến dịch chưa có bài video" : "Chưa có bài video"} hint="Lên lịch từ Kho video." action={<LinkButton href="/video-library" variant="soft">Tới Kho video</LinkButton>} />
       ) : (

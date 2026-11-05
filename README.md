@@ -116,7 +116,7 @@ Chiến dịch → Mục tiêu kênh → Insight → Nội dung → Video → Ph
   (kết nối, bộ chạy nền, AI, lỗi 24h), chuông thông báo tính từ dữ liệu thật (`src/lib/shell-data.ts`, đã đọc lưu ở trình
   duyệt), nút chuyển **giao diện trang xem** (ẩn thanh bên, nội dung rộng) ↔ **giao diện dashboard**.
 - Thanh bên chia 3 nhóm: Điều hành (Điều hành, Chiến dịch, Báo cáo), Marketing, Hệ thống. Phím tắt: `/` hoặc `Ctrl+K`
-  vào ô tìm kiếm (điện thoại: nút kính lúp mở trang tìm kiếm), `Alt+1…9, 0` nhảy phân hệ, `?` mở bảng phím tắt, `Esc` đóng.
+  vào ô tìm kiếm (điện thoại: nút kính lúp mở trang tìm kiếm), `Alt+1…3` nhảy 3 bước hành trình (Video · Đăng · Kết quả), `Alt+8/9/0` Tổng quan / Lead / Cài đặt, `?` mở bảng phím tắt, `Esc` đóng.
 - Chế độ màu ba trạng thái (nút trên thanh trên xoay vòng): theo hệ thống → sáng → tối; theo hệ thống đổi ngay khi máy đổi.
 - Menu tài khoản có **Tài khoản của tôi** (`/account`): ai đăng nhập cũng tự đổi mật khẩu (cần mật khẩu hiện tại, mới ≥ 8 ký tự)
   và xem sự kiện bảo mật của mình. Quản trị mới thấy mục Nhân sự và phân quyền.

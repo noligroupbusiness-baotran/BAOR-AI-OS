@@ -22,6 +22,16 @@ export interface IntakeParams {
   /** "1080" | "4k" (chọn ở Thêm video gốc) */
   quality?: string | null;
   start?: boolean;
+  /** Kèm theo tệp (máy dựng gửi từ thư mục đã duyệt): mã băm để chống trùng, lời nói đã chuyển chữ tại máy, ghi chú OWNER. */
+  meta?: IntakeMeta;
+}
+
+export interface IntakeMeta {
+  sha256?: string;
+  transcript?: string;
+  note?: string;
+  /** "approved-folder" = từ thư mục 7.VIDEO-DA-DUYET trên máy OWNER */
+  source?: string;
 }
 
 export function newUploadId(): string {
@@ -32,14 +42,20 @@ export function newUploadId(): string {
  * Tệp `tmpPath` (đã đủ byte) → chuyển vào kho tải lên với tên `<uploadId><ext>`, tạo bản ghi + video.
  * Chỉ kịch bản đã duyệt mới gắn được (cùng cổng với "Gắn kịch bản").
  */
-export function registerSource(i: { tmpPath: string; uploadId: string; original: string; ext: string; size: number; params: IntakeParams; by: { name: string; email: string } }): { videoId: string } {
+export function registerSource(i: { tmpPath: string; uploadId: string; original: string; ext: string; size: number; params: IntakeParams; by: { name: string; email: string } }): { videoId: string; approved: boolean } {
   const db = getDb();
   const fileName = `${i.uploadId}${i.ext}`;
   const full = path.join(uploadsDir(), fileName);
   if (path.resolve(i.tmpPath) !== path.resolve(full)) fs.renameSync(i.tmpPath, full);
   const title = i.original.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim() || "Video quay thô";
+  const m = i.params.meta ?? {};
+  const meta: Record<string, string> = { title, role: i.params.final ? "final" : "raw" };
+  if (m.sha256 && /^[a-f0-9]{64}$/.test(m.sha256)) meta.sha256 = m.sha256;
+  if (m.transcript?.trim()) meta.transcript = m.transcript.trim().slice(0, 20_000);
+  if (m.note?.trim()) meta.note = m.note.trim().slice(0, 2_000);
+  if (m.source) meta.source = m.source.slice(0, 40);
   db.insert(schema.uploads)
-    .values({ id: i.uploadId, kind: "video", name: i.original || fileName, fileName, mime: EXT_MIME[i.ext] ?? "video/mp4", size: i.size, meta: JSON.stringify({ title, role: "raw" }), uploadedBy: i.by.email, createdAt: new Date().toISOString() })
+    .values({ id: i.uploadId, kind: "video", name: i.original || fileName, fileName, mime: EXT_MIME[i.ext] ?? "video/mp4", size: i.size, meta: JSON.stringify(meta), uploadedBy: i.by.email, createdAt: new Date().toISOString() })
     .run();
   const found = i.params.contentId ? db.select().from(schema.contentItems).where(eq(schema.contentItems.id, i.params.contentId)).get() : undefined;
   const content = found && APPROVED_SCRIPT.includes(found.status) ? found : undefined;
@@ -51,12 +67,12 @@ export function registerSource(i: { tmpPath: string; uploadId: string; original:
     const owner = !!i.by.email && i.by.email.toLowerCase() === getAdminEmail().toLowerCase();
     const status = owner ? "approved" : "review";
     db.insert(schema.videos)
-      .values({ id: videoId, title: (content?.title ?? title).slice(0, 200), contentId: content?.id ?? null, agent: i.by.name, status, origin: "self_edit", platforms: JSON.stringify(["tiktok", "facebook"]), version: 1, note: owner ? "OWNER tự edit, tải lên — vào Tổng kho video ngắn." : "Video dựng sẵn, tải lên tay.", uploadId: i.uploadId, updatedAt: new Date().toISOString() })
+      .values({ id: videoId, title: (content?.title ?? title).slice(0, 200), contentId: content?.id ?? null, agent: i.by.name, status, origin: "self_edit", platforms: JSON.stringify(["tiktok", "facebook"]), version: 1, note: m.source === "approved-folder" ? "OWNER duyệt trong thư mục VIDEO-DA-DUYET trên máy — máy dựng gửi lên." : owner ? "OWNER tự edit, tải lên — vào Tổng kho video ngắn." : "Video dựng sẵn, tải lên tay.", uploadId: i.uploadId, updatedAt: new Date().toISOString() })
       .run();
     if (content) campaignRepo.inheritLinks("content", content.id, "video", videoId, status);
     addVideoFeedback({ videoId, version: 1, kind: "upload", note: `Video dựng sẵn: ${i.original}`, by: i.by.name });
-    return { videoId };
+    return { videoId, approved: status === "approved" };
   }
   const videoId = createVideoFromSource({ title, sourceUploadId: i.uploadId, cutSilence: i.params.cut, aspect: parseAspect(i.params.aspect), quality: parseQuality(i.params.quality), by: i.by.name, contentId: content?.id ?? null, start: !!i.params.start });
-  return { videoId };
+  return { videoId, approved: false };
 }

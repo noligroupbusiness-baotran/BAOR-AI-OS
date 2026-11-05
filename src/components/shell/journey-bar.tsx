@@ -6,7 +6,7 @@ import { ArrowRight } from "lucide-react";
 import { JOURNEY_STEPS, journeyDisplayStepFor } from "@/config/journey";
 import { cn } from "@/lib/format";
 
-// Thanh hành trình marketing 7 bước ở đầu mỗi trang của hành trình: thấy mình ở bước nào, bấm sang bước khác / bước tiếp.
+// Thanh hành trình marketing 3 bước (Video → Đăng → Kết quả) ở đầu mỗi trang của hành trình: thấy mình ở bước nào, bấm sang bước khác / bước tiếp.
 export function JourneyBar() {
   const pathname = usePathname();
   const cur = journeyDisplayStepFor(pathname);

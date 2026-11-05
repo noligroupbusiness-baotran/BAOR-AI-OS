@@ -35,7 +35,7 @@ export function PageHead({ title, sub, action }: { title: string; sub?: string; 
       <div className="flex min-w-0 items-start gap-3">
         <PageIcon className="appear appear--pop mt-px" />
         <div className="min-w-0">
-          <h1 className="appear appear--mask text-[20px] font-bold tracking-[-0.01em] text-ink [text-wrap:balance]">{title}</h1>
+          <h1 className="appear appear--mask text-[26px] font-bold tracking-[-0.02em] text-ink [text-wrap:balance]">{title}</h1>
           {sub && <p className="appear appear--soft mt-1 max-w-[60ch] text-ink-2 [--d:1]">{sub}</p>}
         </div>
       </div>

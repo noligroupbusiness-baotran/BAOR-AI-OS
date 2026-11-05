@@ -9,12 +9,12 @@ import { roleAllows, roleForPurpose, roleSettings } from "@/lib/ai-roster";
 import { AI_MODELS, PROVIDERS, ProviderError, WEB_SEARCH_PROVIDERS, clientFor, modelCostVnd, modelInfo, providerConfigured, servedCost, type AiProvider } from "@/lib/ai-providers";
 import { sendAlert } from "@/lib/alerts";
 import { HOOK_COUNT, HOOK_PLATFORMS, hookContext, saveHooks } from "@/lib/content/hooks";
-import { DEFAULT_STAGE, PATH_STAGES, VLOG_CARDS, emptyVlogDoc, experienceFormulaRules, FIRST_PERSON_CLAIM, moveOwnerMarks, spokenScriptText, parseVlogDraft, serializeVlog, stripMetaHooks, unquoteAi, vlogFormulaRules, type PathStage, type VlogCard, type VlogKey } from "@/lib/content/vlog-script";
+import { DEFAULT_STAGE, PATH_STAGES, VLOG_CARDS, emptyVlogDoc, experienceFormulaRules, FIRST_PERSON_CLAIM, moveOwnerMarks, parseVlogDraft, serializeVlog, stripMetaHooks, unquoteAi, vlogFormulaRules, type PathStage, type VlogCard, type VlogKey } from "@/lib/content/vlog-script";
 import { afterAiWrite, confirmationValid } from "@/lib/content/owner-review";
 import { ANGLES, EXTRACTION_FIELDS, angleInfo, answeredCount, experienceLines, experienceFromDraft, pronounsFromVoice, type AngleKey, type Extraction, type OwnerExperience } from "@/lib/content/experience";
 import { contentSkillPage, experienceSources } from "@/lib/content/owner-experience";
 import { scriptContext } from "@/lib/content/script-context";
-import { buildCaption, buildPostTitle, captionDraft, captionSkill, postTitle, saveCaptionDraft, savePostTitle, setPostDraftSource } from "@/lib/publishing/caption";
+import { buildCaption, buildPostTitle, captionDraft, captionSkill, postTitle, saveCaptionDraft, savePostTitle, setPostDraftSource, videoSpoken } from "@/lib/publishing/caption";
 
 // Bộ não AI của hệ thống. Mô hình theo từng vị trí: src/lib/ai-roster.ts (Cài đặt › Đội AI) — Claude, ChatGPT hoặc Grok
 // (src/lib/ai-providers.ts). Khoá API: Cài đặt › Kết nối (Claude API / OpenAI / xAI) hoặc biến môi trường.
@@ -324,6 +324,7 @@ export async function generateCaption(videoId: string, opts: { keepExisting?: bo
   const c = v.contentId ? db.select().from(schema.contentItems).where(eq(schema.contentItems.id, v.contentId)).get() : undefined;
   const skill = captionSkill();
   const base = buildCaption(videoId);
+  const spoken = videoSpoken(videoId);
   const gated = await gate("caption", `AI viết bài đăng “${v.title.slice(0, 60)}”`, (client, model) =>
     client.messages.parse({
       model,
@@ -336,7 +337,7 @@ export async function generateCaption(videoId: string, opts: { keepExisting?: bo
         {
           role: "user",
           content: `${skill ? `SKILL (${skill.title} · ${skill.status}):\n${skill.body.slice(0, 4000)}` : "(Second Brain chưa có skill viết content — dùng cấu trúc Hook → tình huống → bài học → CTA)"}\n\n` +
-            `Video: ${v.title}\nHook: ${c?.hook ?? ""}\nKịch bản đã duyệt (lời nói):\n${spokenScriptText(c?.draft ?? "").slice(0, 6000) || "(không có)"}\n\nCaption nháp theo luật (để tham khảo):\n${base.text}`,
+            `Video: ${v.title}\nHook: ${c?.hook ?? ""}\n${spoken.source === "transcript" ? "Lời đã nói trong video (chuyển chữ tự động, có thể sai chính tả):" : "Kịch bản đã duyệt (lời nói):"}\n${spoken.text.slice(0, 6000) || "(không có)"}${spoken.note ? `\n\nGhi chú của OWNER về video này:\n${spoken.note.slice(0, 1000)}` : ""}\n\nCaption nháp theo luật (để tham khảo):\n${base.text}`,
         },
       ],
       output_config: { format: zodOutputFormat(PostSchema) },

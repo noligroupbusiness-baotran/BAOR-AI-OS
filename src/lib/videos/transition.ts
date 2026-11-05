@@ -17,7 +17,7 @@ export const VIDEO_TRANSITIONS: Record<TransitionKind, { from: VideoStatus[]; to
   send_review: { from: ["editing", "needs_changes"], to: "review", label: "Gửi kiểm tra", toast: "Đã chuyển sang chờ kiểm tra" },
   send_approval: { from: ["review"], to: "pending_approval", label: "Gửi phê duyệt", toast: "Đã gửi phê duyệt" },
   request_changes: { from: ["review", "pending_approval"], to: "needs_changes", label: "Yêu cầu chỉnh sửa", toast: "Đã yêu cầu Agent chỉnh sửa" },
-  approve: { from: ["pending_approval"], to: "approved", label: "Phê duyệt", toast: "Đã phê duyệt. Video sẵn sàng để lên lịch đăng ở bước 5 · Đăng bài." },
+  approve: { from: ["pending_approval"], to: "approved", label: "Phê duyệt", toast: "Đã phê duyệt. Video sẵn sàng để lên lịch đăng ở bước 3 · Đăng." },
   approve_direct: { from: ["review", "needs_changes", "pending_approval"], to: "approved", label: "Duyệt", toast: "Đã duyệt · video đã vào Kho video — lên lịch đăng ngay" },
 };
 

@@ -13,12 +13,14 @@ import { formatDateTime, formatNumber } from "@/lib/format";
 import { Segment } from "@/components/ui/segment";
 import { displayStepsIn } from "@/config/journey";
 import { ReportsView } from "@/components/reports/reports-view";
+import { AdsPanel } from "@/components/publishing/ads-panel";
 
-export const metadata = { title: "Đo lường – BAOR AI OS" };
+export const metadata = { title: "Kết quả – BAOR AI OS" };
 
 const TABS = [
-  { key: "cai-tien", label: "Cải tiến" },
   { key: "so-lieu", label: "Số liệu" },
+  { key: "quang-cao", label: "Quảng cáo" },
+  { key: "cai-tien", label: "Cải tiến" },
 ];
 
 // Đề xuất đã lưu trước đợt đổi tên (26/10/2026) còn "bước 8.1 / 8.2" và "Second Brain": chuẩn hoá lúc hiển thị.
@@ -33,15 +35,26 @@ const statusLabel: Record<string, { label: string; tone: "amber" | "jade" | "neu
 };
 
 // CP06: số liệu thật → phân tích → đề xuất (giả thuyết) → OWNER quyết → Second Brain / Skill.
-// Hai tab (OWNER 26/10/2026): "Cải tiến" (mặc định) | "Số liệu" (trang /reports cũ, tab con ?view=).
-export default async function LearningPage({ searchParams }: { searchParams: Promise<{ tab?: string; view?: string; month?: string; campaign?: string }> }) {
+// Bước 3 · Kết quả (OWNER 05/11/2026): ba tab "Số liệu" (mặc định, trang /reports cũ, tab con ?view=) | "Quảng cáo" (trang /ads cũ)
+// | "Cải tiến" (đề xuất theo skill + AI).
+export default async function LearningPage({ searchParams }: { searchParams: Promise<{ tab?: string; view?: string; month?: string; campaign?: string; edit?: string; link?: string; goal?: string }> }) {
   const sp = await searchParams;
-  if (sp.tab === "so-lieu") {
+  const tab = sp.tab === "cai-tien" || sp.tab === "quang-cao" ? sp.tab : "so-lieu";
+  if (tab === "so-lieu") {
     return (
       <>
-        <PageHead title="Đo lường & cải tiến" />
+        <PageHead title="Kết quả" />
         <Segment basePath="/insights/learning" active="so-lieu" items={TABS} />
         <ReportsView sp={sp} />
+      </>
+    );
+  }
+  if (tab === "quang-cao") {
+    return (
+      <>
+        <PageHead title="Kết quả" />
+        <Segment basePath="/insights/learning" active="quang-cao" items={TABS} />
+        <AdsPanel edit={sp.edit} link={sp.link} campaign={sp.campaign} goal={sp.goal} />
       </>
     );
   }
@@ -55,7 +68,7 @@ export default async function LearningPage({ searchParams }: { searchParams: Pro
   return (
     <>
       <PageHead
-        title="Đo lường & cải tiến"
+        title="Kết quả"
         sub="Kiểm theo skill trước, AI sau. Anh chấp nhận hoặc bỏ qua."
         action={<form action={refreshLearningAction}><Button type="submit" variant="primary" size="md">Phân tích lại</Button></form>}
       />
