@@ -38,7 +38,7 @@ export interface MenuItem {
   tone: GroupTone;
   /** Nhóm trên thanh bên. */
   group: MenuGroup;
-  /** Phím tắt Alt + phím này để nhảy tới phân hệ: "1"…"4" = bước 1…4, "8" = Tổng quan, "9" = Lead, "0" = Cài đặt. */
+  /** Phím tắt Alt + phím này để nhảy tới phân hệ: "1"…"3" = bước 1…3, "8" = Tổng quan, "9" = Lead, "0" = Cài đặt. */
   hotkey?: string;
   /** Không hiện trên thanh bên (trang phụ vẫn mở được qua đường dẫn / nút trong bước); `parent` = mục thanh bên sáng lên khi ở trang này. */
   hidden?: boolean;
@@ -50,15 +50,15 @@ export interface MenuItem {
 }
 
 export const menu: MenuItem[] = [
-  { key: "dashboard", tone: "blue", href: "/dashboard", label: "Tổng quan", description: "Tình hình chung (chi tiêu AI, kết nối, máy dựng, sao lưu, lỗi) và hành trình marketing 4 bước.", icon: LayoutDashboard, group: "ops", hotkey: "8" },
-  // 4 bước (OWNER 05/11/2026): Kịch bản → Video → Đăng → Kết quả. Trang phụ (chủ đề & insight, Studio dựng trong app, Quảng cáo)
-  // vẫn mở được qua nút trong bước, không chiếm chỗ trên thanh bên.
-  { key: "content", tone: "violet", href: "/content/hooks", label: "1 · Kịch bản", description: "Gõ chủ đề → 10 hook → kịch bản vlog dưới 1 phút.", icon: FileText, group: "brand", hotkey: "1", also: ["/content"] },
-  { key: "research", tone: "cyan", href: "/insights/research", label: "Chủ đề & insight", description: "Chủ đề → insight từ nhóm Facebook, YouTube, social.", icon: FlaskConical, group: "brand", hidden: true, parent: "content" },
-  { key: "video-library", tone: "pink", href: "/video-library", label: "2 · Video", description: "Kéo video edit xong vào thư mục trên máy là tự lên Kho; chưa đăng, đã đăng.", icon: Archive, group: "brand", hotkey: "2" },
+  { key: "dashboard", tone: "blue", href: "/dashboard", label: "Tổng quan", description: "Tình hình chung (chi tiêu AI, kết nối, máy dựng, sao lưu, lỗi) và hành trình marketing 3 bước.", icon: LayoutDashboard, group: "ops", hotkey: "8" },
+  // 3 bước (OWNER 05/11/2026 "chỉ cần Video, Đăng và Kết quả"): Video → Đăng → Kết quả. Trang phụ (kịch bản, chủ đề & insight,
+  // Studio dựng trong app, Quảng cáo) vẫn mở được qua nút / menu Tạo mới, không chiếm chỗ trên thanh bên.
+  { key: "video-library", tone: "pink", href: "/video-library", label: "1 · Video", description: "Kho video gắn với thư mục VIDEO-DA-DUYET trên máy: kéo video vào là lên Kho, máy tự viết bài.", icon: Archive, group: "brand", hotkey: "1" },
   { key: "video-studio", tone: "pink", href: "/video-studio", label: "Dựng trong app", description: "Tải video gốc, AI edit theo skill (ít dùng khi đã edit trên máy).", icon: Clapperboard, group: "brand", hidden: true, parent: "video-library" },
-  { key: "publishing", tone: "orange", href: "/publishing", label: "3 · Đăng", description: "Bài đã viết sẵn, chọn kênh, đăng ngay hoặc lên lịch.", icon: CalendarClock, group: "brand", hotkey: "3" },
-  { key: "learning", tone: "yellow", href: "/insights/learning", label: "4 · Kết quả", description: "Số liệu, quảng cáo, đề xuất cải tiến.", icon: Sparkles, group: "brand", hotkey: "4" },
+  { key: "content", tone: "violet", href: "/content/hooks", label: "Kịch bản", description: "Gõ chủ đề → 10 hook → kịch bản vlog dưới 1 phút (trang phụ, khi cần ý tưởng).", icon: FileText, group: "brand", hidden: true, parent: "video-library", also: ["/content"] },
+  { key: "research", tone: "cyan", href: "/insights/research", label: "Chủ đề & insight", description: "Chủ đề → insight từ nhóm Facebook, YouTube, social.", icon: FlaskConical, group: "brand", hidden: true, parent: "video-library" },
+  { key: "publishing", tone: "orange", href: "/publishing", label: "2 · Đăng", description: "Bài đã viết sẵn, chọn kênh, đăng ngay hoặc lên lịch.", icon: CalendarClock, group: "brand", hotkey: "2" },
+  { key: "learning", tone: "yellow", href: "/insights/learning", label: "3 · Kết quả", description: "Số liệu, quảng cáo, đề xuất cải tiến.", icon: Sparkles, group: "brand", hotkey: "3" },
   { key: "ads", tone: "orange", href: "/ads", label: "Quảng cáo", description: "Quảng cáo từ video đã đăng, trong ủy quyền ngân sách.", icon: Megaphone, group: "brand", hidden: true, parent: "learning" },
   { key: "campaigns", tone: "emerald", href: "/campaigns", label: "Chiến dịch", description: "Mục tiêu, ngân sách, thời gian và kết quả từng chiến dịch.", icon: Target, group: "business" },
   { key: "customers", tone: "emerald", href: "/customers", label: "Lead", description: "Lead từ quảng cáo / fanpage, hộp thư, chăm sóc.", icon: Users, group: "business", hotkey: "9" },
@@ -151,9 +151,9 @@ export interface CreateAction {
 }
 
 export const createActions: CreateAction[] = [
-  { key: "hooks", label: "Kịch bản mới", icon: FilePlus2, moduleKey: "content", href: "/content/hooks" },
-  { key: "research", label: "Chủ đề mới", icon: FlaskConical, moduleKey: "research", href: "/insights/research" },
-  { key: "video", label: "Tải video đã edit", icon: Upload, moduleKey: "video-library", href: "/video-studio?upload=1" },
+  { key: "video", label: "Tải video đã edit", icon: Upload, moduleKey: "video-library", href: "/video-studio?upload=1", note: "hoặc kéo vào thư mục VIDEO-DA-DUYET" },
   { key: "schedule", label: "Lên lịch đăng", icon: CalendarClock, moduleKey: "publishing", href: "/video-library" },
   { key: "customer", label: "Thêm lead", icon: UserPlus, moduleKey: "customers", href: "/customers?tab=leads&add=1" },
+  { key: "hooks", label: "Kịch bản mới", icon: FilePlus2, moduleKey: "content", href: "/content/hooks", note: "khi cần ý tưởng" },
+  { key: "research", label: "Chủ đề mới", icon: FlaskConical, moduleKey: "research", href: "/insights/research" },
 ];

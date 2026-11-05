@@ -60,7 +60,7 @@ export function AppShell({ user, badges, health, notifications, logos, children 
     applyTheme(next);
   }, [theme]);
 
-  // Phím tắt toàn cục: Alt+1…4 = bước 1…4, Alt+8 Tổng quan, Alt+9 Lead, Alt+0 Cài đặt (xem hotkeyOf), ? mở bảng phím tắt.
+  // Phím tắt toàn cục: Alt+1…3 = bước 1…3, Alt+8 Tổng quan, Alt+9 Lead, Alt+0 Cài đặt (xem hotkeyOf), ? mở bảng phím tắt.
   // Đang gõ (ô nhập / contenteditable / IME đang soạn) thì không nhận phím tắt nào: Option+số trên Mac là để gõ ký tự.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

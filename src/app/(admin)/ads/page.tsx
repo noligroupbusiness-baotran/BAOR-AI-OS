@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-// Quảng cáo nằm trong bước 4 · Kết quả (OWNER 05/11/2026: 4 bước). Đường dẫn cũ /ads mở đúng tab, giữ tham số.
+// Quảng cáo nằm trong bước 3 · Kết quả (OWNER 05/11/2026: 3 bước). Đường dẫn cũ /ads mở đúng tab, giữ tham số.
 export default async function AdsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
   const u = new URLSearchParams({ tab: "quang-cao" });

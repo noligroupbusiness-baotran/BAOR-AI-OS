@@ -22,7 +22,7 @@ const stepTone = (href: string): GroupTone => menu.find((m) => m.href === href)?
 const stateDot = { done: "bg-jade", working: "bg-sky", waiting: "bg-amber", not_started: "bg-border-2" } as const;
 const stateLabel = { done: "Xong", working: "Đang làm", waiting: "Chờ anh", not_started: "Chưa bắt đầu" } as const;
 
-// 4 bước hiển thị (OWNER 05/11/2026): gộp các thẻ con cùng bước — mỗi thẻ tối đa 2 số và 2 nút cho dễ nhìn;
+// 3 bước hiển thị (OWNER 05/11/2026): gộp các thẻ con cùng bước — mỗi thẻ tối đa 2 số và 2 nút cho dễ nhìn; trang phụ (step 0) không có thẻ;
 // trạng thái chung ưu tiên "chờ anh" > "đang làm" > "chưa bắt đầu" > "xong".
 function mergeState(parts: JourneyCard[]): JourneyCard["state"] {
   for (const st of ["waiting", "working", "not_started"] as const) if (parts.some((p) => p.state === st)) return st;
@@ -30,9 +30,9 @@ function mergeState(parts: JourneyCard[]): JourneyCard["state"] {
 }
 
 // Trang chính = Tổng quan (OWNER 25/10/2026, đổi từ "Hành trình"): tình hình chung (AI, kết nối, nơi dựng, sao lưu, lỗi) →
-// hành trình marketing 4 bước (Kịch bản → Video → Đăng → Kết quả, mỗi bước một nút bấm) → việc cần làm. Đọc một trang là nắm hết.
+// hành trình marketing 3 bước (Video → Đăng → Kết quả, mỗi bước một nút bấm) → việc cần làm. Đọc một trang là nắm hết.
 export default async function JourneyHome() {
-  const cards = journeyCards();
+  const cards = journeyCards().filter((c) => c.step > 0); // trang phụ (kịch bản, Studio…) không có thẻ, không là "làm tiếp"
   const pending = getPending();
   const status = getSystemStatus(pending.length);
   const next = cards.find((c) => c.state === "waiting") ?? cards.find((c) => c.state === "not_started");
@@ -56,7 +56,7 @@ export default async function JourneyHome() {
       <OverviewStrip issues={status.issues} />
 
       <h2 className="mb-2 mt-5 text-[13px] font-semibold uppercase tracking-wide text-ink-3">Hành trình marketing</h2>
-      <ol className="stagger m-0 grid list-none gap-3 p-0 sm:grid-cols-2 xl:grid-cols-4">
+      <ol className="stagger m-0 grid list-none gap-3 p-0 sm:grid-cols-3">
         {steps.map((d) => {
           const state = mergeState(d.parts);
           const solo = d.parts.length === 1;

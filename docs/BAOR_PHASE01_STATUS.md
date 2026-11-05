@@ -149,6 +149,12 @@ OWNER 25/10/2026 (tối): edit video LẠI ("edit lại đi") — lệnh "ngưng
       Studio dựng trong app là nút phụ), 3 Đăng, 4 Kết quả (/insights/learning: Số liệu · Quảng cáo · Cải tiến; /ads chuyển hướng
       vào tab Quảng cáo giữ tham số). Thanh bên 4 mục (Alt+1…4), mục ẩn vẫn mở được và làm sáng mục cha. Tổng quan 4 thẻ, mỗi thẻ ≤ 2 số
       / 2 nút. Trang Kịch bản: mỗi hook một dòng + "Viết kịch bản" / "Bỏ", chi tiết gập. Mã bước sơ đồ (8.2 → 4, 6.1 → 3, 4.2 → 2).
+      Tối 05/11 OWNER: "khâu kịch bản cũng không cần… chỉ cần Video, Đăng và Kết quả" → 3 bước (commit kế): 1 Video (Kho gắn thư mục
+      VIDEO-DA-DUYET) · 2 Đăng · 3 Kết quả; Kịch bản / Chủ đề & insight / Studio = trang phụ (`step: 0`, `parent: 1`) mở qua menu
+      Tạo mới hoặc đường dẫn, làm sáng bước Video; Alt+1…3; mã sơ đồ 8.2 → 3, 6.1 → 2, 4.2 → 1, 2 / 3 → "—".
+      ĐANG LÀM (OWNER 05/11 tối): bước Đăng = mỗi video một hàng, nút theo nền tảng (bấm = đăng ngay / hẹn giờ), nút "Tự động" GPT
+      đọc video đã duyệt → viết bài → tự xếp lịch giờ vàng; công tắc tự động cho video mới từ thư mục. 5 mẫu giao diện đã dựng trên
+      canvas cho OWNER chọn phong cách.
    CHỜ OWNER: khoá Meta / Google / YouTube / TikTok (đăng bài + quảng cáo 7.2–7.5), hồ sơ cá nhân Facebook (6.2.1.1).
 2. Skill ESV + Skill Edit Video Ngang v0.1.r2 — XONG phần Phần chung A (4255aca, ff638df): nhạc A5 (chưa có bài đạt → KHÔNG nhạc),
    SFX OWNER theo vai trò, cắt lặng A11.4 (+ bảo vệ khoảng có từ), xem trước 720p, số A13, ảnh theo mô tả nội dung A4.1.

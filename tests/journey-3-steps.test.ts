@@ -1,4 +1,5 @@
-// Hành trình 4 bước (OWNER 05/11/2026): /ads chuyển hướng vào Kết quả › Quảng cáo giữ tham số; mục ẩn không hotkey, có mục cha hiện;
+// Hành trình 3 bước Video → Đăng → Kết quả (OWNER 05/11/2026): /ads chuyển hướng vào Kết quả › Quảng cáo giữ tham số; mục ẩn không hotkey,
+// có mục cha hiện; trang phụ (kịch bản, chủ đề, Studio) làm sáng bước 1 · Video;
 // badge của mục ẩn cộng vào mục cha trên thanh bên; mỗi bước mở một mục hiện.
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
@@ -6,7 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "baor-4buoc-"));
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "baor-3buoc-"));
 process.env.DATA_DIR = tmp;
 process.env.DATABASE_PATH = path.join(tmp, "t.db");
 process.env.AUTH_SECRET = "test-secret-".padEnd(40, "x");
@@ -53,16 +54,19 @@ test("mục ẩn: không hotkey, mục cha có thật và hiện; mỗi bước 
   for (const s of j.JOURNEY_STEPS) assert.ok(visible.includes(s.href), `bước ${s.step} ${s.href} phải là mục hiện`);
   assert.equal(m.activeMenuItem("/insights/research")?.key, "research");
   assert.equal(m.hrefForActivityStep("ads"), "/ads");
-  assert.equal(j.journeyDisplayStepFor("/video-studio")?.step, 2);
-  assert.equal(j.journeyDisplayStepFor("/ads")?.step, 4);
+  assert.equal(j.journeyDisplayStepFor("/video-studio")?.step, 1, "Studio là trang phụ của Video");
+  assert.equal(j.journeyDisplayStepFor("/content/hooks")?.step, 1, "Kịch bản là trang phụ của Video");
   assert.equal(j.journeyDisplayStepFor("/insights/research/abc")?.step, 1);
+  assert.equal(j.journeyDisplayStepFor("/publishing")?.step, 2);
+  assert.equal(j.journeyDisplayStepFor("/ads")?.step, 3);
+  assert.deepEqual(j.JOURNEY_STEPS.map((s) => s.href), ["/video-library", "/publishing", "/insights/learning"]);
+  assert.ok(!m.menu.some((x) => !x.hidden && /kịch bản/i.test(x.label)), "Kịch bản không còn trên thanh bên");
 });
 
-test("badge của mục ẩn cộng vào mục cha (video chờ duyệt → Video, quảng cáo chờ → Kết quả)", () => {
+test("badge của mục ẩn cộng vào mục cha (video chờ duyệt + hook chờ chọn → Video, quảng cáo chờ → Kết quả)", () => {
   const badges = { "/video-studio": 2, "/video-library": 1, "/ads": 3, "/content/hooks": 6 };
   const by = (k: string) => m.menu.find((x) => x.key === k)!;
-  assert.equal(m.menuBadge(by("video-library"), badges), 3);
+  assert.equal(m.menuBadge(by("video-library"), badges), 9);
   assert.equal(m.menuBadge(by("learning"), badges), 3);
-  assert.equal(m.menuBadge(by("content"), badges), 6);
   assert.equal(m.menuBadge(by("publishing"), badges), 0);
 });

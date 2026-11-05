@@ -22,7 +22,7 @@ export const metadata = { title: "Kịch bản – BAOR AI OS" };
 const basisLabel = { finding: "Nghiên cứu", knowledge: "Kiến thức", insight: "Insight" } as const;
 const chip = (on: boolean) => cn("rounded-full border px-2.5 py-0.5 whitespace-nowrap", on ? "border-jade/40 bg-jade-soft font-semibold text-jade-ink" : "border-border-2 text-ink-2 hover:bg-ground-2");
 
-// Bước 1 · Kịch bản (OWNER 05/11/2026: "tối giản, đơn giản, dễ sử dụng"): gõ chủ đề → 10 hook, mỗi hook MỘT dòng + hai nút
+// Kịch bản — trang phụ của bước 1 · Video (OWNER 05/11/2026 "khâu kịch bản cũng không cần", chỉ mở khi cần ý tưởng): gõ chủ đề → 10 hook, mỗi hook MỘT dòng + hai nút
 // "Viết kịch bản" / "Bỏ"; góc tiếp cận, dàn ý, nguồn, cảnh báo luật gập trong "Chi tiết". Chấm điểm ưu tiên, "Nên làm" cho 3 hook tốt nhất.
 export default async function HooksPage({ searchParams }: { searchParams: Promise<{ topic?: string; all?: string; research?: string }> }) {
   const sp = await searchParams;

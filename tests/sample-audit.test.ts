@@ -202,7 +202,7 @@ test("Đo lường: ẩn đề xuất chờ duyệt đã cũ (phân tích không
   const exists = (id: string) => id === "v_live" || id === "v_live2";
   const keys = analyze.openProposals(stored, live, exists).map((p) => p.key);
   assert.deepEqual(keys, ["video_skill:qa:F", "content:topic", "ai:abc"]);
-  assert.equal(analyze.MEASURE_STEP, "4", "chữ bước theo 4 bước hiển thị, không còn 8.1 / 8.2");
+  assert.equal(analyze.MEASURE_STEP, "3", "chữ bước theo 3 bước hiển thị, không còn 8.1 / 8.2");
   assert.doesNotMatch(analyze.skillProposals([{ id: "p", title: "Bài", platform: "facebook", caption: "Không CTA", issues: [], views: 1, engagement: 1, reach: 1 }], "skill")[0].detail, /8\.1/);
 });
 

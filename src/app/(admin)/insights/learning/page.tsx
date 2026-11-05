@@ -35,7 +35,7 @@ const statusLabel: Record<string, { label: string; tone: "amber" | "jade" | "neu
 };
 
 // CP06: số liệu thật → phân tích → đề xuất (giả thuyết) → OWNER quyết → Second Brain / Skill.
-// Bước 4 · Kết quả (OWNER 05/11/2026): ba tab "Số liệu" (mặc định, trang /reports cũ, tab con ?view=) | "Quảng cáo" (trang /ads cũ)
+// Bước 3 · Kết quả (OWNER 05/11/2026): ba tab "Số liệu" (mặc định, trang /reports cũ, tab con ?view=) | "Quảng cáo" (trang /ads cũ)
 // | "Cải tiến" (đề xuất theo skill + AI).
 export default async function LearningPage({ searchParams }: { searchParams: Promise<{ tab?: string; view?: string; month?: string; campaign?: string; edit?: string; link?: string; goal?: string }> }) {
   const sp = await searchParams;
