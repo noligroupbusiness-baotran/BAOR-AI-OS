@@ -1,6 +1,5 @@
 import { PageHead, Panel, PanelHeader } from "@/components/ui/card";
 import { Pill } from "@/components/ui/pill";
-import { Tiles, Tile } from "@/components/ui/stat";
 import { Table, Th, Td } from "@/components/ui/table";
 import { platformLabel } from "@/components/ui/platform";
 import { PostActions, canReleaseLock, postErrorShort } from "@/components/publishing/post-actions";
@@ -15,6 +14,7 @@ import { Pager, paginate } from "@/components/ui/pager";
 import { MonthCalendar, monthOf } from "@/components/publishing/month-calendar";
 import { Segment } from "@/components/ui/segment";
 import { VideoPostsPanel } from "@/components/publishing/video-posts-panel";
+import { VideoBoard, boardStats } from "@/components/publishing/video-board";
 import { channelPageIds } from "@/lib/publishing/video";
 import { SamplePill } from "@/components/ui/sample";
 import { CampaignFilterChip } from "@/components/campaigns/campaign-filter-chip";
@@ -72,24 +72,35 @@ export default async function PublishingPage({ searchParams }: { searchParams: P
     }, {}),
   ).sort((a, b) => b.at.localeCompare(a.at));
   const rowPage = paginate(rows, page);
+  const stats = boardStats();
 
+  // Bước 2 · Đăng (OWNER 05/11/2026): bảng video theo nền tảng (VideoBoard) là phần chính; số liệu, lịch sử bài và lịch tháng nằm dưới.
   return (
     <>
       <PageHead
-        title="Đăng bài"
-        sub="Lịch đăng và bài đã đăng."
+        title="Đăng"
+        sub="Bấm nền tảng là đăng. Hẹn giờ cho từng kênh. ✦ Tự động: GPT đọc video, viết bài, xếp giờ vàng."
+        action={
+          <div className="flex items-end gap-5 text-[12.5px] font-semibold text-ink-3">
+            <span><b className="num mr-1 text-[22px] text-ink">{stats.waiting}</b>chờ đăng</span>
+            <span><b className="num mr-1 text-[22px] text-ink">{stats.postedWeek}</b>đã đăng tuần này</span>
+            <span><b className="num mr-1 text-[22px] text-jade">{stats.written}</b>bài GPT viết</span>
+          </div>
+        }
       />
+
+      {!filter && <VideoBoard focus={focusVideo} owner={owner} />}
 
       <CampaignFilterChip filter={filter} missing={!!ctx.campaignId && !filter} clearHref={withCampaignContext(`/publishing${view === "calendar" ? "?view=calendar" : ""}`, {})} />
 
-      <Tiles>
-        <Tile label="Chờ đăng" value={String(queue.length)} hint="Sẽ tự đăng khi nối Facebook" sample={sampleNote(count(samplePosts, "scheduled").length, "bài")} />
-        <Tile label="Đã đăng" value={String(published.length)} hint={avgReach ? `Reach TB ${formatNumber(avgReach)} / bài` : "Chưa có số liệu"} sample={sampleNote(samplePublished.length, "bài")} />
-        <Tile label="Ads đang chạy" value={String(activeReal.length)} hint={`${filter ? "Đã chi" : "Đã chi tháng"} ${formatNumber(spentMonth)} ₫`} sample={activeSample.length || spentSample ? `${activeSample.length} ads · ${formatNumber(spentSample)} ₫` : undefined} />
-        <Tile label="Lỗi đăng" value={String(failed.length)} hint={failed[0]?.error?.split(".")[0] ?? "Không có"} tone={failed.length ? "brick" : undefined} sample={sampleNote(count(samplePosts, "failed").length, "bài")} />
-      </Tiles>
 
-      <VideoPostsPanel focus={focusVideo} owner={owner} campaignIds={campaignFilterFor(ctx, ["publication", "video"])?.ids ?? null} />
+      {/* Lịch sử (bài đã đăng / lỗi / bài chữ) và lịch tháng gập lại: trang Đăng chỉ còn bảng video theo nền tảng là chính (OWNER 05/11) */}
+      <details className="mt-6 group" open={view === "calendar" || !!page || !!filter}>
+        <summary className="btn btn-glass inline-flex h-9 cursor-pointer list-none items-center gap-2 px-4 text-[13px] font-semibold [&::-webkit-details-marker]:hidden">
+          Lịch sử & lịch tháng
+          <span className="num rounded-full bg-ground-2 px-2 py-0.5 text-[11.5px] text-ink-2">{published.length} đã đăng{failed.length ? ` · ${failed.length} lỗi` : ""}</span>
+        </summary>
+      <div className="mt-4"><VideoPostsPanel focus={focusVideo} owner={owner} compact campaignIds={campaignFilterFor(ctx, ["publication", "video"])?.ids ?? null} /></div>
 
       <div className="mt-3.5"><Segment basePath={keep("/publishing")} active={view} items={[{ key: "list", label: "Danh sách" }, { key: "calendar", label: "Lịch tháng" }]} paramName="view" /></div>
 
@@ -136,6 +147,7 @@ export default async function PublishingPage({ searchParams }: { searchParams: P
         </Table>
         <Pager page={rowPage.page} pages={rowPage.pages} total={rowPage.total} hrefFor={(p) => keep(`/publishing?page=${p}`)} label="bài" />
       </Panel>}
+      </details>
     </>
   );
 }

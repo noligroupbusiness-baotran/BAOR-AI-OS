@@ -152,9 +152,21 @@ OWNER 25/10/2026 (tối): edit video LẠI ("edit lại đi") — lệnh "ngưng
       Tối 05/11 OWNER: "khâu kịch bản cũng không cần… chỉ cần Video, Đăng và Kết quả" → 3 bước (commit kế): 1 Video (Kho gắn thư mục
       VIDEO-DA-DUYET) · 2 Đăng · 3 Kết quả; Kịch bản / Chủ đề & insight / Studio = trang phụ (`step: 0`, `parent: 1`) mở qua menu
       Tạo mới hoặc đường dẫn, làm sáng bước Video; Alt+1…3; mã sơ đồ 8.2 → 3, 6.1 → 2, 4.2 → 1, 2 / 3 → "—".
-      ĐANG LÀM (OWNER 05/11 tối): bước Đăng = mỗi video một hàng, nút theo nền tảng (bấm = đăng ngay / hẹn giờ), nút "Tự động" GPT
-      đọc video đã duyệt → viết bài → tự xếp lịch giờ vàng; công tắc tự động cho video mới từ thư mục. 5 mẫu giao diện đã dựng trên
-      canvas cho OWNER chọn phong cách.
+   T. XONG (commit kế, OWNER 05/11 tối, chọn mẫu 3 "thẻ nổi 3D, giữ màu BAOR" trong 5 mẫu trên canvas): bước 2 · Đăng làm lại
+      (src/components/publishing/video-board.tsx, src/lib/publishing/auto-post.ts): mỗi video đã duyệt chưa đăng một hàng thẻ nổi —
+      ảnh video, bài GPT viết từ lời nói (chip nguồn), MỖI NỀN TẢNG MỘT Ô: "Đăng" = xếp giờ hiện tại + bộ chạy nền gửi ngay,
+      "Hẹn giờ" mở khung chọn giờ trong ô (giờ vàng gợi ý), đã hẹn → Đổi giờ / Huỷ, đã đăng → Xem bài, chưa nối / chưa hỗ trợ → Kết nối;
+      fanpage phụ chưa nối không chiếm ô. Nút "✦ Tự động": GPT đọc video → viết bài (fallback luật) → xếp mọi nền tảng còn mở vào khung
+      giờ vàng trống gần nhất (mỗi khung một video). Công tắc "Tự động cho video mới" (publishing.autoNew, quyền quản trị) móc vào
+      post-draft: video vào Kho (thư mục / tải lên / duyệt) → bài xong → tự xếp lịch; lỗi chỉ ghi nhật ký. Chế độ thử / chống trùng /
+      trần caption vẫn ở scheduleVideoPosts. Kho video: nút chính "Đăng ›" sang bước Đăng. CSS .card3d / .board3d / .tilt3d.
+      Test tests/auto-post.test.ts (6). Chạy thật dev: Đăng ngay / Hẹn giờ (GPT viết thật) / Tự động (khung kế khi 20:30 đã có bài);
+      vòng khép kín: máy dựng tạm trỏ dev + thư mục thử → clip kéo vào → 2 phút sau lên trang Đăng với bài GPT viết từ ghi chú .txt,
+      tự xếp khung giờ vàng trống (công tắc bật). Trang Đăng chỉ còn: dải thư mục VIDEO-DA-DUYET · công tắc · hàng video; lịch sử +
+      lịch tháng gập dưới một nút. "Áo" mẫu 3 cho toàn app: thanh bên thành thẻ nổi tách mép, mục chọn viên đậm, thẻ cạnh dày 2px +
+      bóng xa (--card-edge / --shadow), bo 14px, nút chính cạnh 3D, tiêu đề trang 26px. Phản biện độc lập APPROVE; P2 đã sửa (khoá
+      Đăng / Hẹn giờ khi GPT đang viết), công tắc tự động lên quyền quản trị (P3-3). Nợ: gộp vnLocalToIso với whenIso ở actions;
+      rescheduleVideoPost nhận giờ quá khứ (UI mặc định tương lai); platformSlots truy vấn nhiều (ổn với dữ liệu hiện tại).
    CHỜ OWNER: khoá Meta / Google / YouTube / TikTok (đăng bài + quảng cáo 7.2–7.5), hồ sơ cá nhân Facebook (6.2.1.1).
 2. Skill ESV + Skill Edit Video Ngang v0.1.r2 — XONG phần Phần chung A (4255aca, ff638df): nhạc A5 (chưa có bài đạt → KHÔNG nhạc),
    SFX OWNER theo vai trò, cắt lặng A11.4 (+ bảo vệ khoảng có từ), xem trước 720p, số A13, ảnh theo mô tả nội dung A4.1.

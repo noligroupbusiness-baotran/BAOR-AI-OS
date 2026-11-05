@@ -8,6 +8,10 @@ import { cancelTextPost } from "@/lib/publishing/text";
 import { setDryRunMode } from "@/lib/publishing/guards";
 import { captionIssues, clearCaptionDraft, scriptTextFor } from "@/lib/publishing/caption";
 import { generateCaption } from "@/lib/ai";
+import { autoPostVideo, postVideoTo, rescheduleVideoPost, setAutoNew, vnLocalToIso } from "@/lib/publishing/auto-post";
+import { publishDueVideoPosts } from "@/lib/publishing/video";
+import { formatDateTime } from "@/lib/format";
+import { after } from "next/server";
 import { done } from "./common";
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
@@ -94,6 +98,69 @@ export async function aiCaptionAction(fd: FormData) {
   const r = await generateCaption(str(fd, "id"));
   if (!r.ok) return fail(back, r.error);
   done(back, `AI đã viết tiêu đề + nội dung theo skill ${r.skill} — sửa rồi lên lịch`);
+}
+
+// ---------- Bước 2 · Đăng: nút theo nền tảng + Tự động (OWNER 05/11/2026) ----------
+const BOARD = "/publishing";
+const backOf = (fd: FormData) => str(fd, "back") || BOARD;
+/** Bộ chạy nền gửi bài đến hạn mỗi phút; "Đăng ngay" gọi luôn sau khi trả lời để không chờ phút kế. */
+function publishSoon() {
+  try {
+    after(() => publishDueVideoPosts().catch(() => undefined));
+  } catch {
+    /* ngoài phạm vi yêu cầu (kiểm thử) */
+  }
+}
+
+/** Bấm nút nền tảng: đăng ngay (bài viết sẵn; chưa có thì GPT viết trước khi xếp). */
+export async function postNowAction(fd: FormData) {
+  const back = backOf(fd);
+  const actor = await requirePermission("manager", back);
+  const r = await postVideoTo({ videoId: str(fd, "id"), platform: str(fd, "platform"), by: actor.name });
+  if (!r.ok) return fail(back, r.error);
+  publishSoon();
+  done(back, r.mode === "dry_run" ? "Đã xếp đăng ngay ở chế độ thử (không đăng thật)" : "Đang đăng — bài sẽ lên trong ít phút, hệ thống đọc lại để xác minh");
+}
+
+/** Hẹn giờ cho một nền tảng. */
+export async function scheduleAtAction(fd: FormData) {
+  const back = backOf(fd);
+  const actor = await requirePermission("manager", back);
+  const iso = vnLocalToIso(str(fd, "when"));
+  if (!iso) return fail(back, "Cần chọn giờ đăng hợp lệ");
+  const r = await postVideoTo({ videoId: str(fd, "id"), platform: str(fd, "platform"), whenIso: iso, by: actor.name });
+  if (!r.ok) return fail(back, r.error);
+  done(back, `${r.mode === "dry_run" ? "Đã hẹn (chế độ thử)" : "Đã hẹn đăng"} lúc ${formatDateTime(iso)}`);
+}
+
+/** Đổi giờ bài đang chờ. */
+export async function rescheduleAction(fd: FormData) {
+  const back = backOf(fd);
+  const actor = await requirePermission("manager", back);
+  const iso = vnLocalToIso(str(fd, "when"));
+  if (!iso) return fail(back, "Cần chọn giờ đăng hợp lệ");
+  const r = rescheduleVideoPost(str(fd, "post"), iso, actor);
+  if (!r.ok) return fail(back, r.error);
+  done(back, `Đã đổi giờ đăng: ${formatDateTime(iso)}`);
+}
+
+/** Nút "Tự động": GPT đọc video → viết bài → xếp giờ vàng cho mọi nền tảng còn mở. */
+export async function autoPostAction(fd: FormData) {
+  const back = backOf(fd);
+  const actor = await requirePermission("manager", back);
+  const r = await autoPostVideo({ videoId: str(fd, "id"), by: actor.name });
+  if (!r.ok) return fail(back, r.error);
+  const who = r.source === "ai" ? "GPT đã viết bài" : r.source === "kept" ? "Dùng bài đã viết" : "Bài theo luật (AI chưa viết được)";
+  done(back, `${who} · xếp ${r.created} bài (${r.platforms.join(", ")}) lúc ${formatDateTime(r.whenIso)}${r.mode === "dry_run" ? " · chế độ thử" : ""}`);
+}
+
+/** Công tắc "Tự động cho video mới" — quản trị (đường tự động đầu tiên lên nền tảng thật khi tắt chế độ thử). */
+export async function setAutoNewAction(fd: FormData) {
+  const back = backOf(fd);
+  const actor = await requirePermission("admin", back);
+  const on = str(fd, "on") === "1";
+  setAutoNew(on, actor);
+  done(back, on ? "Đã bật: video mới vào Kho → GPT viết bài → tự xếp giờ vàng" : "Đã tắt tự động cho video mới");
 }
 
 export async function resetCaptionAction(fd: FormData) {

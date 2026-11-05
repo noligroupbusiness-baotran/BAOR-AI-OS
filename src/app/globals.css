@@ -27,10 +27,10 @@
   --violet-soft: #eae4f8;
   --sky: #2f5fd0;
   --sky-soft: #e1e8fa;
-  --shadow: 0 1px 2px rgba(16, 16, 24, 0.04), 0 1px 3px rgba(16, 16, 24, 0.03);
+  --shadow: 0 1px 2px rgba(16, 16, 24, 0.04), 0 16px 28px -24px rgba(15, 26, 20, 0.3);
   --shadow-lift: 0 6px 18px -6px rgba(16, 16, 24, 0.16), 0 2px 6px -2px rgba(16, 16, 24, 0.06);
   --card-bg: #ffffff;
-  --card-edge: 0 0 #0000;
+  --card-edge: 0 2px 0 var(--border-2);
   --input-bg: #ffffff;
   --on-brick: #ffffff;
   --page-glow: none;
@@ -52,7 +52,7 @@
   --sidebar-w: 240px;
   --sidebar-collapsed-w: 64px;
   --topbar-h: 56px;
-  --radius: 10px;
+  --radius: 14px;
   color-scheme: light;
 }
 
@@ -83,7 +83,7 @@
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
   --shadow-lift: 0 10px 28px -10px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05);
   --card-bg: #142219;
-  --card-edge: 0 0 #0000;
+  --card-edge: 0 2px 0 rgba(255, 255, 255, 0.07);
   --input-bg: #18281e;
   --on-brick: #1a0505;
   --page-glow: radial-gradient(640px circle at 0% 0%, rgba(30, 122, 75, 0.22), transparent 62%), radial-gradient(560px circle at 100% 100%, rgba(183, 121, 31, 0.13), transparent 62%);
@@ -127,7 +127,7 @@
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
     --shadow-lift: 0 10px 28px -10px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05);
     --card-bg: #142219;
-    --card-edge: 0 0 #0000;
+    --card-edge: 0 2px 0 rgba(255, 255, 255, 0.07);
     --input-bg: #18281e;
     --on-brick: #1a0505;
     --page-glow: radial-gradient(640px circle at 0% 0%, rgba(30, 122, 75, 0.22), transparent 62%), radial-gradient(560px circle at 100% 100%, rgba(183, 121, 31, 0.13), transparent 62%);
@@ -151,8 +151,8 @@
   --btn-radius: 8px;
   --btn-ring: #1e7a4b;
   --btn-primary-border: #17643d;
-  --btn-primary-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 2px rgba(16, 48, 30, 0.24);
-  --btn-primary-shadow-hover: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 6px 14px -4px rgba(30, 122, 75, 0.45), 0 2px 4px -1px rgba(16, 48, 30, 0.2);
+  --btn-primary-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 3px 0 #0f5b36, 0 12px 24px -14px rgba(30, 122, 75, 0.55);
+  --btn-primary-shadow-hover: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 3px 0 #0f5b36, 0 14px 26px -12px rgba(30, 122, 75, 0.6);
   --btn-danger-border: #962c27;
   --btn-danger-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 1px 2px rgba(80, 20, 16, 0.24);
   --btn-danger-shadow-hover: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 6px 14px -4px rgba(183, 58, 52, 0.45), 0 2px 4px -1px rgba(80, 20, 16, 0.2);
@@ -168,7 +168,7 @@
 :root[data-theme="dark"] {
   --btn-ring: #34d399;
   --btn-primary-border: rgba(52, 211, 153, 0.3);
-  --btn-primary-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --btn-primary-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 3px 0 #0e4d33, 0 12px 24px -14px rgba(0, 0, 0, 0.6);
   --btn-primary-shadow-hover: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 6px 18px -6px rgba(52, 211, 153, 0.4), 0 2px 4px rgba(0, 0, 0, 0.35);
   --btn-danger-border: rgba(240, 122, 114, 0.35);
   --btn-danger-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -186,7 +186,7 @@
   :root:not([data-theme="light"]):not([data-theme="dark"]) {
     --btn-ring: #34d399;
     --btn-primary-border: rgba(52, 211, 153, 0.3);
-    --btn-primary-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 1px 2px rgba(0, 0, 0, 0.4);
+    --btn-primary-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 3px 0 #0e4d33, 0 12px 24px -14px rgba(0, 0, 0, 0.6);
     --btn-primary-shadow-hover: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 6px 18px -6px rgba(52, 211, 153, 0.4), 0 2px 4px rgba(0, 0, 0, 0.35);
     --btn-danger-border: rgba(240, 122, 114, 0.35);
     --btn-danger-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -280,6 +280,44 @@ body {
     border: 1px solid var(--border);
     border-radius: var(--radius);
     box-shadow: var(--card-edge), var(--shadow);
+  }
+
+  /* Thẻ nổi (OWNER 05/11/2026 chọn mẫu "thẻ nổi 3D, giữ màu BAOR"): cạnh dưới dày 3px + bóng xa; biến thể ok / wait theo trạng thái */
+  .card3d {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    box-shadow: 0 3px 0 var(--border-2), 0 18px 30px -22px rgba(15, 26, 20, 0.3);
+  }
+  .card3d--ok {
+    background: var(--jade-soft);
+    border-color: color-mix(in srgb, var(--jade) 45%, transparent);
+    box-shadow: 0 3px 0 color-mix(in srgb, var(--jade) 45%, transparent), 0 18px 30px -22px rgba(15, 26, 20, 0.3);
+  }
+  .card3d--wait {
+    background: var(--amber-soft);
+    border-color: color-mix(in srgb, var(--amber) 40%, transparent);
+    box-shadow: 0 3px 0 color-mix(in srgb, var(--amber) 40%, transparent), 0 18px 30px -22px rgba(15, 26, 20, 0.3);
+  }
+  .card3d--off {
+    background: var(--ground);
+    border-style: dashed;
+    box-shadow: none;
+  }
+  /* Bảng nghiêng nhẹ về sau như đặt trên bàn; ảnh video xoay 10° */
+  .board3d {
+    transform: perspective(1200px) rotateX(2deg);
+    transform-origin: 50% 0;
+  }
+  .tilt3d {
+    transform: perspective(800px) rotateY(10deg);
+    box-shadow: 0 20px 30px -18px rgba(15, 26, 20, 0.6);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .board3d,
+    .tilt3d {
+      transform: none;
+    }
   }
 
   /* Thẻ bấm được: nhấc nhẹ + bóng khi rê chuột */
@@ -546,9 +584,13 @@ body {
 
   /* Mục menu đang chọn ở thanh bên: kim loại nhẹ */
   .nav-active {
-    color: var(--ink);
-    background: #ffffff;
-    box-shadow: 0 1px 2px rgba(16, 16, 24, 0.06);
+    color: #ffffff;
+    background: #0f1a14;
+    box-shadow: 0 2px 0 #000, 0 10px 20px -12px rgba(15, 26, 20, 0.6);
+  }
+  .nav-active:hover,
+  .nav-active > span {
+    color: #ffffff;
   }
 }
 
@@ -574,8 +616,8 @@ body {
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]):not([data-theme="dark"]) .nav-active {
     color: #ffffff;
-    background: rgba(255, 255, 255, 0.06);
-    box-shadow: none;
+    background: var(--jade-soft);
+    box-shadow: 0 2px 0 rgba(0, 0, 0, 0.5);
   }
 }
 }

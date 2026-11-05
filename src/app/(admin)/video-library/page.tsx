@@ -169,7 +169,7 @@ function LibraryCard({ r, pending, here, known, canDelete, focus, aiReady }: { r
   const primary: ReactNode = pending.length > 0 ? (
     <LinkButton href={`/publishing?video=${encodeURIComponent(r.id)}#video-posts`} variant="primary" size="md">Xem ở Đăng bài ›</LinkButton>
   ) : r.state === "unposted" ? (
-    <LinkButton href={scheduleHref} variant="primary" size="md">Lên lịch đăng</LinkButton>
+    <LinkButton href={`/publishing#b-${encodeURIComponent(r.id)}`} variant="primary" size="md">Đăng ›</LinkButton>
   ) : firstLink ? (
     <a href={firstLink} target="_blank" rel="noopener noreferrer" className="inline-flex h-8 items-center rounded-full border border-border-2 bg-surface px-3.5 text-[12.5px] font-medium text-ink hover:border-ink-3">Xem bài ›</a>
   ) : null;
@@ -222,7 +222,7 @@ function LibraryCard({ r, pending, here, known, canDelete, focus, aiReady }: { r
               </form>
             )}
             <LinkButton href={studio} variant="ghost" className="justify-start">Mở trong Studio</LinkButton>
-            {pending.length > 0 && <LinkButton href={scheduleHref} variant="ghost" className="justify-start">Lên lịch thêm kênh</LinkButton>}
+            {r.state === "unposted" && <LinkButton href={scheduleHref} variant="ghost" className="justify-start">Sửa bài / lên lịch nhiều kênh</LinkButton>}
             {pending.length === 0 && r.posts.length > 0 && <LinkButton href={`/publishing?video=${encodeURIComponent(r.id)}#video-posts`} variant="ghost" className="justify-start">Xem ở Đăng bài</LinkButton>}
             {!purged && r.uploadId && <a href={fileUrl(r.uploadId)} download className="inline-flex h-[26px] items-center rounded-full px-2.5 text-[12px] font-medium text-ink-2 hover:bg-ground-2 hover:text-ink">Tải bản chính</a>}
             {block ? (

@@ -109,7 +109,7 @@ export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile
     <>
       <aside
         className={cn(
-          "sticky top-0 hidden h-screen shrink-0 flex-col gap-5 border-r border-border bg-ground-2 px-3 pb-4 pt-5 transition-[width] duration-200 md:flex",
+          "card sticky top-3 ml-3 mt-3 hidden h-[calc(100vh-24px)] shrink-0 flex-col gap-5 rounded-[22px] px-3 pb-4 pt-5 transition-[width] duration-200 md:flex",
           collapsed ? "w-[var(--sidebar-collapsed-w)]" : "w-[var(--sidebar-w)]",
         )}
       >

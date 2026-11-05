@@ -6,6 +6,7 @@ import { generateCaption } from "@/lib/ai";
 import { buildCaption, buildPostTitle, captionDraft, saveCaptionDraft, savePostTitle, setPostDraftSource } from "@/lib/publishing/caption";
 import { getSetting, setSetting } from "@/lib/admin";
 import { after } from "next/server";
+import { autoPostIfEnabled } from "./auto-post";
 
 const pendingKey = (videoId: string) => `publishing.postDraftPending.${videoId}`;
 
@@ -34,6 +35,13 @@ export function startPostDraft(videoId: string): void {
 }
 
 export async function draftPostForApprovedVideo(videoId: string): Promise<{ source: "ai" | "rule" | "kept"; reason?: string }> {
+  const out = await writeDraft(videoId);
+  // Công tắc "Tự động cho video mới" (OWNER 05/11/2026): bài xong → xếp lịch giờ vàng cho các nền tảng còn mở (lỗi chỉ ghi nhật ký)
+  await autoPostIfEnabled(videoId);
+  return out;
+}
+
+async function writeDraft(videoId: string): Promise<{ source: "ai" | "rule" | "kept"; reason?: string }> {
   try {
     if (captionDraft(videoId)) return { source: "kept" };
     let reason = "";
