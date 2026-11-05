@@ -5,6 +5,7 @@
 import { generateCaption } from "@/lib/ai";
 import { buildCaption, buildPostTitle, captionDraft, saveCaptionDraft, savePostTitle, setPostDraftSource } from "@/lib/publishing/caption";
 import { getSetting, setSetting } from "@/lib/admin";
+import { after } from "next/server";
 
 const pendingKey = (videoId: string) => `publishing.postDraftPending.${videoId}`;
 
@@ -16,6 +17,20 @@ export function postDraftPending(videoId: string, now = Date.now()): boolean {
 
 export function markPostDraftPending(videoId: string): void {
   setSetting(pendingKey(videoId), new Date().toISOString());
+}
+
+/**
+ * Video vừa vào Kho (duyệt ở bước video, OWNER tải video tự edit, hoặc máy dựng gửi từ thư mục đã duyệt): đánh dấu "AI đang viết"
+ * ngay để Kho hiện trạng thái, rồi viết bài NỀN sau khi đã trả lời yêu cầu (`after` của Next — dùng được trong route lẫn server action).
+ */
+export function startPostDraft(videoId: string): void {
+  markPostDraftPending(videoId);
+  try {
+    after(() => draftPostForApprovedVideo(videoId));
+  } catch {
+    // Ngoài phạm vi một yêu cầu (kiểm thử gọi thẳng route): chạy nền ngay
+    draftPostForApprovedVideo(videoId).catch((e) => console.error("[BAOR] Viết bài nền lỗi:", e instanceof Error ? e.message : e));
+  }
 }
 
 export async function draftPostForApprovedVideo(videoId: string): Promise<{ source: "ai" | "rule" | "kept"; reason?: string }> {

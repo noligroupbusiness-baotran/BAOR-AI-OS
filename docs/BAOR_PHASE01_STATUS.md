@@ -138,6 +138,12 @@ OWNER 25/10/2026 (tối): edit video LẠI ("edit lại đi") — lệnh "ngưng
       máy dựng áp quyết định về manifest Mac (luật duyệt một nguồn music-rules.ts, kiểm ở cả hai đầu). Migration 0024 / 0025 (chỉ thêm
       bảng / chỉ mục). Phản biện bảo mật 3 vòng (P1 vượt trần cỡ tệp bằng khoá prototype + DoS bộ nhớ đã vá; bảng tự dọn; rò giữ chỗ).
       SAU KHI GHÉP: OWNER cài lại máy dựng (`npm run render-worker:install`) để bật đồng bộ.
+   R. XONG (commit kế, OWNER 05/11 "edit trên máy… kéo sang cho hệ thống tự viết bài để đăng"): thư mục 2.BAOR.vn/7.VIDEO-DA-DUYET
+      trên Mac OWNER → máy dựng (render-worker, chạy nền) quét mỗi phút, chuyển lời nói thành chữ tại máy (Whisper), gửi nối tiếp lên
+      /api/render-worker/intake bằng khoá máy dựng (chống trùng theo sha256) → video vào thẳng Kho (đã duyệt, OWNER) → tự viết tiêu đề +
+      nội dung từ LỜI ĐÃ NÓI (+ .txt cùng tên = ghi chú OWNER). Tệp gửi xong cất vào DA-GUI/. Kho video có dải trạng thái thư mục.
+      Cũng vá: OWNER tải video tự edit qua web vào Kho trước đây KHÔNG tự viết bài (chỉ Duyệt mới viết) — nay viết luôn.
+      SAU KHI GHÉP: máy OWNER `git pull` + `npm run render-worker:install` (LaunchAgent nạp mã mới) → kéo video vào thư mục là chạy.
    CHỜ OWNER: khoá Meta / Google / YouTube / TikTok (đăng bài + quảng cáo 7.2–7.5), hồ sơ cá nhân Facebook (6.2.1.1).
 2. Skill ESV + Skill Edit Video Ngang v0.1.r2 — XONG phần Phần chung A (4255aca, ff638df): nhạc A5 (chưa có bài đạt → KHÔNG nhạc),
    SFX OWNER theo vai trò, cắt lặng A11.4 (+ bảo vệ khoảng có từ), xem trước 720p, số A13, ảnh theo mô tả nội dung A4.1.

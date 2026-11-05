@@ -29,6 +29,8 @@ import type { Platform } from "@/lib/types";
 import { CampaignFilterChip } from "@/components/campaigns/campaign-filter-chip";
 import { readCampaignContext, withCampaignContext } from "@/lib/campaigns/context";
 import { campaignFilterFor, keepInCampaign } from "@/lib/campaigns/filter";
+import { approvedFolderState, approvedIntakeCount, lastApprovedIntake, type ApprovedFolderState } from "@/lib/video/approved-intake";
+import { workerKeyConfigured, workerOnline } from "@/lib/video/worker-auth";
 
 export const metadata = { title: "Tổng kho video ngắn – BAOR AI OS" };
 
@@ -74,11 +76,14 @@ export default async function VideoLibraryPage({ searchParams }: { searchParams:
   const writing = rows.some((x) => postDraftPending(x.r.id));
   // "Viết lại bằng AI" chỉ bấm được khi AI Viết bài đăng gọi được (công tắc, khoá hãng, trần)
   const aiReady = aiReadiness("caption");
+  // Thư mục đã duyệt trên máy OWNER: máy dựng gửi video kéo vào đó lên Kho (scripts/video/approved-intake.mts)
+  const folder = { online: workerOnline(), hasKey: workerKeyConfigured(), state: approvedFolderState(), last: lastApprovedIntake(), today: approvedIntakeCount(24) };
 
   return (
     <>
       <AutoRefresh active={writing} everyMs={5000} />
       <PageHead title="Kho video" action={<LinkButton href="/video-studio?upload=1" variant="outline" size="md">Tải video đã edit</LinkButton>} />
+      <ApprovedFolderStrip {...folder} />
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0 max-w-full overflow-x-auto [&_a]:shrink-0 [&_a]:whitespace-nowrap">
@@ -115,6 +120,32 @@ export default async function VideoLibraryPage({ searchParams }: { searchParams:
         </ScheduleDialog>
       )}
     </>
+  );
+}
+
+// Một dòng: thư mục VIDEO-DA-DUYET trên máy OWNER đang được máy dựng theo dõi hay không; lần nhận gần nhất.
+export function approvedFolderText(i: { online: boolean; hasKey: boolean; state: ApprovedFolderState | null }): { tone: "ok" | "warn" | "off"; text: string } {
+  if (!i.hasKey) return { tone: "off", text: "Chưa nối máy dựng: Cài đặt › Video › Nơi dựng video › Tạo khoá." };
+  if (!i.online) return { tone: "warn", text: "Máy dựng đang tắt — bật máy hoặc chạy npm run render-worker." };
+  if (i.state === "ok") return { tone: "ok", text: "Đang theo dõi: kéo video vào là tự lên Kho và tự viết bài." };
+  if (i.state === "missing") return { tone: "warn", text: "Máy dựng không thấy thư mục VIDEO-DA-DUYET — tạo thư mục hoặc đặt BAOR_APPROVED_DIR." };
+  return { tone: "warn", text: "Máy dựng đang chạy mã cũ — trên máy chạy git pull rồi npm run render-worker:install." };
+}
+
+function ApprovedFolderStrip({ online, hasKey, state, last, today }: { online: boolean; hasKey: boolean; state: ApprovedFolderState | null; last: ReturnType<typeof lastApprovedIntake>; today: number }) {
+  const t = approvedFolderText({ online, hasKey, state });
+  const dot = t.tone === "ok" ? "bg-jade" : t.tone === "warn" ? "bg-amber" : "bg-ink-3";
+  return (
+    <div className="card mt-3.5 flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-[12.5px]">
+      <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${dot}`} aria-hidden />
+      <span className="font-semibold text-ink">Thư mục VIDEO-DA-DUYET trên máy</span>
+      <span className="text-ink-2">{t.text}</span>
+      {last && (
+        <span className="ml-auto text-ink-3">
+          Gần nhất: <Link href={`/video-library?focus=${encodeURIComponent(last.videoId)}`} className="text-jade hover:underline">{last.name || last.videoId}</Link> · <span className="num">{formatDateTime(last.at)}</span>{today > 1 ? ` · ${today} video / 24 giờ` : ""}
+        </span>
+      )}
+    </div>
   );
 }
 

@@ -39,6 +39,43 @@ export interface CaptionDraft {
 
 const CTA = "Bạn từng gặp tình huống này chưa? Bình luận để mình trả lời trong video sau.";
 
+export interface VideoSpoken {
+  /** Lời nói: kịch bản đã duyệt (nếu gắn) → bản chuyển chữ máy dựng gửi kèm video tự edit → rỗng. */
+  text: string;
+  source: "script" | "transcript" | "none";
+  /** Ghi chú OWNER để cạnh video (tệp .txt cùng tên trong thư mục đã duyệt). */
+  note: string;
+}
+
+/** Chữ thật của video để viết bài: kịch bản hoặc lời đã nói (video tự edit không có kịch bản gắn). */
+export function videoSpoken(videoId: string): VideoSpoken {
+  const db = getDb();
+  const v = db.select().from(schema.videos).where(eq(schema.videos.id, videoId)).get();
+  if (!v) return { text: "", source: "none", note: "" };
+  const c = v.contentId ? db.select().from(schema.contentItems).where(eq(schema.contentItems.id, v.contentId)).get() : undefined;
+  const script = spokenScriptText(c?.draft ?? "").trim();
+  let meta: Record<string, unknown> = {};
+  if (v.uploadId) {
+    const u = db.select().from(schema.uploads).where(eq(schema.uploads.id, v.uploadId)).get();
+    try {
+      meta = JSON.parse(u?.meta || "{}") as Record<string, unknown>;
+    } catch {
+      meta = {};
+    }
+  }
+  const note = typeof meta.note === "string" ? meta.note.trim() : "";
+  if (script) return { text: script, source: "script", note };
+  const transcript = typeof meta.transcript === "string" ? meta.transcript.trim() : "";
+  return transcript ? { text: transcript, source: "transcript", note } : { text: "", source: "none", note };
+}
+
+/** 1–2 câu đầu của lời nói (để làm thân caption theo luật khi không có kịch bản). */
+export function leadSentences(text: string, max = 2, maxChars = 280): string {
+  const parts = text.replace(/\s+/g, " ").match(/[^.!?…]+[.!?…]*/g) ?? [];
+  const out = parts.map((p) => p.trim()).filter(Boolean).slice(0, max).join(" ");
+  return [...out].length > maxChars ? `${[...out].slice(0, maxChars - 1).join("")}…` : out;
+}
+
 /** Caption theo cấu trúc mặc định của skill (Hook → tình huống / bài học → CTA), chỉ dùng chữ có trong kịch bản đã duyệt. */
 export function buildCaption(videoId: string): CaptionDraft {
   const db = getDb();
@@ -54,7 +91,10 @@ export function buildCaption(videoId: string): CaptionDraft {
     beats = [];
   }
   const hook = c?.hook?.trim() || c?.title || v.title;
-  const parts = [hook, key && key !== hook ? key : "", beats.length ? beats.map((b) => `→ ${b.trim()}`).join("\n") : "", CTA].filter(Boolean);
+  // Video tự edit không gắn kịch bản: thân caption lấy từ lời đã nói (máy dựng chuyển chữ) thay vì chỉ tên tệp
+  const spoken = !c ? videoSpoken(videoId) : null;
+  const lead = spoken?.source === "transcript" ? leadSentences(spoken.text) : "";
+  const parts = [hook, key && key !== hook ? key : "", beats.length ? beats.map((b) => `→ ${b.trim()}`).join("\n") : "", lead && lead !== hook ? lead : "", CTA].filter(Boolean);
   return { text: parts.join("\n\n"), source: skill ? "skill-template" : "fallback", skill: skill ? { id: skill.id, title: skill.title, status: skill.status } : null };
 }
 

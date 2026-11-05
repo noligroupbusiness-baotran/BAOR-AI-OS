@@ -80,7 +80,7 @@ test("phản biện: hoàn tất để lại dấu 'đã xong' (hỏi lại / g�
   const vid = (r as { videoId: string }).videoId;
   assert.deepEqual(rs.sessionInfo(o.sid, ME), { ok: true, offset: 500, size: 500, done: true, videoId: vid });
   const again = await rs.appendChunk(o.sid, 0, stream(data), ME);
-  assert.deepEqual(again, { ok: true, offset: 500, done: true, videoId: vid }, "gửi lại khúc cuối → trả lại video cũ, không tạo trùng");
+  assert.deepEqual(again, { ok: true, offset: 500, done: true, videoId: vid, approved: false }, "gửi lại khúc cuối → trả lại video cũ, không tạo trùng, không viết bài lần hai");
   assert.equal(db.getDb().select().from(db.schema.uploads).all().filter((u) => u.name === "xong.mp4").length, 1);
   // phiên mở 49 giờ trước nhưng vừa ghi khúc → không bị dọn
   const p2 = rs.openSession({ original: "lau.mp4", size: 1000, key: "lau|1000|1", params, by: ME }) as { sid: string };

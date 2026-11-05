@@ -6,6 +6,7 @@ import { actorFor } from "@/lib/permissions";
 import { uploadsDir } from "@/lib/uploads";
 import { EXT_MIME, MAX_SOURCE_BYTES as MAX_BYTES, newUploadId, registerSource } from "@/lib/video/source-intake";
 import { sameOrigin } from "@/lib/same-origin";
+import { startPostDraft } from "@/lib/publishing/post-draft";
 
 // Thêm nguồn quay thô cho Video Studio. Nhận thân yêu cầu dạng luồng, ghi thẳng xuống đĩa:
 // không qua bộ đệm 10 MB của proxy (đường dẫn này loại khỏi matcher trong src/proxy.ts), không nạp cả tệp vào bộ nhớ.
@@ -39,6 +40,7 @@ export async function POST(req: Request) {
     return Response.json({ ok: false, error: `Tải lên chưa trọn (${size}/${declared} byte)` }, { status: 400 });
   }
   const params = { cut: url.searchParams.get("cut") === "1", contentId: (url.searchParams.get("content") ?? "").slice(0, 80) || null, final: url.searchParams.get("mode") === "final", aspect: url.searchParams.get("aspect"), quality: url.searchParams.get("quality"), start: url.searchParams.get("start") === "1" };
-  const { videoId } = registerSource({ tmpPath: full, uploadId: id, original, ext, size, params, by: { name: actor.name, email: actor.email } });
+  const { videoId, approved } = registerSource({ tmpPath: full, uploadId: id, original, ext, size, params, by: { name: actor.name, email: actor.email } });
+  if (approved) startPostDraft(videoId);
   return Response.json({ ok: true, videoId, size });
 }
