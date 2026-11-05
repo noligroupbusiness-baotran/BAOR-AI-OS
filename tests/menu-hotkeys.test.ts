@@ -7,8 +7,8 @@ import { JOURNEY_STEPS, displayStepsIn } from "../src/config/journey";
 
 const hrefOf = (k: string) => menu.find((m) => m.hotkey === k)?.href;
 
-test("Alt+1…7 mở đúng bước 1…7 của hành trình", () => {
-  assert.equal(JOURNEY_STEPS.length, 7);
+test("Alt+1…4 mở đúng bước 1…4 của hành trình", () => {
+  assert.equal(JOURNEY_STEPS.length, 4);
   for (const s of JOURNEY_STEPS) assert.equal(hrefOf(String(s.step)), s.href, `bước ${s.step}`);
   assert.equal(hrefOf("8"), "/dashboard");
   assert.equal(hrefOf("9"), "/customers");
@@ -42,13 +42,13 @@ test("đang gõ chữ thì không nhận phím tắt (Mac Option+số / Option+S
   assert.equal(isTypingTarget({ tagName: "BUTTON" }), false);
 });
 
-test("đề xuất đã lưu: 'bước 8.1 / 8.2' hiển thị thành bước 7, mã lạ giữ nguyên", () => {
-  assert.equal(displayStepsIn("Kiểm theo skill (bước 8.1 — luật, không AI)."), "Kiểm theo skill (bước 7 — luật, không AI).");
-  assert.equal(displayStepsIn("AI Đo lường — bước 8.2, giả thuyết"), "AI Đo lường — bước 7, giả thuyết");
-  assert.equal(displayStepsIn("Bước 6.2.1 xong"), "Bước 5 xong");
+test("đề xuất đã lưu: 'bước 8.1 / 8.2' hiển thị thành bước 4, mã lạ giữ nguyên", () => {
+  assert.equal(displayStepsIn("Kiểm theo skill (bước 8.1 — luật, không AI)."), "Kiểm theo skill (bước 4 — luật, không AI).");
+  assert.equal(displayStepsIn("AI Đo lường — bước 8.2, giả thuyết"), "AI Đo lường — bước 4, giả thuyết");
+  assert.equal(displayStepsIn("Bước 6.2.1 xong"), "Bước 3 xong");
   assert.equal(displayStepsIn("bước 9.1 và 8.1 đơn lẻ"), "bước 9.1 và 8.1 đơn lẻ");
-  assert.equal(displayStepsIn("Kiểm (bước 8.1)"), "Kiểm (bước 7)");
-  assert.equal(displayStepsIn("xong bước 8.2. Sau đó"), "xong bước 7. Sau đó");
+  assert.equal(displayStepsIn("Kiểm (bước 8.1)"), "Kiểm (bước 4)");
+  assert.equal(displayStepsIn("xong bước 8.2. Sau đó"), "xong bước 4. Sau đó");
 });
 
 test("số có dấu chấm ngăn nghìn / thập phân / đơn vị sau chữ 'bước' giữ nguyên", () => {

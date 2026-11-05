@@ -39,7 +39,7 @@ export function journeyCards(): JourneyCard[] {
     4: { value: line(vid, 0) + line(vid, 1), unit: "video đang dựng / chờ duyệt", note: vid?.summary ?? "", state: vid?.state ?? "not_started", go: "/video-studio" },
     5: { value: unposted, unit: "video chưa đăng", note: `${lib.length} video trong kho`, state: unposted ? "waiting" : lib.length ? "done" : "not_started", go: "/video-library" },
     6: { value: line(pub, 0), unit: "bài chờ đăng", note: pub?.summary ?? "", state: pub?.state ?? "not_started", go: "/publishing" },
-    7: { value: line(ads, 1), unit: "quảng cáo đang chạy", note: ads?.summary ?? "", state: ads?.state ?? "not_started", go: "/ads" },
+    7: { value: line(ads, 1), unit: "quảng cáo đang chạy", note: ads?.summary ?? "", state: ads?.state ?? "not_started", go: "/insights/learning?tab=quang-cao" },
     8: { value: proposals, unit: "đề xuất chờ xem", note: measure?.summary ?? "", state: proposals ? "waiting" : measure?.state ?? "not_started", go: "/insights/learning" },
   };
   return JOURNEY.map((s) => ({ ...s, ...data[s.n] }));

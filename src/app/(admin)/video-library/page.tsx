@@ -91,7 +91,8 @@ export default async function VideoLibraryPage({ searchParams }: { searchParams:
         </div>
         <div className="flex items-center gap-2">
           {list.length > 0 && <GridSizeToggle target="video-grid" />}
-          <LinkButton href="/publishing#video-posts" variant="ghost">Đăng bài ›</LinkButton>
+          <LinkButton href="/video-studio" variant="ghost">Dựng trong app</LinkButton>
+          <LinkButton href="/publishing#video-posts" variant="ghost">Đăng ›</LinkButton>
         </div>
       </div>
       <CampaignFilterChip filter={filter} missing={!!ctx.campaignId && !filter} clearHref={`/video-library?tab=${tab}`} />
@@ -101,8 +102,8 @@ export default async function VideoLibraryPage({ searchParams }: { searchParams:
         <div className="card mt-3.5">
           <EmptyState
             title={filter ? "Chiến dịch chưa có video ở mục này" : tab === "unposted" ? "Kho chưa có video chờ đăng" : tab === "scheduled" ? "Chưa có video nào đã lên lịch" : "Chưa có video đã đăng"}
-            hint={tab === "unposted" ? "Duyệt video ở bước 3 · Quay & edit video là video vào đây." : undefined}
-            action={tab === "unposted" ? <LinkButton href="/video-studio" variant="soft">Tới Quay & edit video</LinkButton> : undefined}
+            hint={tab === "unposted" ? "Kéo video edit xong vào thư mục VIDEO-DA-DUYET trên máy, hoặc tải lên ở đây." : undefined}
+            action={tab === "unposted" ? <LinkButton href="/video-studio?upload=1" variant="soft">Tải video đã edit</LinkButton> : undefined}
           />
         </div>
       ) : (

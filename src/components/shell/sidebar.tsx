@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
-import { activeMenuItem, menu, menuGroupLabel, menuGroupOrder } from "@/config/menu";
+import { activeMenuItem, menu, menuBadge, menuGroupLabel, menuGroupOrder } from "@/config/menu";
 import { cn } from "@/lib/format";
 import type { Health } from "@/lib/shell-types";
 import type { ShellUser } from "./app-shell";
@@ -25,7 +25,8 @@ const permissionName = { admin: "Quản trị", manager: "Quản lý", staff: "N
 
 export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile, badges, user, health, logos }: Props) {
   const pathname = usePathname();
-  const activeKey = activeMenuItem(pathname)?.key;
+  const act = activeMenuItem(pathname);
+  const activeKey = act?.hidden ? act.parent : act?.key;
 
   const nav = (
     <nav aria-label="Phân hệ" className="flex flex-col gap-0.5">
@@ -37,9 +38,9 @@ export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile
               <span className="h-px flex-1 bg-border" aria-hidden />
             </div>
           )}
-          {menu.filter((m) => m.group === g).map((m) => {
+          {menu.filter((m) => m.group === g && !m.hidden).map((m) => {
         const active = m.key === activeKey;
-        const badge = badges[m.href];
+        const badge = menuBadge(m, badges);
         return (
           <Link
             key={m.key}

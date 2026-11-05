@@ -38,8 +38,11 @@ export interface MenuItem {
   tone: GroupTone;
   /** Nhóm trên thanh bên. */
   group: MenuGroup;
-  /** Phím tắt Alt + phím này để nhảy tới phân hệ: "1"…"7" = bước 1…7, "8" = Tổng quan, "9" = Lead, "0" = Cài đặt. */
+  /** Phím tắt Alt + phím này để nhảy tới phân hệ: "1"…"4" = bước 1…4, "8" = Tổng quan, "9" = Lead, "0" = Cài đặt. */
   hotkey?: string;
+  /** Không hiện trên thanh bên (trang phụ vẫn mở được qua đường dẫn / nút trong bước); `parent` = mục thanh bên sáng lên khi ở trang này. */
+  hidden?: boolean;
+  parent?: string;
   /** Phân hệ còn là trang khung: hiện nhãn "đang xây" trên menu. */
   building?: boolean;
   /** Đường dẫn khác cũng thuộc mục này (vd /content thuộc bước 2 · Hook & kịch bản). */
@@ -47,14 +50,16 @@ export interface MenuItem {
 }
 
 export const menu: MenuItem[] = [
-  { key: "dashboard", tone: "blue", href: "/dashboard", label: "Tổng quan", description: "Tình hình chung (chi tiêu AI, kết nối, dựng video, sao lưu, lỗi) và hành trình marketing 7 bước.", icon: LayoutDashboard, group: "ops", hotkey: "8" },
-  { key: "research", tone: "cyan", href: "/insights/research", label: "1 · Chủ đề & insight", description: "Chủ đề → insight từ nhóm Facebook, YouTube, Facebook, social.", icon: FlaskConical, group: "brand", hotkey: "1" },
-  { key: "content", tone: "violet", href: "/content/hooks", label: "2 · Hook & kịch bản", description: "10 hook mỗi lần, kịch bản vlog dưới 1 phút.", icon: FileText, group: "brand", hotkey: "2", also: ["/content"] },
-  { key: "video-studio", tone: "pink", href: "/video-studio", label: "3 · Quay & edit video", description: "Tải video, AI edit theo skill.", icon: Clapperboard, group: "brand", hotkey: "3" },
-  { key: "video-library", tone: "pink", href: "/video-library", label: "4 · Kho video", description: "Chưa đăng, đã đăng, mục xoá.", icon: Archive, group: "brand", hotkey: "4" },
-  { key: "publishing", tone: "orange", href: "/publishing", label: "5 · Đăng bài", description: "Lên lịch đăng, fanpage, caption theo skill.", icon: CalendarClock, group: "brand", hotkey: "5" },
-  { key: "ads", tone: "orange", href: "/ads", label: "6 · Quảng cáo", description: "Quảng cáo từ video đã đăng, trong ủy quyền ngân sách.", icon: Megaphone, group: "brand", hotkey: "6" },
-  { key: "learning", tone: "yellow", href: "/insights/learning", label: "7 · Đo lường", description: "Kiểm theo skill, AI đề xuất cải tiến.", icon: Sparkles, group: "brand", hotkey: "7" },
+  { key: "dashboard", tone: "blue", href: "/dashboard", label: "Tổng quan", description: "Tình hình chung (chi tiêu AI, kết nối, máy dựng, sao lưu, lỗi) và hành trình marketing 4 bước.", icon: LayoutDashboard, group: "ops", hotkey: "8" },
+  // 4 bước (OWNER 05/11/2026): Kịch bản → Video → Đăng → Kết quả. Trang phụ (chủ đề & insight, Studio dựng trong app, Quảng cáo)
+  // vẫn mở được qua nút trong bước, không chiếm chỗ trên thanh bên.
+  { key: "content", tone: "violet", href: "/content/hooks", label: "1 · Kịch bản", description: "Gõ chủ đề → 10 hook → kịch bản vlog dưới 1 phút.", icon: FileText, group: "brand", hotkey: "1", also: ["/content"] },
+  { key: "research", tone: "cyan", href: "/insights/research", label: "Chủ đề & insight", description: "Chủ đề → insight từ nhóm Facebook, YouTube, social.", icon: FlaskConical, group: "brand", hidden: true, parent: "content" },
+  { key: "video-library", tone: "pink", href: "/video-library", label: "2 · Video", description: "Kéo video edit xong vào thư mục trên máy là tự lên Kho; chưa đăng, đã đăng.", icon: Archive, group: "brand", hotkey: "2" },
+  { key: "video-studio", tone: "pink", href: "/video-studio", label: "Dựng trong app", description: "Tải video gốc, AI edit theo skill (ít dùng khi đã edit trên máy).", icon: Clapperboard, group: "brand", hidden: true, parent: "video-library" },
+  { key: "publishing", tone: "orange", href: "/publishing", label: "3 · Đăng", description: "Bài đã viết sẵn, chọn kênh, đăng ngay hoặc lên lịch.", icon: CalendarClock, group: "brand", hotkey: "3" },
+  { key: "learning", tone: "yellow", href: "/insights/learning", label: "4 · Kết quả", description: "Số liệu, quảng cáo, đề xuất cải tiến.", icon: Sparkles, group: "brand", hotkey: "4" },
+  { key: "ads", tone: "orange", href: "/ads", label: "Quảng cáo", description: "Quảng cáo từ video đã đăng, trong ủy quyền ngân sách.", icon: Megaphone, group: "brand", hidden: true, parent: "learning" },
   { key: "campaigns", tone: "emerald", href: "/campaigns", label: "Chiến dịch", description: "Mục tiêu, ngân sách, thời gian và kết quả từng chiến dịch.", icon: Target, group: "business" },
   { key: "customers", tone: "emerald", href: "/customers", label: "Lead", description: "Lead từ quảng cáo / fanpage, hộp thư, chăm sóc.", icon: Users, group: "business", hotkey: "9" },
   { key: "assets", tone: "indigo", href: "/assets", label: "Tư liệu", description: "Logo, thư viện nhạc nền, nhạc tải lên, ảnh / B-roll, thư mục thả tư liệu.", icon: Images, group: "business" },
@@ -86,6 +91,13 @@ export function activeMenuItem(pathname: string): MenuItem | undefined {
   return menu
     .filter((m) => [m.href, ...(m.also ?? [])].some((h) => pathname === h || pathname.startsWith(h + "/")))
     .sort((a, b) => b.href.length - a.href.length)[0];
+}
+
+/** Badge thanh bên: số của mục + số của các mục ẩn thuộc nó (video chờ duyệt ở Studio → hiện trên Video; quảng cáo chờ → Kết quả). */
+export function menuBadge(m: MenuItem, badges: Record<string, number | undefined>): number {
+  const own = badges[m.href] ?? 0;
+  const kids = menu.filter((x) => x.hidden && x.parent === m.key).reduce((n, x) => n + (badges[x.href] ?? 0), 0);
+  return own + kids;
 }
 
 export function findMenuByPath(pathname: string): MenuItem | undefined {
@@ -139,9 +151,9 @@ export interface CreateAction {
 }
 
 export const createActions: CreateAction[] = [
-  { key: "research", label: "1 · Chủ đề mới", icon: FlaskConical, moduleKey: "research", href: "/insights/research" },
-  { key: "hooks", label: "2 · Tạo 10 hook", icon: FilePlus2, moduleKey: "content", href: "/content/hooks" },
-  { key: "video", label: "3 · Tải video lên", icon: Upload, moduleKey: "video-studio", href: "/video-studio?upload=1" },
-  { key: "schedule", label: "5 · Lên lịch đăng", icon: CalendarClock, moduleKey: "publishing", href: "/video-library" },
+  { key: "hooks", label: "Kịch bản mới", icon: FilePlus2, moduleKey: "content", href: "/content/hooks" },
+  { key: "research", label: "Chủ đề mới", icon: FlaskConical, moduleKey: "research", href: "/insights/research" },
+  { key: "video", label: "Tải video đã edit", icon: Upload, moduleKey: "video-library", href: "/video-studio?upload=1" },
+  { key: "schedule", label: "Lên lịch đăng", icon: CalendarClock, moduleKey: "publishing", href: "/video-library" },
   { key: "customer", label: "Thêm lead", icon: UserPlus, moduleKey: "customers", href: "/customers?tab=leads&add=1" },
 ];

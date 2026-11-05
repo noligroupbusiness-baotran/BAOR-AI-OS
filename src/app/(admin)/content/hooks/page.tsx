@@ -17,13 +17,13 @@ import { getDb, schema } from "@/db";
 import { formatDateTime, cn } from "@/lib/format";
 import type { Platform } from "@/lib/types";
 
-export const metadata = { title: "Bảng Hook & kịch bản – BAOR AI OS" };
+export const metadata = { title: "Kịch bản – BAOR AI OS" };
 
 const basisLabel = { finding: "Nghiên cứu", knowledge: "Kiến thức", insight: "Insight" } as const;
 const chip = (on: boolean) => cn("rounded-full border px-2.5 py-0.5 whitespace-nowrap", on ? "border-jade/40 bg-jade-soft font-semibold text-jade-ink" : "border-border-2 text-ink-2 hover:bg-ground-2");
 
-// Bước 2 (Hook & kịch bản). OWNER 26/10: mỗi lô hook ghi rõ chủ đề gốc (link về bước 1), lọc theo chủ đề, chấm điểm ưu tiên,
-// "Nên làm" cho 3 hook tốt nhất, "Viết kịch bản" một chạm (khung vlog chia sẻ < 1 phút).
+// Bước 1 · Kịch bản (OWNER 05/11/2026: "tối giản, đơn giản, dễ sử dụng"): gõ chủ đề → 10 hook, mỗi hook MỘT dòng + hai nút
+// "Viết kịch bản" / "Bỏ"; góc tiếp cận, dàn ý, nguồn, cảnh báo luật gập trong "Chi tiết". Chấm điểm ưu tiên, "Nên làm" cho 3 hook tốt nhất.
 export default async function HooksPage({ searchParams }: { searchParams: Promise<{ topic?: string; all?: string; research?: string }> }) {
   const sp = await searchParams;
   const role = roleById("hooks")!;
@@ -59,7 +59,7 @@ export default async function HooksPage({ searchParams }: { searchParams: Promis
 
   return (
     <>
-      <PageHead title="Bảng Hook & kịch bản" sub={`${HOOK_COUNT} hook mỗi lần · vlog chia sẻ < 1 phút · kiểm luật nền tảng`} />
+      <PageHead title="Kịch bản" sub="Gõ chủ đề → 10 hook → bấm Viết kịch bản." action={<Link href="/insights/research" className="text-[12.5px] font-semibold text-jade hover:underline">Chủ đề & insight ›</Link>} />
 
       {perTopic.size > 0 && (
         <nav aria-label="Lọc theo chủ đề" className="appear appear--soft -mt-2 mb-3 flex flex-wrap items-center gap-1.5 text-[12px] [--d:1]">
@@ -73,13 +73,13 @@ export default async function HooksPage({ searchParams }: { searchParams: Promis
       <Panel>
         <PanelHeader
           title="AI tạo hook"
-          sub={filter ? `Từ insight của “${filterName.slice(0, 40)}”` : role.name}
+          sub={filter ? `Từ insight của “${filterName.slice(0, 40)}”` : undefined}
           tags={<AiBlocked ready={ready} />}
-          action={filter ? <Link href={`/insights/research/${filter}`} className="text-[12.5px] font-semibold text-jade hover:underline">← Chủ đề</Link> : <Link href={AI_TEAM_HREF} className="text-[12.5px] font-semibold text-jade">Đội AI ›</Link>}
+          action={filter ? <Link href={`/insights/research/${filter}`} className="text-[12.5px] font-semibold text-jade hover:underline">← Chủ đề</Link> : <Link href={AI_TEAM_HREF} className="text-[12.5px] text-ink-3 hover:text-jade">{role.name} ›</Link>}
         />
         <form action={aiGenerateHooks} className="grid gap-2 p-4 md:grid-cols-[1fr_auto] md:items-end">
           {filter && <input type="hidden" name="research" value={filter} />}
-          <Field label={filter ? "Chủ đề" : "Chủ đề marketing (OWNER đề xuất)"}>
+          <Field label="Chủ đề">
             <input name="topic" required minLength={4} defaultValue={sp.topic ?? (research ? filterName : "")} placeholder="vd: chào hỏi phá băng khi gọi điện cho khách mới" className={inputClass} />
           </Field>
           <SubmitButton pendingText="AI đang viết 10 hook…" disabled={!ready.ok} title={ready.ok ? undefined : ready.reason}>AI tạo {HOOK_COUNT} hook</SubmitButton>
@@ -146,28 +146,33 @@ export default async function HooksPage({ searchParams }: { searchParams: Promis
                             <Pill tone="violet">Chuyện của anh</Pill>
                           )}
                         </div>
-                        {h.angle && <p className="mt-0.5 text-[12.5px] text-ink-2">{h.angle}</p>}
-                        {h.beats.length > 0 && (
-                          <ul className="mt-1 list-disc pl-5 text-[12.5px] text-ink">
-                            {h.beats.map((b, k) => <li key={k}>{b}</li>)}
-                          </ul>
-                        )}
-                        <div className="mt-1.5 flex flex-wrap gap-1.5">
-                          {h.platforms.map((p) => <Pill key={p} tone="neutral">{platformLabel(p as Platform)}</Pill>)}
-                          {h.basis.map((b) =>
-                            b.kind === "finding" && h.topicId ? (
-                              <Link key={`${b.kind}:${b.id}`} href={`/insights/research/${h.topicId}#insights`} title={b.label} className="max-w-full">
-                                <Pill tone="sky" className="max-w-full overflow-hidden text-ellipsis hover:underline">{basisLabel[b.kind]}: {b.label.slice(0, 40)}</Pill>
-                              </Link>
-                            ) : (
-                              <Pill key={`${b.kind}:${b.id}`} tone="sky" className="max-w-full overflow-hidden text-ellipsis">{basisLabel[b.kind]}: {b.label.slice(0, 40)}</Pill>
-                            ),
-                          )}
-                        </div>
                         {h.policyIssues.length > 0 && (
-                          <ul className="mt-1.5 list-none p-0 text-[12px] text-brick">
+                          <ul className="mt-1 list-none p-0 text-[12px] text-brick">
                             {h.policyIssues.map((x, k) => <li key={k}>⚠ {x}</li>)}
                           </ul>
+                        )}
+                        {(h.angle || h.beats.length > 0 || h.basis.length > 0) && (
+                          <details className="mt-1 text-[12.5px]">
+                            <summary className="cursor-pointer select-none text-ink-3 hover:text-ink">Chi tiết</summary>
+                            {h.angle && <p className="mt-1 text-ink-2">{h.angle}</p>}
+                            {h.beats.length > 0 && (
+                              <ul className="mt-1 list-disc pl-5 text-ink">
+                                {h.beats.map((b, k) => <li key={k}>{b}</li>)}
+                              </ul>
+                            )}
+                            <div className="mt-1.5 flex flex-wrap gap-1.5">
+                              {h.platforms.map((p) => <Pill key={p} tone="neutral">{platformLabel(p as Platform)}</Pill>)}
+                              {h.basis.map((b) =>
+                                b.kind === "finding" && h.topicId ? (
+                                  <Link key={`${b.kind}:${b.id}`} href={`/insights/research/${h.topicId}#insights`} title={b.label} className="max-w-full">
+                                    <Pill tone="sky" className="max-w-full overflow-hidden text-ellipsis hover:underline">{basisLabel[b.kind]}: {b.label.slice(0, 40)}</Pill>
+                                  </Link>
+                                ) : (
+                                  <Pill key={`${b.kind}:${b.id}`} tone="sky" className="max-w-full overflow-hidden text-ellipsis">{basisLabel[b.kind]}: {b.label.slice(0, 40)}</Pill>
+                                ),
+                              )}
+                            </div>
+                          </details>
                         )}
                       </div>
                     </div>

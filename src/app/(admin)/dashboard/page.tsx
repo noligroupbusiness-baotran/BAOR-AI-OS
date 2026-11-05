@@ -22,21 +22,23 @@ const stepTone = (href: string): GroupTone => menu.find((m) => m.href === href)?
 const stateDot = { done: "bg-jade", working: "bg-sky", waiting: "bg-amber", not_started: "bg-border-2" } as const;
 const stateLabel = { done: "Xong", working: "Đang làm", waiting: "Chờ anh", not_started: "Chưa bắt đầu" } as const;
 
-// 7 bước hiển thị (OWNER 26/10/2026): gộp các thẻ con cùng bước (bước 1 = Chủ đề + Nghiên cứu insight) — giữ số liệu và
-// nút của từng phần; trạng thái chung ưu tiên "chờ anh" > "đang làm" > "chưa bắt đầu" > "xong".
+// 4 bước hiển thị (OWNER 05/11/2026): gộp các thẻ con cùng bước — mỗi thẻ tối đa 2 số và 2 nút cho dễ nhìn;
+// trạng thái chung ưu tiên "chờ anh" > "đang làm" > "chưa bắt đầu" > "xong".
 function mergeState(parts: JourneyCard[]): JourneyCard["state"] {
   for (const st of ["waiting", "working", "not_started"] as const) if (parts.some((p) => p.state === st)) return st;
   return "done";
 }
 
 // Trang chính = Tổng quan (OWNER 25/10/2026, đổi từ "Hành trình"): tình hình chung (AI, kết nối, nơi dựng, sao lưu, lỗi) →
-// hành trình marketing 7 bước (sơ đồ Personal Brand System, mỗi bước một nút bấm) → việc cần làm. Đọc một trang là nắm hết.
+// hành trình marketing 4 bước (Kịch bản → Video → Đăng → Kết quả, mỗi bước một nút bấm) → việc cần làm. Đọc một trang là nắm hết.
 export default async function JourneyHome() {
   const cards = journeyCards();
   const pending = getPending();
   const status = getSystemStatus(pending.length);
   const next = cards.find((c) => c.state === "waiting") ?? cards.find((c) => c.state === "not_started");
-  const steps = JOURNEY_STEPS.map((d) => ({ ...d, parts: cards.filter((c) => c.step === d.step) })).filter((d) => d.parts.length > 0);
+  // Thứ tự phần trong bước theo JOURNEY (mục đầu là trang chính của bước); phần "chờ anh" đưa lên đầu để nút chính đúng việc
+  const steps = JOURNEY_STEPS.map((d) => ({ ...d, parts: cards.filter((c) => c.step === d.step).sort((a, b) => (a.state === "waiting" ? -1 : 0) - (b.state === "waiting" ? -1 : 0)).slice(0, 2) })).filter((d) => d.parts.length > 0);
+  const nextLabel = next ? (JOURNEY_STEPS.find((s) => s.step === next.step)?.label ?? next.label) : "";
   return (
     <>
       <div className="flex flex-wrap items-end justify-between gap-2">
@@ -46,7 +48,7 @@ export default async function JourneyHome() {
         </h1>
         {next && (
           <Link href={next.go} className="btn btn-primary appear appear--btn flex h-10 items-center gap-1.5 px-4 text-[13px] font-semibold [--d:2]">
-            Làm tiếp: bước {next.step} · {next.label} <ArrowRight size={15} aria-hidden />
+            Làm tiếp: bước {next.step} · {nextLabel} <ArrowRight size={15} aria-hidden />
           </Link>
         )}
       </div>

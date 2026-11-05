@@ -144,6 +144,11 @@ OWNER 25/10/2026 (tối): edit video LẠI ("edit lại đi") — lệnh "ngưng
       nội dung từ LỜI ĐÃ NÓI (+ .txt cùng tên = ghi chú OWNER). Tệp gửi xong cất vào DA-GUI/. Kho video có dải trạng thái thư mục.
       Cũng vá: OWNER tải video tự edit qua web vào Kho trước đây KHÔNG tự viết bài (chỉ Duyệt mới viết) — nay viết luôn.
       SAU KHI GHÉP: máy OWNER `git pull` + `npm run render-worker:install` (LaunchAgent nạp mã mới) → kéo video vào thư mục là chạy.
+   S. XONG (commit kế, OWNER 05/11 "giao diện cũng phải khác… tối giản, đơn giản, dễ dùng"): hành trình 7 bước → 4 bước
+      (src/config/journey.ts giữ n, chỉ đổi `step`): 1 Kịch bản (/content/hooks; chủ đề & insight là trang phụ), 2 Video (Kho video;
+      Studio dựng trong app là nút phụ), 3 Đăng, 4 Kết quả (/insights/learning: Số liệu · Quảng cáo · Cải tiến; /ads chuyển hướng
+      vào tab Quảng cáo giữ tham số). Thanh bên 4 mục (Alt+1…4), mục ẩn vẫn mở được và làm sáng mục cha. Tổng quan 4 thẻ, mỗi thẻ ≤ 2 số
+      / 2 nút. Trang Kịch bản: mỗi hook một dòng + "Viết kịch bản" / "Bỏ", chi tiết gập. Mã bước sơ đồ (8.2 → 4, 6.1 → 3, 4.2 → 2).
    CHỜ OWNER: khoá Meta / Google / YouTube / TikTok (đăng bài + quảng cáo 7.2–7.5), hồ sơ cá nhân Facebook (6.2.1.1).
 2. Skill ESV + Skill Edit Video Ngang v0.1.r2 — XONG phần Phần chung A (4255aca, ff638df): nhạc A5 (chưa có bài đạt → KHÔNG nhạc),
    SFX OWNER theo vai trò, cắt lặng A11.4 (+ bảo vệ khoảng có từ), xem trước 720p, số A13, ảnh theo mô tả nội dung A4.1.
